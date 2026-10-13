@@ -249,9 +249,25 @@
   }
   function minS() { return G.map ? Math.min(CAM.vw / G.map.w, CAM.vh / G.map.h) * 0.92 : 2; }
   function maxS() { return 56; }
+  // Старт — вблизи, на своей армии: сразу видны бойцы, а не значки
+  var CLOSE_S = 26;
   function fitCamera() {
     if (!G.map) return;
-    CAM.x = G.map.w / 2; CAM.y = G.map.h / 2; CAM.s = minS(); CAM.ready = true;
+    var sx = 0, sy = 0, n = 0;
+    G.squads.forEach(function(sq) { if (sq.side === G.side) { sx += sq.x * sq.members.length; sy += sq.y * sq.members.length; n += sq.members.length; } });
+    CAM.x = n ? sx / n + (G.side === 0 ? 6 : -6) : G.map.w / 2;
+    CAM.y = n ? sy / n : G.map.h / 2;
+    CAM.s = CLOSE_S; CAM.ready = true;
+    clampCam();
+  }
+  function isOverview() { return CAM.s < 8; }
+  function toggleZoom() {
+    if (isOverview()) {
+      var h = BENCH.hot();
+      if (h) { CAM.x = h.x; CAM.y = h.y; }
+      CAM.s = CLOSE_S;
+    } else { CAM.x = G.map.w / 2; CAM.y = G.map.h / 2; CAM.s = minS(); }
+    clampCam(); hud();
   }
   function clampCam() {
     if (!G.map) return;
@@ -485,8 +501,8 @@
       c.drawImage(ch.cv, Math.floor(p[0]), Math.floor(p[1]), Math.ceil(size) + 1, Math.ceil(size) + 1);
     }
     c.imageSmoothingEnabled = true;
-    // фигурки или значки: между 8 и 11 px на клетку — перетекают
-    var fk = Math.max(0, Math.min(1, (s - 8) / 3));
+    // фигурки или значки: между 6 и 8 px на клетку — перетекают
+    var fk = Math.max(0, Math.min(1, (s - 6) / 2));
     FR.drawn = 0;
     drawOrders(c, T);
     if (fk < 1) drawIcons(c, 1 - fk, T);
@@ -856,6 +872,7 @@
              : nS ? 'Отрядов: ' + (nS - sing) + (sing ? ' · одиночек: ' + sing : '') + ' · войск: ' + men + ' · коснись поля — идти'
              : G.mode === 'soldier' ? 'Режим «Боец»: касание выбирает одного бойца' : 'Коснись своего отряда. Долгое касание — один боец';
     $('rt-sel').textContent = info;
+    $('rt-zoom').textContent = G.map && isOverview() ? 'Вблизи' : 'Обзор';
     $('rt-mode-squad').classList.toggle('on', G.mode === 'squad');
     $('rt-mode-soldier').classList.toggle('on', G.mode === 'soldier');
     $('rt-box').classList.toggle('on', UI.boxMode);
@@ -880,6 +897,7 @@
     $('rt-net').textContent = fmtKb(G.bps);
     $('rt-lod').textContent = st.lod || 0;
     $('rt-view').textContent = FR.mode + ' · ' + FR.drawn;
+    if (G.map) $('rt-zoom').textContent = isOverview() ? 'Вблизи' : 'Обзор';
   }
 
   var toastT = 0;
@@ -909,6 +927,7 @@
     $('rt-stop').onclick = function() { G.link.send({ t: 'order', k: 'stop', sq: Array.from(G.sel.squads) }); };
     $('rt-clear').onclick = function() { G.sel.squads.clear(); G.sel.soldiers.clear(); hud(); };
     $('rt-bench').onclick = function() { BENCH.start(); };
+    $('rt-zoom').onclick = function() { if (G.map) toggleZoom(); };
     $('rt-res-close').onclick = function() { $('rt-res').hidden = true; };
     $('rt-res-save').onclick = function() { BENCH.save(); };
   }

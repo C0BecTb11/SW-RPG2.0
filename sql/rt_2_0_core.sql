@@ -210,11 +210,13 @@ language plpgsql security definer
 set search_path to 'public', 'pg_temp'
 as $$
 declare
-  j jsonb := to_jsonb(new);
+  j jsonb;
   busy boolean := false;
 begin
   if coalesce(current_setting('app.rt_battle', true), '') = '1' then return new; end if;
-  if not exists (select 1 from rt_battle_locks) then return new; end if;
+  -- Быстрый выход: нет ни одного идущего боя 2.0 (частичный индекс по status)
+  if not exists (select 1 from rt_battles where status = 'active') then return new; end if;
+  j := to_jsonb(new);
 
   if tg_table_name = 'troop_transfer_items' then
     busy := (j->>'kind') in ('unit','ship') and (j->>'item_id') is not null

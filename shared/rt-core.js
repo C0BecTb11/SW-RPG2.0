@@ -311,7 +311,8 @@
     return group.length;
   };
 
-  Battle.prototype.setDest = function(sq, cx, cy) {
+  Battle.prototype.setDest = function(sq, cx, cy, keepRejoin) {
+    if (!keepRejoin) sq.rejoin = 0;                     // новый приказ отменяет возврат в строй
     sq.dest = [cx, cy]; sq.idle = 0; sq.hold = false;
     sq.flow = this.flows.peek(cx, cy);
     if (sq.flow) this.ev.orders.push(sq.id);
@@ -353,6 +354,7 @@
   };
 
   Battle.prototype.orderStop = function(sq) {
+    sq.rejoin = 0;
     if (!sq.dest) return;
     sq.dest = null; sq.flow = null; this.ev.orders.push(sq.id);
     var i = this.flowWait.indexOf(sq); if (i >= 0) this.flowWait.splice(i, 1);
@@ -363,11 +365,13 @@
     var made = [];
     for (var i = 0; i < soldiers.length; i++) {
       var s = soldiers[i];
+      if (typeof s !== 'number' || s !== (s | 0)) continue;     // только целые номера
       if (s < 0 || s >= this.nSoldiers || !this.sAlive[s]) continue;
       if (side != null && this.sSide[s] !== side) continue;
       var from = this.squads[this.sSquad[s]];
       if (!from || from.single) { if (from) made.push(from); continue; }
       var slot = from.members.indexOf(s);
+      if (slot < 0) continue;
       var off = slotOffset(slot, from.members.length);
       var cs = Math.cos(from.face), sn = Math.sin(from.face);
       var px = from.x + off[0] * cs - off[1] * sn, py = from.y + off[0] * sn + off[1] * cs;
@@ -391,8 +395,8 @@
     if (!home) return false;
     var dx = home.x - sq.x, dy = home.y - sq.y;
     if (dx * dx + dy * dy > 16) {          // далеко — сначала идти к строю
-      sq.rejoin = home.id;
       this.setDest(sq, Math.floor(home.x), Math.floor(home.y));
+      sq.rejoin = home.id;
       return true;
     }
     this.merge(sq, home);
@@ -415,7 +419,7 @@
       into.members.push(one.members[i]); this.sSquad[one.members[i]] = into.id;
     }
     into.alive += one.alive;
-    one.members = [];
+    one.members = []; one.alive = 0;
     this.removeSquad(one);
     this.ev.members.push(into.id);
     this.stats.merged++;
@@ -443,7 +447,7 @@
     var list = this.list.slice();
     for (i = 0; i < list.length; i++) {
       sq = list[i];
-      if (!this.squads[sq.id]) continue;
+      if (this.squads[sq.id] !== sq) continue;
       var cx = sq.chunk % cw, cy = (sq.chunk - cx) / cw;
       var foes = this.enemyNear(sq.side, cx, cy);
       if (!foes && !sq.dest) {           // спит: врагов рядом нет, идти некуда
@@ -457,6 +461,7 @@
       if (quiet && lodEvery > 1 && ((this.tick + sq.id) % lodEvery) !== 0) { this.stats.skipped++; continue; }
       var dt = sq.dtAcc; sq.dtAcc = 0;
       this.move(sq, dt);
+      if (this.squads[sq.id] !== sq) continue;           // влился в строй по пути
       if (foes) this.fight(sq, dt); else { sq.engaged = false; sq.target = 0; }
       if (!sq.dest && !sq.engaged) sq.idle += dt; else sq.idle = 0;
     }
@@ -576,7 +581,7 @@
         var arr = this.chunkSquads[y * cw + x];
         for (var i = 0; i < arr.length; i++) {
           var o = arr[i];
-          if (o.side === sq.side || o.alive <= 0) continue;
+          if (o.side === sq.side || o.alive <= 0 || this.squads[o.id] !== o) continue;
           var dx = o.x - sq.x, dy = o.y - sq.y, d = dx * dx + dy * dy;
           if (d <= R2) best.push(d, o);
         }
@@ -595,7 +600,9 @@
   };
 
   Battle.prototype.hurt = function(tg, dmg) {
-    var m = tg.members, idx = Math.floor(this.R() * m.length), s = m[idx];
+    var m = tg.members;
+    if (!m.length || this.squads[tg.id] !== tg) return;
+    var idx = Math.floor(this.R() * m.length), s = m[idx];
     var hp = this.sHp[s] - dmg;
     if (hp > 0) { this.sHp[s] = hp; this.ev.hurts.push(s); return; }
     this.sHp[s] = 0; this.sAlive[s] = 0; this.sDiedAt[s] = this.tick;
@@ -866,7 +873,10 @@
     if (!m || typeof m !== 'object') return;
     if (m.t === 'sub' && Array.isArray(m.r) && m.r.length === 4) { this.subscribe(client, m.r); return; }
     if (m.t !== 'order') return;
-    var ids = Array.isArray(m.sq) ? m.sq.slice(0, 400) : [];
+    var ids = Array.isArray(m.sq) ? m.sq.slice(0, 400).filter(function(v) { return typeof v === 'number' && v === (v | 0) && v > 0; }) : [];
+    if (m.x != null) m.x = +m.x; if (m.y != null) m.y = +m.y;
+    if (isFinite(m.x)) m.x = Math.max(0, Math.min(b.map.w - 1, m.x));
+    if (isFinite(m.y)) m.y = Math.max(0, Math.min(b.map.h - 1, m.y));
     var until = b.tick + 600;   // приказ игрока: ИИ не трогает отряд минуту
     if (m.k === 'move' && isFinite(m.x) && isFinite(m.y)) {
       for (i = 0; i < ids.length; i++) { sq = b.squads[ids[i]]; if (sq && sq.side === side) sq.manual = until; }
@@ -940,7 +950,7 @@
   }
 
   function makeScenario(name, seed) {
-    var sc = SCEN[name] || SCEN.p500;
+    var sc = Object.prototype.hasOwnProperty.call(SCEN, name) ? SCEN[name] : SCEN.p500;
     seed = seed || 1977;
     var map = makeMap(sc.w, sc.h, seed);
     var b = new Battle({ map: map, seed: seed, cap: Math.max(4096, sc.perSide * 4) });

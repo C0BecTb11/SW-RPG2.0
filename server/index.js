@@ -103,7 +103,7 @@ var PROTO = { p500: 1, p2000: 1 };
 function getRoom(name) {
   var r = ROOMS.get(name);
   if (r) return r;
-  if (!PROTO[name]) return null;
+  if (!Object.prototype.hasOwnProperty.call(PROTO, name)) return null;
   var sc = SWRT.makeScenario(name, 1977 + Math.floor(Math.random() * 1000));
   r = new SWRT.Room({ battle: sc.battle, ai: sc.ai, name: name });
   r.ms = []; r.emptySince = Date.now(); r.created = Date.now();
@@ -206,17 +206,21 @@ server.on('upgrade', function(req, sock, head) {
     if (++c.msgs > 30) return;                  // не больше 30 сообщений в секунду
     if (binary) return;
     var m; try { m = JSON.parse(data); } catch (e) { return; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
     if (!c.who) {
-      if (m.t !== 'auth') return;
+      if (m.t !== 'auth' || c.authing) return;      // один вход на соединение
+      c.authing = true;
       verify(m.token).then(function(who) {
         clearTimeout(authTimer);
         if (!ws.open) return;
-        c.who = who; c.side = (m.side === 0 || m.side === 1) ? m.side : who.side;
+        // сторона — из профиля игрока; выбрать её самому можно только в замерах
+        c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
         var r = getRoom(String(m.room || 'p500'));
         if (!r) { ws.send(JSON.stringify({ t: 'error', msg: 'нет такого боя' })); ws.close(4004); return; }
         c.room = r; r.join(c);
         log('info', 'игрок вошёл', { room: r.name, user: who.user, nick: who.nick, side: c.side });
       }, function(e) {
+        c.authing = false;
         ws.send(JSON.stringify({ t: 'error', msg: e.message })); ws.close(4003);
       });
       return;

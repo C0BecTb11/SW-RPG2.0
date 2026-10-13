@@ -54,6 +54,7 @@ Socket.prototype.onData = function(d) {
 };
 
 Socket.prototype.frame = function(fin, op, data) {
+  if (op >= 0x8 && (!fin || data.length > 125)) return this.fail(1002);   // служебные кадры — короткие и целые
   if (op === 0x8) { this.close(1000); return; }
   if (op === 0x9) { this.write(0xA, data); return; }
   if (op === 0xA) { this.alive = true; return; }

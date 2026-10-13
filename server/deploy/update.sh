@@ -10,7 +10,9 @@ L=$($G rev-parse HEAD); R=$($G rev-parse origin/main)
 [ "$L" = "$R" ] && exit 0
 
 if ! $G diff --quiet "$L" "$R" -- server shared; then
-  BUSY=$(curl -fsS --max-time 3 http://127.0.0.1:8080/health | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).busy||0)}catch(e){console.log(0)}})' || echo 0)
+  # сервер лежит или не отвечает — значит, боёв нет: обновляем сразу
+  BUSY=$( (curl -fsS --max-time 3 http://127.0.0.1:8080/health || true) | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).busy||0)}catch(e){console.log(0)}})' || true)
+  BUSY=${BUSY%%$'\n'*}; BUSY=${BUSY:-0}
   PENDING=/run/swrt-update-pending
   if [ "$BUSY" != "0" ]; then
     [ -f $PENDING ] || date +%s > $PENDING

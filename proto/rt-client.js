@@ -61,6 +61,7 @@
     }
     CHUNKS.clear();
     if (!CAM.ready) fitCamera();
+    setTimeout(atlas, 300);           // атлас фигурок — заранее, не при первом приближении
     sendSub(true);
     hud();
   }
@@ -387,11 +388,42 @@
 
   function bakeCorpse(key, cp) {
     [4, 8, 16].forEach(function(tp) { var ch = CHUNKS.get(tp + ':' + key); if (ch) drawCorpse(ch, cp); });
+    if (OVER.cv && OVER.map === G.map) drawCorpse({ ctx: OVER.ctx, tp: OVER.tp, cx: 0, cy: 0 }, cp);
   }
 
+  // Обзорная картинка всей карты (4 пикселя на клетку), склеенная из кусков
+  var OVER = { cv: null, map: null, row: 0 };
+  function overview() {
+    var m = G.map;
+    if (OVER.map !== m) {
+      OVER.map = m; OVER.tp = 4; OVER.row = 0;
+      OVER.cv = document.createElement('canvas'); OVER.cv.width = m.w * 4; OVER.cv.height = m.h * 4;
+      OVER.ctx = OVER.cv.getContext('2d');
+    }
+    // строим по ряду кусков за кадр; пока не готово — рисуем кусками
+    if (OVER.row < m.ch) {
+      for (var cx = 0; cx < m.cw; cx++) {
+        var ch = CHUNKS.get('4:' + cx + ':' + OVER.row) || buildChunk(cx, OVER.row, 4);
+        OVER.ctx.drawImage(ch.cv, cx * CH * 4, OVER.row * CH * 4);
+      }
+      OVER.row++;
+      return false;
+    }
+    return true;
+  }
+
+  // Новые куски поля строим не больше двух за кадр; пока крупного нет —
+  // показываем мелкий того же места: приближение без заминки
+  var BUILD = { left: 2 };
   function getChunk(cx, cy, tp) {
     var key = tp + ':' + cx + ':' + cy, ch = CHUNKS.get(key);
     if (ch) { CHUNKS.delete(key); CHUNKS.set(key, ch); return ch; }
+    if (BUILD.left <= 0) {
+      var alt = CHUNKS.get((tp === 16 ? 8 : 4) + ':' + cx + ':' + cy) || CHUNKS.get('4:' + cx + ':' + cy);
+      if (alt) return alt;
+      if (tp !== 4) return getChunk(cx, cy, 4);
+    }
+    BUILD.left--;
     ch = buildChunk(cx, cy, tp);
     CHUNKS.set(key, ch);
     var lim = CHUNK_MAX[tp], n = 0;
@@ -412,7 +444,7 @@
   }
 
   // ---------- кадр ----------
-  var FR = { last: 0, dts: [], drawn: 0, mode: '' };
+  var FR = { last: 0, dts: [], drawn: 0, mode: '', cpuSim: 0, cpuDraw: 0 };
   function frame(t) {
     requestAnimationFrame(frame);
     var dt = FR.last ? Math.min(0.1, (t - FR.last) / 1000) : 0.016;
@@ -420,8 +452,14 @@
     FR.last = t;
     BENCH.frame(real, t);
     if (!G.map) return;
+    var t1 = performance.now();
     simulate(dt);
+    var t2 = performance.now();
     draw(t / 1000);
+    var t3 = performance.now();
+    FR.cpuSim = FR.cpuSim * 0.95 + (t2 - t1) * 0.05; FR.cpuDraw = FR.cpuDraw * 0.95 + (t3 - t2) * 0.05;
+    FR.lastCpu = t3 - t1;
+    if (BENCH.on) { BENCH.cs.push(t2 - t1); BENCH.cd.push(t3 - t2); }
     FR.dts.push(real); if (FR.dts.length > 120) FR.dts.shift();
     if (t - G.winAt > 1000) { G.bps = G.bytesWin * 1000 / (t - G.winAt); G.bytesWin = 0; G.winAt = t; hudStat(); }
     sendSub(false);
@@ -431,12 +469,17 @@
     var c = CTX, dpr = CAM.dpr, s = CAM.s, m = G.map;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.fillStyle = '#05060a'; c.fillRect(0, 0, CAM.vw, CAM.vh);
+    BUILD.left = 2;
     // поле
     var tp = tierFor(s * dpr / 1.2);
     var a = toWorld(0, 0), b = toWorld(CAM.vw, CAM.vh);
     var cx0 = Math.max(0, Math.floor(a[0] / CH)), cy0 = Math.max(0, Math.floor(a[1] / CH));
     var cx1 = Math.min(m.cw - 1, Math.floor(b[0] / CH)), cy1 = Math.min(m.ch - 1, Math.floor(b[1] / CH));
     c.imageSmoothingEnabled = tp < 16 || s < 20;
+    if (s * dpr < 4 && overview()) {         // вся карта в кадре — одной картинкой
+      var o = toScreen(0, 0);
+      c.drawImage(OVER.cv, o[0], o[1], m.w * s, m.h * s);
+    } else
     for (var cy = cy0; cy <= cy1; cy++) for (var cx = cx0; cx <= cx1; cx++) {
       var ch = getChunk(cx, cy, tp), p = toScreen(cx * CH, cy * CH), size = CH * s;
       c.drawImage(ch.cv, Math.floor(p[0]), Math.floor(p[1]), Math.ceil(size) + 1, Math.ceil(size) + 1);
@@ -494,43 +537,77 @@
     c.globalAlpha = 1;
   }
 
+  // Значок отряда (круг, кольцо стороны, число бойцов) рисуется один раз
+  // в маленькую картинку и потом только копируется: сотни значков за кадр
+  var ICONS = new Map();
+  function iconSprite(own, n, picked, r) {
+    var key = (own ? 1 : 0) + ':' + n + ':' + (picked ? 1 : 0) + ':' + r;
+    var im = ICONS.get(key);
+    if (im) return im;
+    var dpr = CAM.dpr, size = Math.ceil((r + 2) * 2 * dpr);
+    var cv = document.createElement('canvas'); cv.width = cv.height = size;
+    var c = cv.getContext('2d'); c.scale(dpr, dpr);
+    var m = size / dpr / 2, col = own ? COL.own : COL.foe;
+    c.fillStyle = 'rgba(10,13,20,0.9)'; c.beginPath(); c.arc(m, m, r, 0, TAU); c.fill();
+    c.lineWidth = 2; c.strokeStyle = picked ? '#f0c86a' : col; c.beginPath(); c.arc(m, m, r - 1, 0, TAU); c.stroke();
+    if (r >= 8) {
+      c.font = 'bold ' + Math.round(r * 0.95) + 'px "Courier New", monospace';
+      c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#cfd8dc';
+      c.fillText(String(n), m, m + 0.5);
+    }
+    im = { cv: cv, half: m };
+    ICONS.set(key, im);
+    if (ICONS.size > 400) ICONS.delete(ICONS.keys().next().value);
+    return im;
+  }
+
   function drawIcons(c, alpha, T) {
     c.globalAlpha = alpha;
-    var font = false;
+    var wedges = [[], []], dots = [[], []], fights = [], pickedDots = [];
+    var rr = Math.max(2.2, CAM.s * 0.5);
     G.squads.forEach(function(sq) {
       if (!inView(sq.x, sq.y, 4)) return;
-      var p = toScreen(sq.x, sq.y), own = sq.side === G.side, col = own ? COL.own : COL.foe;
+      var p = toScreen(sq.x, sq.y), own = sq.side === G.side ? 1 : 0;
       var picked = G.sel.squads.has(sq.id);
-      if (sq.single) {
-        var r1 = Math.max(2.2, CAM.s * 0.5);
-        c.fillStyle = col; c.beginPath(); c.arc(p[0], p[1], r1, 0, TAU); c.fill();
-        c.strokeStyle = picked ? '#f0c86a' : 'rgba(0,0,0,0.7)'; c.lineWidth = picked ? 2 : 1; c.stroke();
-        FR.drawn++;
-        return;
-      }
-      var r = Math.max(5, Math.min(13, 3 + Math.sqrt(sq.members.length) * 1.6 + CAM.s * 0.4));
-      c.fillStyle = 'rgba(10,13,20,0.9)';
-      c.beginPath(); c.arc(p[0], p[1], r, 0, TAU); c.fill();
-      c.lineWidth = 2; c.strokeStyle = picked ? '#f0c86a' : col;
-      c.beginPath(); c.arc(p[0], p[1], r - 1, 0, TAU); c.stroke();
-      // куда смотрит отряд
-      var a = sq.face;
-      c.fillStyle = col;
-      c.beginPath();
-      c.moveTo(p[0] + Math.cos(a) * (r + 5), p[1] + Math.sin(a) * (r + 5));
-      c.lineTo(p[0] + Math.cos(a + 2.4) * (r + 1), p[1] + Math.sin(a + 2.4) * (r + 1));
-      c.lineTo(p[0] + Math.cos(a - 2.4) * (r + 1), p[1] + Math.sin(a - 2.4) * (r + 1));
-      c.closePath(); c.fill();
-      if (sq.engaged) {
-        c.strokeStyle = 'rgba(232,146,58,' + (0.5 + 0.4 * Math.sin(T * 8)) + ')'; c.lineWidth = 1.5;
-        c.beginPath(); c.arc(p[0], p[1], r + 3, 0, TAU); c.stroke();
-      }
-      if (r >= 8) {
-        if (!font) { c.font = 'bold ' + Math.round(r * 0.95) + 'px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle'; font = true; }
-        c.fillStyle = '#cfd8dc'; c.fillText(String(sq.members.length), p[0], p[1] + 0.5);
-      }
       FR.drawn++;
+      if (sq.single) { dots[own].push(p[0], p[1]); if (picked) pickedDots.push(p[0], p[1]); return; }
+      var r = Math.round(Math.max(5, Math.min(13, 3 + Math.sqrt(sq.members.length) * 1.6 + CAM.s * 0.4)));
+      var im = iconSprite(own, sq.members.length, picked, r);
+      c.drawImage(im.cv, p[0] - im.half, p[1] - im.half, im.half * 2, im.half * 2);
+      wedges[own].push(p[0], p[1], r, sq.face);
+      if (sq.engaged) fights.push(p[0], p[1], r);
     });
+    var i, k;
+    for (k = 0; k < 2; k++) {
+      // клинья — куда смотрит отряд, одним путём на сторону
+      c.fillStyle = k ? COL.own : COL.foe;
+      c.beginPath();
+      var w = wedges[k];
+      for (i = 0; i < w.length; i += 4) {
+        var x = w[i], y = w[i + 1], r = w[i + 2], a = w[i + 3];
+        c.moveTo(x + Math.cos(a) * (r + 5), y + Math.sin(a) * (r + 5));
+        c.lineTo(x + Math.cos(a + 2.4) * (r + 1), y + Math.sin(a + 2.4) * (r + 1));
+        c.lineTo(x + Math.cos(a - 2.4) * (r + 1), y + Math.sin(a - 2.4) * (r + 1));
+        c.closePath();
+      }
+      c.fill();
+      // одиночки — точки
+      var d = dots[k];
+      c.beginPath();
+      for (i = 0; i < d.length; i += 2) { c.moveTo(d[i] + rr, d[i + 1]); c.arc(d[i], d[i + 1], rr, 0, TAU); }
+      c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.7)'; c.lineWidth = 1; c.stroke();
+    }
+    if (pickedDots.length) {
+      c.strokeStyle = '#f0c86a'; c.lineWidth = 2; c.beginPath();
+      for (i = 0; i < pickedDots.length; i += 2) { c.moveTo(pickedDots[i] + rr + 1, pickedDots[i + 1]); c.arc(pickedDots[i], pickedDots[i + 1], rr + 1, 0, TAU); }
+      c.stroke();
+    }
+    if (fights.length) {   // идёт бой — мерцающее оранжевое кольцо
+      c.strokeStyle = 'rgba(232,146,58,' + (0.5 + 0.4 * Math.sin(T * 8)) + ')'; c.lineWidth = 1.5; c.beginPath();
+      for (i = 0; i < fights.length; i += 3) { c.moveTo(fights[i] + fights[i + 2] + 3, fights[i + 1]); c.arc(fights[i], fights[i + 1], fights[i + 2] + 3, 0, TAU); }
+      c.stroke();
+    }
     c.globalAlpha = 1;
   }
 
@@ -699,7 +776,7 @@
       var w2 = toWorld(e.clientX, e.clientY); CAM.x += w[0] - w2[0]; CAM.y += w[1] - w2[1]; clampCam();
       BENCH.userInput();
     }, { passive: false });
-    window.addEventListener('resize', function() { resize(); CHUNKS.clear(); });
+    window.addEventListener('resize', function() { resize(); CHUNKS.clear(); ICONS.clear(); });
   }
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 
@@ -843,7 +920,7 @@
     on: false, t0: 0, frames: [], phase: '', result: null,
     start: function() {
       if (!G.map) return;
-      this.on = true; this.t0 = performance.now(); this.frames = []; this.sims = []; this.bytes0 = G.bytes; this.byPhase = {};
+      this.on = true; this.t0 = performance.now(); this.frames = []; this.sims = []; this.bytes0 = G.bytes; this.byPhase = {}; this.cs = []; this.cd = []; this.cpByPhase = {};
       $('rt-bench').disabled = true; $('rt-res').hidden = true;
       toast('Замер 36 с — не трогай экран');
     },
@@ -873,6 +950,7 @@
       if (e > 0.5) {
         this.frames.push(dt);
         (this.byPhase[ph] = this.byPhase[ph] || []).push(dt);
+        (this.cpByPhase[ph] = this.cpByPhase[ph] || []).push(FR.lastCpu || 0);
         if (G.stat.srvMs != null) this.sims.push(G.stat.srvMs);
       }
       if (e >= 36) this.finish();
@@ -887,7 +965,9 @@
                 troops: (G.stat.troops || [0, 0])[0] + (G.stat.troops || [0, 0])[1], squads: G.squads.size,
                 simMs: this.sims.length ? Math.round(this.sims.reduce(function(a, b) { return a + b; }, 0) / this.sims.length * 100) / 100 : null,
                 netBps: Math.round((G.bytes - this.bytes0) / 36), atlasMs: ATLAS ? Math.round(ATLAS.ms) : null };
-      for (var k in this.byPhase) r.phases[k] = sum(this.byPhase[k]);
+      function avg(a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return a.length ? Math.round(s / a.length * 100) / 100 : 0; }
+      for (var k in this.byPhase) { r.phases[k] = sum(this.byPhase[k]); r.phases[k].cpu = avg(this.cpByPhase[k] || []); }
+      r.cpuMoveMs = avg(this.cs); r.cpuDrawMs = avg(this.cd);
       this.result = r;
       showResult(r);
     },

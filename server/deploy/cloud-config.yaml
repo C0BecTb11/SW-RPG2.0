@@ -1,0 +1,15 @@
+#cloud-config
+# Вставить целиком в поле «Cloud config» при создании сервера в Hetzner.
+# Вместо ВСТАВЬ_КЛЮЧ — ключ сервера (Claude присылает его в чате, в репозиторий не кладётся).
+write_files:
+  - path: /etc/swrt.env
+    permissions: '0600'
+    content: |
+      RT_SERVER_KEY=ВСТАВЬ_КЛЮЧ
+package_update: true
+packages:
+  - git
+runcmd:
+  - git clone --depth 1 --filter=blob:none --sparse https://github.com/C0BecTb11/SW-RPG2.0 /opt/swrt
+  - git -C /opt/swrt sparse-checkout set server shared
+  - bash /opt/swrt/server/deploy/install.sh

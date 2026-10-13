@@ -1,0 +1,1668 @@
+/* HUD корабля: шторка снизу, как остальные панели в игре */
+
+#ship-hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2050;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.65);
+  font-family: 'Courier New', monospace;
+}
+
+#sc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#sc-name {
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #4a90d9;
+}
+
+#sc-sub {
+  font-size: 10px;
+  color: #55606c;
+  margin-top: 3px;
+}
+
+#sc-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ---------- полосы корпуса и щитов ---------- */
+
+#sc-bars { margin-top: 12px; }
+
+.sc-bar, .sc-arc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: #8fa8c4;
+  margin-bottom: 6px;
+}
+
+.sc-bar span, .sc-arc span {
+  flex: none;
+  width: 52px;
+  letter-spacing: 1px;
+}
+
+.sc-bar b, .sc-arc b {
+  flex: none;
+  width: 38px;
+  text-align: right;
+  color: #cfd8dc;
+  font-size: 10px;
+}
+
+.sc-track {
+  flex: 1;
+  height: 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sc-track i {
+  display: block;
+  height: 100%;
+  background: #5fd968;
+}
+
+.sc-track-shield i { background: #4a90d9; }
+
+.sc-arcs {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #1c2530;
+}
+
+/* Сбитый сектор — самое важное, что должен заметить игрок */
+.sc-arc.down span,
+.sc-arc.down b { color: #d94a4a; }
+
+/* ---------- очки действий ---------- */
+
+#sc-ap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 10px;
+  padding-top: 10px;
+  border-top: 1px solid #1c2530;
+}
+
+#sc-ap-dots { display: flex; gap: 5px; }
+
+.sc-dot {
+  width: 11px;
+  height: 11px;
+  border: 1px solid #2a3644;
+  border-radius: 50%;
+  background: #10151e;
+}
+
+.sc-dot.on {
+  background: #d9a940;
+  border-color: #d9a940;
+}
+
+#sc-ap-text {
+  font-size: 10px;
+  color: #55606c;
+  letter-spacing: 1px;
+}
+
+/* ---------- кнопки ---------- */
+
+#sc-actions { display: flex; gap: 6px; }
+
+.sc-btn {
+  flex: 1;
+  padding: 10px 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.sc-btn.active {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #0a0d14;
+  font-weight: bold;
+}
+
+.sc-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sc-btn-ghost {
+  color: #55606c;
+  border-style: dashed;
+}
+
+/* ---------- роза направлений ---------- */
+
+#sc-dial {
+  display: none;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.sc-dir {
+  padding: 10px 0;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #8fa8c4;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sc-dir:active {
+  background: #4a90d9;
+  color: #0a0d14;
+}
+
+/* Направление, в котором корабль стоит сейчас */
+.sc-dir.current {
+  border-color: #4a90d9;
+  color: #4a90d9;
+}
+
+#sc-hint {
+  min-height: 13px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: #55606c;
+  letter-spacing: 1px;
+}
+
+#sc-hint.error { color: #d94a4a; }
+
+
+/* Зона гиперпространства. Видна только своя — чужой полосы на карте
+   просто нет, за этим следит и клиент, и RLS в базе. */
+.hyperspace-zone {
+  position: absolute;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(74,144,217,0.10) 0px,
+    rgba(74,144,217,0.10) 14px,
+    rgba(74,144,217,0.04) 14px,
+    rgba(74,144,217,0.04) 28px
+  );
+}
+
+.hyperspace-zone.top { border-bottom: 2px dashed rgba(74,144,217,0.55); }
+.hyperspace-zone.bottom { border-top: 2px dashed rgba(74,144,217,0.55); }
+
+.hyperspace-zone-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Courier New', monospace;
+  font-size: 34px;
+  letter-spacing: 12px;
+  text-transform: uppercase;
+  color: rgba(74,144,217,0.35);
+  white-space: nowrap;
+}
+
+.hyperspace-zone.top .hyperspace-zone-label { bottom: 10px; }
+.hyperspace-zone.bottom .hyperspace-zone-label { top: 10px; }
+
+/* Подтверждение хода */
+#sc-confirm {
+  display: none;
+  gap: 6px;
+}
+
+.sc-btn-go {
+  background: #5fd968;
+  border-color: #5fd968;
+  color: #0a0d14;
+  font-weight: bold;
+}
+
+/* Призрак корабля на будущей позиции */
+.sc-ghost {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.5;
+  border: 2px dashed rgba(95,217,104,0.9);
+  border-radius: 3px;
+  background: rgba(95,217,104,0.10);
+}
+
+.sc-ghost img { opacity: 0.75; }
+
+/* Точка занята видимым кораблём или станцией — «Идти» туда не пошлёт */
+.sc-ghost.blocked {
+  border-color: rgba(217,74,74,0.95);
+  background: rgba(217,74,74,0.14);
+}
+
+/* Зона хода: множество клеток, куда можно поставить корабль */
+.sc-range {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed rgba(95,217,104,0.45);
+  background: rgba(95,217,104,0.06);
+  border-radius: 4px;
+}
+
+/* Площадки сброса десанта в центре карты */
+.orbital-drop-zone {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid rgba(217,169,64,0.75);
+  background: rgba(217,169,64,0.10);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orbital-drop-zone span {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: rgba(217,169,64,0.85);
+}
+
+/* Список целей в режиме атаки */
+#sc-targets { margin-top: 8px; }
+
+.sc-targets-empty {
+  padding: 10px 0;
+  font-size: 10px;
+  color: #55606c;
+  text-align: center;
+}
+
+.sc-target {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 11px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d94a4a;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+}
+
+.sc-target-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.sc-target-line b { font-weight: normal; color: #55606c; }
+
+/* Шанс попадания — главное число при выборе цели */
+.sc-target-line em {
+  font-style: normal;
+  font-size: 12px;
+  color: #d9a940;
+}
+
+.sc-target-track {
+  height: 4px;
+  margin-top: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sc-target-track i { display: block; height: 100%; background: #d94a4a; }
+
+.sc-target-sub {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.sc-target:disabled { opacity: 0.45; }
+
+/* Цель, до которой этот корабль дотягивается: пульсирующая обводка,
+   чтобы в месиве одинаковых кораблей было видно, куда можно бить */
+.ship-targetable {
+  outline: 2px solid rgba(217,74,74,0.95) !important;
+  box-shadow: 0 0 0 3px rgba(217,74,74,0.35);
+  animation: target-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes target-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(217,74,74,0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(217,74,74,0.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-targetable { animation: none; }
+}
+
+/* ===== Сводка боя =====
+   Появляется только на карте боя: подписки отфильтрованы по системе,
+   так что чужие сражения сюда не долетают. */
+
+#combat-log {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  top: 58px;
+  z-index: 2400;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.clog {
+  padding: 7px 11px;
+  background: rgba(13,17,25,0.95);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  animation: clog-in 0.18s ease-out;
+  transition: opacity 0.6s;
+}
+
+.clog.fading { opacity: 0; }
+
+@keyframes clog-in {
+  from { transform: translateY(-6px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Цвет кромки сообщает исход быстрее, чем успеешь прочитать строку */
+.clog.shield { border-left-color: #4a90d9; }
+.clog.hull   { border-left-color: #d9a940; }
+.clog.kill   { border-left-color: #d94a4a; }
+.clog.miss   { border-left-color: #55606c; }
+
+.clog-title { display: block; font-size: 11px; color: #cfd8dc; }
+.clog.kill .clog-title { color: #d94a4a; }
+.clog.miss .clog-title { color: #8fa8c4; }
+
+.clog-details {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clog { animation: none; }
+}
+
+/* ===== Ангар в панели корабля ===== */
+
+#sc-hangar { margin-top: 10px; }
+
+.sc-hangar-head {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #55606c;
+  margin-bottom: 6px;
+}
+
+.sc-hangar-empty {
+  padding: 8px 0;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.sc-hangar-row {
+  margin-bottom: 7px;
+  padding: 9px 11px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #4a90d9;
+  border-radius: 8px;
+}
+
+.sc-hangar-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: #cfd8dc;
+}
+
+.sc-hangar-line em { font-style: normal; font-size: 10px; color: #55606c; }
+
+.sc-hangar-track {
+  height: 4px;
+  margin-top: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sc-hangar-track i { display: block; height: 100%; background: #5fd968; }
+
+.sc-hangar-acts { display: flex; gap: 6px; margin-top: 8px; }
+
+.sc-hangar-btn {
+  flex: 1;
+  padding: 8px 6px;
+  background: #0a0d14;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.sc-hangar-btn.wide { width: 100%; }
+.sc-hangar-btn:active { background: #4a90d9; color: #0a0d14; }
+
+/* ===== Компактная панель =====
+   По умолчанию видно состояние корабля. Выбран режим — всё лишнее
+   скрывается: во время прицеливания нужна карта, а не полосы щитов. */
+
+#ship-hud {
+  max-height: 62vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Списки прокручиваются внутри вкладки, а не растягивают панель */
+#sc-targets, #sc-hangar {
+  max-height: 34vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+
+
+/* Командир свёрнут в строку: нужен редко, а места занимал много */
+.sc-cmd-head {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  text-align: left;
+}
+
+.sc-cmd-head.assigned { color: #5fd968; }
+.sc-cmd-arrow { color: #4a90d9; }
+
+.sc-cmd-details { display: none; margin-top: 8px; }
+#sc-cmd.open .sc-cmd-details { display: block; }
+
+/* Ангар в панели корабля */
+#sc-hangar { margin-top: 10px; }
+
+.sc-hangar-head {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #55606c;
+  margin-bottom: 6px;
+}
+
+.sc-hangar-empty { padding: 8px 0; font-size: 10px; color: #55606c; }
+
+.sc-hangar-row {
+  margin-bottom: 7px;
+  padding: 9px 11px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #4a90d9;
+  border-radius: 8px;
+}
+
+.sc-hangar-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: #cfd8dc;
+}
+
+.sc-hangar-line em { font-style: normal; font-size: 10px; color: #55606c; }
+
+.sc-hangar-track {
+  height: 4px;
+  margin-top: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sc-hangar-track i { display: block; height: 100%; background: #5fd968; }
+.sc-hangar-acts { display: flex; gap: 6px; margin-top: 8px; }
+
+.sc-hangar-btn {
+  flex: 1;
+  padding: 8px 6px;
+  background: #0a0d14;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.sc-hangar-btn.wide { width: 100%; }
+.sc-hangar-btn:active { background: #4a90d9; color: #0a0d14; }
+
+/* Урон по конкретной цели — главное число после шанса попадания */
+.sc-dmg { color: #d9a940; font-weight: normal; }
+
+/* ===== Панель корабля: портрет и вкладки =====
+   Устройство то же, что у наземной панели, — единый язык интерфейса.
+   Отличия только в том, что у кораблей есть щиты по секторам и ангар. */
+
+#ship-hud {
+  max-height: 60vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sc-top { display: flex; gap: 11px; align-items: flex-start; }
+
+.sc-portrait {
+  flex: none;
+  width: 62px;
+  height: 78px;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+
+.sc-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.sc-stats { flex: 1; min-width: 0; }
+
+.sc-name {
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #4a90d9;
+}
+
+.sc-role { margin-top: 2px; font-size: 10px; color: #55606c; }
+
+.sc-hp { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.sc-hp-num { flex: none; font-size: 11px; color: #5fd968; }
+
+.sc-hp-track {
+  flex: 1;
+  height: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sc-hp-track i { display: block; height: 100%; background: #5fd968; }
+
+.sc-props {
+  display: flex;
+  gap: 12px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: #8fa8c4;
+}
+.sc-props .sc-trophy-low { color: #e3a24a; }
+.sc-board-marks { margin-top: 7px; }
+
+.sc-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.sc-ap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 11px 0 9px;
+  padding-top: 10px;
+  border-top: 1px solid #1c2530;
+}
+
+.sc-dots { display: flex; gap: 5px; }
+.sc-ap-text { font-size: 10px; color: #55606c; letter-spacing: 1px; }
+
+.sc-tabs { display: flex; gap: 5px; }
+
+.sc-tab {
+  flex: 1;
+  padding: 9px 4px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: #55606c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.sc-tab.active { background: #16202e; color: #4a90d9; border-color: #2a3644; }
+
+.sc-panel {
+  padding: 11px;
+  background: #16202e;
+  border: 1px solid #2a3644;
+  border-radius: 0 0 9px 9px;
+}
+
+/* Плитки действий */
+.sc-abils { display: flex; gap: 10px; }
+.sc-tiles { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.sc-tile {
+  width: 58px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+}
+
+.sc-tile-icon { font-size: 19px; line-height: 1; }
+.sc-tile-label { font-size: 8px; letter-spacing: 0.5px; }
+
+.sc-tile.active {
+  border-color: #4a90d9;
+  background: #16283c;
+  color: #cfd8dc;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.25);
+}
+
+/* Недоступное действие видно, но приглушено: игрок должен понимать,
+   что оно есть и почему сейчас нельзя */
+.sc-tile.locked { opacity: 0.4; }
+
+.sc-abil-info { flex: 1; min-width: 0; }
+.sc-abil-name { font-size: 12px; color: #cfd8dc; margin-bottom: 4px; }
+.sc-abil-text { font-size: 10px; color: #8fa8c4; line-height: 1.45; }
+.sc-abil-meta { margin-top: 6px; font-size: 10px; color: #55606c; }
+
+.sc-desc { font-size: 11px; color: #8fa8c4; line-height: 1.5; margin-top: 8px; }
+
+#sc-confirm { margin-top: 10px; }
+#sc-dial { margin-top: 10px; }
+#sc-targets { margin-top: 10px; max-height: 30vh; overflow-y: auto; }
+
+
+/* ===== Боевые сводки и разведданные — космос =====
+   Правила те же, что у наземного боя (drop.css): единый вид сводки. */
+
+/* Карточка итога: всплывает над нижней панелью, сама уходит через
+   несколько секунд, тап — закрыть сразу */
+#cb-toast {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 2450;
+  max-width: 460px;
+  margin: 0 auto;
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(13,17,25,0.97);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d9a940;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+  font-family: 'Courier New', monospace;
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.22s ease;
+  will-change: transform;
+}
+#cb-toast.show { opacity: 1; transform: translateY(0); }
+
+/* Карточка не перехватывает касания: под ней может быть цель.
+   Закрыть её можно крестиком, остальное она пропускает к карте. */
+#cb-toast { padding-right: 34px; }
+.cb-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #55606c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+#cb-toast.show .cb-x { pointer-events: auto; }
+
+#cb-toast.cb-hit      { border-left-color: #d9a940; }
+#cb-toast.cb-kill     { border-left-color: #d94a4a;
+  background: linear-gradient(90deg, rgba(217,74,74,0.14), rgba(13,17,25,0.97) 55%); }
+#cb-toast.cb-miss     { border-left-color: #55606c; }
+#cb-toast.cb-heal     { border-left-color: #5fd968; }
+#cb-toast.cb-area     { border-left-color: #d9a940; }
+#cb-toast.cb-info     { border-left-color: #4a90d9; }
+#cb-toast.cb-incoming { border-left-color: #d94a4a; animation: cb-alarm 1.2s ease-out 1; }
+
+@keyframes cb-alarm {
+  0%   { box-shadow: 0 0 0 0 rgba(217,74,74,0.55), 0 10px 28px rgba(0,0,0,0.55); }
+  100% { box-shadow: 0 0 0 14px rgba(217,74,74,0), 0 10px 28px rgba(0,0,0,0.55); }
+}
+
+.cb-pics { flex: none; display: flex; align-items: center; gap: 4px; }
+.cb-arrow { color: #55606c; font-size: 12px; }
+
+.cb-pic {
+  width: 40px;
+  height: 50px;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+.cb-pic img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.cb-pic.veh img { object-position: center 50%; }
+.cb-pic.struct { background: radial-gradient(circle at 50% 60%, #1c2a1c 0%, #0a0d14 72%); }
+.cb-pic.struct img { object-fit: contain; object-position: center; padding: 3px; }
+.cb-pic.side-mine  { border-color: rgba(95,217,104,0.55); }
+.cb-pic.side-ally  { border-color: rgba(74,144,217,0.6); }
+.cb-pic.side-enemy { border-color: rgba(217,74,74,0.65); }
+
+/* Сбитая цель — портрет гаснет */
+#cb-toast.cb-kill .cb-pic.side-enemy img { filter: grayscale(1) brightness(0.55); }
+
+.cb-body { flex: 1; min-width: 0; }
+
+.cb-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cb-head b {
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d9a940;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#cb-toast.cb-kill .cb-head b     { color: #ff6b4a; }
+#cb-toast.cb-miss .cb-head b     { color: #8fa8c4; }
+#cb-toast.cb-heal .cb-head b     { color: #5fd968; }
+#cb-toast.cb-info .cb-head b     { color: #4a90d9; }
+#cb-toast.cb-incoming .cb-head b { color: #d94a4a; }
+
+.cb-chance { flex: none; font-size: 10px; color: #55606c; letter-spacing: 1px; }
+
+.cb-who {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8fa8c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cb-who i { font-style: normal; color: #55606c; }
+
+.cb-hp { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.cb-num {
+  flex: none;
+  min-width: 40px;
+  font-size: 17px;
+  font-weight: bold;
+  color: #ff6b4a;
+  letter-spacing: 0.5px;
+}
+#cb-toast.cb-miss .cb-num { color: #55606c; }
+#cb-toast.cb-heal .cb-num { color: #5fd968; }
+
+.cb-track {
+  position: relative;
+  flex: 1;
+  height: 7px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cb-track i { position: absolute; top: 0; bottom: 0; left: 0; display: block; }
+.cb-track i.left { background: #d94a4a; }
+#cb-toast.cb-heal .cb-track i.left { background: #5fd968; }
+#cb-toast.cb-incoming .cb-track i.left { background: #5fd968; }
+.cb-track i.lost { background: #d9a940; animation: cb-lost 0.9s ease-out 2; }
+
+@keyframes cb-lost {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.25; }
+  100% { opacity: 1; }
+}
+
+.cb-left { flex: none; font-size: 11px; color: #cfd8dc; }
+
+.cb-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.cb-chip {
+  padding: 3px 8px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 10px;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+.cb-chip.good { color: #5fd968; border-color: rgba(95,217,104,0.4); }
+.cb-chip.bad  { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
+
+.cb-line { margin-top: 5px; font-size: 10px; line-height: 1.4; color: #8fa8c4; }
+.cb-line.bad   { color: #d94a4a; }
+.cb-line.muted { color: #55606c; }
+
+/* ----- Цифры над картой ----- */
+
+/* Слой повторяет перенос и масштаб холста, а каждая подпись
+   масштабируется обратно — на любом зуме она одного размера */
+
+.fx-pos {
+  position: absolute;
+  z-index: 40;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+  transform: scale(var(--fx-inv, 1));
+  transform-origin: 0 0;
+}
+
+.fx-txt {
+  position: absolute;
+  left: 0;
+  bottom: 2px;
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 0 0 3px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  transform: translate(-50%, 0);
+  opacity: 0;
+  animation: fx-rise 1.5s ease-out forwards;
+}
+
+.fx-dmg  { color: #ff6b4a; font-size: 18px; }
+.fx-heal { color: #5fd968; }
+.fx-miss { color: #cfd8dc; font-size: 12px; letter-spacing: 2px; }
+.fx-kill {
+  padding: 2px 7px;
+  background: rgba(217,74,74,0.92);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-shadow: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+}
+
+@keyframes fx-rise {
+  0%   { opacity: 0; transform: translate(-50%, 6px) scale(0.7); }
+  12%  { opacity: 1; transform: translate(-50%, -4px) scale(1.12); }
+  25%  { transform: translate(-50%, -8px) scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -38px) scale(1); }
+}
+
+/* ----- Общие элементы разведки ----- */
+
+.ui-tag {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 0;
+  background: rgba(217,74,74,0.88);
+  color: #fff;
+  font-size: 8px;
+  letter-spacing: 2px;
+  text-align: center;
+}
+.side-ally .ui-tag { background: rgba(74,144,217,0.88); }
+
+.ui-owner { margin-top: 6px; font-size: 10px; color: #55606c; }
+.ui-owner b { font-weight: normal; color: #cfd8dc; }
+
+.ui-marks { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.ui-mark {
+  padding: 3px 8px;
+  border: 1px solid #2a3644;
+  border-radius: 10px;
+  background: #10151e;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+.ui-mark.cover  { color: #c9a45c; border-color: rgba(201,164,92,0.45); }
+.ui-mark.camo   { color: #5fd9be; border-color: rgba(95,217,190,0.45); }
+.ui-mark.mind   { color: #c07ae8; border-color: rgba(163,74,217,0.5); }
+.ui-mark.reveal { color: #d9a940; border-color: rgba(217,169,64,0.45); }
+.ui-mark.wound  { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
+
+.ui-panel { margin-top: 10px; border-radius: 9px; }
+
+.ui-label {
+  margin-bottom: 7px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+.ui-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ui-stat {
+  padding: 7px 4px 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  text-align: center;
+}
+.ui-stat i { display: block; font-style: normal; font-size: 11px; color: #55606c; line-height: 1; }
+.ui-stat b { display: block; margin-top: 3px; font-size: 14px; font-weight: normal; color: #cfd8dc; }
+.ui-stat span { display: block; margin-top: 2px; font-size: 9px; letter-spacing: 0.5px; color: #55606c; }
+
+.ui-desc {
+  margin-top: 9px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ----- Космос: щит в сводке и над кораблём ----- */
+#cb-toast.cb-shield { border-left-color: #4a90d9; }
+#cb-toast.cb-shield .cb-head b { color: #4a90d9; }
+.cb-chip.shield { color: #4a90d9; border-color: rgba(74,144,217,0.45); }
+.fx-shield { color: #7fb8f0; font-size: 14px; }
+.cb-pic.ship { background: radial-gradient(circle at 50% 50%, #141c2a 0%, #05070b 75%); }
+.cb-pic.ship img { object-fit: contain; object-position: center; padding: 2px; }
+
+/* ===== Паспорт чужого корабля =====
+   Та же шторка, что у своего корабля, только без управления */
+#sx-intel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2050;
+  max-width: 460px;
+  max-height: 64vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 auto;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d94a4a;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.65);
+  font-family: 'Courier New', monospace;
+}
+#sx-intel[data-side="ally"] { border-left-color: #4a90d9; }
+
+.sx-portrait { position: relative; }
+.sx-portrait.side-enemy { border-color: rgba(217,74,74,0.65); }
+.sx-portrait.side-ally  { border-color: rgba(74,144,217,0.6); }
+.sx-portrait img { padding-bottom: 14px; }
+
+.sx-name { color: #cfd8dc; }
+#sx-intel[data-side="enemy"] .sc-hp-num { color: #d94a4a; }
+#sx-intel[data-side="enemy"] .sc-hp-track i { background: #d94a4a; }
+#sx-intel[data-side="ally"]  .sc-hp-num { color: #4a90d9; }
+#sx-intel[data-side="ally"]  .sc-hp-track i { background: #4a90d9; }
+
+.sx-side { font-weight: normal; }
+.sx-side.side-enemy { color: #d94a4a; }
+.sx-side.side-ally  { color: #4a90d9; }
+
+.sx-panel {
+  margin-top: 10px;
+  padding: 11px;
+  background: #16202e;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+}
+.sx-panel .ui-label:not(:first-child) { margin-top: 11px; }
+
+.sx-arcs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.sx-arc { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #8fa8c4; }
+.sx-arc span { flex: none; width: 74px; }
+.sx-arc b { flex: none; min-width: 22px; text-align: right; font-weight: normal; color: #cfd8dc; }
+.sx-arc-track {
+  flex: 1;
+  height: 5px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.sx-arc-track i { display: block; height: 100%; background: #4a90d9; }
+.sx-arc.down span, .sx-arc.down b { color: #d94a4a; }
+.sx-arc.down .sx-arc-track { border-color: rgba(217,74,74,0.45); }
+
+#sx-intel[data-side="ally"] .ui-lock { color: #4a90d9; }
+
+/* Корабль с открытым паспортом и его дальности на поле */
+.ship-sprite.ship-intel { box-shadow: 0 0 0 3px rgba(217,169,64,0.55); }
+
+.sx-range {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 4px;
+  z-index: 5;
+}
+.sx-range-fire   { border: 2px dashed rgba(217,74,74,0.7);  background: rgba(217,74,74,0.05); }
+.sx-range-ally   { border: 2px dashed rgba(74,144,217,0.6); background: rgba(74,144,217,0.04); }
+.sx-range-vision { border: 2px dashed rgba(217,169,64,0.45); }
+
+.ui-hidden {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 8px 10px;
+  border: 1px dashed #2a3644;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #55606c;
+}
+.ui-lock { flex: none; font-size: 14px; color: #d94a4a; }
+
+/* ===== Метка места из ленты и процессов ===== */
+.fx-ping { position: absolute; pointer-events: none; z-index: 45; }
+.fx-ping i {
+  position: absolute;
+  inset: -6px;
+  border: 3px solid #d9a940;
+  border-radius: 8px;
+  opacity: 0;
+  animation: fx-ping 1.4s ease-out 3;
+}
+.fx-ping i + i { animation-delay: 0.45s; }
+@keyframes fx-ping {
+  0%   { opacity: 0.95; transform: scale(0.85); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+/* ===== Автоход (js/automove-space.js) =====
+   Золото — цвет автохода: нить, метка финиша, кольца флота.
+   Обычный ход остаётся зелёным, чтобы два режима не путались. */
+
+/* Режим выбора точки: плитки уступают место карточке автохода */
+#ship-hud.mode-auto .sc-abils { display: none; }
+
+/* Плитка: автоход уже идёт — золотая точка в углу (неподвижная) */
+.sc-tile { position: relative; }
+.sc-tile.am-running { border-color: rgba(217,169,64,0.55); color: #d9a940; }
+.sc-tile.am-running::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d9a940;
+  box-shadow: 0 0 6px rgba(217,169,64,0.7);
+}
+
+.am-ico { color: #d9a940; font-size: 14px; line-height: 1; }
+
+/* --- карточка выбора точки --- */
+#am-box { display: none; }
+
+.am-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.am-head b { font-weight: normal; color: #d9a940; }
+.am-head em { font-style: normal; color: #8fa8c4; }
+
+.am-lead-text {
+  margin-top: 7px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #8fa8c4;
+}
+
+.am-sum {
+  margin-top: 9px;
+  padding: 9px 11px;
+  background: linear-gradient(90deg, rgba(217,169,64,0.10), rgba(16,21,30,0.9) 70%);
+  border: 1px solid rgba(217,169,64,0.28);
+  border-left: 3px solid #d9a940;
+  border-radius: 8px;
+}
+.am-sum-main { font-size: 12px; letter-spacing: 1px; color: #cfd8dc; }
+.am-sum-sub { margin-top: 4px; font-size: 10px; color: #55606c; }
+
+.am-warn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  font-size: 10px;
+  color: #d9a940;
+}
+.am-warn i {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  border: 1px solid #d9a940;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 10px;
+  line-height: 13px;
+  text-align: center;
+}
+
+.am-row { display: flex; gap: 6px; margin-top: 9px; }
+
+.am-chip {
+  flex: 1;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.am-chip b {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: #0a0d14;
+  border: 1px solid #2a3644;
+  font-weight: normal;
+  color: #d9a940;
+}
+.am-chip.on {
+  border-color: #d9a940;
+  background: rgba(217,169,64,0.12);
+  color: #d9a940;
+  box-shadow: 0 0 0 2px rgba(217,169,64,0.18);
+}
+.am-chip.on b { border-color: rgba(217,169,64,0.6); }
+.am-chip-x { color: #8fa8c4; }
+.am-chip:disabled { opacity: 0.45; }
+.am-chip:active { background: #16283c; }
+
+.am-note {
+  margin-top: 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #55606c;
+}
+
+.am-go { display: flex; gap: 6px; margin-top: 8px; }
+.am-go .sc-btn { min-height: 38px; }
+
+/* --- строка «автоход идёт» --- */
+.am-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: linear-gradient(90deg, rgba(217,169,64,0.10), rgba(16,21,30,0.92) 65%);
+  border: 1px solid rgba(217,169,64,0.25);
+  border-left: 3px solid #d9a940;
+  border-radius: 8px;
+}
+.am-status.group { flex-wrap: wrap; }
+.am-st-main { flex: 1; min-width: 0; }
+.am-st-title {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.am-st-title b { font-weight: normal; color: #d9a940; }
+.am-st-title em { font-style: normal; color: #8fa8c4; }
+.am-st-line {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #8fa8c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.am-st-next { color: #55606c; }
+.am-st-track {
+  height: 3px;
+  margin-top: 6px;
+  background: #0a0d14;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.am-st-track i { display: block; height: 100%; background: #d9a940; transition: width 0.4s ease; }
+.am-st-acts { flex: none; display: flex; gap: 6px; }
+.am-status.group .am-st-acts { flex-basis: 100%; }
+.am-status:not(.group) .am-st-acts .am-chip { min-width: 72px; }
+.am-chip.am-stop { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
+
+/* --- корабли флота на карте --- */
+.ship-sprite.am-lead {
+  outline: 2px solid #d9a940 !important;
+  box-shadow: 0 0 0 4px rgba(217,169,64,0.22), 0 0 16px rgba(217,169,64,0.35);
+}
+.ship-sprite.am-pick {
+  outline: 2px solid #d9a940 !important;
+  box-shadow: 0 0 0 4px rgba(217,169,64,0.16);
+}
+.ship-sprite.am-can { outline: 2px dashed rgba(217,169,64,0.55) !important; }
+/* Ведущий — со звездой: его цель и задаёт строй. Значок одного
+   размера на любом зуме. */
+.ship-sprite.am-lead::after {
+  content: '★';
+  position: absolute;
+  left: calc(50% - 11px);
+  top: -28px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0a0d14;
+  border: 1px solid #d9a940;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  color: #d9a940;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  transform: scale(var(--fx-inv, 1));
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+
+/* Свой корабль на автоходе — значок ⇉ в правом верхнем углу: нити
+   спрятаны, а по значку видно, кто идёт; тап по кораблю покажет путь.
+   Неподвижный, одного размера на любом зуме */
+.ship-sprite.am-going::before {
+  content: '⇉';
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 2;
+  width: 18px;
+  height: 14px;
+  margin: -8px -6px 0 0;
+  box-sizing: border-box;
+  border: 1px solid #d9a940;
+  border-radius: 7px;
+  background: #0a0d14;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.65);
+  color: #d9a940;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+  transform: scale(min(var(--fx-inv, 1), 2.4));
+  transform-origin: 12px 8px;
+  pointer-events: none;
+}
+
+/* --- нить маршрута ---
+   Слой SVG живёт внутри поля и масштабируется вместе с ним. Толщину,
+   штрих и узлы держим постоянными на экране через --fx-inv (обратный
+   масштаб, его ставит sxSyncScale): non-scaling-stroke внутри
+   CSS-трансформации браузеры не учитывают. */
+.am-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+  --am-k: var(--fx-inv, 1);
+}
+
+.am-under {
+  fill: none;
+  stroke: rgba(5,6,10,0.75);
+  stroke-width: calc(5px * var(--am-k));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.am-line {
+  fill: none;
+  stroke: #d9a940;
+  stroke-width: calc(2px * var(--am-k));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Пунктир неподвижный: бегущий перерисовывал слой каждый кадр */
+  stroke-dasharray: calc(8px * var(--am-k)) calc(7px * var(--am-k));
+}
+
+.am-node {
+  r: calc(4px * var(--am-k));
+  fill: #0a0d14;
+  stroke: #d9a940;
+  stroke-width: calc(1.5px * var(--am-k));
+}
+.am-fin {
+  fill: rgba(217,169,64,0.07);
+  stroke: #d9a940;
+  stroke-width: calc(1.5px * var(--am-k));
+  stroke-dasharray: calc(6px * var(--am-k)) calc(4px * var(--am-k));
+}
+/* Пульс финиша — единственная анимация автохода на поле и только одна:
+   у выбранного корабля или в предпросмотре. HTML-рамка под кораблями:
+   transform и opacity у неё считает видеокарта */
+.am-pulse-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: calc(2px * var(--fx-inv, 1)) solid #d9a940;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: am-pulse 2s ease-out infinite;
+}
+@keyframes am-pulse {
+  0%   { opacity: 0.85; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.3); }
+}
+.am-cross { stroke: rgba(217,169,64,0.85); stroke-width: calc(1.2px * var(--am-k)); }
+.am-dot { r: calc(3px * var(--am-k)); fill: #d9a940; }
+.am-ghost { opacity: 0.32; }
+
+/* Тусклая — прежний путь кораблей, которым сейчас выбирают новую точку;
+   выбранный корабль и его флот — ярко (без фильтра свечения: он дорогой) */
+.am-g.dim { opacity: 0.42; }
+.am-g.dim .am-line { stroke-width: calc(1.5px * var(--am-k)); }
+.am-g.dim .am-under { stroke-width: calc(3.5px * var(--am-k)); }
+.am-g.dim .am-node { r: calc(3px * var(--am-k)); }
+.am-g.live:not(.dim) .am-line { stroke-width: calc(2.5px * var(--am-k)); }
+.am-g.live:not(.dim) .am-under { stroke-width: calc(6px * var(--am-k)); }
+.am-g.plan .am-line { stroke: #f0c35a; }
+.am-g.plan:not(.lead) { opacity: 0.85; }
+
+/* Подпись у финиша: одного размера на любом зуме, как цифры урона */
+.am-tag-pos {
+  position: absolute;
+  z-index: 42;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transform: scale(var(--fx-inv, 1));
+  transform-origin: 0 0;
+}
+.am-tag {
+  position: absolute;
+  left: 0;
+  bottom: 7px;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  white-space: nowrap;
+  background: rgba(10,13,20,0.92);
+  border: 1px solid rgba(217,169,64,0.55);
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.55);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #d9a940;
+}
+.am-tag.plan { background: rgba(26,21,10,0.94); color: #f0c35a; border-color: #d9a940; }
+.am-tag.warn { color: #0a0d14; background: #d9a940; border-color: #d9a940; }
+.am-tag.below { bottom: auto; top: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .am-pulse-box { animation: none; opacity: 0.6; }
+}
+
+/* Груз в трюме: ресурсы делят место с десантом. Полоса слева — цвет
+   ресурса, как на складе планеты */
+.sc-cargo-full { color: #d94a4a; }
+.sc-hangar-head.sc-cargo-sub { margin-top: 10px; }
+.sc-cargo-err {
+  margin-bottom: 7px;
+  padding: 7px 10px;
+  background: #10151e;
+  border: 1px solid rgba(217,74,74,0.45);
+  border-left: 3px solid #d94a4a;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #d94a4a;
+}
+.sc-cargo-goods {
+  border-left-color: #8fa8c4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 11px;
+}
+.sc-goods-txt { flex: 1; min-width: 0; }
+.sc-goods-txt span { display: block; font-size: 11px; color: #cfd8dc; }
+.sc-goods-txt em { font-style: normal; font-size: 10px; color: #55606c; }
+.sc-cargo-goods .sc-hangar-acts { flex: none; margin-top: 0; }
+.sc-cargo-goods .sc-hangar-btn { flex: none; min-width: 46px; padding: 7px 9px; }
+
+/* ===== Жест «зажал и тянешь» (js/ship-control.js, sd*) ===== */
+.sd-ghost { z-index: 6; opacity: 0.85; }
+.sd-ghost img { opacity: 0.8; }
+
+/* Нить от корабля к пальцу */
+.sd-line {
+  position: absolute;
+  z-index: 5;
+  height: 0;
+  border-top: 3px dashed rgba(95,217,104,0.9);
+  transform-origin: 0 50%;
+  margin-top: -1.5px;
+  pointer-events: none;
+}
+.sd-line[data-tone="attack"] { border-top-color: rgba(255,107,107,0.95); }
+.sd-line[data-tone="bad"]    { border-top-color: rgba(154,166,178,0.85); }
+.sd-line[data-tone="wait"]   { border-top-color: rgba(217,169,64,0.9); }
+
+/* Прицел на цели: угловые скобки */
+.sd-reticle {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  --sd-c: #ff6b6b;
+  background:
+    linear-gradient(var(--sd-c), var(--sd-c)) top left / 28% 4px no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) top left / 4px 28% no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) top right / 28% 4px no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) top right / 4px 28% no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) bottom left / 28% 4px no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) bottom left / 4px 28% no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) bottom right / 28% 4px no-repeat,
+    linear-gradient(var(--sd-c), var(--sd-c)) bottom right / 4px 28% no-repeat;
+}
+.sd-reticle[data-tone="bad"]  { --sd-c: #9aa6b2; }
+.sd-reticle[data-tone="wait"] { --sd-c: #d9a940; }
+
+/* Поднятый корабль приглушён на старом месте, достижимые цели — в рамке */
+.ship-sprite.sd-lifted { opacity: 0.4; }
+.ship-sprite.sd-reach {
+  outline: 2px solid rgba(217,74,74,0.95) !important;
+  box-shadow: 0 0 0 3px rgba(217,74,74,0.3);
+}
+
+/* Картинка корабля не должна ловить долгое нажатие сама (меню «сохранить») */
+.ship-sprite img {
+  pointer-events: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* Куда развернуться нельзя — направление приглушено, тап объяснит почему */
+.sc-dir.blocked { opacity: 0.35; border-style: dashed; }
+.sc-dir.blocked:active { background: #10151e; color: #8fa8c4; }
+
+/* Выпуск истребителя: где он может выйти из ангара */
+.sc-launch-zone {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed rgba(217,169,64,0.75);
+  background: rgba(217,169,64,0.07);
+  border-radius: 4px;
+}
+
+/* ===== Имя корабля: строка с карандашом и правка на месте ===== */
+.sc-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.sc-name-row .sc-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-rename {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #55606c;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.sc-rename:active,
+.sc-rename:hover { color: #4a90d9; border-color: #4a90d9; }
+/* Безымянному — подсказка, что имя можно дать */
+.sc-rename:not(.named) { border-style: dashed; }
+
+.sc-rename-box { display: none; }
+.sc-stats.renaming .sc-name-row,
+.sc-stats.renaming .sc-role { display: none; }
+.sc-stats.renaming .sc-rename-box { display: block; }
+
+.sc-rename-line { display: flex; gap: 5px; }
+.sc-rename-line input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  background: #0a0d14;
+  border: 1px solid #4a90d9;
+  border-radius: 7px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  /* 16px: меньше — и телефон увеличивает страницу при вводе */
+  font-size: 16px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.15);
+}
+.sc-rename-line input::placeholder { color: #3a4654; }
+
+.sc-rename-ok,
+.sc-rename-no {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sc-rename-ok { background: #4a90d9; border: 1px solid #4a90d9; color: #0a0d14; }
+.sc-rename-ok:disabled { opacity: 0.45; }
+.sc-rename-no { background: none; border: 1px solid #2a3644; color: #8fa8c4; }
+
+.sc-rename-hint {
+  margin-top: 4px;
+  font-size: 9px;
+  line-height: 1.35;
+  color: #55606c;
+}
+.sc-rename-hint.bad { color: #d94a4a; }

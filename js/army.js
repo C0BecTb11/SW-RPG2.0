@@ -1,0 +1,491 @@
+// Экран "Армия": сверху командиры со своим инвентарём (то, что они возят
+// с собой между планетами), ниже — войска, стоящие по планетам.
+
+function openArmyScreen() {
+  document.getElementById('army-screen').style.display = 'block';
+  loadArmyData();
+  if (typeof questSeen === 'function') questSeen('army');
+}
+
+function closeArmyScreen() {
+  document.getElementById('army-screen').style.display = 'none';
+}
+
+function loadArmyData() {
+  supabase.auth.getSession().then(function(res) {
+    if (!res.data.session) return;
+    var userId = res.data.session.user.id;
+    loadCommanders(userId);
+    loadGarrisons(userId);
+  });
+}
+
+function loadCommanders(userId) {
+  var listEl = document.getElementById('army-commanders-list');
+
+  Promise.all([
+    supabase.from('commanders').select('*').eq('user_id', userId).order('slot_index'),
+    supabase.from('systems').select('id, name').eq('is_deep_space', false),
+    // Истребители в ангаре не показываем отдельными кораблями: они
+    // внутри носителя, а не стоят в системе сами по себе
+    supabase.from('ships')
+      .select('*, ship_types(name, image, capacity, is_fighter, hangar_slots)')
+      .eq('owner_user_id', userId).is('carrier_ship_id', null),
+    // Трюм — это не только пехота из ship_cargo: техника лежит строками
+    // в unit_positions, и без неё загруженная канонерка пропадала из виду
+    supabase.rpc('get_ship_holds'),
+    // Ресурсы лежат в том же трюме, что и десант. Без них гружёный
+    // корабль числился здесь пустым, а панель трюма говорила «полон»
+    supabase.from('ship_resource_cargo').select('ship_id, resource, amount'),
+    supabase.from('resources').select('id, name, color, sort_order'),
+    supabase.from('game_settings').select('value').eq('key', 'cargo_units_per_slot').maybeSingle()
+  ]).then(function(results) {
+    var commandersRes = results[0];
+    var systemsRes = results[1];
+    var shipsRes = results[2];
+    var cargoRes = results[3];
+    if (commandersRes.error || !commandersRes.data) return;
+
+    var perSlot = (!results[6].error && results[6].data)
+      ? Math.max(1, parseInt(results[6].data.value, 10) || 2) : 2;
+    var resById = {};
+    (results[5].data || []).forEach(function(r) { resById[r.id] = r; });
+    var goodsByShip = {};
+    (results[4].data || []).forEach(function(g) {
+      if (!(g.amount > 0)) return;
+      var r = resById[g.resource] || {};
+      if (!goodsByShip[g.ship_id]) goodsByShip[g.ship_id] = [];
+      goodsByShip[g.ship_id].push({
+        resource: g.resource, name: r.name || g.resource, color: r.color,
+        sort: r.sort_order || 0, amount: g.amount,
+        // Тот же счёт, что у сервера: ceil(количество / единиц на слот)
+        slots: Math.ceil(g.amount / perSlot)
+      });
+    });
+    Object.keys(goodsByShip).forEach(function(k) {
+      goodsByShip[k].sort(function(a, b) { return a.sort - b.sort; });
+    });
+
+    var ships = shipsRes.error ? [] : (shipsRes.data || []);
+    var cargoByShip = {};
+    (cargoRes.data || []).forEach(function(c) {
+      if (c.quantity <= 0) return;
+      if (!cargoByShip[c.ship_id]) cargoByShip[c.ship_id] = [];
+      cargoByShip[c.ship_id].push(c);
+    });
+
+    var shipsByCommander = {};
+    ships.forEach(function(sh) {
+      var key = sh.commander_id || 'free';
+      if (!shipsByCommander[key]) shipsByCommander[key] = [];
+      shipsByCommander[key].push(sh);
+    });
+
+    var systemNames = {};
+    (systemsRes.data || []).forEach(function(s) { systemNames[s.id] = s.name; });
+
+    listEl.innerHTML = '';
+
+    commandersRes.data.forEach(function(c) {
+      var row = document.createElement('div');
+      row.className = 'commander-row' + (c.unlocked ? '' : ' locked');
+
+      var head = document.createElement('div');
+      head.className = 'commander-head';
+
+      var icon = document.createElement('div');
+      icon.className = 'commander-icon';
+      icon.textContent = '♟';
+      icon.style.color = c.unlocked ? '#5fd968' : '#55606c';
+      icon.style.borderColor = c.unlocked ? '#5fd968' : '#2a3644';
+      head.appendChild(icon);
+
+      var info = document.createElement('div');
+      info.className = 'commander-info';
+
+      var name = document.createElement('div');
+      name.className = 'commander-name';
+      name.textContent = c.name;
+      info.appendChild(name);
+
+      var status = document.createElement('div');
+      status.className = 'commander-status';
+      if (!c.unlocked) {
+        status.textContent = 'Заблокирован';
+      } else if (c.moving_to) {
+        status.textContent = 'В пути → ' + (systemNames[c.moving_to] || c.moving_to);
+        // Дальний маршрут: куда дальше и конечная цель
+        if (c.route && c.route.length) {
+          status.textContent += ' · далее ' + c.route.map(function(id) { return systemNames[id] || id; }).join(' → ');
+        }
+      } else {
+        status.textContent = 'В системе: ' + (systemNames[c.current_system] || '—');
+      }
+      info.appendChild(status);
+      head.appendChild(info);
+      row.appendChild(head);
+
+      // Маршрут можно оборвать: командир сядет на ближайшей планете пути
+      if (c.moving_to && c.route && c.route.length) {
+        var stop = document.createElement('button');
+        stop.className = 'route-stop-btn';
+        stop.textContent = 'Остановиться: ' + (systemNames[c.moving_to] || c.moving_to);
+        stop.addEventListener('click', function() {
+          stop.disabled = true;
+          supabase.rpc('cancel_commander_route', { p_commander_id: c.id }).then(function(res) {
+            if (res.error) { stop.disabled = false; alert(res.error.message); return; }
+            loadArmyData();
+          });
+        });
+        row.appendChild(stop);
+      }
+
+      if (c.unlocked) {
+        // Флот командира: список кораблей, каждый раскрывается и показывает,
+        // кто внутри. Так вся цепочка «командир → корабль → войска» видна
+        // в одном месте, без отдельных разделов.
+        row.appendChild(makeFleetSection(shipsByCommander[c.id] || [], cargoByShip, systemNames, goodsByShip));
+
+      }
+
+      listEl.appendChild(row);
+    });
+
+    // Гарнизоны идут после командиров: командиры — главные действующие
+    // лица, а гарнизон это фон. Каждая система свёрнута, иначе при трёх
+    // кораблях на пяти планетах экран превращается в простыню.
+    var free = shipsByCommander['free'] || [];
+    if (free.length > 0) {
+      var bySystem = {};
+      free.forEach(function(sh) {
+        if (!bySystem[sh.system_id]) bySystem[sh.system_id] = [];
+        bySystem[sh.system_id].push(sh);
+      });
+
+      var sectionTitle = document.createElement('div');
+      sectionTitle.className = 'garrison-section-title';
+      sectionTitle.textContent = 'Гарнизоны';
+      listEl.appendChild(sectionTitle);
+
+      Object.keys(bySystem).sort(function(a, b) {
+        return (systemNames[a] || a).localeCompare(systemNames[b] || b);
+      }).forEach(function(sysId) {
+        var group = bySystem[sysId];
+
+        // Состав словами: «Венатор ×2, Тантив» — понятно, что стоит
+        // в системе, не раскрывая список
+        var counts = {};
+        group.forEach(function(sh) {
+          var nm = (sh.ship_types && sh.ship_types.name) || sh.ship_type;
+          counts[nm] = (counts[nm] || 0) + 1;
+        });
+        var parts = Object.keys(counts).map(function(nm) {
+          return counts[nm] > 1 ? nm + ' ×' + counts[nm] : nm;
+        });
+
+        var block = document.createElement('div');
+        block.className = 'commander-row garrison-row';
+
+        var head = document.createElement('button');
+        head.className = 'commander-head garrison-head';
+        head.innerHTML =
+          '<span class="garrison-arrow">▸</span>' +
+          '<div class="commander-info">' +
+            '<div class="commander-name">' + (systemNames[sysId] || sysId) +
+              '<span class="garrison-count">' + group.length + '</span></div>' +
+            '<div class="commander-status">' + parts.join(', ') + '</div>' +
+          '</div>';
+        block.appendChild(head);
+
+        var section = makeFleetSection(group, cargoByShip, systemNames, goodsByShip);
+        // Заголовок «Флот» внутри лишний: система уже названа сверху
+        var inner = section.querySelector('.inventory-title');
+        if (inner) inner.parentNode.removeChild(inner);
+        section.style.display = 'none';
+        block.appendChild(section);
+
+        head.addEventListener('click', function() {
+          var open = section.style.display !== 'none';
+          section.style.display = open ? 'none' : 'block';
+          head.querySelector('.garrison-arrow').textContent = open ? '▸' : '▾';
+        });
+
+        listEl.appendChild(block);
+      });
+    }
+
+  });
+}
+
+// Раскрывающийся список кораблей: внутри каждого — его трюм.
+function makeFleetSection(ships, cargoByShip, systemNames, goodsByShip) {
+  var wrap = document.createElement('div');
+  wrap.className = 'fleet-section';
+
+  var title = document.createElement('div');
+  title.className = 'inventory-title';
+  title.textContent = 'Флот';
+  wrap.appendChild(title);
+
+  if (ships.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'inventory-empty';
+    empty.textContent = 'кораблей нет';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  ships.forEach(function(ship) {
+    var type = ship.ship_types || {};
+    var cargo = cargoByShip[ship.id] || [];
+    var goods = (goodsByShip && goodsByShip[ship.id]) || [];
+    // Место считаем слотами, а не головами: техника занимает больше,
+    // а гружёная канонерка — ещё и за свой десант. Груз — тоже слоты.
+    var used = cargo.reduce(function(a, c) { return a + (c.slots || c.quantity); }, 0) +
+               goods.reduce(function(a, g) { return a + g.slots; }, 0);
+    // Вместимость с улучшениями корабля, как считает сервер
+    var cap = (type.capacity || 0) + (ship.bonus_capacity || 0);
+    var hangarCap = (type.hangar_slots || 0) + (ship.bonus_hangar || 0);
+
+    var block = document.createElement('div');
+    block.className = 'ship-block';
+    block.setAttribute('data-ship-id', ship.id);
+
+    var header = document.createElement('button');
+    header.className = 'ship-header';
+    header.innerHTML =
+      '<span class="garrison-arrow">▸</span>' +
+      '<span class="ship-thumb"><img src="../' + (type.image || '') + '" alt=""></span>' +
+      // Имя, данное хозяином, — крупно; тип остаётся в подсказке и в трюме
+      '<span class="ship-title">' + armyEsc(ship.name ? '«' + ship.name + '»' : (type.name || ship.ship_type)) +
+        '<em>' + (ship.in_transit
+            ? 'в гиперпространстве'
+            : (systemNames[ship.system_id] || ship.system_id)) + '</em></span>' +
+      // У истребителя трюма нет, и «0/0» рядом с ним только сбивает
+      '<span class="ship-capacity">' +
+        (type.is_fighter ? 'истребитель' : used + '/' + cap) +
+      '</span>';
+    if (!type.is_fighter && cap > 0 && used >= cap) {
+      header.querySelector('.ship-capacity').classList.add('full');
+    }
+    block.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'garrison-body';
+    body.style.display = 'none';
+
+    // Управление трюмом прямо из списка флота: видно, что внутри,
+    // и сразу можно догрузить или высадить.
+    // Кнопка трюма только там, где трюм есть
+    if (!type.is_fighter && cap > 0) {
+      var manage = document.createElement('button');
+      manage.className = 'ship-manage-btn';
+      manage.textContent = 'Заполнить трюм';
+      manage.addEventListener('click', function() {
+        if (typeof openShipCargo === 'function') openShipCargo(ship, type);
+      });
+      body.appendChild(manage);
+    }
+
+    // Зато у носителя показываем ангар: сколько истребителей внутри
+    if (hangarCap > 0) {
+      var hangar = document.createElement('div');
+      hangar.className = 'ship-hangar-line';
+      hangar.textContent = 'Ангар: загрузка…';
+      body.appendChild(hangar);
+
+      supabase.rpc('get_hangar', { p_ship_id: ship.id }).then(function(res) {
+        var n = (!res.error && res.data) ? res.data.length : 0;
+        hangar.textContent = 'Ангар: ' + n + ' из ' + hangarCap;
+      });
+    }
+
+    if (type.is_fighter) {
+      // Истребителю нечего показывать: ни трюма, ни ангара
+    } else if (cargo.length === 0 && goods.length === 0) {
+      var e = document.createElement('div');
+      e.className = 'inventory-empty';
+      e.textContent = 'трюм пуст';
+      body.appendChild(e);
+    } else if (cargo.length) {
+      var grid = document.createElement('div');
+      grid.className = 'inventory-grid';
+      cargo.forEach(function(c) {
+        // Поля приходят плоскими из get_ship_holds. У техники дописываем,
+        // сколько десанта сидит внутри — иначе непонятно, почему она
+        // занимает больше места, чем весит сама.
+        var chip = makeUnitChip(
+          { name: c.unit_name + (c.passengers ? ' +' + c.passengers : ''), image: c.unit_image },
+          c.quantity);
+        if (c.is_vehicle) chip.classList.add('cargo-vehicle');
+        grid.appendChild(chip);
+      });
+      body.appendChild(grid);
+    }
+
+    if (!type.is_fighter && goods.length) body.appendChild(makeGoodsGrid(goods));
+    block.appendChild(body);
+
+    header.addEventListener('click', function() {
+      var open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      header.querySelector('.garrison-arrow').textContent = open ? '▸' : '▾';
+    });
+
+    wrap.appendChild(block);
+  });
+
+  return wrap;
+}
+
+// Войска по планетам. Читаем реальные позиции юнитов на картах и группируем
+// по системе: один боец — одна строка в БД, поэтому количество считаем сами.
+function loadGarrisons(userId) {
+  var listEl = document.getElementById('army-garrisons-list');
+  if (!listEl) return;
+
+  Promise.all([
+    // Только те, кто реально стоит на земле: у сидящих в транспорте
+    // и в трюме координат нет, иначе они считались бы дважды
+    supabase.from('unit_positions').select('system_id, unit_type')
+      .eq('owner_user_id', userId).not('x', 'is', null),
+    supabase.from('systems').select('id, name').eq('is_deep_space', false),
+    supabase.from('unit_types').select('id, name, image')
+  ]).then(function(results) {
+    var unitsRes = results[0];
+    var systemsRes = results[1];
+    var typesRes = results[2];
+
+    var systemNames = {};
+    (systemsRes.data || []).forEach(function(s) { systemNames[s.id] = s.name; });
+
+    var typeById = {};
+    (typesRes.data || []).forEach(function(t) { typeById[t.id] = t; });
+
+    if (unitsRes.error || !unitsRes.data || unitsRes.data.length === 0) {
+      listEl.innerHTML = '<div class="army-empty">Войск на планетах пока нет</div>';
+      return;
+    }
+
+    // { system_id: { unit_type: количество } }
+    var bySystem = {};
+    unitsRes.data.forEach(function(u) {
+      if (!bySystem[u.system_id]) bySystem[u.system_id] = {};
+      bySystem[u.system_id][u.unit_type] = (bySystem[u.system_id][u.unit_type] || 0) + 1;
+    });
+
+    listEl.innerHTML = '';
+    Object.keys(bySystem).forEach(function(sysId) {
+      var counts = bySystem[sysId];
+      var total = Object.keys(counts).reduce(function(a, k) { return a + counts[k]; }, 0);
+
+      var block = document.createElement('div');
+      block.className = 'garrison-block';
+
+      var header = document.createElement('button');
+      header.className = 'garrison-header';
+      header.innerHTML = '<span class="garrison-arrow">▸</span>' +
+                         '<span class="garrison-name">' + (systemNames[sysId] || sysId) + '</span>' +
+                         '<span class="garrison-total">' + total + '</span>';
+      block.appendChild(header);
+
+      var body = document.createElement('div');
+      body.className = 'garrison-body';
+      body.style.display = 'none';
+
+      var grid = document.createElement('div');
+      grid.className = 'inventory-grid';
+      Object.keys(counts).forEach(function(typeId) {
+        grid.appendChild(makeUnitChip(typeById[typeId], counts[typeId]));
+      });
+      body.appendChild(grid);
+      block.appendChild(body);
+
+      header.addEventListener('click', function() {
+        var open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : 'block';
+        header.querySelector('.garrison-arrow').textContent = open ? '▸' : '▾';
+      });
+
+      listEl.appendChild(block);
+    });
+  });
+}
+
+// Груз корабля: те же фишки, что у бойцов, только вместо портрета —
+// метка цвета ресурса, как на складе планеты
+function makeGoodsGrid(goods) {
+  var wrap = document.createElement('div');
+  wrap.className = 'goods-block';
+
+  var head = document.createElement('div');
+  head.className = 'goods-head';
+  head.textContent = 'Груз';
+  wrap.appendChild(head);
+
+  var grid = document.createElement('div');
+  grid.className = 'inventory-grid';
+  goods.forEach(function(g) {
+    var chip = document.createElement('div');
+    chip.className = 'unit-chip goods-chip';
+
+    var dot = document.createElement('i');
+    dot.className = 'goods-dot';
+    if (g.color) dot.style.background = g.color;
+    chip.appendChild(dot);
+
+    var label = document.createElement('div');
+    label.className = 'unit-chip-label';
+    label.textContent = g.name;
+    chip.appendChild(label);
+
+    var count = document.createElement('div');
+    count.className = 'unit-chip-count';
+    count.textContent = g.amount;
+    chip.appendChild(count);
+
+    grid.appendChild(chip);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function makeUnitChip(type, quantity) {
+  var chip = document.createElement('div');
+  chip.className = 'unit-chip';
+
+  var thumb = document.createElement('div');
+  thumb.className = 'unit-chip-thumb';
+  if (type && type.image) {
+    var img = document.createElement('img');
+    img.src = '../' + type.image;
+    img.alt = '';
+    thumb.appendChild(img);
+  }
+  chip.appendChild(thumb);
+
+  var label = document.createElement('div');
+  label.className = 'unit-chip-label';
+  label.textContent = (type && type.name) || 'Юнит';
+  chip.appendChild(label);
+
+  var count = document.createElement('div');
+  count.className = 'unit-chip-count';
+  count.textContent = '×' + quantity;
+  chip.appendChild(count);
+
+  return chip;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var armyButton = document.getElementById('panel-item-army');
+  var closeButton = document.getElementById('army-screen-close');
+  if (armyButton) armyButton.addEventListener('click', openArmyScreen);
+  if (closeButton) closeButton.addEventListener('click', closeArmyScreen);
+});
+
+function armyEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}

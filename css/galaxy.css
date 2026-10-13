@@ -1,0 +1,1747 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #000;
+  font-family: 'Courier New', monospace;
+  color: #cfd8dc;
+}
+
+/* Значок профиля — зафиксирован в углу экрана поверх карты,
+   не зависит от скролла/зума самой галакарты */
+#profile-badge {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(5,6,10,0.7);
+  border: 1px solid rgba(28,37,48,0.9);
+  border-radius: 20px;
+  padding: 6px 14px 6px 6px;
+}
+
+#profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4a90d9, #2a3644);
+  border: 1px solid rgba(143,168,196,0.4);
+  flex-shrink: 0;
+}
+
+#profile-nickname {
+  font-size: 12px;
+  color: #cfd8dc;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Форма создания ника — показывается только если у аккаунта нет профиля
+   (например, аккаунт был создан до появления никнеймов) */
+#nickname-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(5,6,10,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+#nickname-prompt-box {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
+#nickname-prompt-box p {
+  font-size: 13px;
+  color: #8fa8c4;
+  margin-bottom: 16px;
+}
+
+#nickname-prompt-input {
+  width: 100%;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  color: #cfd8dc;
+  padding: 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  border-radius: 2px;
+}
+
+#nickname-prompt-input:focus {
+  outline: none;
+  border-color: #4a90d9;
+}
+
+#nickname-prompt-save {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px;
+  background: #4a90d9;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+#nickname-prompt-save:disabled {
+  background: #2a3644;
+  color: #55606c;
+}
+
+#nickname-prompt-message {
+  margin-top: 10px;
+  font-size: 12px;
+  min-height: 16px;
+  color: #d94a4a;
+}
+
+/* Экран ожидания назначения фракции — блокирует доступ к карте,
+   пока администратор не назначит фракцию вручную в БД */
+#faction-waiting {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(5,6,10,0.97);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+#faction-waiting-box {
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+}
+
+.faction-waiting-title {
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #cfd8dc;
+  margin-bottom: 10px;
+}
+
+.faction-waiting-text {
+  font-size: 12px;
+  color: #8fa8c4;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+#access-code-value {
+  font-size: 28px;
+  letter-spacing: 6px;
+  color: #4a90d9;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  padding: 16px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+/* Нижняя панель — зафиксирована снизу экрана поверх карты,
+   не зависит от скролла самой галакарты. Сворачивается вниз,
+   оставляя только кнопку-переключатель на виду. */
+#bottom-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.25s ease;
+}
+
+#bottom-panel.collapsed {
+  transform: translateY(calc(100% - 26px));
+}
+
+#bottom-panel-toggle {
+  width: 56px;
+  height: 22px;
+  background: rgba(5,6,10,0.85);
+  border: 1px solid rgba(28,37,48,0.9);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+#bottom-panel-toggle-icon {
+  color: #8fa8c4;
+  font-size: 12px;
+  transition: transform 0.25s ease;
+}
+
+#bottom-panel.collapsed #bottom-panel-toggle-icon {
+  transform: rotate(180deg);
+}
+
+#bottom-panel-content {
+  width: 100%;
+  background: rgba(5,6,10,0.9);
+  border-top: 1px solid rgba(28,37,48,0.9);
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 8px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+/* Четыре пункта делят ширину поровну: на 360px подписи не наезжают
+   друг на друга, на широком экране пункты не расползаются */
+.panel-item {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #cfd8dc;
+  padding: 6px 2px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+}
+
+.panel-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  background: #161b24;
+  border: 1px solid #2a3644;
+}
+
+.panel-item-label {
+  font-size: 10px;
+  color: #8fa8c4;
+  white-space: nowrap;
+}
+
+/* Экран армии — полноэкранный оверлей поверх карты */
+#army-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  background: rgba(5,6,10,0.97);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+#army-screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1c2530;
+}
+
+.army-screen-title {
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #cfd8dc;
+}
+
+#army-screen-close {
+  background: none;
+  border: 1px solid #2a3644;
+  color: #8fa8c4;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.army-section {
+  margin-bottom: 24px;
+}
+
+.army-section-title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+  margin-bottom: 10px;
+}
+
+.army-empty {
+  font-size: 12px;
+  color: #3d4652;
+  padding: 12px 0;
+}
+
+.army-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #161b24;
+}
+
+.army-unit-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: #161b24;
+  border: 1px solid #2a3644;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.army-unit-name {
+  flex: 1;
+  font-size: 12px;
+  color: #cfd8dc;
+}
+
+.army-unit-count {
+  font-size: 12px;
+  color: #8fa8c4;
+}
+
+.commander-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  border: 1px solid #1c2530;
+  background: #0a0d14;
+}
+
+.commander-row.locked {
+  opacity: 0.45;
+}
+
+.commander-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: #161b24;
+  border: 1px solid #2a3644;
+  flex-shrink: 0;
+}
+
+.commander-info {
+  flex: 1;
+}
+
+.commander-name {
+  font-size: 12px;
+  color: #cfd8dc;
+}
+
+.commander-status {
+  font-size: 10px;
+  color: #55606c;
+  margin-top: 2px;
+}
+
+/* Оборвать дальний маршрут — тихая кнопка, не главное действие */
+.route-stop-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px dashed rgba(217, 169, 64, 0.5);
+  border-radius: 5px;
+  color: #d9a940;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.route-stop-btn:disabled { opacity: 0.5; }
+
+/* ===== Галактическая карта ===== */
+/* Карта — это «мир» фиксированного размера, который таскают и зумят.
+   Раньше ширина задавалась в процентах экрана, и при добавлении планет
+   картинку растягивало и рвало. Теперь координаты живут в мире, а экран
+   просто окно в него. */
+#map-scroll {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  background: #05060a;
+}
+
+#map-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2600px;
+  height: 1500px;
+  transform-origin: 0 0;
+  /* Подсказываем браузеру держать слой на видеокарте: без этого он
+     пересобирает всю карту заново на каждом кадре панорамирования */
+  will-change: transform;
+  background-image: url('../assets/ui/galaxy-bg-tile.png');
+  background-repeat: repeat;
+  background-size: 900px auto;
+}
+
+#galaxy-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.planet-icon { display: block; }
+
+/* ===== Карточка планеты ===== */
+#planet-info-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3,5,9,0.72);
+  padding: 20px;
+}
+
+#pi-card {
+  position: relative;
+  width: 100%;
+  max-width: 310px;
+  background: linear-gradient(180deg, #111722 0%, #0a0d14 100%);
+  border: 1px solid #1c2530;
+  border-radius: 14px;
+  padding: 20px 18px 18px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+}
+
+/* Цветная полоса сверху — сразу видно, чья это система */
+#pi-planet-strip {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: #4a90d9;
+}
+
+#pi-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: 1px solid #2a3644;
+  color: #8fa8c4;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+#pi-head { margin-bottom: 14px; }
+
+#pi-name {
+  font-family: 'Courier New', monospace;
+  font-size: 19px;
+  letter-spacing: 1px;
+  color: #e6edf3;
+  margin-bottom: 8px;
+  padding-right: 30px;
+}
+
+#pi-faction {
+  display: inline-block;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #4a90d9;
+  border: 1px solid #4a90d9;
+  border-radius: 10px;
+  padding: 3px 10px;
+}
+
+#pi-controller-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid #1c2530;
+  border-bottom: 1px solid #1c2530;
+  font-family: 'Courier New', monospace;
+}
+
+#pi-controller-row span { font-size: 10px; color: #55606c; }
+#pi-controller-row b { font-size: 12px; color: #cfd8dc; font-weight: normal; }
+
+#pi-stats { padding: 12px 0 4px; }
+
+.pi-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: 'Courier New', monospace;
+  padding: 5px 0;
+}
+
+.pi-stat span { font-size: 10px; color: #55606c; }
+.pi-stat b { font-size: 11px; color: #8fa8c4; font-weight: normal; }
+
+#pi-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pi-action {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  background: #131b26;
+  border: 1px solid #22303f;
+  border-radius: 10px;
+  padding: 14px 8px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  color: #cfd8dc;
+}
+
+.pi-action:active { border-color: #4a90d9; }
+
+.pi-action-icon { font-size: 18px; color: #4a90d9; }
+
+.pi-action-text {
+  font-size: 9.5px;
+  line-height: 1.35;
+  text-align: center;
+  color: #8fa8c4;
+}
+
+#pi-move-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px;
+  background: #5fd968;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+#pi-move-btn:disabled { background: #2a4a2c; color: #6a8a6c; }
+
+
+.flight-rocket {
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ===== Армия: командиры с отрядом и войска по планетам ===== */
+.commander-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.commander-inventory {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #161b24;
+}
+
+.inventory-title {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+  margin-bottom: 8px;
+}
+
+.inventory-empty {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #3d4652;
+}
+
+.inventory-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unit-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #10151e;
+  border: 1px solid #22303f;
+  border-radius: 8px;
+  padding: 5px 9px 5px 5px;
+}
+
+.unit-chip-thumb {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #05070b;
+  border: 1px solid #22303f;
+  flex-shrink: 0;
+}
+
+/* Исходник — фигура в полный рост 1:2. В миниатюре 38 пикселей она
+   превращается в неразличимое пятно, поэтому показываем не всю фигуру,
+   а увеличенный фрагмент с головой и торсом — так юнит узнаётся. */
+.unit-chip-thumb img {
+  position: absolute;
+  width: 190%;
+  height: auto;
+  left: -45%;
+  top: -7%;
+  display: block;
+}
+
+.unit-chip-label {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #cfd8dc;
+}
+
+.unit-chip-count {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #d9a940;
+  font-weight: bold;
+}
+
+.garrison-block {
+  margin-bottom: 8px;
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.garrison-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0a0d14;
+  border: none;
+  padding: 12px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+}
+
+.garrison-arrow {
+  color: #8fa8c4;
+  font-size: 10px;
+}
+
+.garrison-name {
+  flex: 1;
+  text-align: left;
+  font-size: 12px;
+  color: #cfd8dc;
+}
+
+.garrison-total {
+  font-size: 11px;
+  color: #d9a940;
+  font-weight: bold;
+}
+
+.garrison-body {
+  padding: 10px 12px 12px;
+  background: #080b11;
+}
+
+/* ===== Кнопки командира и панель погрузки ===== */
+.commander-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.commander-action-btn {
+  flex: 1;
+  padding: 8px;
+  background: #5fd968;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: bold;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.commander-action-btn.secondary {
+  background: #2a3644;
+  color: #cfd8dc;
+}
+
+#cargo-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3,5,9,0.78);
+}
+
+#cargo-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.65);
+}
+
+#cargo-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid #1c2530;
+}
+
+#cargo-title {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #5fd968;
+}
+
+#cargo-subtitle {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+  margin-top: 3px;
+}
+
+#cargo-close {
+  background: none;
+  border: 1px solid #2a3644;
+  color: #8fa8c4;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cargo-capacity {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #8fa8c4;
+  padding: 10px 18px 0;
+}
+
+.cargo-capacity.full { color: #d94a4a; }
+
+#cargo-list {
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cargo-empty {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+  padding: 22px 0;
+}
+
+.cargo-row {
+  display: flex;
+  gap: 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.cargo-thumb {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #05070b;
+  border: 1px solid #22303f;
+  flex-shrink: 0;
+}
+
+.cargo-thumb img {
+  position: absolute;
+  width: 190%;
+  height: auto;
+  left: -45%;
+  top: -7%;
+  display: block;
+}
+
+.cargo-info { flex: 1; min-width: 0; }
+
+.cargo-name {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #e6edf3;
+}
+
+.cargo-available {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+  margin: 3px 0 8px;
+}
+
+.cargo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cargo-qty {
+  display: flex;
+  align-items: center;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cargo-qty-btn {
+  background: #161b24;
+  border: none;
+  color: #8fa8c4;
+  width: 26px;
+  height: 28px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cargo-qty-value {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #cfd8dc;
+  min-width: 26px;
+  text-align: center;
+}
+
+.cargo-action {
+  flex: 1;
+  padding: 8px;
+  background: #d9a940;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cargo-action:disabled { background: #55606c; }
+
+/* ===== Флот командира ===== */
+.fleet-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #161b24;
+}
+
+.ship-block {
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.ship-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #0d1119;
+  border: none;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+}
+
+.ship-thumb {
+  width: 22px;
+  height: 34px;
+  flex-shrink: 0;
+  background: #05070b;
+  border: 1px solid #22303f;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ship-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.ship-title {
+  flex: 1;
+  text-align: left;
+  font-size: 11px;
+  color: #cfd8dc;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ship-title em {
+  font-style: normal;
+  font-size: 9px;
+  color: #55606c;
+}
+
+.ship-capacity {
+  font-size: 10px;
+  color: #d9a940;
+  font-weight: bold;
+}
+
+/* ===== Трюм корабля ===== */
+.ship-manage-btn {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  background: #4a90d9;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: bold;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#shipcargo-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3,5,9,0.78);
+}
+
+#shipcargo-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.65);
+}
+
+#shipcargo-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px 10px;
+}
+
+#shipcargo-title {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #4a90d9;
+}
+
+#shipcargo-name {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+  margin-top: 3px;
+}
+
+#shipcargo-close {
+  background: none;
+  border: 1px solid #2a3644;
+  color: #8fa8c4;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#shipcargo-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 18px;
+}
+
+.shipcargo-tab {
+  flex: 1;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  padding: 9px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.shipcargo-tab.active {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #0a0d14;
+  font-weight: bold;
+}
+
+#shipcargo-list {
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ===== Ресурсы в трюме ===== */
+
+.cargo-section {
+  margin: 14px 0 6px;
+  padding-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #d9a940;
+  border-bottom: 1px solid #1c2530;
+}
+
+/* У ресурса нет картинки, поэтому строка идёт без миниатюры
+   и отмечена цветной кромкой слева */
+.cargo-row.cargo-resource { border-left: 3px solid #4a90d9; }
+
+.cargo-resource .cargo-qty-value { min-width: 38px; }
+
+/* Купленное на рынке: право вывоза даёт бронь, а не контроль над планетой */
+.cargo-row.cargo-bought { border-left: 3px solid #5fd968; }
+
+/* ===== Плашки сырья в карточке планеты ===== */
+
+.pi-res-row { align-items: flex-start; }
+
+.pi-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.pi-chip {
+  display: inline-block;
+  padding: 3px 9px;
+  border: 1px solid #2a3644;
+  border-radius: 11px;
+  background: rgba(10, 13, 20, 0.6);
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 1px;
+}
+
+/* Попутное сырьё вдвое медленнее — и выглядит вполсилы */
+.pi-chip.weak { opacity: 0.55; }
+
+/* ===== Лента событий ===== */
+
+#feed-bell {
+  position: fixed;
+  right: 14px;
+  bottom: 96px;
+  z-index: 1200;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #0e131c;
+  border: 1px solid #2a3644;
+  color: #55606c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Есть непрочитанное — колокол оживает, иначе он приглушён */
+#feed-bell.has-unseen { color: #d9a940; border-color: #d9a940; }
+
+#feed-bell-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #d94a4a;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 18px;
+  text-align: center;
+  display: none;
+}
+
+#feed-bell.has-unseen #feed-bell-count { display: block; }
+
+#feed-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(5, 8, 13, 0.75);
+}
+
+#feed-box {
+  width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: #0d1119;
+  border-top: 1px solid #1c2530;
+  border-radius: 14px 14px 0 0;
+}
+
+#feed-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 14px;
+  border-bottom: 1px solid #1c2530;
+}
+
+#feed-title { font-size: 12px; letter-spacing: 1px; color: #cfd8dc; }
+
+#feed-close {
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  width: 30px;
+  height: 30px;
+}
+
+#feed-tabs {
+  flex: none;
+  display: flex;
+  gap: 5px;
+  padding: 10px 14px 0;
+}
+
+.feed-tab {
+  flex: 1;
+  position: relative;
+  padding: 9px 2px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  color: #55606c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+}
+
+.feed-tab.active { border-color: #4a90d9; color: #cfd8dc; }
+
+.feed-badge {
+  position: absolute;
+  top: -5px;
+  right: -3px;
+  min-width: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #d94a4a;
+  color: #0a0d14;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 16px;
+}
+
+#feed-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px 18px;
+}
+
+.feed-empty {
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.feed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0 9px 9px;
+  border-bottom: 1px solid #1c2530;
+  border-left: 3px solid transparent;
+}
+
+.feed-row:last-child { border-bottom: none; }
+
+/* Тон события читается кромкой, без пестроты в тексте */
+.feed-row.tone-bad { border-left-color: #d94a4a; }
+.feed-row.tone-warn { border-left-color: #d9a940; }
+.feed-row.tone-good { border-left-color: #5fd968; }
+.feed-row.tone-neutral { border-left-color: #2a3644; }
+
+/* Непрочитанное чуть ярче, но не кричит */
+.feed-row.fresh { background: rgba(74, 144, 217, 0.06); }
+
+.feed-info { flex: 1; min-width: 0; }
+.feed-title { font-size: 12px; color: #cfd8dc; }
+.feed-line { margin-top: 3px; font-size: 11px; color: #8fa8c4; }
+.feed-meta { margin-top: 3px; font-size: 10px; color: #55606c; }
+.feed-meta.warn { color: #d9a940; }
+
+/* Сводка по планетам внутри одного уведомления */
+.feed-lines {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 1px solid #2a3644;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.feed-lines i {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #8fa8c4;
+}
+
+.feed-lines i.warn { color: #d9a940; }
+
+.feed-go {
+  flex: none;
+  padding: 8px 12px;
+  background: #1c2530;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+}
+
+.feed-income {
+  flex: none;
+  font-size: 14px;
+  color: #d9a940;
+}
+
+.feed-income-head {
+  padding: 10px 0 14px;
+  text-align: center;
+  border-bottom: 1px solid #1c2530;
+  margin-bottom: 8px;
+}
+
+.feed-income-head b {
+  display: block;
+  font-size: 22px;
+  color: #d9a940;
+  font-weight: normal;
+}
+
+.feed-income-head span { font-size: 10px; color: #55606c; }
+
+/* Куда перенесла карта — подсвечиваем, иначе непонятно, что изменилось */
+.planet-flash { animation: planetFlash 2.2s ease-out; }
+
+@keyframes planetFlash {
+  0%, 100% { filter: none; }
+  20%, 60% { filter: drop-shadow(0 0 12px #d9a940); }
+}
+
+/* Подпись под цифрой дохода: чтобы не путать с полученным за сутки */
+.feed-income span {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #55606c;
+  text-align: right;
+}
+
+/* ── Выбор командира для перелёта ─────────────────────────────── */
+#move-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(5, 8, 13, 0.75);
+}
+
+#move-box {
+  width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: #0d1119;
+  border-top: 1px solid #1c2530;
+  border-radius: 14px 14px 0 0;
+  font-family: 'Courier New', monospace;
+}
+
+#move-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 14px;
+  border-bottom: 1px solid #1c2530;
+}
+
+#move-title { font-size: 12px; letter-spacing: 1px; color: #cfd8dc; }
+#move-subtitle { margin-top: 3px; font-size: 10px; color: #55606c; }
+
+#move-close {
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  width: 30px;
+  height: 30px;
+}
+
+#move-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px 6px;
+}
+
+#move-foot {
+  flex: none;
+  padding: 10px 14px 16px;
+  border-top: 1px solid #1c2530;
+}
+
+#move-send {
+  width: 100%;
+  padding: 12px;
+  background: #5fd968;
+  border: none;
+  border-radius: 8px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#move-send:disabled { background: #1c2530; color: #55606c; }
+
+.mv-card {
+  display: block;
+  margin-bottom: 10px;
+  padding: 11px 12px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.mv-card.chosen {
+  border-color: #5fd968;
+  background: rgba(95, 217, 104, 0.05);
+}
+
+.mv-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mv-pawn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #2a3644;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #55606c;
+  font-size: 15px;
+}
+
+.mv-card.chosen .mv-pawn { border-color: #5fd968; color: #5fd968; }
+
+.mv-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mv-who b { font-size: 12px; color: #cfd8dc; font-weight: normal; }
+.mv-who i { font-size: 10px; color: #55606c; font-style: normal; }
+
+.mv-state {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.mv-state.ok { color: #5fd968; border-color: rgba(95, 217, 104, 0.45); }
+.mv-state.warn { color: #d9a940; border-color: rgba(217, 169, 64, 0.45); }
+.mv-state.busy { color: #8fa8c4; border-color: rgba(143, 168, 196, 0.4); }
+
+/* Командир на задании (рейс снабжения, конвой): виден, но не отправить */
+.mv-card.busy { opacity: 0.86; }
+.mv-card.busy.chosen { border-color: rgba(217, 169, 64, 0.6); background: rgba(217, 169, 64, 0.04); }
+.mv-card.busy .mv-pawn { color: #55606c; }
+.mv-card.busy.chosen .mv-pawn { border-color: #d9a940; color: #d9a940; }
+.mv-busy {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid #d9a940;
+  border-radius: 6px;
+  background: rgba(217, 169, 64, 0.07);
+  font-size: 10px;
+  line-height: 1.45;
+  color: #8fa8c4;
+}
+.mv-busy b { display: block; margin-bottom: 3px; font-size: 11px; font-weight: normal; color: #e3c37a; }
+.mv-busy-go {
+  margin-top: 8px;
+  padding: 7px 10px;
+  background: none;
+  border: 1px solid rgba(217, 169, 64, 0.55);
+  border-radius: 6px;
+  color: #d9a940;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mv-label {
+  margin: 8px 0 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+.mv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.mv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px 4px 4px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+}
+
+.mv-chip > b { font-size: 11px; color: #d9a940; }
+
+.mv-chip-text { display: flex; flex-direction: column; gap: 2px; }
+.mv-chip-text em { font-style: normal; font-size: 10px; color: #cfd8dc; }
+
+.mv-tag {
+  text-decoration: none;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+.mv-tag.hero { color: #a06fd9; }
+
+/* Портрет юнита 1:2 — показываем голову и торс, как в армии */
+.mv-thumb {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #05070b;
+  border: 1px solid #22303f;
+}
+
+.mv-thumb img {
+  position: absolute;
+  width: 190%;
+  left: -45%;
+  top: -7%;
+  display: block;
+}
+
+/* Корабль — вид сверху, целиком */
+.mv-thumb.ship { width: 22px; height: 30px; }
+
+.mv-thumb.ship img {
+  position: static;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.mv-res { padding: 6px 10px; }
+.mv-res b { font-size: 11px; color: #d9a940; }
+.mv-res em { font-style: normal; font-size: 10px; color: #8fa8c4; margin-left: 4px; }
+
+.mv-none { font-size: 10px; color: #55606c; }
+
+.mv-note {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #1c2530;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #8fa8c4;
+}
+
+.mv-note.warn { color: #d9a940; }
+
+/* Маршрут командира: цепочка планет от стоянки до цели */
+.mv-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 5px;
+  margin-bottom: 2px;
+}
+
+.mv-stop {
+  padding: 3px 8px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  font-size: 10px;
+  color: #8fa8c4;
+  white-space: nowrap;
+}
+
+.mv-stop.from { color: #55606c; }
+.mv-stop.goal { color: #5fd968; border-color: rgba(95, 217, 104, 0.45); }
+.mv-hop { font-style: normal; font-size: 11px; color: #2a3644; }
+
+.mv-route-hint {
+  margin-top: 6px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #55606c;
+}
+
+/* Трюм в списке флота: полный подсвечен, груз — фишками с цветом ресурса */
+.ship-capacity.full { color: #d94a4a; }
+
+.goods-block { margin-top: 10px; }
+
+.goods-head {
+  margin-bottom: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+.unit-chip.goods-chip { padding: 6px 9px; }
+
+.goods-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #8fa8c4;
+  flex-shrink: 0;
+}
+
+/* ===== Схватка в ленте: счёт боя с одним противником ===== */
+.feed-row.duel { align-items: flex-start; }
+.feed-row.duel .feed-go { align-self: center; }
+
+.duel-head { display: flex; align-items: center; gap: 9px; }
+
+.duel-pics { flex: none; display: flex; align-items: center; }
+
+.duel-pic {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  background: #05070b;
+  border: 1px solid #22303f;
+  border-radius: 6px;
+}
+.duel-pic + .duel-pic.us { margin-left: -9px; box-shadow: -2px 0 0 #0d1119; }
+.duel-pic.us { border-color: rgba(95,217,104,0.55); }
+.duel-pic.en { width: 34px; height: 34px; border-color: rgba(217,74,74,0.65); }
+.duel-pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Пехота снята в рост — на маленькой плашке показываем голову и торс */
+.duel-pic:not(.veh) img[src*="/units/"] {
+  position: absolute;
+  width: 190%;
+  height: auto;
+  left: -45%;
+  top: -7%;
+}
+
+.duel-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #d94a4a;
+  opacity: 0.8;
+}
+.duel-more { margin-left: 3px; font-size: 9px; color: #55606c; }
+.duel-vs { margin: 0 6px; font-size: 12px; color: #55606c; }
+
+.duel-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.duel-title b {
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1.25;
+  color: #cfd8dc;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.duel-title i { font-size: 10px; font-style: normal; color: #55606c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.duel-state {
+  flex: none;
+  align-self: flex-start;
+  margin-bottom: 1px;
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 10px;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.duel-state.good    { color: #5fd968; border-color: rgba(95,217,104,0.45); }
+.duel-state.bad     { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
+.duel-state.warn    { color: #d9a940; border-color: rgba(217,169,64,0.45); }
+.duel-state.neutral { color: #55606c; border-color: #2a3644; }
+
+.duel-stats { display: flex; gap: 6px; margin-top: 8px; }
+
+.duel-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  padding: 5px 7px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+}
+.duel-side.out { border-left: 2px solid #5fd968; }
+.duel-side.inc { border-left: 2px solid #d94a4a; }
+.duel-side-lbl { width: 100%; font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+.duel-side b { font-size: 11px; font-weight: normal; color: #cfd8dc; }
+.duel-side em { font-style: normal; font-size: 11px; color: #ff6b4a; }
+.duel-side.inc em { color: #ff9a9a; }
+.duel-side em.zero { font-size: 9px; color: #55606c; }
+.duel-side u { width: 100%; text-decoration: none; font-size: 9px; color: #e8923a; }
+
+.duel-hp { display: flex; align-items: center; gap: 7px; margin-top: 7px; }
+.duel-hp span { flex: none; max-width: 40%; font-size: 9px; color: #8fa8c4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duel-hp em { flex: none; font-style: normal; font-size: 10px; color: #8fa8c4; }
+.duel-track { flex: 1; height: 4px; background: #1c2530; border-radius: 2px; overflow: hidden; }
+.duel-track i { display: block; height: 100%; background: #d94a4a; }
+
+.duel-lost { margin-top: 5px; font-size: 10px; color: #d94a4a; }

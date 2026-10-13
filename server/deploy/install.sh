@@ -11,6 +11,15 @@ REPO_DIR=/opt/swrt
 ENV_FILE=/etc/swrt.env
 export DEBIAN_FRONTEND=noninteractive
 
+# --- подкачка 1 ГБ: на малых тарифах (CPX02 — 1 ГБ памяти) установка и
+#     обновления системы не упрутся в память ---
+if ! swapon --show | grep -q /swapfile; then
+  if [ ! -f /swapfile ]; then fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024; fi
+  chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  sysctl -w vm.swappiness=10 >/dev/null; echo 'vm.swappiness=10' > /etc/sysctl.d/99-swrt.conf
+fi
+
 # --- пакеты ---
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg git debian-keyring debian-archive-keyring apt-transport-https unattended-upgrades ufw
@@ -57,7 +66,7 @@ ExecStart=/usr/bin/node $REPO_DIR/server/index.js
 Restart=always
 RestartSec=2
 LimitNOFILE=65536
-MemoryMax=3G
+MemoryMax=80%
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

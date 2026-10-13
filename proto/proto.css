@@ -112,7 +112,7 @@ button { font-family: inherit; }
 
 .rt-sel { font-size: 11px; color: #cfd8dc; min-height: 15px; margin-bottom: 7px; line-height: 1.35; }
 
-.rt-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.rt-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 
 .rt-btn {
   padding: 8px 4px;

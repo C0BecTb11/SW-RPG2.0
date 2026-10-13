@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
+<title>Бой 2.0 — прототип</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+<canvas id="rt-canvas"></canvas>
+
+<a id="rt-back" href="../game/galaxy-map.html">← В игру</a>
+
+<div class="rt-top">
+  <div class="rt-row">
+    <span class="rt-side">Бой 2.0 · прототип</span>
+    <span class="rt-spacer"></span>
+    <button class="rt-chip" id="rt-scen-500">~500</button>
+    <button class="rt-chip" id="rt-scen-2000">~2000</button>
+  </div>
+  <div class="rt-row rt-counts">
+    <span class="rt-rep">Респ <b id="rt-rep">0</b></span>
+    <span class="rt-cis">КНС <b id="rt-cis">0</b></span>
+    <span class="rt-dim">отр <b id="rt-sq">0/0</b></span>
+    <span class="rt-dim">один <b id="rt-singles">0</b></span>
+  </div>
+  <div class="rt-row rt-perf">
+    <span><b id="rt-fps">0</b> к/с</span>
+    <span>кадр <b id="rt-frame">0</b></span>
+    <span>расчёт <b id="rt-sim">0</b></span>
+    <span><b id="rt-net">0</b></span>
+    <span>LOD <b id="rt-lod">0</b></span>
+    <span class="rt-spacer"></span>
+    <button class="rt-chip sm" id="rt-src-worker" title="Расчёт в браузере">браузер</button>
+    <button class="rt-chip sm" id="rt-src-server" disabled>сервер</button>
+  </div>
+  <div class="rt-view rt-dim" id="rt-view"></div>
+</div>
+
+<div class="rt-bottom">
+  <div class="rt-sel" id="rt-sel"></div>
+  <div class="rt-btns">
+    <button class="rt-btn" id="rt-mode-squad">Отряд</button>
+    <button class="rt-btn" id="rt-mode-soldier">Боец</button>
+    <button class="rt-btn" id="rt-box">Рамка</button>
+    <button class="rt-btn" id="rt-all">Все</button>
+    <button class="rt-btn" id="rt-regroup" disabled>В строй</button>
+    <button class="rt-btn" id="rt-stop" disabled>Стоп</button>
+    <button class="rt-btn" id="rt-clear" disabled>Снять</button>
+    <button class="rt-btn gold" id="rt-bench">Замер</button>
+  </div>
+</div>
+
+<div class="rt-res" id="rt-res" hidden>
+  <div class="rt-res-card">
+    <div class="rt-res-head"><span class="rt-side">Замер плавности</span><button class="rt-x" id="rt-res-close" aria-label="Закрыть">×</button></div>
+    <div id="rt-res-body"></div>
+    <div class="rt-res-foot">
+      <span class="rt-dim">Рывок — кадр дольше 34 мс. Зелёным — плавно.</span>
+      <button class="rt-btn gold" id="rt-res-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="rt-toast" id="rt-toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/supabase-client.js"></script>
+<script src="../shared/rt-core.js"></script>
+<script src="../shared/rt-figures.js"></script>
+<script src="rt-client.js"></script>
+</body>
+</html>

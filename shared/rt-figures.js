@@ -264,5 +264,23 @@
     c.restore();
   }
 
-  root.SWRTFig = { bake: bake, corpse: corpse, DIRS: DIRS, FRAMES: FRAMES, FIG: FIG, TAU: TAU };
+  // Нарисовать бойца прямо на экран, без атласа (запасной путь, если
+  // браузер потерял содержимое картинки-атласа). c уже сдвинут в точку бойца
+  // и масштабирован в клетки поля.
+  function draw(c, T, u) {
+    u.gun = T.id === 'rep_sniper' ? 'sniper' : T.gun;
+    c.scale(FIG, FIG);
+    shadow(c, T.rad);
+    DRAW[T.draw](c, u);
+  }
+
+  // Есть ли в атласе картинка: центр первой фигурки должен быть непрозрачным
+  function check(A) {
+    try {
+      var d = A.canvas.getContext('2d').getImageData(Math.floor(A.cell / 2), Math.floor(A.cell / 2), 1, 1).data;
+      return d[3] > 0;
+    } catch (e) { return false; }
+  }
+
+  root.SWRTFig = { bake: bake, corpse: corpse, draw: draw, check: check, DIRS: DIRS, FRAMES: FRAMES, FIG: FIG, TAU: TAU };
 })(typeof self !== 'undefined' ? self : this);

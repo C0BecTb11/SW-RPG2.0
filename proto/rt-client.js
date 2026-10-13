@@ -299,7 +299,7 @@
   }
 
   // ---------- слой поля по чанкам ----------
-  var CHUNKS = new Map(), CHUNK_MAX = { 4: 80, 8: 48, 16: 20 };
+  var CHUNKS = new Map(), CHUNK_MAX = { 4: 80, 8: 32, 16: 12 };
   function tierFor(s) { return s < 6 ? 4 : s < 14 ? 8 : 16; }
 
   function hash2(x, y, seed) {
@@ -449,15 +449,29 @@
   }
 
   // ---------- атлас фигурок ----------
-  var ATLAS = null;
+  // Атлас проверяется после создания и потом раз в 3 с: встроенные браузеры
+  // на Android при нехватке памяти молча стирают содержимое холстов. Пропал —
+  // пересоздаём (меньше размером); не выходит — рисуем бойцов напрямую.
+  var ATLAS = null, ATLAS_TRIES = 0, ATLAS_SIZES = [72, 56, 40];
   function atlas() {
-    if (!ATLAS) {
+    if (!ATLAS || (ATLAS.bad && ATLAS_TRIES < ATLAS_SIZES.length)) {
       var t0 = performance.now();
-      ATLAS = F.bake(G.types, 72);
+      try { ATLAS = F.bake(G.types, ATLAS_SIZES[Math.min(ATLAS_TRIES, ATLAS_SIZES.length - 1)]); }
+      catch (e) { ATLAS = { canvas: null, bad: true, err: String(e) }; }
+      ATLAS_TRIES++;
       ATLAS.ms = performance.now() - t0;
+      ATLAS.ok = !!ATLAS.canvas && F.check(ATLAS);
+      ATLAS.bad = !ATLAS.ok;
+      ATLAS.checkedAt = performance.now();
+      if (ATLAS.bad) diag('атлас пуст (' + ATLAS_TRIES + '), ' + (ATLAS_TRIES < ATLAS_SIZES.length ? 'пересоздаю' : 'рисую бойцов напрямую'));
+    } else if (ATLAS.ok && performance.now() - ATLAS.checkedAt > 3000) {
+      ATLAS.checkedAt = performance.now();
+      if (!F.check(ATLAS)) { ATLAS.ok = false; ATLAS.bad = true; diag('атлас стёрт браузером — пересоздаю'); CHUNKS.clear(); ICONS.clear(); OVER.map = null; }
     }
     return ATLAS;
   }
+  var DIAG = [];
+  function diag(msg) { DIAG.push(msg); if (DIAG.length > 10) DIAG.shift(); try { console.warn('rt: ' + msg); } catch (e) {} }
 
   // ---------- кадр ----------
   var FR = { last: 0, dts: [], drawn: 0, mode: '', cpuSim: 0, cpuDraw: 0 };
@@ -514,7 +528,9 @@
   }
 
   function drawFigures(c, alpha, T) {
-    var A = atlas(), cell = A.cell, size = CAM.s * A.scale, half = size / 2;
+    var A = atlas();
+    if (!A.ok) return drawFiguresVector(c, alpha);
+    var cell = A.cell, size = CAM.s * A.scale, half = size / 2;
     var cols = 10, perType = A.dirs * A.frames;
     c.globalAlpha = alpha;
     var hw = CAM.vw / 2 / CAM.s + 1, hh = CAM.vh / 2 / CAM.s + 1, x0 = CAM.x - hw, x1 = CAM.x + hw, y0 = CAM.y - hh, y1 = CAM.y + hh;
@@ -575,6 +591,39 @@
     ICONS.set(key, im);
     if (ICONS.size > 400) ICONS.delete(ICONS.keys().next().value);
     return im;
+  }
+
+  // Запасной путь: бойцы кодом прямо на экран (как в демо). Медленнее,
+  // но не зависит от атласа
+  function drawFiguresVector(c, alpha) {
+    var dpr = CAM.dpr, s = CAM.s;
+    c.globalAlpha = alpha;
+    var hw = CAM.vw / 2 / s + 1, hh = CAM.vh / 2 / s + 1, x0 = CAM.x - hw, x1 = CAM.x + hw, y0 = CAM.y - hh, y1 = CAM.y + hh;
+    var u = { aim: 0, legs: 0, mv: 0, phase: 0, gun: '' };
+    G.squads.forEach(function(sq) {
+      if (sq.x < x0 - 8 || sq.x > x1 + 8 || sq.y < y0 - 8 || sq.y > y1 + 8) return;
+      var picked = G.sel.squads.has(sq.id), T = G.types[sq.type];
+      for (var i = 0; i < sq.members.length; i++) {
+        var id = sq.members[i], x = G.sx[id], y = G.sy[id];
+        if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+        var p = toScreen(x, y);
+        if (picked || G.sel.soldiers.has(id)) {
+          c.strokeStyle = 'rgba(240,200,106,0.95)'; c.lineWidth = 1.5;
+          c.beginPath(); c.arc(p[0], p[1], s * 0.48, 0, TAU); c.stroke();
+        }
+        u.aim = G.sAim[id]; u.legs = G.sLegs[id]; u.mv = G.sMv[id]; u.phase = G.sPhase[id];
+        c.save(); c.translate(p[0], p[1]); c.scale(s, s);
+        F.draw(c, T, u);
+        c.restore();
+        FR.drawn++;
+      }
+      if (sq.single && sq.members.length && s > 16) {
+        var sid = sq.members[0], pct = G.sHp[sid] / T.hp, pp = toScreen(G.sx[sid], G.sy[sid]);
+        c.strokeStyle = sq.side === G.side ? COL.own : COL.foe; c.lineWidth = 2;
+        c.beginPath(); c.arc(pp[0], pp[1], s * 0.62, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, pct)); c.stroke();
+      }
+    });
+    c.globalAlpha = 1;
   }
 
   function drawIcons(c, alpha, T) {
@@ -793,12 +842,17 @@
       BENCH.userInput();
     }, { passive: false });
     window.addEventListener('resize', function() { resize(); CHUNKS.clear(); ICONS.clear(); });
+    // вернулись на вкладку — проверить, не стёр ли браузер холсты
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible' && ATLAS) ATLAS.checkedAt = 0;
+    });
+    CV.addEventListener('contextrestored', function() { CHUNKS.clear(); ICONS.clear(); OVER.map = null; if (ATLAS) ATLAS.checkedAt = 0; });
   }
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
 
   // ---------- связь ----------
   function WorkerLink(room, side) {
-    var w = new Worker('sim-worker.js');
+    var w = new Worker('sim-worker.js?v=4');
     w.onmessage = function(e) { if (e.data instanceof ArrayBuffer) onBuf(e.data); };
     w.postMessage({ t: 'start', room: room, side: side });
     return { send: function(m) { w.postMessage(m); }, close: function() { w.terminate(); }, kind: 'worker' };
@@ -898,6 +952,8 @@
     $('rt-lod').textContent = st.lod || 0;
     $('rt-view').textContent = FR.mode + ' · ' + FR.drawn;
     if (G.map) $('rt-zoom').textContent = isOverview() ? 'Вблизи' : 'Обзор';
+    var dg = $('rt-diag');
+    if (dg) { var t = ATLAS && ATLAS.bad && ATLAS_TRIES >= ATLAS_SIZES.length ? 'фигурки: рисую напрямую' : DIAG.length ? DIAG[DIAG.length - 1] : ''; dg.textContent = t; dg.hidden = !t; }
   }
 
   var toastT = 0;
@@ -983,7 +1039,8 @@
       var r = { scenario: G.room, source: G.source, all: sum(this.frames), phases: {},
                 troops: (G.stat.troops || [0, 0])[0] + (G.stat.troops || [0, 0])[1], squads: G.squads.size,
                 simMs: this.sims.length ? Math.round(this.sims.reduce(function(a, b) { return a + b; }, 0) / this.sims.length * 100) / 100 : null,
-                netBps: Math.round((G.bytes - this.bytes0) / 36), atlasMs: ATLAS ? Math.round(ATLAS.ms) : null };
+                netBps: Math.round((G.bytes - this.bytes0) / 36), atlasMs: ATLAS ? Math.round(ATLAS.ms) : null,
+                atlas: ATLAS ? (ATLAS.ok ? 'ok ' + ATLAS.cell : 'вектор') : 'нет', diag: DIAG.slice(-5) };
       function avg(a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return a.length ? Math.round(s / a.length * 100) / 100 : 0; }
       for (var k in this.byPhase) { r.phases[k] = sum(this.byPhase[k]); r.phases[k].cpu = avg(this.cpByPhase[k] || []); }
       r.cpuMoveMs = avg(this.cs); r.cpuDrawMs = avg(this.cd);
@@ -1026,5 +1083,5 @@
   checkServer();
   requestAnimationFrame(frame);
   if (/[?&]bench=1/.test(location.search)) setTimeout(function() { BENCH.start(); }, 4000);
-  window.__rt = { G: G, CAM: CAM, BENCH: BENCH, FR: FR };
+  window.__rt = { G: G, CAM: CAM, BENCH: BENCH, FR: FR, atlas: function() { return ATLAS; }, DIAG: DIAG };
 })();

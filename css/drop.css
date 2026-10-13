@@ -1,0 +1,3284 @@
+/* Панель высадки десанта на наземной карте */
+
+/* Десант — справа внизу, у самой полосы вторжения, куда и тянут
+   карточки: палец идёт от кнопки к лотку и дальше вверх на карту.
+   Когда снизу открыта другая панель (боец, подсказка режима), кнопка
+   уходит, чтобы не висеть поверх неё. */
+#drop-btn {
+  position: fixed;
+  right: 12px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px 7px 7px;
+  background: linear-gradient(180deg, rgba(30,14,16,0.96) 0%, rgba(12,10,14,0.97) 100%);
+  border: 1px solid rgba(217,74,74,0.75);
+  border-radius: 12px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 1px rgba(217,74,74,0.12);
+  transition: opacity 0.16s ease, transform 0.18s ease;
+}
+#drop-btn .db-ico {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #d94a4a;
+  color: #0a0d14;
+  font-size: 17px;
+  font-weight: bold;
+}
+#drop-btn .db-txt { display: flex; flex-direction: column; gap: 2px; }
+#drop-btn .db-txt b {
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d94a4a;
+}
+#drop-btn .db-txt i {
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: #8fa8c4;
+  white-space: nowrap;
+}
+/* Готовые к высадке есть — от значка расходится кольцо. Только
+   transform и opacity: анимацию ведёт видеокарта, холст не трогаем */
+#drop-btn .db-ico { position: relative; }
+#drop-btn.ready .db-ico::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 2px solid rgba(217,74,74,0.7);
+  border-radius: 9px;
+  opacity: 0;
+  animation: db-ring 2.4s ease-out infinite;
+}
+@keyframes db-ring {
+  0%   { opacity: 0.9; transform: scale(1); }
+  70%  { opacity: 0;   transform: scale(1.45); }
+  100% { opacity: 0;   transform: scale(1.45); }
+}
+#drop-btn.idle { border-color: rgba(85,96,108,0.8); }
+#drop-btn.idle .db-ico { background: #55606c; }
+#drop-btn.idle .db-txt b { color: #8fa8c4; }
+/* Снизу другая панель: кнопка прячется, а не наезжает на неё */
+#drop-btn.tucked { opacity: 0; transform: translateY(12px); pointer-events: none; }
+/* Режим стройки: внизу по центру переключатель слоёв */
+#drop-btn.raised { bottom: calc(64px + env(safe-area-inset-bottom)); }
+
+#drop-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3,5,9,0.78);
+}
+
+#drop-panel-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: 70vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+}
+
+#drop-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+#drop-panel-title {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d94a4a;
+}
+
+#drop-panel-close {
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.drop-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 11px 13px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d94a4a;
+  border-radius: 8px;
+  text-align: left;
+  font-family: 'Courier New', monospace;
+}
+
+.drop-item-name {
+  font-size: 12px;
+  color: #cfd8dc;
+}
+
+.drop-item-sub {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+/* Корабль вне площадки сброса: видно, что груз есть, но высадить нельзя */
+.drop-item.not-ready {
+  opacity: 0.45;
+  border-left-color: #2a3644;
+}
+
+.drop-empty {
+  padding: 14px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+}
+
+/* Полоска погрузки: появляется при выборе своего юнита, если рядом есть
+   корабль, готовый его принять */
+#pickup-bar {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 1400;
+  padding: 11px 13px;
+  background: rgba(13,17,25,0.96);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #5fd968;
+  border-radius: 10px;
+  font-family: 'Courier New', monospace;
+}
+
+.pickup-title {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #55606c;
+  margin-bottom: 8px;
+}
+
+.pickup-ship {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.pickup-ship em {
+  font-style: normal;
+  font-size: 10px;
+  color: #5fd968;
+}
+
+.pickup-ship:disabled { opacity: 0.4; }
+
+/* Накладки над картой держим в собственных слоях композитора: иначе их
+   появление заставляет браузер заново растрировать холст 3840x3840,
+   и карта заметно дёргается. */
+#drop-btn,
+#pickup-bar {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Координаты корабля в списке — тусклее названия, но различимы */
+.pickup-ship b {
+  font-weight: normal;
+  color: #55606c;
+}
+
+/* Производственная линия в окне найма */
+.prod-slot {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #1c2530;
+  border-radius: 9px;
+  background: #10151e;
+  font-family: 'Courier New', monospace;
+}
+
+.prod-slot.free { border-left: 3px solid #5fd968; }
+.prod-slot.busy { border-left: 3px solid #d9a940; }
+
+.prod-slot-title {
+  font-size: 12px;
+  color: #cfd8dc;
+}
+
+.prod-slot-title em {
+  font-style: normal;
+  font-size: 10px;
+  color: #d94a4a;
+}
+
+.prod-slot-sub {
+  margin-top: 5px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.prod-slot-track {
+  height: 6px;
+  margin-top: 7px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.prod-slot-track i {
+  display: block;
+  height: 100%;
+  background: #d9a940;
+  transition: width 1s linear;
+}
+
+/* Очки действий и кнопка хода в панели юнита */
+.pickup-ap {
+  float: right;
+  color: #d9a940;
+  font-size: 10px;
+}
+
+.pickup-move {
+  border-left: 3px solid #5fd968;
+}
+
+.pickup-move:disabled {
+  opacity: 0.45;
+}
+
+/* Габарит и десант техники в списке высадки */
+.drop-size { color: #55606c; font-size: 10px; }
+.drop-pax  { color: #d9a940; font-size: 10px; }
+
+/* Полоса захвата поселения */
+/* Полоса захвата опускается ниже ряда с кнопками */
+#capture-bar {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  top: 104px;
+  z-index: 1400;
+  padding: 9px 12px;
+  background: rgba(13,17,25,0.95);
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  font-family: 'Courier New', monospace;
+}
+
+#capture-bar.mine   { border-left: 3px solid #5fd968; }
+#capture-bar.theirs { border-left: 3px solid #d94a4a; }
+
+.capture-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #cfd8dc;
+  margin-bottom: 6px;
+}
+
+.capture-track {
+  height: 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.capture-track i { display: block; height: 100%; transition: width 1s linear; }
+#capture-bar.mine   .capture-track i { background: #5fd968; }
+#capture-bar.theirs .capture-track i { background: #d94a4a; }
+
+/* ===== HUD наземного юнита ===== */
+
+#pickup-bar {
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+}
+
+.gu-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.gu-media {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+
+.gu-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.gu-info { flex: 1; min-width: 0; }
+
+.gu-name {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #cfd8dc;
+}
+
+.gu-sub {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.gu-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.gu-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+
+.gu-bar span { flex: none; width: 62px; letter-spacing: 1px; }
+.gu-bar b { flex: none; width: 46px; text-align: right; color: #cfd8dc; font-size: 10px; }
+
+.gu-track {
+  flex: 1;
+  height: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gu-track i { display: block; height: 100%; background: #5fd968; }
+.gu-track-cargo i { background: #d9a940; }
+
+.gu-ap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 11px 0 10px;
+  padding-top: 10px;
+  border-top: 1px solid #1c2530;
+}
+
+.gu-dots { display: flex; gap: 5px; }
+
+.gu-dot {
+  width: 11px;
+  height: 11px;
+  border: 1px solid #2a3644;
+  border-radius: 50%;
+  background: #10151e;
+}
+
+.gu-dot.on { background: #d9a940; border-color: #d9a940; }
+
+.gu-ap-text { font-size: 10px; color: #55606c; letter-spacing: 1px; }
+
+.gu-actions { display: flex; gap: 6px; }
+
+.gu-btn {
+  flex: 1;
+  padding: 11px 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.gu-btn-go { background: #5fd968; border-color: #5fd968; color: #0a0d14; font-weight: bold; }
+.gu-btn:disabled { opacity: 0.4; }
+
+/* Строки действий: посадка зелёная, содержимое жёлтое, корабль синий */
+.gu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  text-align: left;
+}
+
+.gu-row b { font-weight: normal; color: #55606c; }
+.gu-row em { font-style: normal; font-size: 10px; color: #8fa8c4; }
+.gu-row.board  { border-left-color: #5fd968; }
+.gu-row.inside { border-left-color: #d9a940; }
+.gu-row.ship   { border-left-color: #4a90d9; }
+.gu-row:disabled { opacity: 0.45; }
+
+/* Техника в трюме отличается от пехоты */
+.cargo-vehicle { border-color: #d9a940; }
+
+/* ===== Панель поселения ===== */
+
+#settlement-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3,5,9,0.78);
+}
+
+#settlement-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: 82vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+}
+
+#settlement-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+#settlement-title {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d9a940;
+}
+
+#settlement-close {
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* Довольство слева крупно, деньги справа: сначала «сколько», потом
+   «за что» */
+.stl-top { display: flex; gap: 14px; align-items: center; }
+
+.stl-mood {
+  flex: none;
+  width: 76px;
+  text-align: center;
+  padding: 10px 0;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+}
+
+.stl-mood-value {
+  font-family: 'Courier New', monospace;
+  font-size: 26px;
+  color: #d9a940;
+  line-height: 1;
+}
+
+.stl-mood-label {
+  margin-top: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #55606c;
+}
+
+.stl-money { flex: 1; min-width: 0; }
+
+.stl-money-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+
+.stl-money-row b { color: #5fd968; font-size: 12px; }
+.stl-money-row em { font-style: normal; color: #55606c; }
+
+.stl-track {
+  height: 6px;
+  margin: 12px 0 8px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stl-track i { display: block; height: 100%; background: #d9a940; }
+
+.stl-meta {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+}
+
+/* Итог дня заранее: игрок должен понимать, куда всё катится */
+.stl-verdict {
+  margin: 12px 0 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.stl-verdict.good { background: rgba(95,217,104,0.10); color: #5fd968; }
+.stl-verdict.bad  { background: rgba(217,74,74,0.10); color: #d94a4a; }
+
+.stl-task {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+}
+
+.stl-task.done { border-left-color: #5fd968; }
+
+.stl-task-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stl-task-title { font-size: 12px; color: #cfd8dc; }
+.stl-task-mark { font-size: 13px; color: #55606c; }
+.stl-task.done .stl-task-mark { color: #5fd968; }
+
+.stl-task-sub {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.stl-pay {
+  width: 100%;
+  margin-top: 9px;
+  padding: 9px;
+  background: #d9a940;
+  border: none;
+  border-radius: 7px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.stl-pay:disabled { opacity: 0.5; }
+
+.stl-empty {
+  padding: 18px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+}
+
+/* Ангар носителя в списке флота */
+.ship-hangar-line {
+  margin: 8px 0 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #8fa8c4;
+}
+
+/* Техника в панели трюма: своя строка с кнопкой, без счётчика */
+.cargo-row.cargo-vehicle { border-left: 3px solid #d9a940; }
+
+.cargo-action {
+  margin-top: 8px;
+  padding: 9px 14px;
+  background: #d9a940;
+  border: none;
+  border-radius: 7px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.cargo-action:disabled { opacity: 0.5; }
+
+/* ===== HUD наземного юнита: портрет и вкладки ===== */
+
+#pickup-bar { padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
+
+.gu-top { display: flex; gap: 11px; align-items: flex-start; }
+
+/* Портрет крупный: по нему юнит узнаётся быстрее, чем по названию */
+.gu-portrait {
+  flex: none;
+  width: 62px;
+  height: 78px;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+
+.gu-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+/* Технику показываем по корпусу: у высокой машины сверху только ствол */
+.gu-portrait.veh img { object-position: center 50%; }
+
+.gu-stats { flex: 1; min-width: 0; }
+
+.gu-name {
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #cfd8dc;
+}
+
+.gu-role { margin-top: 2px; font-size: 10px; color: #55606c; }
+
+.gu-hp { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.gu-hp-num { flex: none; font-size: 11px; color: #d94a4a; }
+
+.gu-hp-track {
+  flex: 1;
+  height: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gu-hp-track i { display: block; height: 100%; background: #d94a4a; }
+
+.gu-props {
+  display: flex;
+  gap: 12px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: #8fa8c4;
+}
+
+.gu-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.gu-ap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 11px 0 9px;
+  padding-top: 10px;
+  border-top: 1px solid #1c2530;
+}
+
+.gu-dots { display: flex; gap: 5px; }
+
+.gu-dot {
+  width: 11px;
+  height: 11px;
+  border: 1px solid #2a3644;
+  border-radius: 50%;
+  background: #10151e;
+}
+
+.gu-dot.on { background: #d9a940; border-color: #d9a940; }
+.gu-ap-text { font-size: 10px; color: #55606c; letter-spacing: 1px; }
+
+/* Вкладки */
+.gu-tabs { display: flex; gap: 5px; }
+
+.gu-tab {
+  flex: 1;
+  padding: 9px 4px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: #55606c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.gu-tab.active { background: #16202e; color: #4a90d9; border-color: #2a3644; }
+
+.gu-panel {
+  padding: 11px;
+  background: #16202e;
+  border: 1px solid #2a3644;
+  border-radius: 0 0 9px 9px;
+}
+
+.gu-empty, .gu-desc { font-size: 11px; color: #8fa8c4; line-height: 1.5; }
+.gu-empty { color: #55606c; text-align: center; padding: 10px 0; }
+
+/* Способности: слева плитки, справа описание выбранной */
+.gu-abils { display: flex; gap: 10px; }
+.gu-tiles { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.gu-tile {
+  width: 58px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+}
+
+.gu-tile-icon { font-size: 19px; line-height: 1; }
+.gu-tile-label { font-size: 8px; letter-spacing: 0.5px; }
+
+.gu-tile.active {
+  border-color: #4a90d9;
+  background: #16283c;
+  color: #cfd8dc;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.25);
+}
+
+/* Недоступная способность видна, но приглушена: игрок должен знать,
+   что она есть, и понимать, почему сейчас нельзя */
+.gu-tile.locked { opacity: 0.4; }
+
+.gu-abil-info { flex: 1; min-width: 0; }
+.gu-abil-name { font-size: 12px; color: #cfd8dc; margin-bottom: 4px; }
+.gu-abil-text { font-size: 10px; color: #8fa8c4; line-height: 1.45; }
+
+.gu-abil-meta {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.gu-abil-meta.warn { color: #d9a940; }
+
+.gu-abil-go {
+  width: 100%;
+  margin-top: 9px;
+  padding: 9px;
+  background: #4a90d9;
+  border: none;
+  border-radius: 7px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.gu-abil-go:disabled { opacity: 0.35; }
+
+.gu-rows { margin-top: 10px; }
+
+/* ===== Каталог исследований ===== */
+
+#research-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1700;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3,5,9,0.8);
+}
+
+#research-box {
+  width: 100%;
+  max-width: 480px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+}
+
+#research-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+#research-title {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #4a90d9;
+}
+
+#research-close {
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-size: 11px;
+  line-height: 1;
+}
+
+#research-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rs-cat {
+  margin: 12px 0 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+#research-list .rs-cat:first-child { margin-top: 0; }
+
+/* Цепочка: корень, стрелка, следующая ступень. Видно путь, а не набор
+   разрозненных плиток. */
+.rs-chain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rs-chain.branch { margin-left: 14px; }
+
+.rs-arrow {
+  flex: none;
+  color: #2a3644;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.rs-tile {
+  flex: none;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 5px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  text-align: center;
+}
+
+.rs-icon { width: 46px; height: 46px; object-fit: contain; }
+.rs-name { font-size: 9px; line-height: 1.2; }
+.rs-note { font-size: 9px; color: #55606c; }
+
+.rs-tile.active {
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.25);
+}
+
+/* Изученное подсвечено, недоступное приглушено, но видно: игрок должен
+   понимать, к чему стремиться */
+.rs-tile.done { border-color: #5fd968; }
+.rs-tile.done .rs-note { color: #5fd968; }
+.rs-tile.busy { border-color: #d9a940; }
+.rs-tile.busy .rs-note { color: #d9a940; }
+.rs-tile.locked { opacity: 0.45; }
+
+#research-info {
+  font-family: 'Courier New', monospace;
+  margin-top: 12px;
+  padding: 11px;
+  background: #16202e;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+}
+
+.rs-info-name { font-size: 12px; color: #cfd8dc; margin-bottom: 5px; }
+.rs-info-text { font-size: 10px; color: #8fa8c4; line-height: 1.5; }
+
+.rs-info-meta { margin-top: 7px; font-size: 10px; color: #55606c; }
+.rs-info-meta.ok { color: #5fd968; }
+.rs-info-meta.warn { color: #d9a940; }
+
+.rs-go {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  background: #4a90d9;
+  border: none;
+  border-radius: 8px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.rs-go:disabled { opacity: 0.4; }
+
+.rs-empty {
+  padding: 20px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+}
+
+/* Кнопка исследований в карточке постройки */
+#building-info-research {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px;
+  background: #16283c;
+  border: 1px solid #4a90d9;
+  border-radius: 8px;
+  color: #4a90d9;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+/* Предупреждение о своих под ударом: цена броска должна быть заметна */
+.warn-own { color: #d94a4a; font-weight: normal; }
+
+/* Иконка в плитке способности: без явного размера картинка рисуется
+   в натуральную величину и разносит панель */
+.gu-tile-img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+/* Переключатель техники в каталоге исследований */
+.rs-ships {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.rs-ship {
+  padding: 7px 11px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+}
+
+.rs-ship.active {
+  background: #16283c;
+  border-color: #4a90d9;
+  color: #cfd8dc;
+}
+
+/* Выбор дополнений при найме */
+.unit-up {
+  margin-top: 9px;
+  padding: 9px 10px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+}
+
+.unit-up-head {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #8fa8c4;
+  margin-bottom: 7px;
+}
+
+.unit-up-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.unit-up-tile {
+  width: 46px;
+  height: 46px;
+  padding: 3px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+}
+
+.unit-up-tile img { width: 100%; height: 100%; object-fit: contain; }
+
+.unit-up-tile.active {
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.25);
+}
+
+.unit-up-sub {
+  margin-top: 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+  line-height: 1.4;
+}
+
+/* Страховка на будущее: любая картинка внутри панели не вылезает
+   за её пределы, даже если для неё забыли задать размер */
+#pickup-bar img { max-width: 100%; }
+
+/* Разведсводка: компактная плашка в углу, а не полоса поперёк карты.
+   Свёрнута по умолчанию, раскрывается по нажатию. */
+#scout-bar {
+  position: fixed;
+  right: 10px;
+  top: 148px;
+  z-index: 1390;
+  max-width: 72vw;
+  padding: 7px 11px;
+  background: rgba(13,17,25,0.92);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #a06fd9;
+  border-radius: 10px;
+  font-family: 'Courier New', monospace;
+  cursor: pointer;
+}
+
+/* Кто-то на подходе — плашка янтарная, это предупреждение */
+#scout-bar.alert { border-left-color: #d9a940; }
+
+.scout-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.scout-chip b {
+  font-size: 10px;
+  letter-spacing: 1px;
+  font-weight: normal;
+  color: #a06fd9;
+}
+
+#scout-bar.alert .scout-chip b { color: #d9a940; }
+
+.scout-chip span { font-size: 11px; color: #cfd8dc; }
+
+.scout-list { display: none; margin-top: 6px; }
+#scout-bar.open .scout-list { display: block; }
+
+#scout-bar i {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8fa8c4;
+  white-space: normal;
+}
+
+/* Тот, кто ещё в пути, отмечен отдельно: это предупреждение, а не факт */
+#scout-bar i.scout-soon { color: #d9a940; }
+
+/* ===== Одарённые: портрет и список убитых в HUD ===== */
+
+/* Портрет героя обведён золотом — на карте и в панели он не рядовой */
+.gu-portrait.hero { border-color: #d9a940; }
+
+.hk-total {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #d9a940;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #1c2530;
+}
+
+.hk-list { display: flex; flex-direction: column; gap: 6px; }
+
+.hk-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+}
+
+.hk-face {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+
+.hk-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+.hk-name { flex: 1; min-width: 0; font-size: 11px; color: #8fa8c4; }
+
+.hk-count {
+  flex: none;
+  font-size: 12px;
+  color: #cfd8dc;
+}
+
+/* ===== Древо развития одарённого ===== */
+
+.gu-tree-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 9px;
+  padding: 10px;
+  background: #d9a940;
+  border: none;
+  border-radius: 7px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+#tree-panel {
+  position: fixed;
+  inset: 0;
+  /* Выше всех панелей наземной карты: кредиты и выход в галактику
+     сидят на 1000-1700 и раньше проступали сквозь древо */
+  z-index: 2200;
+  display: flex;
+  flex-direction: column;
+  background: #070a10;
+}
+
+#tree-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: #0e131c;
+  border-bottom: 1px solid #1c2530;
+}
+
+#tree-title {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #d9a940;
+}
+
+#tree-close {
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  width: 30px;
+  height: 30px;
+}
+
+/* Полотно листается и щиплется, поэтому прокрутку страницы глушим */
+#tree-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  background:
+    radial-gradient(circle at 50% 0%, #101a28 0%, #070a10 70%);
+}
+
+#tree-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+#tree-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.tree-link {
+  fill: none;
+  stroke: #1c2530;
+  stroke-width: 3;
+}
+
+.tree-link.open { stroke: #3c5a78; }
+
+#tree-nodes { position: absolute; left: 0; top: 0; }
+
+.tree-node {
+  position: absolute;
+  width: 96px;
+  padding: 0;
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Courier New', monospace;
+}
+
+.tree-node img {
+  width: 62px;
+  height: 62px;
+  border: 2px solid #2a3644;
+  border-radius: 10px;
+  background: #0a0d14;
+  display: block;
+}
+
+.tree-node-name {
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 1.25;
+  color: #8fa8c4;
+  text-align: center;
+}
+
+.tree-node-kind {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #55606c;
+}
+
+/* Состояния узла: закрыт, открыт, идёт обучение, освоено */
+.tree-node.locked img { filter: grayscale(1) brightness(0.45); }
+.tree-node.locked .tree-node-name { color: #55606c; }
+
+.tree-node.open img { border-color: #4a90d9; }
+
+.tree-node.training img {
+  border-color: #d9a940;
+  filter: brightness(0.7);
+}
+
+.tree-node.learned img { border-color: #5fd968; }
+.tree-node.learned .tree-node-name { color: #cfd8dc; }
+
+.tree-node.active img {
+  box-shadow: 0 0 0 2px #d9a940;
+}
+
+#tree-info {
+  flex: none;
+  padding: 12px 14px 16px;
+  background: #0e131c;
+  border-top: 1px solid #1c2530;
+}
+
+.tree-info-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tree-info-name {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #cfd8dc;
+}
+
+.tree-info-branch { font-size: 9px; color: #55606c; }
+
+.tree-info-desc {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8fa8c4;
+}
+
+.tree-info-meta {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: #d9a940;
+}
+
+.tree-hint {
+  margin-top: 9px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+.tree-hint.done { color: #5fd968; }
+
+.tree-go {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px;
+  background: #5fd968;
+  border: none;
+  border-radius: 7px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.tree-go:disabled { opacity: 0.5; }
+
+/* ===== Полевые постройки инженера ===== */
+
+/* Панель постройки — тот же HUD, что у бойца; кромка цветом стороны */
+#pickup-bar[data-side="ally"]  { border-left-color: #4a90d9; }
+#pickup-bar[data-side="enemy"] { border-left-color: #d94a4a; }
+
+/* Картинка постройки вырезана по контуру: показываем целиком, на подложке */
+.gu-portrait.struct {
+  width: 70px;
+  height: 70px;
+  background: radial-gradient(circle at 50% 60%, #1c2a1c 0%, #0a0d14 72%);
+}
+.gu-portrait.struct img { object-fit: contain; object-position: center; padding: 3px; }
+.gu-portrait.struct.side-mine  { border-color: rgba(95,217,104,0.55); }
+.gu-portrait.struct.side-ally  { border-color: rgba(74,144,217,0.55); }
+.gu-portrait.struct.side-enemy { border-color: rgba(217,74,74,0.6); }
+
+.struct-side { font-weight: normal; }
+.struct-side.side-mine  { color: #5fd968; }
+.struct-side.side-ally  { color: #4a90d9; }
+.struct-side.side-enemy { color: #d94a4a; }
+
+#pickup-bar[data-struct] .gu-props { flex-wrap: wrap; gap: 6px 12px; }
+
+.struct-status { gap: 9px; }
+.struct-st-label { flex: none; font-size: 10px; letter-spacing: 1px; color: #8fa8c4; }
+.struct-st-label.ok { color: #5fd968; }
+.struct-st-track {
+  flex: 1;
+  height: 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.struct-st-track i { display: block; height: 100%; background: #4a90d9; }
+.struct-st-time { flex: none; font-size: 10px; color: #cfd8dc; }
+
+.struct-panel { border-radius: 9px; }
+
+.gu-abil-go.struct-demolish {
+  background: transparent;
+  border: 1px solid #d94a4a;
+  color: #d94a4a;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+}
+
+/* Каталог построек в окне стройки */
+#build-panel.struct-mode #build-panel-box { max-width: 360px; max-height: 78vh; }
+
+.struct-note {
+  margin: -6px 0 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #55606c;
+  text-align: center;
+}
+.struct-note.warn { color: #d94a4a; }
+
+.struct-thumb {
+  position: relative;
+  background: radial-gradient(circle at 50% 60%, #1c2a1c 0%, #0a0d14 72%);
+}
+.build-panel-thumb.struct-thumb img { object-fit: contain; padding: 2px; }
+
+.struct-size {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 1px 3px;
+  background: rgba(5,6,10,0.85);
+  border-radius: 3px;
+  font-size: 8px;
+  color: #cfd8dc;
+  letter-spacing: 0.5px;
+}
+
+.struct-tag {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  color: #5fd968;
+  border: 1px solid rgba(95,217,104,0.5);
+  border-radius: 3px;
+  padding: 0 3px;
+  vertical-align: 1px;
+}
+
+.struct-effect { font-size: 10px; color: #8fa8c4; line-height: 1.4; margin-bottom: 4px; }
+.struct-limit { margin-top: 3px; font-size: 9px; color: #55606c; letter-spacing: 0.5px; }
+
+/* Неизученное видно, но приглушено и без цены в глаза */
+.build-panel-item.struct-locked .build-panel-thumb img { filter: grayscale(1) brightness(0.6); }
+.build-panel-item.struct-locked .build-panel-why { color: #d9a940; }
+
+/* ===== Развитие поселения: вкладки, уровень, кварталы ===== */
+/* Всё строится внутри #settlement-body. Язык тот же, что у панели
+   поселения выше: тёмные плашки, золото — поселение, синий — стройка,
+   зелёный/красный — хватает/не хватает. */
+
+/* Шапка с крестиком и вкладки прилипают к верху окна: длинная сводка
+   прокручивается под ними, закрыть панель можно с любого места */
+#settlement-header {
+  position: sticky;
+  top: -16px;
+  z-index: 3;
+  height: 26px;
+  margin: -16px -16px 0;
+  padding: 16px 16px 10px;
+  box-sizing: content-box;
+  background: #0d1119;
+}
+
+.stl-tabs {
+  position: sticky;
+  top: 36px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  margin: 0 -16px 12px;
+  padding: 0 16px 10px;
+  background: #0d1119;
+  border-bottom: 1px solid #1c2530;
+}
+
+.stl-tab {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 2px 8px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  color: #55606c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stl-tab.active {
+  background: #16202e;
+  border-color: #d9a940;
+  color: #cfd8dc;
+  box-shadow: inset 0 -2px 0 #d9a940;
+}
+
+.stl-tab i {
+  margin-left: 5px;
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0;
+  color: #55606c;
+}
+.stl-tab i:empty { display: none; }
+.stl-tab i.go   { color: #d9a940; }
+.stl-tab i.ok   { color: #5fd968; }
+.stl-tab i.bad  { color: #d94a4a; }
+.stl-tab i.busy { color: #4a90d9; }
+
+/* Заголовок раздела: подпись слева, значение справа, тонкая черта */
+.stl-sec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 16px 0 9px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1c2530;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+.stl-sec em { font-style: normal; color: #d9a940; letter-spacing: 1px; }
+
+/* ----- Уровень ----- */
+.stl-lvl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgba(217,169,64,0.10) 0%, #10151e 55%);
+  border: 1px solid #2a3644;
+  border-left: 3px solid #d9a940;
+  border-radius: 9px;
+  font-family: 'Courier New', monospace;
+}
+
+.stl-lvl-emb {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0d14;
+  border: 1px solid #d9a940;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 3px #0a0d14, inset 0 0 0 4px rgba(217,169,64,0.35);
+  color: #d9a940;
+  font-size: 16px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.stl-lvl-info { flex: 1; min-width: 0; }
+
+.stl-lvl-name {
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d9a940;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stl-lvl-sub { margin-top: 4px; font-size: 10px; color: #55606c; }
+
+/* Ступени — ромбы: пройденные залиты, строящаяся мигает синим */
+.stl-pips { flex: none; display: flex; gap: 7px; padding-right: 3px; }
+.stl-pips i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(217,169,64,0.55);
+  transform: rotate(45deg);
+}
+.stl-pips i.on { background: #d9a940; border-color: #d9a940; }
+.stl-pips i.up {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  animation: stl-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes stl-blink { 50% { opacity: 0.35; } }
+
+.stl-lvl.max {
+  border-left-color: #d9a940;
+  box-shadow: 0 0 0 1px rgba(217,169,64,0.25), 0 0 18px rgba(217,169,64,0.08);
+}
+
+/* ----- Довольство и из чего оно сложилось ----- */
+.stl-top-dev { align-items: stretch; }
+.stl-top-dev .stl-mood { display: flex; flex-direction: column; justify-content: center; }
+.stl-mood.ok  .stl-mood-value { color: #5fd968; }
+.stl-mood.low .stl-mood-value { color: #d9a940; }
+
+.stl-factors {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+
+.stl-factor {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px dashed #1c2530;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+.stl-factor:last-child { border-bottom: none; }
+.stl-factor span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stl-factor b { flex: none; font-size: 11px; color: #55606c; }
+.stl-factor b.base { color: #cfd8dc; }
+.stl-factor b.pos  { color: #5fd968; }
+.stl-factor b.neg  { color: #d94a4a; }
+
+/* Порог следующего уровня прямо на шкале довольства */
+.stl-mood-track { position: relative; overflow: visible; margin-bottom: 4px; }
+.stl-mood-track i { border-radius: 2px; }
+.stl-mood-track s {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  background: #cfd8dc;
+  box-shadow: 0 0 0 1px #0a0d14;
+}
+
+.stl-track-cap {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  height: 13px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  color: #3a4654;
+}
+.stl-track-cap em {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-style: normal;
+  color: #8fa8c4;
+  white-space: nowrap;
+}
+
+/* ----- Доход ----- */
+.stl-income {
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+}
+
+.stl-income-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: #8fa8c4;
+}
+.stl-income-row b { color: #5fd968; font-size: 13px; }
+.stl-income-row.sub { margin-top: 4px; font-size: 10px; color: #55606c; }
+.stl-income-row.sub span { color: #d9a940; }
+.stl-income-row em { font-style: normal; }
+
+/* ----- Очки развития: деление на очко ----- */
+.stl-devbar {
+  display: flex;
+  gap: 3px;
+  height: 9px;
+  margin-bottom: 9px;
+}
+.stl-devbar i {
+  flex: 1;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 2px;
+}
+.stl-devbar i.on { background: #d9a940; border-color: #d9a940; }
+
+/* ----- Требования к расширению ----- */
+.stl-reqs {
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.stl-req {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  border-top: 1px solid #161d28;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #8fa8c4;
+}
+.stl-req:first-child { border-top: none; }
+.stl-req i {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: bold;
+}
+.stl-req span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stl-req b { flex: none; font-weight: normal; color: #cfd8dc; }
+
+.stl-req.ok  i { background: rgba(95,217,104,0.14); color: #5fd968; }
+.stl-req.bad i { background: rgba(217,74,74,0.14); color: #d94a4a; }
+.stl-req.bad b { color: #d94a4a; }
+.stl-req.info i { background: rgba(217,169,64,0.14); color: #d9a940; font-weight: normal; }
+.stl-req.info b { color: #d9a940; }
+
+/* Что даст новая ступень — строка коротких показателей */
+.stl-gains-cap {
+  margin: 12px 0 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+.stl-gains {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  font-family: 'Courier New', monospace;
+}
+.stl-gains > div {
+  min-width: 0;
+  padding: 6px 2px 5px;
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+  text-align: center;
+}
+.stl-gains b { display: block; font-size: 13px; font-weight: normal; color: #d9a940; }
+.stl-gains span {
+  display: block;
+  margin-top: 2px;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  color: #55606c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stl-note {
+  margin-top: 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #55606c;
+  text-align: center;
+}
+.stl-note.warn { color: #d9a940; }
+.stl-pane[data-pane="districts"] > .stl-note { margin: -2px 0 10px; }
+
+/* Главная кнопка панели — золотая, как оплата задач */
+.stl-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px;
+  background: #d9a940;
+  border: none;
+  border-radius: 8px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.stl-go em {
+  font-style: normal;
+  font-weight: normal;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.75;
+}
+.stl-go:disabled {
+  background: #16202e;
+  color: #55606c;
+  box-shadow: inset 0 0 0 1px #2a3644;
+}
+.stl-go.busy { opacity: 0.6; }
+
+/* ----- Идёт расширение ----- */
+.stl-upg {
+  padding: 11px 12px 10px;
+  background: #10151e;
+  border: 1px solid rgba(74,144,217,0.45);
+  border-left: 3px solid #4a90d9;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+}
+
+.stl-upg-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #4a90d9;
+}
+.stl-upg-head b { font-size: 12px; font-weight: normal; letter-spacing: 1px; color: #cfd8dc; }
+
+.stl-upg-bar {
+  height: 8px;
+  margin: 10px 0 8px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stl-upg-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: repeating-linear-gradient(135deg, #4a90d9 0 6px, #3b7cc0 6px 12px);
+  transition: width 0.9s linear;
+}
+
+.stl-upg-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  color: #55606c;
+}
+.stl-upg-foot b { font-size: 15px; font-weight: normal; letter-spacing: 1px; color: #cfd8dc; }
+
+/* ----- Высший уровень ----- */
+.stl-max {
+  margin-top: 16px;
+  padding: 14px 14px 13px;
+  background:
+    linear-gradient(180deg, rgba(217,169,64,0.10), rgba(217,169,64,0.02)),
+    #10151e;
+  border: 1px solid rgba(217,169,64,0.55);
+  border-radius: 9px;
+  font-family: 'Courier New', monospace;
+  text-align: center;
+}
+.stl-max-title {
+  font-size: 12px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #d9a940;
+}
+.stl-max-title::before,
+.stl-max-title::after { content: '◆'; margin: 0 8px; font-size: 8px; vertical-align: 2px; }
+.stl-max-text { margin-top: 7px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+
+/* ----- Провизия и ополчение: карточки с тремя показателями ----- */
+.stl-card {
+  margin-top: 12px;
+  padding: 10px 12px 11px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+}
+.stl-card.ok   { border-left-color: #5fd968; }
+.stl-card.bad  { border-left-color: #d94a4a; background: linear-gradient(90deg, rgba(217,74,74,0.08), #10151e 60%); }
+.stl-card.wait { border-left-color: #4a90d9; }
+.stl-card.warn { border-left-color: #d9a940; }
+
+.stl-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #8fa8c4;
+}
+.stl-card-head em {
+  padding: 2px 7px;
+  border: 1px solid #2a3644;
+  border-radius: 4px;
+  font-style: normal;
+  font-size: 9px;
+  color: #55606c;
+}
+.stl-card.ok   .stl-card-head em { border-color: rgba(95,217,104,0.5); color: #5fd968; }
+.stl-card.bad  .stl-card-head em { border-color: rgba(217,74,74,0.6); color: #d94a4a; background: rgba(217,74,74,0.12); }
+.stl-card.wait .stl-card-head em { border-color: rgba(74,144,217,0.55); color: #4a90d9; }
+.stl-card.warn .stl-card-head em { border-color: rgba(217,169,64,0.55); color: #d9a940; }
+
+.stl-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 9px;
+}
+.stl-stats > div {
+  min-width: 0;
+  padding: 7px 4px 6px;
+  background: #0a0d14;
+  border: 1px solid #161d28;
+  border-radius: 6px;
+  text-align: center;
+}
+.stl-stats b {
+  display: block;
+  font-size: 16px;
+  font-weight: normal;
+  line-height: 1.1;
+  color: #cfd8dc;
+  white-space: nowrap;
+}
+.stl-stats span {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  color: #55606c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stl-stats .bad b  { color: #d94a4a; }
+.stl-stats .warn b { color: #d9a940; }
+.stl-stats .ok b   { color: #5fd968; }
+.stl-stats .wait b { color: #4a90d9; font-size: 14px; line-height: 1.25; }
+
+.stl-card-text { margin-top: 8px; font-size: 10px; line-height: 1.5; color: #55606c; }
+.stl-card-text.bad { color: #d94a4a; }
+.stl-card-text.warn { color: #d9a940; }
+
+/* ----- Ошибка сводки ----- */
+.stl-alert {
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  background: rgba(217,169,64,0.06);
+  border: 1px solid rgba(217,169,64,0.35);
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+}
+.stl-alert b { display: block; font-size: 11px; font-weight: normal; letter-spacing: 1px; color: #d9a940; }
+.stl-alert span { display: block; margin-top: 5px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+.stl-alert code {
+  display: block;
+  margin-top: 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #55606c;
+  word-break: break-word;
+}
+
+/* ----- Вкладка «Условия» ----- */
+.stl-base {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #8fa8c4;
+}
+.stl-base b { font-size: 18px; font-weight: normal; letter-spacing: 0; color: #d9a940; }
+.stl-base + .stl-track { margin-top: 7px; }
+
+/* ----- Кварталы: сетка 2×2 ----- */
+.stl-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stl-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 6px 8px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 9px;
+  font-family: 'Courier New', monospace;
+}
+
+.stl-slot-no {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  padding: 1px 4px;
+  background: rgba(5,6,10,0.85);
+  border-radius: 3px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #8fa8c4;
+}
+
+/* Плитка с картинкой; пока файла нет — крупный символ квартала */
+.stl-slot-art,
+.stl-dist-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 55%, #1d2a3a 0%, #0a0d14 75%);
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+}
+.stl-slot-art { aspect-ratio: 16 / 10; min-height: 90px; }
+.stl-slot-art img,
+.stl-dist-art img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.stl-glyph {
+  font-size: 30px;
+  line-height: 1;
+  color: #d9a940;
+  text-shadow: 0 0 14px rgba(217,169,64,0.35);
+}
+.has-img .stl-glyph { visibility: hidden; }
+
+.stl-slot-name {
+  margin-top: 7px;
+  padding: 0 2px;
+  font-size: 11px;
+  color: #cfd8dc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stl-slot-eff {
+  flex: 1;
+  margin-top: 3px;
+  padding: 0 2px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #8fa8c4;
+}
+
+.stl-slot-act {
+  margin-top: 8px;
+  padding: 7px 4px;
+  background: transparent;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.stl-slot-act.demolish { border-color: rgba(217,74,74,0.3); color: #c25656; }
+.stl-slot-act.pick { background: #d9a940; border-color: #d9a940; color: #0a0d14; font-weight: bold; }
+.stl-slot-act:disabled { opacity: 0.5; }
+
+/* Метка состояния в углу плитки: действует / стройка */
+.stl-slot-tag {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  padding: 1px 5px;
+  background: rgba(5,6,10,0.85);
+  border: 1px solid rgba(95,217,104,0.45);
+  border-radius: 3px;
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #5fd968;
+}
+.stl-slot.building .stl-slot-tag { border-color: rgba(74,144,217,0.55); color: #4a90d9; }
+
+/* Строится: картинка приглушена, поверх — отсчёт и синяя полоса */
+.stl-slot.building { border-color: rgba(74,144,217,0.5); }
+.stl-slot.building .stl-slot-art { border-style: dashed; border-color: rgba(74,144,217,0.6); }
+.stl-slot.building .stl-glyph,
+.stl-slot.building .stl-slot-art img { opacity: 0.22; }
+.stl-slot-prog {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px 9px;
+  pointer-events: none;
+}
+.stl-slot-prog em {
+  margin: 0 0 6px;
+  font-style: normal;
+  font-size: 17px;
+  letter-spacing: 1px;
+  color: #cfd8dc;
+  text-shadow: 0 1px 3px #000;
+}
+.stl-slot-prog div {
+  width: 100%;
+  height: 4px;
+  background: rgba(5,6,10,0.85);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.stl-slot-prog i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #4a90d9;
+  transition: width 0.9s linear;
+}
+
+/* Свободный участок — пунктир и плюс; управляющему — кнопка выбора */
+.stl-slot.empty { border-style: dashed; border-color: #3a4654; cursor: pointer; }
+.stl-slot.empty.ro { cursor: default; }
+.stl-slot.empty .stl-slot-art { background: #0a0d14; border-style: dashed; }
+.stl-slot.empty .stl-glyph { font-size: 26px; color: #3a4654; text-shadow: none; }
+.stl-slot.empty .stl-slot-name { color: #8fa8c4; }
+.stl-slot.empty .stl-slot-eff { color: #55606c; }
+
+/* Закрытый — видно, на каком уровне откроется */
+.stl-slot.locked { background: #0c1018; border-color: #1c2530; }
+.stl-slot.locked .stl-slot-art {
+  background: repeating-linear-gradient(135deg, #0a0d14 0 7px, #0d121a 7px 14px);
+}
+.stl-slot.locked .stl-glyph {
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: #3a4654;
+  text-shadow: none;
+  padding: 5px 9px;
+  border: 1px solid #2a3644;
+  border-radius: 5px;
+}
+.stl-slot.locked .stl-slot-no { color: #3a4654; }
+.stl-slot.locked .stl-slot-name { color: #55606c; }
+.stl-slot.locked .stl-slot-eff { color: #3a4654; }
+
+.stl-hint {
+  margin-top: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  line-height: 1.5;
+  color: #55606c;
+  text-align: center;
+}
+
+/* ----- Выбор квартала ----- */
+.stl-pick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #d9a940;
+}
+
+.stl-back {
+  padding: 7px 10px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.stl-dist {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-left: 3px solid #d9a940;
+  border-radius: 8px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+}
+.stl-dist:active { border-color: #d9a940; background: #16202e; }
+.stl-dist:disabled { opacity: 0.6; }
+.stl-dist-why { margin-top: 4px; font-size: 10px; color: #d94a4a; }
+.stl-dist.short { border-left-color: #d94a4a; }
+
+.stl-dist-art { flex: none; width: 58px; height: 58px; }
+.stl-dist-art .stl-glyph { font-size: 26px; }
+
+.stl-dist-info { flex: 1; min-width: 0; }
+
+.stl-dist-name {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: #cfd8dc;
+}
+.stl-dist-name em { flex: none; font-style: normal; font-size: 10px; color: #55606c; }
+.stl-dist-eff { margin-top: 3px; font-size: 10px; line-height: 1.35; color: #5fd968; }
+.stl-dist-desc { margin-top: 3px; font-size: 10px; line-height: 1.4; color: #55606c; }
+.stl-dist-cost { margin-top: 5px; font-size: 10px; line-height: 1.45; color: #4a90d9; }
+.stl-dist-cost b { font-weight: normal; color: #d9a940; }
+.stl-dist-cost .short { color: #d94a4a; }
+.stl-dist-cost em { font-style: normal; color: #8a4040; }
+
+/* ===== Боевые сводки ===== */
+
+/* Карточка итога: всплывает над нижней панелью, сама уходит через
+   несколько секунд, тап — закрыть сразу */
+#cb-toast {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 1500;
+  max-width: 460px;
+  margin: 0 auto;
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(13,17,25,0.97);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d9a940;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+  font-family: 'Courier New', monospace;
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.22s ease;
+  will-change: transform;
+}
+#cb-toast.show { opacity: 1; transform: translateY(0); }
+
+/* Карточка не перехватывает касания: под ней может быть цель.
+   Закрыть её можно крестиком, остальное она пропускает к карте. */
+#cb-toast { padding-right: 34px; }
+.cb-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #55606c;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+#cb-toast.show .cb-x { pointer-events: auto; }
+
+#cb-toast.cb-hit      { border-left-color: #d9a940; }
+#cb-toast.cb-kill     { border-left-color: #d94a4a;
+  background: linear-gradient(90deg, rgba(217,74,74,0.14), rgba(13,17,25,0.97) 55%); }
+#cb-toast.cb-miss     { border-left-color: #55606c; }
+#cb-toast.cb-heal     { border-left-color: #5fd968; }
+#cb-toast.cb-area     { border-left-color: #d9a940; }
+#cb-toast.cb-info     { border-left-color: #4a90d9; }
+#cb-toast.cb-incoming { border-left-color: #d94a4a; animation: cb-alarm 1.2s ease-out 1; }
+
+@keyframes cb-alarm {
+  0%   { box-shadow: 0 0 0 0 rgba(217,74,74,0.55), 0 10px 28px rgba(0,0,0,0.55); }
+  100% { box-shadow: 0 0 0 14px rgba(217,74,74,0), 0 10px 28px rgba(0,0,0,0.55); }
+}
+
+.cb-pics { flex: none; display: flex; align-items: center; gap: 4px; }
+.cb-arrow { color: #55606c; font-size: 12px; }
+
+.cb-pic {
+  width: 40px;
+  height: 50px;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+.cb-pic img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.cb-pic.veh img { object-position: center 50%; }
+.cb-pic.struct { background: radial-gradient(circle at 50% 60%, #1c2a1c 0%, #0a0d14 72%); }
+.cb-pic.struct img { object-fit: contain; object-position: center; padding: 3px; }
+.cb-pic.side-mine  { border-color: rgba(95,217,104,0.55); }
+.cb-pic.side-ally  { border-color: rgba(74,144,217,0.6); }
+.cb-pic.side-enemy { border-color: rgba(217,74,74,0.65); }
+
+/* Сбитая цель — портрет гаснет */
+#cb-toast.cb-kill .cb-pic.side-enemy img { filter: grayscale(1) brightness(0.55); }
+
+.cb-body { flex: 1; min-width: 0; }
+
+.cb-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cb-head b {
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d9a940;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#cb-toast.cb-kill .cb-head b     { color: #ff6b4a; }
+#cb-toast.cb-miss .cb-head b     { color: #8fa8c4; }
+#cb-toast.cb-heal .cb-head b     { color: #5fd968; }
+#cb-toast.cb-info .cb-head b     { color: #4a90d9; }
+#cb-toast.cb-incoming .cb-head b { color: #d94a4a; }
+
+.cb-chance { flex: none; font-size: 10px; color: #55606c; letter-spacing: 1px; }
+
+.cb-who {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8fa8c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cb-who i { font-style: normal; color: #55606c; }
+
+.cb-hp { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.cb-num {
+  flex: none;
+  min-width: 40px;
+  font-size: 17px;
+  font-weight: bold;
+  color: #ff6b4a;
+  letter-spacing: 0.5px;
+}
+#cb-toast.cb-miss .cb-num { color: #55606c; }
+#cb-toast.cb-heal .cb-num { color: #5fd968; }
+
+.cb-track {
+  position: relative;
+  flex: 1;
+  height: 7px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cb-track i { position: absolute; top: 0; bottom: 0; left: 0; display: block; }
+.cb-track i.left { background: #d94a4a; }
+#cb-toast.cb-heal .cb-track i.left { background: #5fd968; }
+#cb-toast.cb-incoming .cb-track i.left { background: #5fd968; }
+.cb-track i.lost { background: #d9a940; animation: cb-lost 0.9s ease-out 2; }
+
+@keyframes cb-lost {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.25; }
+  100% { opacity: 1; }
+}
+
+.cb-left { flex: none; font-size: 11px; color: #cfd8dc; }
+
+.cb-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.cb-chip {
+  padding: 3px 8px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 10px;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+.cb-chip.good { color: #5fd968; border-color: rgba(95,217,104,0.4); }
+.cb-chip.bad  { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
+
+.cb-line { margin-top: 5px; font-size: 10px; line-height: 1.4; color: #8fa8c4; }
+.cb-line.bad   { color: #d94a4a; }
+.cb-line.muted { color: #55606c; }
+
+/* ----- Цифры над картой ----- */
+
+/* Слой повторяет перенос и масштаб холста, а каждая подпись
+   масштабируется обратно — на любом зуме она одного размера */
+#gb-fx {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.fx-pos {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: scale(var(--fx-inv, 1));
+  transform-origin: 0 0;
+}
+
+.fx-txt {
+  position: absolute;
+  left: 0;
+  bottom: 2px;
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 0 0 3px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  transform: translate(-50%, 0);
+  opacity: 0;
+  animation: fx-rise 1.5s ease-out forwards;
+}
+
+.fx-dmg  { color: #ff6b4a; font-size: 18px; }
+.fx-heal { color: #5fd968; }
+.fx-miss { color: #cfd8dc; font-size: 12px; letter-spacing: 2px; }
+.fx-kill {
+  padding: 2px 7px;
+  background: rgba(217,74,74,0.92);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-shadow: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+}
+
+@keyframes fx-rise {
+  0%   { opacity: 0; transform: translate(-50%, 6px) scale(0.7); }
+  12%  { opacity: 1; transform: translate(-50%, -4px) scale(1.12); }
+  25%  { transform: translate(-50%, -8px) scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -38px) scale(1); }
+}
+
+/* ===== Разведданные о чужом бойце ===== */
+
+#pickup-bar[data-intel] .gu-portrait { position: relative; }
+.gu-portrait.ui-portrait.side-enemy { border-color: rgba(217,74,74,0.65); }
+.gu-portrait.ui-portrait.side-ally  { border-color: rgba(74,144,217,0.6); }
+
+.ui-tag {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 0;
+  background: rgba(217,74,74,0.88);
+  color: #fff;
+  font-size: 8px;
+  letter-spacing: 2px;
+  text-align: center;
+}
+.side-ally .ui-tag { background: rgba(74,144,217,0.88); }
+
+#pickup-bar[data-intel][data-side="ally"] .gu-hp-num { color: #4a90d9; }
+#pickup-bar[data-intel][data-side="ally"] .gu-hp-track i { background: #4a90d9; }
+
+.ui-owner { margin-top: 6px; font-size: 10px; color: #55606c; }
+.ui-owner b { font-weight: normal; color: #cfd8dc; }
+
+.ui-marks { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.ui-mark {
+  padding: 3px 8px;
+  border: 1px solid #2a3644;
+  border-radius: 10px;
+  background: #10151e;
+  font-size: 10px;
+  color: #8fa8c4;
+}
+.ui-mark.cover  { color: #c9a45c; border-color: rgba(201,164,92,0.45); }
+.ui-mark.camo   { color: #5fd9be; border-color: rgba(95,217,190,0.45); }
+.ui-mark.mind   { color: #c07ae8; border-color: rgba(163,74,217,0.5); }
+.ui-mark.reveal { color: #d9a940; border-color: rgba(217,169,64,0.45); }
+.ui-mark.wound  { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
+
+.ui-panel { margin-top: 10px; border-radius: 9px; }
+
+.ui-label {
+  margin-bottom: 7px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #55606c;
+}
+
+.ui-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ui-stat {
+  padding: 7px 4px 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  text-align: center;
+}
+.ui-stat i { display: block; font-style: normal; font-size: 11px; color: #55606c; line-height: 1; }
+.ui-stat b { display: block; margin-top: 3px; font-size: 14px; font-weight: normal; color: #cfd8dc; }
+.ui-stat span { display: block; margin-top: 2px; font-size: 9px; letter-spacing: 0.5px; color: #55606c; }
+
+.ui-desc {
+  margin-top: 9px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ui-hidden {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 8px 10px;
+  border: 1px dashed #2a3644;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #55606c;
+}
+.ui-lock { flex: none; font-size: 14px; color: #d94a4a; }
+#pickup-bar[data-side="ally"] .ui-lock { color: #4a90d9; }
+
+/* ===== Метка места из ленты и процессов ===== */
+.fx-ping {
+  position: absolute;
+  pointer-events: none;
+}
+.fx-ping i {
+  position: absolute;
+  inset: -6px;
+  border: 3px solid #d9a940;
+  border-radius: 8px;
+  opacity: 0;
+  animation: fx-ping 1.4s ease-out 3;
+}
+.fx-ping i + i { animation-delay: 0.45s; }
+
+@keyframes fx-ping {
+  0%   { opacity: 0.95; transform: scale(0.85); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+/* ===== Автоход: нить пути, выбор точки, строка в панели ===== */
+
+/* Нить живёт в слое #gb-fx и масштабируется вместе с картой, а толщины
+   делятся на зум (--fx-inv) — линия одинаково тонкая на любом масштабе */
+#am-svg {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.am-thread path,
+.am-thread rect { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.am-shadow {
+  stroke: rgba(4,6,10,0.55);
+  stroke-width: calc(var(--fx-inv, 1) * 5px);
+}
+
+.am-line {
+  stroke-width: calc(var(--fx-inv, 1) * 2px);
+  stroke-dasharray: calc(var(--fx-inv, 1) * 7px) calc(var(--fx-inv, 1) * 5px);
+}
+
+/* Узел шага — отрезок нулевой длины с круглым концом: точка того же
+   размера на любом зуме. Тёмная сердцевина делает из неё колечко */
+.am-node { stroke-width: calc(var(--fx-inv, 1) * 8px); }
+.am-node-in { stroke: #0a0d14; stroke-width: calc(var(--fx-inv, 1) * 3px); }
+
+.am-fin { stroke-width: calc(var(--fx-inv, 1) * 2px); }
+
+/* Нить рисуется только у выбранного отряда; тусклая — прежний путь
+   бойцов, которым сейчас выбирают новую точку */
+.am-thread.live { opacity: 0.5; }
+.am-thread.live .am-line,
+.am-thread.live .am-node,
+.am-thread.live .am-fin { stroke: #5fd968; }
+.am-thread.live .am-fin { fill: rgba(95,217,104,0.08); }
+.am-thread.live .am-shadow { stroke-width: calc(var(--fx-inv, 1) * 4px); }
+.am-thread.live .am-node { stroke-width: calc(var(--fx-inv, 1) * 6px); }
+.am-thread.live .am-node-in { stroke-width: calc(var(--fx-inv, 1) * 2px); }
+
+/* Выбранный боец или отряд — ярко. Пунктир неподвижный: бегущий
+   заставлял перерисовывать весь слой каждый кадр */
+.am-thread.live.hi { opacity: 1; }
+.am-thread.live.hi .am-line { stroke-width: calc(var(--fx-inv, 1) * 2.5px); }
+.am-thread.live.hi .am-node { stroke-width: calc(var(--fx-inv, 1) * 8px); }
+.am-thread.live.hi .am-node-in { stroke-width: calc(var(--fx-inv, 1) * 3px); }
+.am-thread.live.hi .am-fin { fill: rgba(95,217,104,0.16); }
+
+/* Предпросмотр — золотом: это ещё план, не приказ */
+.am-thread.plan .am-line,
+.am-thread.plan .am-fin { stroke: #d9a940; }
+.am-thread.plan .am-line { stroke-width: calc(var(--fx-inv, 1) * 2.5px); }
+.am-thread.plan .am-node { stroke: #d9a940; }
+.am-thread.plan .am-fin { fill: rgba(217,169,64,0.16); }
+.am-thread.plan.blocked .am-fin { stroke-dasharray: calc(var(--fx-inv, 1) * 4px) calc(var(--fx-inv, 1) * 3px); fill: rgba(217,169,64,0.06); }
+
+/* Пульс финиша — единственная анимация автохода на карте и только одна:
+   у выбранного отряда или в предпросмотре. HTML-рамка, а не SVG: transform
+   и opacity у неё считает видеокарта, слой с нитью не перерисовывается */
+.am-pulse-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: calc(var(--fx-inv, 1) * 2px) solid #5fd968;
+  border-radius: 5px;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: am-pulse 1.8s ease-out infinite;
+}
+.am-pulse-box.plan { border-color: #d9a940; }
+
+@keyframes am-pulse {
+  0%   { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0;   transform: scale(1.45); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-pulse-box { animation: none; opacity: 0.6; }
+}
+
+/* Значок ⇉ у своих бойцов на автоходе: нити спрятаны, а по значку видно,
+   кто идёт, — тап по бойцу покажет его путь. Неподвижный, экранного размера */
+#am-marks { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+
+/* Размер экранный, но на сильном отдалении значок уменьшается вместе
+   с картой — не закрывает бойца целиком */
+.am-markpos {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: scale(min(var(--fx-inv, 1), 1.3));
+  transform-origin: 0 0;
+}
+
+.am-mark {
+  position: absolute;
+  left: -11px;
+  top: -7px;
+  width: 16px;
+  height: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: #0a0d14;
+  border: 1px solid #d9a940;
+  border-radius: 7px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.65);
+  color: #d9a940;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1;
+}
+
+/* Отряд в сборе — золотые рамки вокруг бойцов, у ведущего плотнее */
+.am-ring {
+  fill: rgba(217,169,64,0.10);
+  stroke: #d9a940;
+  stroke-width: calc(var(--fx-inv, 1) * 2px);
+  stroke-dasharray: calc(var(--fx-inv, 1) * 5px) calc(var(--fx-inv, 1) * 3px);
+}
+.am-ring.lead {
+  fill: rgba(217,169,64,0.18);
+  stroke-width: calc(var(--fx-inv, 1) * 3px);
+  stroke-dasharray: none;
+}
+
+/* Подпись над финишем: как всплывающие цифры — обратный масштаб */
+#am-tags { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+
+.am-tagpos {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: scale(var(--fx-inv, 1));
+  transform-origin: 0 0;
+}
+
+.am-tag {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px 4px 7px;
+  white-space: nowrap;
+  background: rgba(8,11,17,0.92);
+  border: 1px solid rgba(95,217,104,0.55);
+  border-radius: 11px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #cfd8dc;
+}
+.am-tag i { font-style: normal; font-size: 11px; color: #5fd968; }
+.am-tag.plan { border-color: rgba(217,169,64,0.7); }
+.am-tag.plan i { color: #d9a940; }
+
+/* ----- Карточка выбора точки ----- */
+
+#am-card {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 1500;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 11px 12px 12px;
+  background: linear-gradient(180deg, rgba(16,21,30,0.97) 0%, rgba(8,11,17,0.97) 100%);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d9a940;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+  font-family: 'Courier New', monospace;
+  color: #cfd8dc;
+  box-sizing: border-box;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.am-head { display: flex; align-items: center; gap: 10px; }
+
+.am-ico {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(217,169,64,0.45);
+  border-radius: 9px;
+  background: radial-gradient(circle at 50% 40%, rgba(217,169,64,0.20) 0%, #0a0d14 75%);
+  color: #d9a940;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.am-ttl { flex: 1; min-width: 0; }
+.am-ttl b {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #d9a940;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.am-ttl span { display: block; margin-top: 3px; font-size: 10px; line-height: 1.4; color: #8fa8c4; }
+
+.am-stats { display: flex; gap: 6px; margin-top: 10px; }
+.am-stat {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px 6px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  text-align: center;
+}
+.am-stat.wide { flex: 1.7; }
+.am-stat b { display: block; font-size: 15px; color: #cfd8dc; letter-spacing: 0.5px; white-space: nowrap; }
+.am-stat span { display: block; margin-top: 1px; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+
+.am-warn { margin-top: 8px; font-size: 10px; line-height: 1.4; color: #d9a940; }
+.am-warn::before { content: '⚠ '; }
+.am-warn.err { color: #d94a4a; }
+
+.am-btns { display: flex; gap: 6px; margin-top: 9px; }
+
+.am-b {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 6px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.am-b i {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: #2a3644;
+  color: #cfd8dc;
+  font-style: normal;
+  font-weight: bold;
+}
+.am-b.on { border-color: #d9a940; color: #d9a940; background: rgba(217,169,64,0.10); }
+.am-b.on i { background: #d9a940; color: #0a0d14; }
+.am-b:disabled { opacity: 0.4; }
+
+.am-b.go {
+  flex: 2.2;
+  background: #d9a940;
+  border-color: #d9a940;
+  color: #0a0d14;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.am-b.go:disabled { opacity: 0.45; }
+
+/* ----- Строка состояния в панели бойца ----- */
+
+.am-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 9px;
+  padding: 6px 6px 6px 8px;
+  background: linear-gradient(90deg, rgba(95,217,104,0.10) 0%, rgba(16,21,30,0.6) 70%);
+  border: 1px solid rgba(95,217,104,0.35);
+  border-radius: 9px;
+}
+.am-strip.ask {
+  background: linear-gradient(90deg, rgba(217,74,74,0.10) 0%, rgba(16,21,30,0.6) 70%);
+  border-color: rgba(217,74,74,0.4);
+}
+
+.am-strip-ico {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: rgba(95,217,104,0.14);
+  color: #5fd968;
+  font-size: 14px;
+}
+.am-strip.ask .am-strip-ico { background: rgba(217,74,74,0.14); color: #d94a4a; }
+
+.am-strip-txt { flex: 1; min-width: 0; }
+.am-strip-txt b {
+  display: block;
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #5fd968;
+}
+.am-strip.ask .am-strip-txt b { color: #d94a4a; }
+.am-strip-txt span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #8fa8c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.am-strip-btn {
+  flex: none;
+  min-height: 34px;
+  padding: 0 11px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.am-strip-btn.stop { border-color: rgba(217,74,74,0.6); color: #d94a4a; background: rgba(217,74,74,0.08); }
+.am-strip-btn.x { padding: 0 9px; color: #55606c; }
+.am-strip-btn:disabled { opacity: 0.4; }
+
+/* Плитка автохода, пока он идёт, — с зелёной меткой в углу */
+.gu-tile.am-going { position: relative; }
+.gu-tile.am-going::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5fd968;
+  box-shadow: 0 0 6px rgba(95,217,104,0.8);
+}
+
+/* ----- Сводки автохода ----- */
+#cb-toast.cb-am-ok   { border-left-color: #5fd968; }
+#cb-toast.cb-am-near { border-left-color: #d9a940; }
+#cb-toast.cb-am-stop { border-left-color: #d94a4a; animation: cb-alarm 1.2s ease-out 1; }
+#cb-toast.cb-am-info { border-left-color: #55606c; }
+#cb-toast.cb-am-go   { border-left-color: #d9a940; }
+#cb-toast.cb-am-ok .cb-head b   { color: #5fd968; }
+#cb-toast.cb-am-near .cb-head b { color: #d9a940; }
+#cb-toast.cb-am-stop .cb-head b { color: #d94a4a; }
+#cb-toast.cb-am-info .cb-head b { color: #8fa8c4; }
+#cb-toast.cb-am-go .cb-head b   { color: #d9a940; }
+
+/* Плитки способностей держатся кучно сверху, даже когда описание справа
+   длинное: иначе третья плитка уезжала вниз на высоту текста */
+.gu-tiles { align-content: start; }
+
+/* Налёт мародёров в «Условиях» поселения: ждём — золото, идёт — красный, отбит — зелёный */
+.stl-task.mar-wait { border-left-color: #d9a940; }
+.stl-task.mar-raid {
+  border-left-color: #d94a4a;
+  background: linear-gradient(90deg, rgba(217,74,74,0.09), #10151e 65%);
+}
+.stl-task.mar-fail { border-left-color: #d94a4a; }
+.stl-task.mar-wait .stl-task-mark { color: #d9a940; }
+.stl-task.mar-raid .stl-task-mark,
+.stl-task.mar-fail .stl-task-mark { color: #d94a4a; font-weight: bold; }
+.stl-raid b { display: block; font-weight: normal; line-height: 1.45; }
+.stl-raid span { display: block; margin-top: 2px; color: #55606c; }
+.stl-raid.wait b { color: #d9a940; }
+.stl-raid.raid b, .stl-raid.fail b { color: #d94a4a; }
+.stl-raid.ok b { color: #5fd968; }
+.stl-raid-bar {
+  height: 4px;
+  margin-top: 8px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stl-raid-bar i { display: block; height: 100%; background: linear-gradient(90deg, #d9a940, #d94a4a); }
+.stl-verdict.wait { background: rgba(217,169,64,0.10); color: #d9a940; }
+
+/* ===== Каталог исследований в цвете КНС ===== */
+body.fac-cis #research-title { color: #d94a4a; }
+body.fac-cis .rs-tile.active {
+  border-color: #d94a4a;
+  box-shadow: 0 0 0 2px rgba(217,74,74,0.25);
+}
+body.fac-cis .rs-go { background: #d94a4a; }
+body.fac-cis .rs-ship.active { background: #2a1517; border-color: #d94a4a; }
+body.fac-cis #building-info-research {
+  background: #2a1517;
+  border-color: #d94a4a;
+  color: #e07a7a;
+}
+
+/* ===== Рывок BX-коммандос: росчерк и удар клинком ===== */
+.fx-lunge {
+  position: absolute;
+  height: 6px;
+  margin-top: -3px;
+  transform-origin: 0 50%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(217,74,74,0) 0%, rgba(217,74,74,0.55) 55%, #ffb0a0 100%);
+  box-shadow: 0 0 10px rgba(217,74,74,0.8);
+  pointer-events: none;
+  animation: fx-lunge 0.7s ease-out forwards;
+}
+@keyframes fx-lunge {
+  0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
+  25%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  100% { opacity: 0; clip-path: inset(0 0 0 0); }
+}
+.fx-slash {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  border-top: 4px solid #ffd0c4;
+  border-right: 4px solid rgba(217,74,74,0.9);
+  box-shadow: 0 0 14px rgba(217,74,74,0.9);
+  pointer-events: none;
+  opacity: 0;
+  animation: fx-slash 0.6s 0.18s ease-out forwards;
+}
+@keyframes fx-slash {
+  0%   { opacity: 0; transform: rotate(-80deg) scale(0.6); }
+  35%  { opacity: 1; transform: rotate(10deg) scale(1.05); }
+  100% { opacity: 0; transform: rotate(60deg) scale(1.25); }
+}
+
+/* ===== Десант: лоток с карточками для перетаскивания в полосу ===== */
+#dt-tray {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1350;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(16,13,17,0.97) 0%, rgba(8,10,15,0.98) 100%);
+  border: 1px solid rgba(217,74,74,0.35);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -10px 34px rgba(0,0,0,0.6);
+  font-family: 'Courier New', monospace;
+  transform: translateY(105%);
+  transition: transform 0.2s ease-out;
+}
+#dt-tray.open { transform: translateY(0); }
+
+.dt-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 9px;
+}
+.dt-ico {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(217,74,74,0.15);
+  color: #d94a4a;
+  font-size: 16px;
+}
+.dt-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dt-titles b {
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d94a4a;
+}
+.dt-titles i {
+  font-style: normal;
+  font-size: 10px;
+  color: #8fa8c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-x {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.dt-cards {
+  display: flex;
+  gap: 8px;
+  padding: 2px 12px 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.dt-cards::-webkit-scrollbar { display: none; }
+
+.dt-card {
+  flex: none;
+  width: 82px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 10px;
+  cursor: grab;
+  touch-action: pan-x;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 0.12s, opacity 0.12s, border-color 0.12s;
+}
+.dt-card.sel { border-color: #5fd968; box-shadow: 0 0 0 2px rgba(95,217,104,0.25); }
+.dt-card.lifted { opacity: 0.35; transform: scale(0.94); }
+.dt-card.off { opacity: 0.4; cursor: default; }
+
+.dt-thumb {
+  position: relative;
+  height: 64px;
+  overflow: hidden;
+  background: #05070b;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+}
+.dt-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+  pointer-events: none;
+}
+.dt-card.veh .dt-thumb img { object-fit: contain; object-position: center; }
+.dt-thumb em {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 1px 5px;
+  background: rgba(10,13,20,0.88);
+  border: 1px solid rgba(217,169,64,0.55);
+  border-radius: 6px;
+  font-style: normal;
+  font-size: 10px;
+  color: #d9a940;
+}
+.dt-name {
+  font-size: 10px;
+  color: #cfd8dc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-sub {
+  font-size: 8px;
+  color: #55606c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-card.off .dt-sub { color: #d9a940; }
+
+.dt-empty { padding: 18px 0; width: 100%; text-align: center; font-size: 11px; color: #55606c; }
+
+/* Карточка в руке: картинка над пальцем */
+.dt-ghost {
+  position: fixed;
+  left: -30px;
+  top: -30px;
+  z-index: 5200;
+  width: 60px;
+  height: 60px;
+  overflow: hidden;
+  border: 2px solid #5fd968;
+  border-radius: 10px;
+  background: #05070b;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.7);
+  pointer-events: none;
+  transition: opacity 0.12s, border-color 0.12s;
+}
+.dt-ghost img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.dt-ghost.veh img { object-fit: contain; object-position: center; }
+.dt-ghost.over-tray { opacity: 0.55; border-color: #55606c; }
+.dt-ghost.on-map {
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+.dt-ghost.on-map.bad { border-color: #d94a4a; opacity: 0.8; }
+.dt-card.flying { opacity: 0.6; }
+.dt-card.flying .dt-sub { color: #5fd968; }

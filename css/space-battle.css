@@ -1,0 +1,689 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+#space-back-btn {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 1000;
+  background: rgba(5,6,10,0.75);
+  border: 1px solid rgba(28,37,48,0.9);
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+#space-viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  background-color: #05060a;
+  background-image: url('../assets/ui/galaxy-bg-tile.png');
+  background-repeat: repeat;
+}
+
+/* Сама сетка — один большой div с линиями через repeating-linear-gradient.
+   130x130 клеток по 40px = поле 5200x5200px. Так не нужно создавать
+   10000 отдельных DOM-элементов/клеток — просто два градиента на слой. */
+#space-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5200px;
+  height: 5200px;
+  transform-origin: 0 0;
+  background-image:
+    repeating-linear-gradient(to right, rgba(120,170,220,0.12) 0, rgba(120,170,220,0.12) 1px, transparent 1px, transparent 40px),
+    repeating-linear-gradient(to bottom, rgba(120,170,220,0.12) 0, rgba(120,170,220,0.12) 1px, transparent 1px, transparent 40px);
+}
+
+/* Панель космической станции */
+#station-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5,6,10,0.6);
+  padding: 20px;
+}
+
+#station-panel-box {
+  position: relative;
+  width: 100%;
+  max-width: 280px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+#station-panel-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: 1px solid #2a3644;
+  color: #8fa8c4;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#station-panel-title {
+  font-size: 14px;
+  color: #cfd8dc;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+#station-panel-text {
+  font-size: 11px;
+  color: #8fa8c4;
+  margin-bottom: 16px;
+}
+
+#station-build-btn {
+  width: 100%;
+  padding: 11px;
+  background: #4a90d9;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+#station-demolish-btn {
+  width: 100%;
+  padding: 11px;
+  background: #a83a3a;
+  border: none;
+  color: #f0dede;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+#station-build-btn:disabled,
+#station-demolish-btn:disabled {
+  opacity: 0.5;
+}
+
+/* ===== Верфь и корабли ===== */
+.ship-sprite { pointer-events: auto; }
+
+#shipyard-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1700;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3,5,9,0.78);
+}
+
+#shipyard-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #0d1119 0%, #080b11 100%);
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+}
+
+#shipyard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #1c2530;
+}
+
+#shipyard-title {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #4a90d9;
+}
+
+#shipyard-close, #ship-info-close {
+  background: none;
+  border: 1px solid #2a3644;
+  color: #8fa8c4;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#shipyard-list {
+  overflow-y: auto;
+  padding: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shipyard-empty {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+  padding: 22px 0;
+}
+
+.ship-card {
+  display: flex;
+  gap: 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.ship-card-media {
+  width: 76px;
+  height: 152px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #05070b;
+  border: 1px solid #22303f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ship-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.ship-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.ship-card-name {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: #e6edf3;
+  margin-bottom: 3px;
+}
+
+.ship-card-desc {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.ship-card-stats, #ship-info-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+
+.ship-card-stats div, #ship-info-stats div {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+}
+
+.ship-card-stats span, #ship-info-stats span { color: #55606c; }
+.ship-card-stats b, #ship-info-stats b { color: #cfd8dc; }
+
+.ship-order-btn {
+  margin-top: auto;
+  padding: 9px;
+  background: #4a90d9;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ship-order-btn:disabled { background: #55606c; }
+
+#station-shipyard-btn {
+  width: 100%;
+  padding: 11px;
+  margin-bottom: 8px;
+  background: #4a90d9;
+  border: none;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+#ship-info {
+  position: fixed;
+  inset: 0;
+  z-index: 1650;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3,5,9,0.6);
+  padding: 20px;
+}
+
+#ship-info-box {
+  position: relative;
+  width: 100%;
+  max-width: 280px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  padding: 18px;
+}
+
+#ship-info-close { position: absolute; top: 10px; right: 10px; }
+
+#ship-info-name {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #cfd8dc;
+  margin-bottom: 12px;
+}
+
+#ship-queue {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 70vw;
+}
+
+.order-chip {
+  background: rgba(5,6,10,0.85);
+  border: 1px solid rgba(74,144,217,0.5);
+  color: #cfe0f5;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  padding: 5px 10px;
+  border-radius: 12px;
+}
+
+#ship-info-commander { margin-top: 12px; }
+
+.ship-assign-title {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #55606c;
+  margin-bottom: 6px;
+}
+
+.ship-assign-select {
+  width: 100%;
+  background: #161b24;
+  border: 1px solid #2a3644;
+  color: #cfd8dc;
+  padding: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.ship-assign-hint {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  color: #55606c;
+  margin-top: 6px;
+}
+
+.ship-assign-note {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  color: #55606c;
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
+/* Выбор истребителей при заказе носителя */
+.ship-addon {
+  margin: 10px 0;
+  padding: 9px 11px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+}
+
+.ship-addon-head {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #8fa8c4;
+  margin-bottom: 7px;
+}
+
+.ship-addon-row { display: flex; gap: 5px; }
+
+.ship-addon-btn {
+  flex: 1;
+  padding: 8px 0;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 6px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.ship-addon-btn.active {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #0a0d14;
+  font-weight: bold;
+}
+
+/* Цена и срок пересчитываются сразу: игрок должен видеть, во что
+   обходится каждый истребитель, до нажатия «Построить» */
+.ship-addon-sub {
+  margin-top: 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #55606c;
+}
+
+/* Состав ангара: два ряда с общим ограничением по местам */
+.ship-addon-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 9px 0 5px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #cfd8dc;
+}
+
+.ship-addon-line em {
+  font-style: normal;
+  font-size: 9px;
+  color: #55606c;
+}
+
+/* Недоступные количества гасим: правило видно до нажатия */
+.ship-addon-btn:disabled {
+  opacity: 0.3;
+}
+
+/* Выбор дополнений при заказе корабля */
+.ship-up-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 6px;
+}
+
+.ship-up {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 4px;
+  background: #10151e;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 8px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.ship-up img { width: 38px; height: 38px; object-fit: contain; }
+
+/* Выбранное дополнение подсвечено: набор виден с одного взгляда */
+.ship-up.active {
+  border-color: #4a90d9;
+  background: #16283c;
+  color: #cfd8dc;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.25);
+}
+
+/* ===== Док: ремонт, модернизация и пополнение ангара ===== */
+
+.dock-box {
+  margin-bottom: 14px;
+  padding: 11px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+}
+
+.dock-head {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #4a90d9;
+  padding-bottom: 9px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid #1c2530;
+}
+
+.dock-empty {
+  font-size: 11px;
+  color: #55606c;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.dock-card {
+  padding: 10px 0;
+  border-bottom: 1px solid #1c2530;
+}
+
+.dock-card:last-child { border-bottom: none; }
+
+.dock-top { display: flex; align-items: center; gap: 10px; }
+
+.dock-face {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #0a0d14;
+}
+
+.dock-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.dock-info { flex: 1; min-width: 0; }
+
+.dock-name {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #cfd8dc;
+}
+
+.dock-hp { display: flex; align-items: center; gap: 7px; margin-top: 5px; }
+.dock-hp span { flex: none; font-size: 10px; color: #d94a4a; }
+
+.dock-track {
+  flex: 1;
+  height: 5px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dock-track i { display: block; height: 100%; background: #d94a4a; }
+
+.dock-sub { margin-top: 4px; font-size: 10px; color: #55606c; }
+
+.dock-lock {
+  margin-top: 8px;
+  padding: 8px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  font-size: 10px;
+  color: #55606c;
+  text-align: center;
+}
+
+.dock-go {
+  display: block;
+  width: 100%;
+  margin-top: 9px;
+  padding: 10px;
+  background: #4a90d9;
+  border: none;
+  border-radius: 7px;
+  color: #0a0d14;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.dock-go:disabled { background: #1c2530; color: #55606c; }
+
+/* Трофей абордажа: дебафы до ремонта, разборка на сырьё */
+.dock-trophy {
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: rgba(217,169,64,0.07);
+  border: 1px solid rgba(217,169,64,0.4);
+  border-radius: 7px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #b9a982;
+}
+.dock-trophy b { display: block; font-weight: normal; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #f0d48a; }
+.dock-go.dock-scrap { background: none; border: 1px dashed rgba(217,169,64,0.6); color: #f0d48a; font-weight: normal; }
+.dock-go.dock-scrap:active { background: rgba(217,169,64,0.15); }
+
+/* ===== Открытый космос ===== */
+
+#deep-space-mark {
+  position: fixed;
+  left: 50%;
+  top: 92px;
+  transform: translateX(-50%);
+  z-index: 900;
+  max-width: 82vw;
+  padding: 10px 16px;
+  background: rgba(10, 13, 20, 0.82);
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  pointer-events: none;
+}
+
+#deep-space-mark b {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #8fa8c4;
+  font-weight: normal;
+}
+
+#deep-space-mark span {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #55606c;
+}
+
+#deep-space-mark i {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-size: 9px;
+  color: #3c4652;
+}
+
+/* В пустоте нет планеты внизу — убираем её свечение из фона сетки */
+body.deep-space #space-grid { background-image: none; }
+
+/* Туман войны: маска клетка-в-точку, растянутая на поле. Сглаживание
+   браузера даёт мягкую границу обзора. Касания проходят насквозь. */
+#space-fog {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+/* ===== Верфь: занятый стапель и сырьё со склада ===== */
+.sy-busy {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(217,169,64,0.4);
+  border-left: 3px solid #d9a940;
+  border-radius: 9px;
+  background: rgba(217,169,64,0.06);
+  font-family: 'Courier New', monospace;
+}
+.sy-busy-ico { flex: none; color: #d9a940; font-size: 15px; }
+.sy-busy-txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sy-busy-txt b { font-size: 10px; font-weight: normal; letter-spacing: 1.5px; text-transform: uppercase; color: #d9a940; }
+.sy-busy-txt i { font-style: normal; font-size: 10px; color: #8fa8c4; }
+
+.sy-res {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 8px 0 2px;
+  font-family: 'Courier New', monospace;
+}
+.sy-res-lbl { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+.sy-res-chip {
+  padding: 3px 7px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #8fa8c4;
+  border-radius: 5px;
+  font-size: 10px;
+  color: #cfd8dc;
+}
+.sy-res-chip.short { border-color: rgba(217,74,74,0.55); color: #ff9a9a; background: rgba(217,74,74,0.07); }

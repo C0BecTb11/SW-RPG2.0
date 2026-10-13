@@ -1,0 +1,21 @@
+#site-banner {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  aspect-ratio: 21 / 9;
+  background-image: url('../assets/ui/banner.jpg'), linear-gradient(135deg, #0d1119 0%, #161b24 50%, #0d1119 100%);
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid #1c2530;
+}
+
+/* фолбэк для браузеров без aspect-ratio (на старых мобилках) */
+@supports not (aspect-ratio: 21 / 9) {
+  #site-banner {
+    height: 0;
+    padding-top: 42.85%; /* 9/21 */
+  }
+}

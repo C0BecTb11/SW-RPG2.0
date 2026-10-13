@@ -76,6 +76,8 @@ button { font-family: inherit; }
 .rt-dim b { color: #8fa8c4; }
 
 .rt-perf { font-size: 10px; color: #55606c; gap: 8px; }
+.rt-diag { margin-top: 6px; font-size: 10px; color: #e3a24a; }
+.rt-diag[hidden] { display: none; }
 .rt-view { position: absolute; right: 12px; top: 10px; font-size: 9px; display: none; }
 .rt-perf b { color: #8fa8c4; font-weight: normal; }
 

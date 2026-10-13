@@ -237,7 +237,9 @@ $$;
 
 -- ---------- Функции игрового сервера ----------
 
--- Сервер стартовал: адрес, версия; в ответ — активные бои для продолжения
+-- Сервер стартовал: адрес, версия; в ответ — активные бои для продолжения.
+-- Чистки журнала здесь нет: подключение Supabase к Claude не пропускает
+-- запросы с удалением строк. Журнал маленький (~1,5 тыс. строк в сутки).
 create or replace function public.rt_server_hello(p_key text, p_url text, p_version text, p_info jsonb default null)
 returns jsonb
 language plpgsql security definer
@@ -248,8 +250,6 @@ begin
   update rt_servers set url = p_url, version = p_version, info = p_info,
          started_at = now(), seen_at = now()
    where id = 'main';
-  delete from rt_server_log where at < now() - interval '14 days';
-  delete from rt_bench where at < now() - interval '90 days';
   return coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'kind', b.kind, 'system_id', b.system_id,
                                                        'snapshot', b.snapshot, 'meta', b.meta))
                    from rt_battles b where b.status = 'active'), '[]'::jsonb);
@@ -341,12 +341,12 @@ begin
   insert into rt_battles (kind, system_id, meta) values (p_kind, p_system, coalesce(p_meta, '{}'::jsonb))
   returning id into bid;
 
-  -- Блокировки умершего боя (сервер пропал) больше не действуют — заменяем
-  delete from rt_battle_locks where (obj_kind = 'unit' and obj_id = any(us)) or (obj_kind = 'ship' and obj_id = any(ss));
+  -- Строка от прошлого (закрытого или умершего) боя переходит к новому
   insert into rt_battle_locks (obj_kind, obj_id, battle_id)
   select 'unit', v, bid from unnest(us) v
   union all
-  select 'ship', v, bid from unnest(ss) v;
+  select 'ship', v, bid from unnest(ss) v
+  on conflict (obj_kind, obj_id) do update set battle_id = excluded.battle_id, locked_at = now();
 
   return jsonb_build_object('battle_id', bid, 'units', to_jsonb(us), 'ships', to_jsonb(ss));
 end;
@@ -375,22 +375,21 @@ begin
 end;
 $$;
 
--- Закрыть бой: итог, снять блокировки
+-- Закрыть бой. Блокировки перестают действовать сами: rt_obj_busy_2_0
+-- учитывает только активные бои. Строки блокировок переиспользуются при
+-- следующем бою этих же объектов (upsert в rt_battle_open).
 create or replace function public.rt_battle_close(p_key text, p_battle uuid, p_result jsonb default null,
                                                   p_status text default 'finished')
 returns boolean
 language plpgsql security definer
 set search_path to 'public', 'pg_temp'
 as $$
-declare ok boolean;
 begin
   perform rt_need_key(p_key);
   if p_status not in ('finished', 'aborted') then raise exception 'rt: неверный статус'; end if;
   update rt_battles set status = p_status, ended_at = now(), result = p_result
    where id = p_battle and status = 'active';
-  ok := found;
-  delete from rt_battle_locks where battle_id = p_battle;
-  return ok;
+  return found;
 end;
 $$;
 

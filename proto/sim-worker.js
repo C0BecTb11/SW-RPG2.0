@@ -2,7 +2,7 @@
 // двоичный поток, что у игрового сервера, только в отдельном потоке Worker.
 // Основной поток страницы получает ровно то, что получал бы по WebSocket.
 
-importScripts('../shared/rt-core.js?v=4');
+importScripts('../shared/rt-core.js?v=5');
 
 var room = null, client = null, timer = null, nextAt = 0, scen = '';
 

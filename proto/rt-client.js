@@ -452,7 +452,8 @@
   // Атлас проверяется после создания и потом раз в 3 с: встроенные браузеры
   // на Android при нехватке памяти молча стирают содержимое холстов. Пропал —
   // пересоздаём (меньше размером); не выходит — рисуем бойцов напрямую.
-  var ATLAS = null, ATLAS_TRIES = 0, ATLAS_SIZES = [72, 56, 40];
+  // 56 px с первого раза: на телефоне Артёма атлас 72 px каждый раз приходил пустым
+  var ATLAS = null, ATLAS_TRIES = 0, ATLAS_SIZES = [56, 44, 36];
   function atlas() {
     if (!ATLAS || (ATLAS.bad && ATLAS_TRIES < ATLAS_SIZES.length)) {
       var t0 = performance.now();
@@ -852,7 +853,7 @@
 
   // ---------- связь ----------
   function WorkerLink(room, side) {
-    var w = new Worker('sim-worker.js?v=4');
+    var w = new Worker('sim-worker.js?v=5');
     w.onmessage = function(e) { if (e.data instanceof ArrayBuffer) onBuf(e.data); };
     w.postMessage({ t: 'start', room: room, side: side });
     return { send: function(m) { w.postMessage(m); }, close: function() { w.terminate(); }, kind: 'worker' };

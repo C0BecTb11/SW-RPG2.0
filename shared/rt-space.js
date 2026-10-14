@@ -98,7 +98,7 @@
       hullMax: C.hp * 3, hull: C.hp * 3, shMax: C.shield * 2, sh: [C.shield * 2, C.shield * 2, C.shield * 2, C.shield * 2],
       shHit: [0, 0, 0, 0], regen: C.regen * 0.5, acc: C.acc / 100, eva: C.eva / 100,
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
-      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, alert: true }),
+      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true }),
       guns: [], eff: {}, hangar: (C.craft || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
     };
     // орудия с секторами обстрела

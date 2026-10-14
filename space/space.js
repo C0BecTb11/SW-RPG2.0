@@ -60,10 +60,9 @@
       if (token !== START) return;            // уже нажали другой бой
       var B = new SP.Battle({ seed: 1977 + Date.now() % 1000 });
       sc.ships.forEach(function(s) {
-        var plan = G.plans[s[0]], rep = plan.faction === 'republic';
-        var figs = rep ? [S.TYPE_BY_ID.rep_dc15a, S.TYPE_BY_ID.rep_heavy] : [S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b2];
-        // каждый бой — свежий экипаж: план копируется не нужно, состояние живёт в Crew
-        B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figs: figs });
+        var plan = G.plans[s[0]];
+        // каждый бой — свежий экипаж (состояние живёт в Crew, план общий и не меняется)
+        B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: F.crewFigs(plan.faction, ALL) });
       });
       G.who = null;
       G.B = B; G.fx = { shots: [], booms: [], shields: [] }; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
@@ -187,6 +186,8 @@
     drawGrid(c);
     // корабли
     for (i = 0; i < B.ships.length; i++) drawShip(c, B.ships[i], T);
+    // куда бьёт враг по нашим кораблям
+    drawThreats(c, T);
     // цели выбранного корабля
     if (G.sel >= 0) drawAims(c, B.ships[G.sel], T);
     // отсеки на схеме — в режиме прицела
@@ -326,6 +327,36 @@
       if (s > 0.05 || on) {
         c.strokeStyle = col; c.lineWidth = on ? 2 : 1.2;
         c.beginPath(); c.arc(p[0], p[1], on ? 5 : g.t === 'pd' ? 2.5 : 3.5, 0, TAU); c.stroke();
+      }
+    }
+  }
+  // Наведение вражеских пушек на наши корабли: {корабль: {отсек: число}}
+  function threats() {
+    var B = G.B, out = {};
+    for (var i = 0; i < B.ships.length; i++) {
+      var en = B.ships[i]; if (en.dead || en.side === G.side) continue;
+      for (var k = 0; k < en.guns.length; k++) {
+        var g = en.guns[k], a = g.aimAt;
+        if (!a || a.craft || !a.ship || a.ship.side !== G.side) continue;
+        var m = out[a.ship.n] || (out[a.ship.n] = {});
+        m[a.room || 0] = (m[a.room || 0] || 0) + 1;
+      }
+    }
+    return out;
+  }
+  function drawThreats(c, T) {
+    var B = G.B, s = CAM.s;
+    for (var i = 0; i < B.ships.length; i++) {
+      var en = B.ships[i]; if (en.dead || en.side === G.side) continue;
+      for (var k = 0; k < en.guns.length; k++) {
+        var g = en.guns[k], a = g.aimAt;
+        if (!a || a.craft || !a.ship || a.ship.side !== G.side || a.ship.dead) continue;
+        var r = a.room && a.ship.plan.roomByN[a.room];
+        var w = r ? B.toWorld(a.ship, r.cx, r.cy) : [a.ship.x, a.ship.y];
+        var p = toS(g.x, g.y), q = toS(w[0], w[1]);
+        c.strokeStyle = 'rgba(255,90,70,0.4)'; c.lineWidth = 1.2; c.setLineDash([2, 7]); c.lineDashOffset = T * 14;
+        c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); c.setLineDash([]);
+        if (r && s > 0.06) outlineRoom(c, a.ship, r, 'rgba(255,90,70,' + (0.5 + 0.3 * Math.sin(T * 6)) + ')', T);
       }
     }
   }
@@ -542,7 +573,7 @@
     c.imageSmoothingEnabled = true;
     }
     // поломки: красный налёт по целости, ионный удар — голубые искры
-    var cr = sh.crew;
+    var cr = sh.crew, TH = threats()[sh.n];
     for (var i = 0; i < cr.roomList.length; i++) {
       var st = cr.roomList[i], r = st.r;
       var o = itoS(r.x, r.y);
@@ -556,6 +587,23 @@
           c.beginPath(); c.arc(zq[0], zq[1], Math.max(1.5, s * 0.5), 0, TAU); c.fill();
         }
         c.restore();
+      }
+      var thr = TH && TH[r.n];
+      if (thr) {
+        // под прицелом врага: красные уголки
+        var L = Math.min(r.w, r.h) * s * 0.25, x0 = o[0] + 2, y0 = o[1] + 2, x1 = o[0] + r.w * s - 2, y1 = o[1] + r.h * s - 2;
+        c.strokeStyle = 'rgba(255,80,60,' + (0.55 + 0.35 * Math.sin(T * 6)) + ')'; c.lineWidth = 2.5;
+        c.beginPath();
+        c.moveTo(x0, y0 + L); c.lineTo(x0, y0); c.lineTo(x0 + L, y0); c.moveTo(x1 - L, y0); c.lineTo(x1, y0); c.lineTo(x1, y0 + L);
+        c.moveTo(x1, y1 - L); c.lineTo(x1, y1); c.lineTo(x1 - L, y1); c.moveTo(x0 + L, y1); c.lineTo(x0, y1); c.lineTo(x0, y1 - L);
+        c.stroke();
+        if (r.w * s > 70) {
+          var tx = 'под прицелом' + (thr > 1 ? ' ×' + thr : '');
+          c.font = '10px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+          var tw = c.measureText(tx).width, ty = o[1] + r.h * s - 14;
+          c.fillStyle = 'rgba(40,6,4,0.8)'; c.fillRect(o[0] + r.w * s / 2 - tw / 2 - 4, ty - 8, tw + 8, 16);
+          c.fillStyle = '#ff9a80'; c.fillText(tx, o[0] + r.w * s / 2, ty);
+        }
       }
       if (G.room === r) {
         c.strokeStyle = 'rgba(240,200,106,' + (0.65 + 0.3 * Math.sin(T * 4)) + ')'; c.lineWidth = 2;
@@ -674,10 +722,11 @@
       }
     }
   }
+  var ALL = F.withCrew(S.TYPES);         // бойцы + экипаж кораблей
   var ATLAS = null, ATLAS_TRIES = 0, SIZES = [56, 44, 36];
   function atlas() {
     if (!ATLAS || (ATLAS.bad && ATLAS_TRIES < SIZES.length)) {
-      try { ATLAS = F.bake(S.TYPES, SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)]); } catch (e) { ATLAS = { bad: true }; }
+      try { ATLAS = F.bake(ALL, SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)], 20); } catch (e) { ATLAS = { bad: true }; }
       ATLAS_TRIES++;
       ATLAS.ok = !!ATLAS.canvas && F.check(ATLAS); ATLAS.bad = !ATLAS.ok; ATLAS.at = performance.now();
     } else if (ATLAS.ok && performance.now() - ATLAS.at > 3000) {
@@ -698,7 +747,7 @@
     for (i = 0; i < ag.length; i++) {
       m = ag[i]; if (m.alive || !vis(m)) continue;
       p = itoS(m.x, m.y);
-      c.save(); c.translate(p[0], p[1]); F.corpse(c, S.TYPES[m.fig], m.aim + 0.6, s * FIGK); c.restore();
+      c.save(); c.translate(p[0], p[1]); F.corpse(c, ALL[m.fig], m.aim + 0.6, s * FIGK); c.restore();
     }
     // дела: под фигурками
     c.save(); c.globalCompositeOperation = 'lighter';
@@ -758,7 +807,7 @@
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
       } else {
         c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK);
-        F.draw(c, S.TYPES[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
+        F.draw(c, ALL[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
         c.restore();
       }
       // в руках: ящик боеприпасов / огнетушитель; над головой — крест медика, ранение
@@ -1053,7 +1102,13 @@
     var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Щит', e.shield) + sysCell('Мост', e.bridge) +
       '<div class="shd" title="Щиты: нос / правый борт / корма / левый борт, %">◇' + shv(sh.sh[0]) + shv(sh.sh[1]) + shv(sh.sh[2]) + shv(sh.sh[3]) + '</div></div>';
-    var shs = '';
+    var th = threats()[sh.n], shs = '';
+    if (th && !sh.dead) {
+      var parts = Object.keys(th).map(function(n) {
+        var r = sh.plan.roomByN[n]; return { name: r ? r.name : 'корпус', k: th[n] };
+      }).sort(function(a, b) { return b.k - a.k; }).slice(0, 4);
+      shs = '<div class="sp-dim" style="margin-top:4px">под огнём: ' + parts.map(function(p) { return '<b style="color:#ff8a70">' + esc(p.name) + (p.k > 1 ? ' ×' + p.k : '') + '</b>'; }).join(' · ') + '</div>';
+    }
     var inside = '';
     if (G.mode === 'inside') {
       var r = G.room, st = r && sh.crew.rooms[r.n];
@@ -1120,7 +1175,8 @@
     else if (j && j.kind === 'back') what = 'возвращается на склад';
     else what = a.at ? (sh.crew.alertOn ? 'на посту у пульта' : 'несёт вахту') : 'идёт на пост';
     var where = j && j.room ? rn(j.room) : rn(a.goalRoom || a.home);
-    return '<b>' + ROLE[a.role].charAt(0).toUpperCase() + ROLE[a.role].slice(1) + '</b> · ' + what + ' · ' + esc(where) +
+    var kind = ALL[a.fig] ? ALL[a.fig].name : ROLE[a.role];
+    return '<b>' + esc(kind) + '</b> (' + ROLE[a.role] + ') · ' + what + ' · ' + esc(where) +
       ' · здоровье <b' + (a.hp < 50 ? ' style="color:#ff8a5c"' : '') + '>' + Math.round(a.hp) + '%</b>';
   }
   function sysCell(name, v) {

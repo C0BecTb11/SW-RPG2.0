@@ -165,18 +165,18 @@
   // друга, в проходах расходятся правым плечом, несут вахту по отсекам.
   function makeCrew() {
     var sh = V.ship, rep = sh.faction === 'republic';
-    var figs = rep ? [S.TYPE_BY_ID.rep_dc15a, S.TYPE_BY_ID.rep_heavy] : [S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b2];
-    V.sim = new window.SWCrew.Crew(sh, { seed: sh.w * 31 + sh.h, figs: figs });
+    V.sim = new window.SWCrew.Crew(sh, { seed: sh.w * 31 + sh.h, figMap: F.crewFigs(sh.faction, ALL) });
     V.crew = V.sim.agents;
     $('sv-crew').textContent = V.crew.length;
   }
   function stepCrew(dt) { if (V.sim) V.sim.step(dt); }
 
   // ---------- атлас фигурок (с защитой от «пустого» холста на Android) ----------
+  var ALL = F.withCrew(S.TYPES);         // бойцы + экипаж кораблей
   var ATLAS = null, ATLAS_TRIES = 0, SIZES = [56, 44, 36];
   function atlas() {
     if (!ATLAS || (ATLAS.bad && ATLAS_TRIES < SIZES.length)) {
-      try { ATLAS = F.bake(S.TYPES, SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)]); } catch (e) { ATLAS = { bad: true }; }
+      try { ATLAS = F.bake(ALL, SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)], 20); } catch (e) { ATLAS = { bad: true }; }
       ATLAS_TRIES++;
       ATLAS.ok = !!ATLAS.canvas && F.check(ATLAS); ATLAS.bad = !ATLAS.ok; ATLAS.at = performance.now();
     } else if (ATLAS.ok && performance.now() - ATLAS.at > 3000) {
@@ -284,7 +284,7 @@
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
       } else {
         c.save(); c.translate(p[0], p[1]); c.scale(s * scale, s * scale);
-        F.draw(c, S.TYPES[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
+        F.draw(c, ALL[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
         c.restore();
       }
     }

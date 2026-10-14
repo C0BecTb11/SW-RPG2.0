@@ -8,7 +8,8 @@
 
   var TAU = Math.PI * 2;
   var LEGION = '#3d74d6';
-  var GRIP = { dc15a: [0.17, 0.055, 0.32, 0.045], dc15s: [0.15, 0.055, 0.26, 0.045], z6: [0.1, 0.125, 0.3, 0.06], e5: [0.13, 0.05, 0.27, 0.04] };
+  var GRIP = { dc15a: [0.17, 0.055, 0.32, 0.045], dc15s: [0.15, 0.055, 0.26, 0.045], z6: [0.1, 0.125, 0.3, 0.06], e5: [0.13, 0.05, 0.27, 0.04],
+               none: [0.2, 0.085, 0.2, -0.085], tool: [0.24, 0.07, 0.17, -0.1], kit: [0.2, 0.09, 0.2, -0.09] };
   var FIG = 1.3;            // фигурка крупнее клетки: читается и на телефоне
 
   function dot(c, x, y, r) { c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
@@ -49,6 +50,20 @@
   function cloneGun(c, u) {
     var g = u.gun;
     c.lineCap = 'butt';
+    if (g === 'none') return;
+    if (g === 'tool') {
+      // гидроключ/сварочник
+      c.strokeStyle = '#3a3f46'; c.lineWidth = 0.034; line(c, 0.17, 0.07, 0.36, 0.06);
+      c.fillStyle = '#d9a940'; rr(c, 0.33, 0.03, 0.06, 0.06, 0.012); c.fill();
+      return;
+    }
+    if (g === 'kit') {
+      // аптечка в руках
+      c.fillStyle = '#eef1f4'; rr(c, 0.17, -0.07, 0.12, 0.14, 0.02); c.fill();
+      c.strokeStyle = '#8a929b'; c.lineWidth = 0.008; c.stroke();
+      c.fillStyle = '#c0453a'; c.fillRect(0.215, -0.045, 0.03, 0.09); c.fillRect(0.185, -0.015, 0.09, 0.03);
+      return;
+    }
     if (g === 'z6') {
       c.strokeStyle = '#b8953c'; c.lineWidth = 0.022; c.setLineDash([0.018, 0.012]);
       c.beginPath(); c.moveTo(-0.13, 0.1); c.quadraticCurveTo(-0.02, 0.2, 0.12, 0.13); c.stroke(); c.setLineDash([]);
@@ -71,7 +86,7 @@
   }
 
   function clone(c, u) {
-    var heavy = u.gun === 'z6', sniper = u.gun === 'sniper';
+    var heavy = u.gun === 'z6', sniper = u.gun === 'sniper', mark = u.mark || (sniper ? '#5a6b3a' : LEGION);
     legs(c, u, { w: 0.075, hip: 0.07, foot: 0.082, st: 0.17, col: '#cdd3da', bootCol: '#eef1f4', bootEdge: '#59626d', boot: [0.062, 0.038] });
     var bob = 1 + 0.035 * u.mv * Math.abs(Math.sin(u.phase));
     c.save(); c.rotate(u.aim); c.scale(bob, bob);
@@ -90,7 +105,7 @@
       c.fillStyle = '#eef1f4'; dot(c, -0.01, k * 0.168, 0.07);
       c.strokeStyle = '#76808b'; c.lineWidth = 0.012; c.stroke();
       c.save(); c.beginPath(); c.arc(-0.01, k * 0.168, 0.064, 0, TAU); c.clip();
-      c.fillStyle = sniper ? '#5a6b3a' : LEGION; c.fillRect(-0.035, k * 0.168 - 0.07, 0.034, 0.14);
+      c.fillStyle = mark; c.fillRect(-0.035, k * 0.168 - 0.07, 0.034, 0.14);
       c.restore();
     }
     cloneGun(c, u);
@@ -107,7 +122,7 @@
     });
     dot(c, 0.035, 0, 0.113);
     c.strokeStyle = '#69727d'; c.lineWidth = 0.012; c.stroke();
-    c.strokeStyle = sniper ? '#5a6b3a' : LEGION; c.lineWidth = 0.028; line(c, -0.065, 0, 0.1, 0);
+    c.strokeStyle = mark; c.lineWidth = 0.028; line(c, -0.065, 0, 0.1, 0);
     c.strokeStyle = '#14171c'; c.lineWidth = 0.032;
     c.beginPath(); c.arc(0.035, 0, 0.098, -0.78, 0.78); c.stroke();
     c.lineWidth = 0.028; line(c, 0.115, 0, 0.152, 0);
@@ -115,6 +130,7 @@
   }
 
   function b1(c, u) {
+    var unarmed = u.gun === 'none';
     legs(c, u, { w: 0.032, hip: 0.05, foot: 0.072, st: 0.2, col: '#b9a476', bootCol: '#8a7651', boot: [0.055, 0.026] });
     c.save(); c.rotate(u.aim);
     c.lineJoin = 'round';
@@ -129,12 +145,16 @@
     c.strokeStyle = 'rgba(80,64,40,0.5)'; c.lineWidth = 0.008;
     for (var i = -1; i <= 1; i++) line(c, -0.075, i * 0.04, 0.03, i * 0.04);
     c.fillStyle = '#7a6845'; dot(c, -0.01, 0.102, 0.03); dot(c, -0.01, -0.102, 0.03);
+    // метки по службе: пилоты — синие, командование — жёлтые (как в каноне OOM)
+    if (u.mark) { c.fillStyle = u.mark; rr(c, -0.07, -0.05, 0.07, 0.1, 0.015); c.fill(); }
     c.lineCap = 'butt';
-    c.strokeStyle = '#33363b'; c.lineWidth = 0.04; line(c, -0.01, 0.06, 0.41, 0.04);
-    c.strokeStyle = '#5c6067'; c.lineWidth = 0.012; line(c, 0.18, 0.033, 0.4, 0.033);
-    c.fillStyle = '#25272b'; c.fillRect(0.08, 0.055, 0.05, 0.03);
+    if (!unarmed) {
+      c.strokeStyle = '#33363b'; c.lineWidth = 0.04; line(c, -0.01, 0.06, 0.41, 0.04);
+      c.strokeStyle = '#5c6067'; c.lineWidth = 0.012; line(c, 0.18, 0.033, 0.4, 0.033);
+      c.fillStyle = '#25272b'; c.fillRect(0.08, 0.055, 0.05, 0.03);
+    }
     c.lineCap = 'round';
-    var gp = GRIP.e5;
+    var gp = unarmed ? GRIP.none : GRIP.e5;
     c.strokeStyle = '#c3ae80'; c.lineWidth = 0.03;
     c.beginPath(); c.moveTo(-0.01, 0.102); c.lineTo(0.065, 0.125); c.lineTo(gp[0], gp[1]); c.stroke();
     c.beginPath(); c.moveTo(-0.01, -0.102); c.lineTo(0.12, -0.075); c.lineTo(gp[2], gp[3]); c.stroke();
@@ -146,9 +166,61 @@
     });
     c.beginPath(); c.ellipse(0.145, 0, 0.112, 0.047, 0, 0, TAU); c.fill();
     c.strokeStyle = '#6a5a3e'; c.lineWidth = 0.01; c.stroke();
+    if (u.mark) { c.fillStyle = u.mark; c.beginPath(); c.ellipse(0.12, 0, 0.05, 0.03, 0, 0, TAU); c.fill(); }
     c.fillStyle = '#2a231a'; dot(c, 0.205, 0.03, 0.012); dot(c, 0.205, -0.03, 0.012);
     c.restore();
   }
+
+  // Офицер флота Республики: серый китель, фуражка, без брони
+  function officer(c, u) {
+    legs(c, u, { w: 0.06, hip: 0.06, foot: 0.075, st: 0.17, col: '#4b525b', bootCol: '#1c1f23', boot: [0.058, 0.034] });
+    c.save(); c.rotate(u.aim);
+    c.lineJoin = 'round';
+    c.fillStyle = grad(c, 'ofT', function(x) {
+      var g = x.createLinearGradient(0, -0.19, 0, 0.19);
+      g.addColorStop(0, '#7e8791'); g.addColorStop(0.5, '#c3cad2'); g.addColorStop(1, '#7e8791'); return g;
+    });
+    c.beginPath(); c.ellipse(-0.02, 0, 0.12, 0.2, 0, 0, TAU); c.fill();
+    c.strokeStyle = '#3d434a'; c.lineWidth = 0.012; c.stroke();
+    // планка с наградами
+    c.fillStyle = '#c0453a'; c.fillRect(0.0, 0.05, 0.03, 0.05); c.fillStyle = '#4a90d9'; c.fillRect(0.0, 0.1, 0.03, 0.03);
+    // руки за спиной/у планшета
+    c.strokeStyle = '#a9b1ba'; c.lineWidth = 0.05; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(0.0, 0.15); c.lineTo(0.1, 0.12); c.lineTo(0.17, 0.05); c.stroke();
+    c.beginPath(); c.moveTo(0.0, -0.15); c.lineTo(0.1, -0.12); c.lineTo(0.17, -0.05); c.stroke();
+    c.fillStyle = '#2a3440'; rr(c, 0.15, -0.07, 0.07, 0.14, 0.015); c.fill();
+    c.fillStyle = 'rgba(120,200,255,0.8)'; c.fillRect(0.165, -0.05, 0.04, 0.1);
+    // голова в фуражке
+    c.fillStyle = '#4b525b'; dot(c, 0.03, 0, 0.1);
+    c.fillStyle = '#8d959f'; dot(c, 0.03, 0, 0.075);
+    c.fillStyle = '#d9a940'; c.fillRect(0.045, -0.02, 0.03, 0.04);
+    c.fillStyle = '#1c1f23'; c.beginPath(); c.ellipse(0.1, 0, 0.035, 0.08, 0, -1.4, 1.4); c.fill();
+    c.restore();
+  }
+
+  // Ремонтный дроид КНС: приземистый корпус, две руки-манипулятора, оптика
+  function droidEng(c, u, med) {
+    legs(c, u, { w: 0.045, hip: 0.07, foot: 0.09, st: 0.14, col: '#4e4a42', bootCol: '#2e2b26', boot: [0.05, 0.035] });
+    var sway = Math.sin(u.phase) * 0.05 * u.mv;
+    c.save(); c.rotate(u.aim + sway);
+    c.lineJoin = 'round';
+    c.fillStyle = grad(c, med ? 'dmT' : 'deT', function(x) {
+      var g = x.createRadialGradient(-0.02, -0.03, 0.01, 0, 0, 0.16);
+      g.addColorStop(0, med ? '#c9d2da' : '#b8a27a'); g.addColorStop(1, med ? '#5a6570' : '#5e5038'); return g;
+    });
+    dot(c, -0.01, 0, 0.14);
+    c.strokeStyle = '#2a2620'; c.lineWidth = 0.012; c.stroke();
+    // манипуляторы
+    c.strokeStyle = '#3e3a33'; c.lineWidth = 0.03; c.lineCap = 'round';
+    line(c, 0.05, 0.1, 0.24, 0.1); line(c, 0.05, -0.1, 0.24, -0.08);
+    c.fillStyle = med ? '#4a90d9' : '#d9a940'; dot(c, 0.25, 0.1, 0.028); dot(c, 0.25, -0.08, 0.028);
+    // оптика
+    c.fillStyle = '#1a1814'; rr(c, 0.06, -0.05, 0.08, 0.1, 0.02); c.fill();
+    c.fillStyle = med ? '#7fd8ff' : '#ff7a3a'; dot(c, 0.12, -0.022, 0.016); dot(c, 0.12, 0.022, 0.016);
+    if (med) { c.fillStyle = '#e8eef2'; c.fillRect(-0.07, -0.015, 0.08, 0.03); c.fillRect(-0.045, -0.04, 0.03, 0.08); }
+    c.restore();
+  }
+  function droidMed(c, u) { droidEng(c, u, true); }
 
   function b2(c, u) {
     legs(c, u, { w: 0.08, hip: 0.1, foot: 0.12, st: 0.13, col: '#4a535e', bootCol: '#383f48', boot: [0.085, 0.052], bootEdge: '#1d2228' });
@@ -212,7 +284,19 @@
     c.restore();
   }
 
-  var DRAW = { clone: clone, b1: b1, b2: b2, bx: bx };
+  var DRAW = { clone: clone, b1: b1, b2: b2, bx: bx, officer: officer, droideng: droidEng, droidmed: droidMed };
+
+  // Экипаж кораблей — не строевые бойцы (имена — как у юнитов игры)
+  var CREW = [
+    { id: 'rep_officer',   name: 'Клон-офицер',         draw: 'officer',  gun: 'none', rad: 0.32 },
+    { id: 'rep_gunner',    name: 'Клон-артиллерист',    draw: 'clone',    gun: 'none', mark: '#7d858f', rad: 0.34 },
+    { id: 'rep_engineer',  name: 'Клон-инженер',        draw: 'clone',    gun: 'tool', mark: '#d9a940', rad: 0.34 },
+    { id: 'rep_medic',     name: 'Клон-медик',          draw: 'clone',    gun: 'kit',  mark: '#c0453a', rad: 0.34 },
+    { id: 'cis_b1_cmd',    name: 'Командный дроид B1',  draw: 'b1',       gun: 'none', mark: '#d9a940', rad: 0.32 },
+    { id: 'cis_b1_crew',   name: 'Дроид-пилот B1',      draw: 'b1',       gun: 'none', mark: '#3d74d6', rad: 0.32 },
+    { id: 'cis_engineer',  name: 'Инженерный дроид',    draw: 'droideng', gun: 'none', rad: 0.34 },
+    { id: 'cis_medic',     name: 'Дроид-техник',        draw: 'droidmed', gun: 'none', rad: 0.34 }
+  ];
 
   // Тень под фигуркой
   function shadow(c, r) {
@@ -224,9 +308,9 @@
   // Набор картинок: для каждого вида — DIRS поворотов × FRAMES кадров.
   // Кадр 0 — стойка, 1..4 — шаг. Клетка атласа — cell×cell пикселей.
   var DIRS = 16, FRAMES = 5;
-  function bake(types, cell) {
+  function bake(types, cell, cols) {
     // сетка 10 столбцов: атлас узкий и не упирается в пределы холста телефона
-    var COLS = 10, per = DIRS * FRAMES;
+    var COLS = cols || 10, per = DIRS * FRAMES;
     var cv = document.createElement('canvas');
     cv.width = COLS * cell; cv.height = Math.ceil(types.length * per / COLS) * cell;
     var c = cv.getContext('2d');
@@ -237,7 +321,7 @@
       for (var d = 0; d < DIRS; d++) {
         var ang = d / DIRS * TAU;
         for (var f = 0; f < FRAMES; f++) {
-          var u = { aim: ang, legs: ang, mv: f === 0 ? 0 : 1, phase: f === 0 ? 0 : (f - 1) * (TAU / 4), gun: gun };
+          var u = { aim: ang, legs: ang, mv: f === 0 ? 0 : 1, phase: f === 0 ? 0 : (f - 1) * (TAU / 4), gun: gun, mark: T.mark };
           c.save();
           var idx = t * per + d * FRAMES + f;
           c.translate((idx % COLS) * cell + cell / 2, Math.floor(idx / COLS) * cell + cell / 2);
@@ -259,7 +343,7 @@
     c.fillStyle = 'rgba(10,8,6,0.45)';
     c.beginPath(); c.ellipse(0.02, 0.02, 0.32, 0.22, 0, 0, TAU); c.fill();
     c.globalAlpha = 0.6;
-    var u = { aim: 0.5, legs: -0.4, mv: 0, phase: 0, gun: T.id === 'rep_sniper' ? 'sniper' : T.gun };
+    var u = { aim: 0.5, legs: -0.4, mv: 0, phase: 0, gun: T.id === 'rep_sniper' ? 'sniper' : T.gun, mark: T.mark };
     DRAW[T.draw](c, u);
     c.restore();
   }
@@ -268,7 +352,7 @@
   // браузер потерял содержимое картинки-атласа). c уже сдвинут в точку бойца
   // и масштабирован в клетки поля.
   function draw(c, T, u) {
-    u.gun = T.id === 'rep_sniper' ? 'sniper' : T.gun;
+    u.gun = T.id === 'rep_sniper' ? 'sniper' : T.gun; u.mark = T.mark;
     c.scale(FIG, FIG);
     shadow(c, T.rad);
     DRAW[T.draw](c, u);
@@ -282,5 +366,16 @@
     } catch (e) { return false; }
   }
 
-  root.SWRTFig = { bake: bake, corpse: corpse, draw: draw, check: check, DIRS: DIRS, FRAMES: FRAMES, FIG: FIG, TAU: TAU };
+  // Все виды для отрисовки кораблей: бойцы боя + экипаж; и кто где служит
+  function withCrew(types) { return types.concat(CREW); }
+  function crewFigs(faction, all) {
+    var at = function(ids) { return ids.map(function(id) { for (var i = 0; i < all.length; i++) if (all[i].id === id) return i; return 0; }); };
+    return faction === 'cis'
+      ? { bridge: at(['cis_b1_cmd']), post: at(['cis_b1_crew']), eng: at(['cis_engineer']), medic: at(['cis_medic']),
+          troops: at(['cis_b1', 'cis_b1', 'cis_b2']), crew: at(['cis_b1_crew']) }
+      : { bridge: at(['rep_officer']), post: at(['rep_gunner']), eng: at(['rep_engineer']), medic: at(['rep_medic']),
+          troops: at(['rep_dc15a', 'rep_dc15a', 'rep_heavy']), crew: at(['rep_gunner', 'rep_engineer']) };
+  }
+
+  root.SWRTFig = { withCrew: withCrew, crewFigs: crewFigs, bake: bake, corpse: corpse, draw: draw, check: check, DIRS: DIRS, FRAMES: FRAMES, FIG: FIG, TAU: TAU, CREW: CREW };
 })(typeof self !== 'undefined' ? self : this);

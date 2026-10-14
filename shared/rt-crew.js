@@ -43,6 +43,12 @@
   var FIXER = { workshop: 1, reactor: 1, engine: 1, hyper: 1, shield: 1 };
   // Откуда носят боеприпасы к орудиям
   var STORE = { storage: 1, armory: 1, hold: 1 };
+  // Кто служит в отсеке: мостик — офицеры, машины — инженеры, лазарет — медики,
+  // казармы — десант, орудия и прочие посты — расчёты
+  var GROUP = { bridge: 'bridge', cic: 'bridge', flight: 'bridge', comms: 'bridge', observe: 'bridge',
+                reactor: 'eng', engine: 'eng', workshop: 'eng', medbay: 'medic',
+                troops: 'troops', droids: 'troops', vehicle: 'troops', armory: 'troops',
+                quarters: 'crew', mess: 'crew', storage: 'crew', hold: 'crew' };
   function roleOf(t) { return KEY[t] ? 'post' : FIXER[t] ? 'fixer' : t === 'medbay' ? 'medic' : 'reserve'; }
 
   function rng(seed) {
@@ -162,7 +168,13 @@
     }
     // люди
     this.agents = [];
-    var figs = opts.figs || [0];
+    var figs = opts.figs || [0], fmap = opts.figMap || null;
+    var self = this;
+    var figOf = function(t) {
+      var list = fmap && (fmap[GROUP[t] || 'post'] || fmap.post);
+      if (!list || !list.length) list = figs;
+      return list[Math.floor(self.R() * list.length)];
+    };
     for (i = 0; i < this.roomList.length; i++) {
       var rs = this.roomList[i];
       if (!rs.anchor) continue;
@@ -173,7 +185,7 @@
           id: id, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, alive: true,
           home: rs.n, spot: p, role: roleOf(rs.t),
           task: 'post', goalRoom: rs.n, goal: p, at: true, wait: this.R() * 4, stuck: 0, lastD: 1e9, wig: 0,
-          job: null, fig: figs[Math.floor(this.R() * figs.length)], aim: p[2] != null ? p[2] : this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
+          job: null, fig: figOf(rs.t), aim: p[2] != null ? p[2] : this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
           face: p[2] != null ? p[2] : null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1
         };
         this.agents.push(ag);

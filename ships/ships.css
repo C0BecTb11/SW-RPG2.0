@@ -68,7 +68,22 @@ button { font-family: inherit; }
 .sv-dim b { color: #8fa8c4; font-weight: normal; }
 .sv-small { font-size: 10px; }
 
-.sv-ships { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 8px; }
+/* корабли: строка на сторону, листается пальцем, край затухает */
+.sv-ships {
+  display: flex; align-items: center; gap: 5px; margin-top: 8px;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+          mask-image: linear-gradient(90deg, #000 88%, transparent);
+  padding-right: 24px;
+}
+.sv-ships + .sv-ships { margin-top: 5px; }
+.sv-ships::-webkit-scrollbar { display: none; }
+.sv-ships .sv-chip { flex: 0 0 auto; padding: 6px 10px; scroll-snap-align: start; }
+.sv-ships-lab {
+  flex: 0 0 34px; font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; color: #4a90d9;
+}
+.sv-ships-lab.cis { color: #d94a4a; }
 
 .sv-chip {
   padding: 6px 2px;
@@ -110,7 +125,10 @@ button { font-family: inherit; }
 .sv-info-row b { color: #cfd8dc; font-weight: normal; margin-right: 6px; }
 .sv-info-about { color: #8fa8c4; font-size: 11px; }
 
-.sv-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sv-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.sv-btn.red.on { border-color: #ff7a5a; color: #ffb3a0; background: rgba(255,90,60,0.1); }
+.sv-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10px; color: #8fa8c4; margin-top: 4px; }
+.sv-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 
 .sv-btn {
   padding: 8px 4px;

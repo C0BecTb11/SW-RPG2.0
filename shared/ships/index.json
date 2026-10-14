@@ -22,5 +22,65 @@
   "name": "Провиденс",
   "faction": "cis",
   "length_m": 1088
+ },
+ {
+  "id": "rep_mandator",
+  "name": "Мандатор",
+  "faction": "republic",
+  "length_m": 1500
+ },
+ {
+  "id": "rep_victory",
+  "name": "Победа",
+  "faction": "republic",
+  "length_m": 900
+ },
+ {
+  "id": "rep_valiant",
+  "name": "Валиант",
+  "faction": "republic",
+  "length_m": 700
+ },
+ {
+  "id": "rep_arquitens",
+  "name": "Аркитенс",
+  "faction": "republic",
+  "length_m": 325
+ },
+ {
+  "id": "tantive",
+  "name": "Тантив",
+  "faction": "republic",
+  "length_m": 150
+ },
+ {
+  "id": "cis_subjugator",
+  "name": "Покоритель",
+  "faction": "cis",
+  "length_m": 1500
+ },
+ {
+  "id": "cis_lucrehulk",
+  "name": "Лукрехалк",
+  "faction": "cis",
+  "length_m": 1200
+ },
+ {
+  "id": "cis_recusant",
+  "name": "Рекусант",
+  "faction": "cis",
+  "length_m": 1187
+ },
+ {
+  "id": "cis_diamond",
+  "name": "Даймонд",
+  "faction": "cis",
+  "length_m": 600
+ },
+ {
+  "id": "hardcell",
+  "name": "Хардселл",
+  "faction": "cis",
+  "length_m": 225
  }
 ]

@@ -33,7 +33,7 @@
   // Плитка 4×4 клетки (8 м), рисуется один раз на цвет и масштаб
   var STYLE = {
     hangar: 'deck', dock: 'deck', vehicle: 'deck',
-    engine: 'grate', reactor: 'grate', hyper: 'grate', shield: 'grate',
+    engine: 'grate', reactor: 'grate', hyper: 'grate', shield: 'grate', power: 'grate', pumps: 'grate',
     bridge: 'smooth', flight: 'smooth', cic: 'smooth', comms: 'smooth', observe: 'smooth',
     medbay: 'tile', mess: 'tile'
   };
@@ -222,6 +222,15 @@
       var d = sh.doors[i];
       if (d.x < x0 - 3 || d.y < y0 - 3 || d.x >= x0 + CH + 3 || d.y >= y0 + CH + 3) continue;
       door(c, d, (d.x - x0) * tp, (d.y - y0) * tp, tp, P, rep, glows);
+    }
+
+    // 6б. лазы
+    if (sh.ducts && tp >= 4) for (i = 0; i < sh.ducts.length; i++) {
+      var du = sh.ducts[i];
+      [du.a, du.b].forEach(function(q) {
+        if (q[0] < x0 - 2 || q[1] < y0 - 2 || q[0] >= x0 + CH + 2 || q[1] >= y0 + CH + 2) return;
+        ductVent(c, (q[0] - x0 + 0.5) * tp, (q[1] - y0 + 0.5) * tp, tp);
+      });
     }
 
     // 7. техника, мебель, малые корабли
@@ -478,6 +487,7 @@
   function door(c, d, px, py, tp, P, rep, glows) {
     var len = (d.w || 2) * tp, deep = (d.d === 2 ? 2 : 1) * tp;
     var w = d.v ? deep : len, h = d.v ? len : deep;
+    if (d.k === 'blast' || d.k === 'lock') return heavyDoor(c, d, px, py, w, h, tp, P, rep, glows);
     // рама
     c.fillStyle = P.wallEdge; c.fillRect(px, py, w, h);
     // створки, разъехавшиеся в стены
@@ -498,6 +508,40 @@
       else { c.fillRect(px + w / 2 - r, py - r, r * 2, r); c.fillRect(px + w / 2 - r, py + h, r * 2, r); }
       glows.push([px + w / 2, py + h / 2, tp * 1.4, P.doorGlow]);
     }
+  }
+
+  // Бронедверь (переборка) и внутренняя дверь шлюза: толстая рама, жёлто-чёрная
+  // разметка, у шлюза — красные огни. При абордаже их запирают по тревоге.
+  function heavyDoor(c, d, px, py, w, h, tp, P, rep, glows) {
+    var lock = d.k === 'lock', fr = Math.max(1, tp * 0.28);
+    c.fillStyle = '#1c2026'; c.fillRect(px - (d.v ? fr : 0), py - (d.v ? 0 : fr), w + (d.v ? fr * 2 : 0), h + (d.v ? 0 : fr * 2));
+    c.fillStyle = P.wallEdge; c.fillRect(px, py, w, h);
+    // створки сдвинуты, но видно массивные направляющие
+    c.fillStyle = lock ? '#6d4a3a' : '#5d636b';
+    if (d.v) { c.fillRect(px, py, w, tp * 0.5); c.fillRect(px, py + h - tp * 0.5, w, tp * 0.5); }
+    else { c.fillRect(px, py, tp * 0.5, h); c.fillRect(px + w - tp * 0.5, py, tp * 0.5, h); }
+    if (tp >= 6) {
+      var n = Math.max(4, Math.round((d.v ? h : w) / tp * 1.5));
+      for (var i = 0; i < n; i++) {
+        c.fillStyle = i % 2 ? '#d9a940' : '#16181b';
+        if (d.v) c.fillRect(px + w * 0.25, py + tp * 0.5 + i * (h - tp) / n, w * 0.5, (h - tp) / n);
+        else c.fillRect(px + tp * 0.5 + i * (w - tp) / n, py + h * 0.25, (w - tp) / n, h * 0.5);
+      }
+      var r = Math.max(1, tp * 0.16);
+      c.fillStyle = lock ? '#ff5a3a' : '#e3a24a';
+      if (d.v) { c.fillRect(px - r * 1.5, py + h / 2 - r, r, r * 2); c.fillRect(px + w + r * 0.5, py + h / 2 - r, r, r * 2); }
+      else { c.fillRect(px + w / 2 - r, py - r * 1.5, r * 2, r); c.fillRect(px + w / 2 - r, py + h + r * 0.5, r * 2, r); }
+      glows.push([px + w / 2, py + h / 2, tp * 1.6, lock ? 'rgba(255,90,60,0.16)' : 'rgba(230,170,70,0.12)']);
+    }
+  }
+
+  // Вход в лаз: решётка в полу у стены
+  function ductVent(c, px, py, tp) {
+    var s = tp * 1.6;
+    c.fillStyle = '#121418'; c.fillRect(px - s / 2, py - s / 2, s, s);
+    c.strokeStyle = '#5a616b'; c.lineWidth = Math.max(1, tp * 0.12); c.strokeRect(px - s / 2, py - s / 2, s, s);
+    c.fillStyle = '#3a4048';
+    for (var i = 1; i < 4; i++) c.fillRect(px - s / 2 + 1, py - s / 2 + i * s / 4, s - 2, Math.max(1, tp * 0.1));
   }
 
   // ---------------------------------------------------------------- предметы
@@ -684,6 +728,38 @@
       case 'window':
         c.fillStyle = 'rgba(140,190,255,0.25)'; c.fillRect(0, 0, W, H);
         return;
+      case 'apturret': {
+        // противоабордажная турель: тумба, поворотная голова, два ствола к двери
+        c.fillStyle = sd; disc(c, W / 2 + tp * 0.2, H / 2 + tp * 0.25, W * 0.5);
+        c.fillStyle = '#2b3036'; disc(c, W / 2, H / 2, W * 0.48);
+        c.fillStyle = rep ? '#b9c0c8' : '#8b8170'; disc(c, W / 2, H / 2, W * 0.34);
+        c.strokeStyle = '#1b1e22'; c.lineWidth = Math.max(1, tp * 0.22);
+        c.beginPath(); c.moveTo(W * 0.42, H * 0.5); c.lineTo(W * 0.42, -H * 0.15); c.moveTo(W * 0.58, H * 0.5); c.lineTo(W * 0.58, -H * 0.15); c.stroke();
+        c.fillStyle = '#ff4a3a'; disc(c, W / 2, H / 2, Math.max(1, tp * 0.16));
+        gl(W / 2, H / 2, tp * 1.8, 'rgba(255,70,50,0.18)');
+        return;
+      }
+      case 'barricade':
+        c.fillStyle = sd; c.fillRect(tp * 0.25, tp * 0.3, W, H);
+        c.fillStyle = rep ? '#7a7f86' : '#6a6152'; c.fillRect(0, 0, W, H);
+        c.fillStyle = '#d9a940'; c.fillRect(0, 0, W, Math.max(1, tp * 0.14)); c.fillRect(0, H - Math.max(1, tp * 0.14), W, Math.max(1, tp * 0.14));
+        c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = Math.max(1, tp * 0.08); c.strokeRect(0, 0, W, H);
+        return;
+      case 'capacitor':
+        c.fillStyle = sd; c.fillRect(tp * 0.3, tp * 0.3, W, H);
+        c.fillStyle = '#2a2f36'; rr(c, 0, 0, W, H, tp * 0.3); c.fill();
+        c.fillStyle = '#3d4550'; rr(c, W * 0.15, H * 0.15, W * 0.7, H * 0.7, tp * 0.2); c.fill();
+        c.fillStyle = rep ? '#7fd0ff' : '#ffb060'; c.fillRect(W * 0.3, H * 0.42, W * 0.4, H * 0.16);
+        gl(W / 2, H / 2, tp * 2.2, rep ? 'rgba(120,200,255,0.18)' : 'rgba(255,170,90,0.16)');
+        return;
+      case 'pump':
+        c.fillStyle = sd; disc(c, W / 2 + tp * 0.25, H / 2 + tp * 0.3, W * 0.5);
+        c.fillStyle = '#3a4a52'; disc(c, W / 2, H / 2, W * 0.48);
+        c.strokeStyle = '#22292e'; c.lineWidth = Math.max(1, tp * 0.12); ring(c, W / 2, H / 2, W * 0.36);
+        c.fillStyle = '#5c7380'; disc(c, W / 2, H / 2, W * 0.18);
+        c.strokeStyle = '#2a3238'; c.lineWidth = Math.max(1, tp * 0.3);
+        c.beginPath(); c.moveTo(W, H / 2); c.lineTo(W + tp, H / 2); c.stroke();
+        return;
       default:
         c.fillStyle = sd; c.fillRect(0, 0, W, H);
     }
@@ -717,7 +793,8 @@
         hangar: '#565d66', bridge: '#2b405c', flight: '#2b405c', cic: '#2e3f5a', gun: '#5d4640', pdgun: '#5a4642',
         reactor: '#5f5130', shield: '#2c5560', engine: '#544a40', hyper: '#463e5e', quarters: '#555d54', troops: '#525a52',
         mess: '#5c5b4c', medbay: '#3d5f59', armory: '#5d4b4b', storage: '#5a5548', hold: '#5a5548', workshop: '#5a5848',
-        airlock: '#4a4e57', dock: '#4c5562', comms: '#33506a', observe: '#2b405c', vehicle: '#535a63', droids: '#585042'
+        airlock: '#4a4e57', dock: '#4c5562', comms: '#33506a', observe: '#2b405c', vehicle: '#535a63', droids: '#585042',
+        power: '#4a4f5c', pumps: '#3f5258'
       }
     },
     cis: {
@@ -729,7 +806,8 @@
         hangar: '#4a4741', bridge: '#2a3446', flight: '#2a3446', cic: '#2c3344', gun: '#54403a', pdgun: '#523f3a',
         reactor: '#58492a', shield: '#284650', engine: '#4a4038', hyper: '#3e3550', quarters: '#4b4c44', troops: '#4a4b44',
         mess: '#504d40', medbay: '#344c48', armory: '#504141', storage: '#4f4a3f', hold: '#4c473c', workshop: '#4f4c3e',
-        airlock: '#40424a', dock: '#424852', comms: '#2c4258', observe: '#2a3446', vehicle: '#474b52', droids: '#4d4537'
+        airlock: '#40424a', dock: '#424852', comms: '#2c4258', observe: '#2a3446', vehicle: '#474b52', droids: '#4d4537',
+        power: '#43464f', pumps: '#384a50'
       }
     }
   };

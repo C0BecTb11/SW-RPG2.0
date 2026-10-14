@@ -37,8 +37,38 @@
     workshop: { name: 'Мастерская',       sys: 'ремонт',     about: 'Ремонтная бригада и запчасти.' },
     airlock:  { name: 'Шлюз',             sys: 'шлюз',       about: 'Выход в открытый космос и стыковка.' },
     comms:    { name: 'Связь',            sys: 'связь',      about: 'Дальняя связь и глушение.' },
-    observe:  { name: 'Обзорная палуба',  sys: 'обзор',      about: 'Обзорное окно.' }
+    observe:  { name: 'Обзорная палуба',  sys: 'обзор',      about: 'Обзорное окно.' },
+    power:    { name: 'Энергоузел',       sys: 'свет',       about: 'Свет палуб и питание противоабордажных турелей.' },
+    pumps:    { name: 'Насосная',         sys: 'продувка',   about: 'Продувка отсеков: раз в 5 минут — удар по всем, кто в отсеке.' }
   };
+
+  // Абордаж (правила старой игры, js/boarding-goals.js): что даёт отсек тому,
+  // кто держит его один. goal — цель абордажа; who: att — только атакующему.
+  var BOARD = {
+    bridge:  { role: 'bridge',  name: 'Мостик',            goal: 'Захват: атакующие одни на мостике 3 мин (флагман — 5) — корабль их' },
+    reactor: { role: 'reactor', name: 'Реакторный зал',    goal: 'Подрыв: инженер ставит заряд у реактора; не сняли за 5 мин — взрыв' },
+    shield:  { role: 'shields', name: 'Генератор щитов',   who: 'att', eff: 'щиты корабля погашены' },
+    hangar:  { role: 'hangar',  name: 'Ангар',             who: 'att', eff: 'машины не взлетают' },
+    engine:  { role: 'engine',  name: 'Машинное',          who: 'att', eff: 'ход и прыжок заглушены' },
+    hyper:   { role: 'engine',  name: 'Гиперпривод',       who: 'att', eff: 'прыжок заглушён' },
+    comms:   { role: 'comms',   name: 'Узел связи',        who: 'att', eff: 'тревога снята, новой не будет' },
+    power:   { role: 'power',   name: 'Энергоузел',        who: 'att', eff: 'палуба во тьме, турели молчат' },
+    cic:     { role: 'tactical', name: 'Тактический центр', who: 'any', eff: 'виден весь корабль' },
+    armory:  { role: 'armory',  name: 'Арсенал',           who: 'any', eff: 'урон +15%' },
+    medbay:  { role: 'medbay',  name: 'Медотсек',          who: 'any', eff: 'свои внутри лечатся' },
+    pumps:   { role: 'pumps',   name: 'Насосная',          who: 'any', eff: 'продувка отсека раз в 5 мин' },
+    troops:  { role: 'barracks', name: 'Казармы',          spawn: 'def', eff: 'здесь встают защитники' },
+    droids:  { role: 'barracks', name: 'Стеллажи дроидов', spawn: 'def', eff: 'здесь встают защитники' },
+    airlock: { role: 'port',    name: 'Шлюз',              spawn: 'att', eff: 'сюда пристыковывается абордажный трап' }
+  };
+  function boardRole(ship, r) {
+    if (r.t === 'gun' || r.t === 'pdgun') {
+      var port = r.cx < ship.w / 2;
+      return { role: port ? 'battery_port' : 'battery_star', name: port ? 'Батарея ЛБ' : 'Батарея ПБ', who: 'att',
+               eff: (port ? 'левый' : 'правый') + ' борт не стреляет' };
+    }
+    return BOARD[r.t] || null;
+  }
 
   function unrle(arr, n) {
     var out = new Uint16Array(n), o = 0;
@@ -56,7 +86,7 @@
       id: data.id, name: data.name, faction: data.faction, lengthM: data.length_m, cellM: data.cell_m,
       w: data.w, h: data.h, sprite: data.sprite, crop: data.crop,
       kind: unrle(data.kind, n), room: unrle(data.room, n),
-      rooms: data.rooms, doors: data.doors, props: data.props, mounts: data.mounts,
+      rooms: data.rooms, doors: data.doors, props: data.props, mounts: data.mounts, ducts: data.ducts || [],
       roomByN: {}
     };
     for (var i = 0; i < ship.rooms.length; i++) ship.roomByN[ship.rooms[i].n] = ship.rooms[i];
@@ -87,5 +117,5 @@
     return n ? ship.roomByN[n] : null;
   }
 
-  return { K: K, TYPES: TYPES, load: load, rtMap: rtMap, roomAt: roomAt };
+  return { K: K, TYPES: TYPES, BOARD: BOARD, boardRole: boardRole, load: load, rtMap: rtMap, roomAt: roomAt };
 });

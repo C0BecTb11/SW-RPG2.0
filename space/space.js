@@ -15,7 +15,13 @@
   var SCEN = {
     vp:  { name: 'Венатор × Провиденс', ships: [['venator', 0, 0, 0], ['providence', 1, 9000, 1400]] },
     am:  { name: 'Акламатор × Щедрый', ships: [['acclamator', 0, 0, 0], ['munificent', 1, 8500, -1000]] },
-    '2x2': { name: 'Два на два', ships: [['venator', 0, 0, -1300], ['acclamator', 0, -600, 1500], ['providence', 1, 9500, -900], ['munificent', 1, 9000, 1800]] }
+    '2x2': { name: 'Два на два', ships: [['venator', 0, 0, -1300], ['acclamator', 0, -600, 1500], ['providence', 1, 9500, -900], ['munificent', 1, 9000, 1800]] },
+    fl:  { name: 'Мандатор × Покоритель', ships: [['rep_mandator', 0, 0, 0], ['cis_subjugator', 1, 11000, 1500]] },
+    lr:  { name: 'Венатор × Лукрехалк', ships: [['venator', 0, 0, 0], ['cis_lucrehulk', 1, 10500, 1200]] },
+    vk:  { name: 'Победа × Провиденс', ships: [['rep_victory', 0, 0, 0], ['providence', 1, 9000, 1400]] },
+    vr:  { name: 'Валиант × Рекусант', ships: [['rep_valiant', 0, 0, 0], ['cis_recusant', 1, 8500, 1200]] },
+    ad:  { name: 'Аркитенс × Даймонд', ships: [['rep_arquitens', 0, 0, 0], ['cis_diamond', 1, 7500, -900]] },
+    th:  { name: 'Тантив × Хардселл', ships: [['tantive', 0, 0, 0], ['hardcell', 1, 6000, 700]] }
   };
   var SIDE_NAME = ['Республика', 'КНС'];
   var COL = { 0: { bolt: '#8fd0ff', core: '#e6f6ff', ui: '#4a90d9' }, 1: { bolt: '#ff6a55', core: '#ffe2d8', ui: '#d94a4a' } };
@@ -36,7 +42,7 @@
   }
   function loadPlan(id) {
     if (G.plans[id]) return Promise.resolve(G.plans[id]);
-    return fetch('../shared/ships/' + id + '.json?v=3').then(function(r) {
+    return fetch('../shared/ships/' + id + '.json?v=5').then(function(r) {
       if (!r.ok) throw new Error('план ' + id + ' не найден'); return r.json();
     }).then(function(d) {
       var p = SH.load(d);
@@ -65,7 +71,7 @@
         B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: F.crewFigs(plan.faction, ALL) });
       });
       G.who = null;
-      G.B = B; G.fx = { shots: [], booms: [], shields: [] }; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
+      G.B = B; G.fx = { shots: [], booms: [], shields: [] }; DOWN = {}; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
       G.sel = -1; G.foe = -1;
       for (var i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side) { G.sel = i; break; }
       for (i = 0; i < B.ships.length; i++) if (B.ships[i].side !== G.side) { G.foe = i; break; }
@@ -76,7 +82,11 @@
       $('sp-top').classList.toggle('cis', G.side === 1);
       $('sp-side').textContent = SIDE_NAME[G.side];
       var chips = document.querySelectorAll('#sp-scen .sp-chip');
-      for (i = 0; i < chips.length; i++) chips[i].classList.toggle('on', chips[i].getAttribute('data-scen') === scen);
+      for (i = 0; i < chips.length; i++) {
+        var on = chips[i].getAttribute('data-scen') === scen;
+        chips[i].classList.toggle('on', on);
+        if (on) { var row = $('sp-scen'), c = chips[i]; row.scrollLeft = Math.max(0, c.offsetLeft - row.offsetLeft - (row.clientWidth - c.offsetWidth) / 2); }
+      }
       try { localStorage.setItem('sp-scen', scen); localStorage.setItem('sp-side', String(side)); } catch (e) {}
       toast('Бой начался. Выбери пушки и цель', 'gold');
     }).catch(function(e) { toast('Не загрузилось: ' + e.message, 'bad'); });
@@ -147,6 +157,7 @@
   }
   function now() { return G.B.t + (G.B.acc || 0); }
 
+  var DOWN = {};       // когда последний раз сообщали «упал щит» по сектору
   // События расчёта → эффекты с временем жизни
   function takeFx() {
     var e = G.B.takeEvents(), fx = G.fx, i;
@@ -155,7 +166,8 @@
     for (i = 0; i < e.shields.length; i++) {
       fx.shields.push(e.shields[i]);
       var sh = G.B.ships[e.shields[i].ship];
-      if (e.shields[i].down && sh && sh.side === G.side) toast(sh.name + ': упал щит — ' + ['нос', 'правый борт', 'корма', 'левый борт'][e.shields[i].s], 'bad');
+      var sk = e.shields[i].ship + ':' + e.shields[i].s;
+      if (e.shields[i].down && sh && sh.side === G.side && (DOWN[sk] == null || G.B.t - DOWN[sk] > 25) && ((DOWN[sk] = G.B.t), true)) toast(sh.name + ': упал щит — ' + ['нос', 'правый борт', 'корма', 'левый борт'][e.shields[i].s], 'bad');
     }
     for (i = 0; i < e.kills.length; i++) {
       var k = e.kills[i];
@@ -1100,8 +1112,15 @@
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
       '<span class="r">экипаж <i>' + sh.crew.alive() + '</i>' + (sh.crew.burning.length ? ' · огонь <i style="color:#ffb070">' + sh.crew.burning.length + '</i>' : '') + '</span></div>';
     var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
-    var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Щит', e.shield) + sysCell('Мост', e.bridge) +
-      '<div class="shd" title="Щиты: нос / правый борт / корма / левый борт, %">◇' + shv(sh.sh[0]) + shv(sh.sh[1]) + shv(sh.sh[2]) + shv(sh.sh[3]) + '</div></div>';
+    var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Ген', e.shield) + sysCell('Мост', e.bridge) + '</div>';
+    // щиты по секторам: касание — усилить сектор (повторное — вернуть экипажу)
+    var SN = ['нос', 'пр', 'корма', 'лев'], shRow = '<div class="sp-shd"><span>щиты</span>';
+    [0, 3, 1, 2].forEach(function(q) {
+      var cap = G.B.shieldCap(sh, q), v = Math.round(sh.sh[q] / Math.max(1, cap) * 100);
+      shRow += '<button class="sp-shb' + (sh.focus === q ? ' on' : '') + (v <= 0 ? ' z' : '') + '" data-shf="' + q + '">' + SN[q] + ' <b>' + v + '</b></button>';
+    });
+    shRow += '<button class="sp-shb auto' + (sh.focusAuto ? ' on' : '') + '" data-shf="-1">' + (sh.focusAuto ? 'экипаж' : 'авто') + '</button></div>';
+    sys += shRow;
     var th = threats()[sh.n], shs = '';
     if (th && !sh.dead) {
       var parts = Object.keys(th).map(function(n) {
@@ -1200,6 +1219,16 @@
     $('sp-guns').addEventListener('click', function(e) {
       var b = e.target.closest('[data-gun]'); if (!b || !G.B) return;
       var i = +b.getAttribute('data-gun'); G.gsel[i] = !G.gsel[i]; G.aim = false; hud();
+    });
+    // панель корабля перерисовывается 4 раза в секунду — ловим нажатие сразу
+    $('sp-ship').addEventListener('pointerdown', function(e) {
+      var b = e.target.closest('[data-shf]'); if (!b || !G.B) return;
+      e.preventDefault();
+      var sh = G.B.ships[G.sel]; if (!sh || sh.dead) return;
+      var q = +b.getAttribute('data-shf');
+      if (q < 0 || (sh.focus === q && !sh.focusAuto)) { sh.focusAuto = true; toast('Щиты распределяет экипаж: к ближайшему врагу', 'gold'); }
+      else { G.B.setFocus(G.sel, q); toast('Щиты: усилен ' + ['нос', 'правый борт', 'корма', 'левый борт'][q], 'gold'); }
+      hud();
     });
     $('sp-quick').addEventListener('click', function(e) {
       var b = e.target.closest('[data-q]'); if (!b) return;

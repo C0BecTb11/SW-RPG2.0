@@ -34,11 +34,33 @@ button { font-family: inherit; }
   border-radius: 20px;
   text-decoration: none;
 }
-#sp-clock {
+#sp-tr {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top, 0px));
   right: 12px;
   z-index: 1000;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+#sp-snd {
+  width: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(5,6,10,0.75);
+  border: 1px solid rgba(28,37,48,0.9);
+  border-radius: 20px;
+  color: #e8d9a8;
+  cursor: pointer;
+}
+#sp-snd svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#sp-snd .spk { fill: currentColor; stroke: none; }
+#sp-snd .x { display: none; }
+#sp-snd.off { color: #55606c; }
+#sp-snd.off .wv { display: none; }
+#sp-snd.off .x { display: inline; }
+#sp-clock {
   background: rgba(5,6,10,0.75);
   border: 1px solid rgba(28,37,48,0.9);
   font-size: 11px;

@@ -157,14 +157,43 @@
   }
   function now() { return G.B.t + (G.B.acc || 0); }
 
+  // ---------------------------------------------------------------- звук
+  // Громкость и панорама события в точке мира: на экране — в полную силу,
+  // за краем — тише; в общем обзоре всё дальше и тише, вблизи — громче.
+  // Внутри корабля громко только то, что касается своего корабля.
+  function sfx(kind, x, y, shipN) {
+    var X = window.SPSfx; if (!X) return;
+    var vol, pan = 0;
+    if (G.mode === 'inside') {
+      var me = G.B.ships[G.sel];
+      var mine = shipN === G.sel || (shipN == null && me && Math.abs(x - me.x) + Math.abs(y - me.y) < me.len * 0.8);
+      vol = mine ? 0.95 : 0.22;
+    } else {
+      var p = toS(x, y), hx = CAM.vw / 2, hy = CAM.vh / 2;
+      var dx = (p[0] - hx) / hx, dy = (p[1] - hy) / hy, d = Math.sqrt(dx * dx + dy * dy);
+      var att = d <= 1.2 ? 1 : Math.max(0, 1 - (d - 1.2) / 2.5);
+      var z = Math.max(0.35, Math.min(1, 0.35 + 0.65 * Math.log(CAM.s / 0.01) / Math.log(35)));
+      vol = att * (kind === 'shipboom' ? Math.max(z, 0.75) : z);
+      pan = Math.max(-1, Math.min(1, dx)) * 0.6;
+    }
+    X.play(kind, vol, pan);
+  }
+
   var DOWN = {};       // когда последний раз сообщали «упал щит» по сектору
   // События расчёта → эффекты с временем жизни
   function takeFx() {
     var e = G.B.takeEvents(), fx = G.fx, i;
-    for (i = 0; i < e.shots.length; i++) fx.shots.push(e.shots[i]);
-    for (i = 0; i < e.booms.length; i++) fx.booms.push(e.booms[i]);
+    for (i = 0; i < e.shots.length; i++) {
+      var sh0 = e.shots[i]; fx.shots.push(sh0);
+      sfx(sh0.t === 'f' ? 'fighter' : sh0.t, sh0.x0, sh0.y0, null);
+    }
+    for (i = 0; i < e.booms.length; i++) {
+      var bm = e.booms[i]; fx.booms.push(bm);
+      sfx(bm.craft ? 'craftboom' : bm.big ? 'shipboom' : bm.ion ? 'ionhit' : 'hull', bm.x, bm.y, bm.ship);
+    }
     for (i = 0; i < e.shields.length; i++) {
       fx.shields.push(e.shields[i]);
+      sfx('shield', e.shields[i].x, e.shields[i].y, e.shields[i].ship);
       var sh = G.B.ships[e.shields[i].ship];
       var sk = e.shields[i].ship + ':' + e.shields[i].s;
       if (e.shields[i].down && sh && sh.side === G.side && (DOWN[sk] == null || G.B.t - DOWN[sk] > 25) && ((DOWN[sk] = G.B.t), true)) toast(sh.name + ': упал щит — ' + ['нос', 'правый борт', 'корма', 'левый борт'][e.shields[i].s], 'bad');
@@ -869,6 +898,7 @@
   // ---------------------------------------------------------------- режимы
   function setMode(m) {
     G.mode = m;
+    if (window.SPSfx) window.SPSfx.setInside(m === 'inside');
     document.body.classList.toggle('inside', m === 'inside');
     $('sp-inside').textContent = m === 'inside' ? 'К бою' : 'Внутри';
     $('sp-kicker').textContent = m === 'inside' ? 'Внутри корабля' : 'Космический бой 2.0';
@@ -1275,6 +1305,11 @@
         ICAM.s = Math.min((CAM.vw - 20) / p.w, (v.h - 10) / p.h); ICAM.x = p.w / 2; ICAM.y = p.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
       } else fitAll();
     };
+    var snd = $('sp-snd'), SX = window.SPSfx;
+    if (SX) {
+      snd.classList.toggle('off', !SX.isOn());
+      snd.onclick = function() { SX.setOn(!SX.isOn()); snd.classList.toggle('off', !SX.isOn()); toast(SX.isOn() ? 'Звук включён' : 'Звук выключен'); };
+    } else snd.hidden = true;
     $('sp-fold').onclick = function() {
       var b = $('sp-bottom'); b.classList.toggle('min');
       $('sp-fold').textContent = b.classList.contains('min') ? '▴ приказы' : '▾ свернуть';

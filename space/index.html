@@ -5,13 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
 <title>Космический бой 2.0</title>
-<link rel="stylesheet" href="space.css?v=4">
+<link rel="stylesheet" href="space.css?v=5">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
 
 <a id="sp-back" href="../game/galaxy-map.html">← В игру</a>
-<div id="sp-clock"><b id="sp-time">0:00</b> · <span id="sp-fps">0</span> к/с</div>
+<div id="sp-tr">
+  <button id="sp-snd" type="button" aria-label="Звук боя" title="Звук боя">
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path class="spk" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path class="wv" d="M13 7a4 4 0 0 1 0 6M15.2 4.8a7 7 0 0 1 0 10.4"/><path class="x" d="M13 7.5l5 5M18 7.5l-5 5"/></svg>
+  </button>
+  <div id="sp-clock"><b id="sp-time">0:00</b> · <span id="sp-fps">0</span> к/с</div>
+</div>
 
 <div class="sp-panel sp-top" id="sp-top">
   <div class="sp-row">
@@ -78,6 +83,7 @@
 <script src="../shared/rt-crew.js?v=5"></script>
 <script src="../shared/rt-space.js?v=6"></script>
 <script src="../ships/ship-art.js?v=4"></script>
-<script src="space.js?v=6"></script>
+<script src="space-sfx.js?v=1"></script>
+<script src="space.js?v=7"></script>
 </body>
 </html>

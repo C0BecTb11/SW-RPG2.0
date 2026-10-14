@@ -1,0 +1,50 @@
+{
+ "heavy": [
+  "heavy_1",
+  "heavy_2",
+  "heavy_3"
+ ],
+ "medium": [
+  "medium_1",
+  "medium_2",
+  "medium_3"
+ ],
+ "long": [
+  "long_1",
+  "long_2"
+ ],
+ "ion": [
+  "ion_1",
+  "ion_2"
+ ],
+ "pd": [
+  "pd_1",
+  "pd_2",
+  "pd_3"
+ ],
+ "fighter": [
+  "fighter_1",
+  "fighter_2"
+ ],
+ "shield": [
+  "shield_1",
+  "shield_2",
+  "shield_3"
+ ],
+ "hull": [
+  "hull_1",
+  "hull_2",
+  "hull_3"
+ ],
+ "ionhit": [
+  "ionhit_1"
+ ],
+ "craftboom": [
+  "craftboom_1",
+  "craftboom_2"
+ ],
+ "shipboom": [
+  "shipboom_1",
+  "shipboom_2"
+ ]
+}

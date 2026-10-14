@@ -49,12 +49,15 @@
     }));
   }
 
+  var START = 0;
   function start(scen, side) {
+    var token = ++START;
     G.scen = scen; G.side = side;
     var sc = SCEN[scen];
     toast('Готовлю бой: ' + sc.name + '…', 'gold');
     var ids = []; sc.ships.forEach(function(s) { if (ids.indexOf(s[0]) < 0) ids.push(s[0]); });
     Promise.all(ids.map(loadPlan).concat([loadCraft()])).then(function() {
+      if (token !== START) return;            // уже нажали другой бой
       var B = new SP.Battle({ seed: 1977 + Date.now() % 1000 });
       sc.ships.forEach(function(s) {
         var plan = G.plans[s[0]], rep = plan.faction === 'republic';
@@ -66,7 +69,7 @@
       G.sel = -1; G.foe = -1;
       for (var i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side) { G.sel = i; break; }
       for (i = 0; i < B.ships.length; i++) if (B.ships[i].side !== G.side) { G.foe = i; break; }
-      CHUNKS.clear();
+      CHUNKS.clear(); TIER_N = { 4: 0, 8: 0, 16: 0, 32: 0 };
       setMode('space');
       buildFleet(); buildShipPanel(); hud(); fitAll();
       $('sp-end').hidden = true;
@@ -136,6 +139,7 @@
       var f = fitRect(), k = Math.min(1, dt * 1.5);
       if (f) { CAM.s = Math.exp(Math.log(CAM.s) + (Math.log(f.s) - Math.log(CAM.s)) * k); CAM.x += (f.x - CAM.x) * k; CAM.y += (f.y - CAM.y) * k; }
     }
+    if (G.mode === 'inside' && (!B.ships[G.sel] || B.ships[G.sel].dead)) setMode('space');
     if (G.mode === 'inside') drawInside(t / 1000); else drawSpace(t / 1000);
     FR.hud += dt;
     if (FR.hud > 0.25) { FR.hud = 0; hud(); $('sp-fps').textContent = Math.round(FR.fps); }
@@ -155,7 +159,17 @@
     }
     for (i = 0; i < e.kills.length; i++) {
       var k = e.kills[i];
-      if (k.ship != null) { var s = G.B.ships[k.ship]; toast(s.name + ' уничтожен' + (k.why === 'reactor' ? ' — взрыв реактора' : ''), s.side === G.side ? 'bad' : 'gold'); }
+      if (k.ship != null) {
+        var s = G.B.ships[k.ship];
+        toast(s.name + ' уничтожен' + (k.why === 'reactor' ? ' — взрыв реактора' : ''), s.side === G.side ? 'bad' : 'gold');
+        if (k.ship === G.foe) { G.aim = false; G.foe = -1; }
+        if (k.ship === G.sel) {
+          // свой погиб — управление переходит к живому кораблю флота
+          var next = G.B.ships.filter(function(x) { return !x.dead && x.side === G.side; })[0];
+          if (next) { if (G.mode === 'inside') setMode('space'); selectShip(next.n); }
+        }
+        buildTargets(); hud();
+      }
     }
     var t = now();
     fx.shots = fx.shots.filter(function(s) { return t - s.t0 < s.dur + (s.miss ? 1.2 : 0.15); });
@@ -411,7 +425,7 @@
   }
 
   // ---------------------------------------------------------------- внутри
-  var CHUNKS = new Map(), CLIPS = {}, BUILD = { left: 2 };
+  var CHUNKS = new Map(), CLIPS = {}, BUILD = { left: 2 }, CHUNK_MAX = { 4: 260, 8: 64, 16: 20, 32: 10 }, TIER_N = { 4: 0, 8: 0, 16: 0, 32: 0 };
   function tierFor(s) { return s < 5 ? 4 : s < 12 ? 8 : s < 26 ? 16 : 32; }
   function makeClip(sh, img) {
     var cw = sh.crop[2] - sh.crop[0], chh = sh.crop[3] - sh.crop[1];
@@ -432,9 +446,9 @@
     var key = sh.cls + ':' + tp + ':' + cx + ':' + cy, ch = CHUNKS.get(key);
     if (ch) { CHUNKS.delete(key); CHUNKS.set(key, ch); return ch; }
     if (BUILD.left <= 0) {
-      var alt = CHUNKS.get(sh.cls + ':4:' + cx + ':' + cy) || CHUNKS.get(sh.cls + ':8:' + cx + ':' + cy);
-      if (alt) return alt;
-      if (tp !== 4) return chunk(sh, cx, cy, 4);
+      // бюджет кадра исчерпан: взять готовый кусок другого яруса или пропустить кадр
+      return CHUNKS.get(sh.cls + ':8:' + cx + ':' + cy) || CHUNKS.get(sh.cls + ':4:' + cx + ':' + cy) ||
+             CHUNKS.get(sh.cls + ':16:' + cx + ':' + cy) || null;
     }
     BUILD.left--;
     var p = sh.plan;
@@ -442,8 +456,11 @@
     ARTV.ship = p; ARTV.pal = ART.PAL[p.faction] || ART.PAL.republic; ARTV.clip = CLIPS[sh.cls]; ARTV.craft = G.craftImg;
     ART.init(ARTV, K);
     ch = ART.chunk(cx, cy, tp);
-    CHUNKS.set(key, ch);
-    if (CHUNKS.size > 140) CHUNKS.delete(CHUNKS.keys().next().value);
+    CHUNKS.set(key, ch); TIER_N[tp]++;
+    // вытеснение по ярусу: старые куски этого же яруса
+    if (TIER_N[tp] > CHUNK_MAX[tp]) {
+      for (var k of CHUNKS.keys()) { if (CHUNKS.get(k).tp === tp) { CHUNKS.delete(k); TIER_N[tp]--; break; } }
+    }
     return ch;
   }
 
@@ -453,6 +470,16 @@
     c.clearRect(0, 0, CAM.vw, CAM.vh);
     if (!sh) return;
     var p = sh.plan;
+    // весь корабль на экране — разрез одной картинкой (кусками было бы сотни сборок)
+    if (s < 2.6) {
+      if (!CLIPS[sh.cls]) CLIPS[sh.cls] = makeClip(p, G.imgs[sh.cls]);
+      var o0 = itoS(0, 0);
+      c.drawImage(CLIPS[sh.cls], o0[0], o0[1], p.w * s, p.h * s);
+      c.globalCompositeOperation = 'source-atop';
+      c.fillStyle = 'rgba(28,32,38,0.55)'; c.fillRect(o0[0], o0[1], p.w * s, p.h * s);
+      c.globalCompositeOperation = 'source-over';
+      roomsFlat(c, sh, s);
+    } else {
     BUILD.left = s >= 12 ? 1 : 2;
     var tp = tierFor(s * CAM.dpr / 1.2);
     var a = itoW(0, 0), b = itoW(CAM.vw, CAM.vh);
@@ -462,9 +489,10 @@
     c.imageSmoothingEnabled = !(tp >= 16 && s >= tp * 1.2);
     for (var cy = cy0; cy <= cy1; cy++) for (var cx = cx0; cx <= cx1; cx++) {
       var ch = chunk(sh, cx, cy, tp), q = itoS(cx * CH, cy * CH);
-      c.drawImage(ch.cv, Math.floor(q[0]), Math.floor(q[1]), Math.ceil(CH * s) + 1, Math.ceil(CH * s) + 1);
+      if (ch) c.drawImage(ch.cv, Math.floor(q[0]), Math.floor(q[1]), Math.ceil(CH * s) + 1, Math.ceil(CH * s) + 1);
     }
     c.imageSmoothingEnabled = true;
+    }
     // поломки: красный налёт по целости, ионный удар — голубые искры
     var cr = sh.crew;
     for (var i = 0; i < cr.roomList.length; i++) {
@@ -492,6 +520,15 @@
     drawCrew(c, sh);
     // подписи: имя, целость, огонь
     drawLabels(c, sh);
+  }
+  // Отсеки плоско — для вида «весь корабль»
+  function roomsFlat(c, sh, s) {
+    var P = ART.PAL[sh.plan.faction] || ART.PAL.republic, rooms = sh.plan.rooms;
+    for (var i = 0; i < rooms.length; i++) {
+      var r = rooms[i], o = itoS(r.x, r.y);
+      c.fillStyle = P.floor[r.t] || '#555'; c.fillRect(o[0] + s, o[1] + s, (r.w - 2) * s, (r.h - 2) * s);
+      c.strokeStyle = P.wall; c.lineWidth = Math.max(1, s); c.strokeRect(o[0] + s / 2, o[1] + s / 2, (r.w - 1) * s, (r.h - 1) * s);
+    }
   }
   function drawFire(c, sh, T) {
     var cr = sh.crew, p = sh.plan, s = ICAM.s, list = cr.burning;
@@ -793,7 +830,7 @@
     if (!sh) { box.innerHTML = '<div class="sp-hint">Твоих кораблей не осталось.</div>'; return; }
     var e = sh.eff;
     var head = '<div class="sp-ship-head"><b>' + esc(sh.name) + '</b><span class="sp-tag">' + Math.max(0, Math.round(sh.hull / sh.hullMax * 100)) + '%</span>' +
-      (sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : '') +
+      (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
       '<span class="r">экипаж <i>' + sh.crew.alive() + '</i>' + (sh.crew.burning.length ? ' · огонь <i style="color:#ffb070">' + sh.crew.burning.length + '</i>' : '') + '</span></div>';
     var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Щит', e.shield) + sysCell('Мост', e.bridge) +
@@ -864,29 +901,31 @@
     $('sp-side').style.cursor = 'pointer';
     $('sp-side').addEventListener('click', function() { start(G.scen, 1 - G.side); });
     $('sp-fleet').addEventListener('click', function(e) {
-      var b = e.target.closest('[data-ship]'); if (!b) return;
+      var b = e.target.closest('[data-ship]'); if (!b || !G.B) return;
       var s = G.B.ships[+b.getAttribute('data-ship')]; if (!s || s.dead) return;
       if (s.side === G.side) selectShip(s.n);
       else { G.foe = s.n; buildTargets(); if (G.mode === 'space') { focusShip(s); G.follow = false; } hud(); }
     });
     $('sp-guns').addEventListener('click', function(e) {
-      var b = e.target.closest('[data-gun]'); if (!b) return;
+      var b = e.target.closest('[data-gun]'); if (!b || !G.B) return;
       var i = +b.getAttribute('data-gun'); G.gsel[i] = !G.gsel[i]; G.aim = false; hud();
     });
     $('sp-quick').addEventListener('click', function(e) {
       var b = e.target.closest('[data-q]'); if (!b) return;
+      if (!G.B) return;
       var q = b.getAttribute('data-q'), sh = G.B.ships[G.sel]; if (!sh) return;
       G.gsel = {};
       sh.guns.forEach(function(g, i) { if (q === 'all' || (q === 'main' && g.t !== 'pd') || (q === 'pd' && g.t === 'pd')) G.gsel[i] = true; });
       G.aim = false; hud();
     });
     $('sp-tg-foe').addEventListener('click', function(e) {
-      var b = e.target.closest('[data-foe]'); if (!b) return;
+      var b = e.target.closest('[data-foe]'); if (!b || !G.B) return;
       G.foe = +b.getAttribute('data-foe'); buildTargets(); hud();
     });
     $('sp-tg-grid').addEventListener('click', function(e) {
-      var b = e.target.closest('[data-t]'); if (!b) return;
+      var b = e.target.closest('[data-t]'); if (!b || !G.B) return;
       var k = b.getAttribute('data-t'), foe = G.B.ships[G.foe];
+      if (foe && foe.dead) foe = null;
       if (k === 'auto') assign({ k: 'auto' }, 'сама выбирает цель');
       else if (k === 'fighters') assign({ k: 'fighters' }, 'по истребителям');
       else if (!foe) return;
@@ -909,8 +948,9 @@
       else { G.move = true; G.aim = false; if (G.mode === 'inside') setMode('space'); toast('Коснись космоса — туда пойдёт корабль', 'gold'); }
       hud();
     };
-    $('sp-inside').onclick = function() { if (G.B && G.B.ships[G.sel]) setMode(G.mode === 'inside' ? 'space' : 'inside'); };
+    $('sp-inside').onclick = function() { if (G.B && G.B.ships[G.sel] && !G.B.ships[G.sel].dead) setMode(G.mode === 'inside' ? 'space' : 'inside'); };
     $('sp-view').onclick = function() {
+      if (!G.B) return;
       if (G.mode === 'inside') {
         var p = G.B.ships[G.sel].plan, v = view();
         ICAM.s = Math.min((CAM.vw - 20) / p.w, (v.h - 10) / p.h); ICAM.x = p.w / 2; ICAM.y = p.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;

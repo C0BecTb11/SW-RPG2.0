@@ -134,7 +134,8 @@
       this.walk[i] = (k === K.FLOOR || k === K.DOOR) && !ship.prop[i] ? 1 : 0;
     }
     this.mainOnly();
-    this.fire = new Uint8Array(n);      // сила огня в клетке 0..100
+    this.fire = new Float32Array(n);    // сила огня в клетке 0..100
+    this.inList = new Uint8Array(n);    // клетка уже в списке горящих
     this.burning = [];                  // номера горящих клеток
     this.flows = new Flows(this);
     this.budget = 2;
@@ -238,7 +239,7 @@
       var d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; }
     }
     if (best < 0) return false;
-    if (!this.fire[best]) this.burning.push(best);
+    if (!this.inList[best]) { this.inList[best] = 1; this.burning.push(best); }
     this.fire[best] = Math.min(100, Math.max(this.fire[best], power || 40));
     this.ev.ignites.push(best);
     return true;
@@ -372,12 +373,33 @@
       cand.push([Math.sqrt(dx * dx + dy * dy) * w, a]);
     }
     cand.sort(function(p, q) { return p[0] - q[0]; });
+    // ближайшие по прямой могут быть далеко по коридорам: уточнить длиной пути
+    var f = this.flows.global(ax, ay);
+    if (f) {
+      var top = Math.min(cand.length, count + 8);
+      for (var t = 0; t < top; t++) {
+        var L = this.pathLen(f, cand[t][1]);
+        if (L >= 0) cand[t][0] = L * (cand[t][0] / Math.max(0.01, Math.sqrt(Math.pow(cand[t][1].x - ax, 2) + Math.pow(cand[t][1].y - ay, 2))));
+      }
+      cand.sort(function(p, q) { return p[0] - q[0]; });
+    }
     for (var k = 0; k < cand.length && count > 0; k++, count--) {
       var b = cand[k][1];
       b.job = { kind: kind, room: st.n };
       if (kind === 'fire') st.fighters++; else st.fixers++;
       this.goJob(b);
     }
+  };
+  // Длина пути по полю (в клетках), −1 — нет пути
+  Crew.prototype.pathLen = function(f, a) {
+    var x = Math.floor(a.x), y = Math.floor(a.y), L = 0;
+    for (var i = 0; i < 3000; i++) {
+      var d = flowDir(f, x, y);
+      if (d === 254) return L;
+      if (d === 255) return -1;
+      x += DX[d]; y += DY[d]; L += (d & 1) ? 1.414 : 1;
+    }
+    return -1;
   };
   Crew.prototype.nearest = function(st, ok, maxD) {
     var best = null, bd = (maxD || 1e9) * (maxD || 1e9), ax = st.anchor[0], ay = st.anchor[1];
@@ -426,7 +448,7 @@
     var add = [];
     for (i = list.length - 1; i >= 0; i--) {
       var c = list[i], v = f[c];
-      if (v === 0) { list[i] = list[list.length - 1]; list.pop(); continue; }
+      if (v <= 0) { f[c] = 0; this.inList[c] = 0; list[i] = list[list.length - 1]; list.pop(); continue; }
       f[c] = Math.min(100, v + 9 * dt);
       var st = this.rooms[sh.room[c]];
       if (st) st.integ = Math.max(0, st.integ - v * 0.0005 * dt);
@@ -436,8 +458,8 @@
           var nx = x + DX[d], ny = y + DY[d];
           if (nx < 0 || ny < 0 || nx >= W || ny >= this.h) continue;
           var nc = ny * W + nx;
-          if (f[nc] || !this.burnable(nc)) continue;
-          if (R() < 0.035 * dt * (v / 100)) { f[nc] = 12; add.push(nc); }
+          if (f[nc] || this.inList[nc] || !this.burnable(nc)) continue;
+          if (R() < 0.035 * dt * (v / 100)) { f[nc] = 12; this.inList[nc] = 1; add.push(nc); }
         }
       }
     }
@@ -451,6 +473,8 @@
   };
   Crew.prototype.tick = function(dt) {
     this.t += dt;
+    if (this.ev.deaths.length > 200) this.ev.deaths.splice(0, 100);
+    if (this.ev.ignites.length > 200) this.ev.ignites.splice(0, 100);
     // дальний путь по всему кораблю дорогой (5–15 мс) — не чаще ~6 раз в секунду
     this.flowT -= dt; this.budget = this.flowT <= 0 ? 1 : 0;
     var i, rs = this.roomList;

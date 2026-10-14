@@ -38,8 +38,8 @@
               about: 'Скорострельный, годится и по кораблям, и по бомбардировщикам.' },
     long:   { name: 'Дальнобойная пушка', short: 'ДП', range: 10000, reload: 8, dmg: 16, acc: 0.75, accF: 0.03, sh: 1, hull: 1, sys: 0.9, fire: 0.25, aim: 0.5, fdmg: 400,
               about: 'Бьёт дальше всех, но медленно.' },
-    ion:    { name: 'Ионная пушка', short: 'ИОН', range: 6000, reload: 7, dmg: 16, acc: 0.8, accF: 0.04, sh: 2.6, hull: 0.25, sys: 1.6, fire: 0, stun: 5, aim: 0.6, fdmg: 60,
-              about: 'Срывает щиты втрое быстрее и глушит отсек на 5 с. Корпус почти не царапает, пожаров не даёт.' },
+    ion:    { name: 'Ионная пушка', short: 'ИОН', range: 6000, reload: 7, dmg: 16, acc: 0.8, accF: 0.04, sh: 2.6, hull: 0.5, sys: 1.6, fire: 0, stun: 5, aim: 0.6, fdmg: 60,
+              about: 'Срывает щиты втрое быстрее и глушит отсек на 5 с. По корпусу — вполсилы, пожаров не даёт.' },
     pd:     { name: 'Турель ПВО', short: 'ПВО', range: 2200, reload: 0.7, dmg: 2.5, acc: 0.85, accF: 0.42, sh: 0.5, hull: 0.6, sys: 0.3, fire: 0.05, aim: 0.35, fdmg: 34,
               about: 'Против истребителей и бомбардировщиков. По кораблям — слабо.' }
   };
@@ -107,16 +107,34 @@
       var m = plan.mounts[g], T = GUNS[m.t] || GUNS.medium;
       var ux = (m.x - plan.w / 2) * plan.cellM, uf = -(m.y - plan.h / 2) * plan.cellM;
       var face = Math.atan2(ux, uf), dist = Math.sqrt(ux * ux + uf * uf);
-      // у носа — вперёд (±92°), у бортов — на свой борт (±115°), ПВО — ±150°
-      if (dist < sh.wid * 0.12) face = 0;
+      // башня смотрит на свою сторону корпуса: нос (±100°), борт (±115°) или корма (±100°); ПВО — ±150°
+      if (dist < sh.wid * 0.12 || Math.abs(face) < Math.PI / 6) face = 0;
+      else if (Math.abs(face) > Math.PI * 0.86) face = Math.PI;
+      else face = face > 0 ? Math.PI / 2 : -Math.PI / 2;
       var room = plan.roomByN[m.room];
       sh.guns.push({ i: g, t: m.t, T: T, room: m.room, name: room ? room.name : T.name, lx: m.x, ly: m.y,
-                     face: face, arc: m.t === 'pd' ? 2.6 : face === 0 ? 1.6 : 2.0, cd: this.R() * T.reload, tgt: { k: 'auto' }, cur: null,
+                     face: face, arc: m.t === 'pd' ? 2.6 : (face === 0 || face === Math.PI) ? 1.75 : 2.0, cd: this.R() * T.reload, tgt: { k: 'auto' }, cur: null,
                      x: 0, y: 0, k: 1, aimAt: null, eff: 1, out: false });
       if (m.t !== 'pd') { main++; raw += T.dmg / T.reload; }
     }
     // урон главного калибра — пропорционально «урону» корабля в старой игре
     var k = raw > 0 ? (C.dmg / 120) * (44 / raw) : 1;
+    // и с поправкой на то, сколько стволов бьёт в одну сторону при лучшем развороте:
+    // корабли с равным «уроном» старой игры равны и здесь, как бы ни стояли пушки
+    var bestDps = 0;
+    for (var a = 0; a < 32; a++) {
+      var ang = -Math.PI + a * Math.PI / 16, v = 0;
+      for (g = 0; g < sh.guns.length; g++) {
+        var gg = sh.guns[g]; if (gg.t === 'pd') continue;
+        if (Math.abs(wrap(ang - gg.face)) <= gg.arc) v += gg.T.dmg / gg.T.reload;
+      }
+      bestDps = Math.max(bestDps, v);
+    }
+    if (bestDps > 0) k *= raw / bestDps;
+    // ионные пушки слабы по корпусу — их корабль получает прибавку, чтобы итог был равным
+    var hw = 0, hs = 0;
+    for (g = 0; g < sh.guns.length; g++) { var gt = sh.guns[g]; if (gt.t === 'pd') continue; hw += gt.T.dmg / gt.T.reload * gt.T.hull; hs += gt.T.dmg / gt.T.reload; }
+    if (hw > 0) k *= Math.min(1.5, hs / hw);
     for (g = 0; g < sh.guns.length; g++) if (sh.guns[g].t !== 'pd') sh.guns[g].k = k;
     this.ships.push(sh);
     this.place(sh);
@@ -157,16 +175,26 @@
   // ---------------------------------------------------------------- приказы игрока
   // tgt: {k:'auto'} | {k:'fighters'} | {k:'hull', ship} | {k:'sys', ship, sys} | {k:'room', ship, room}
   Battle.prototype.setTarget = function(shipN, guns, tgt) {
-    var sh = this.ships[shipN]; if (!sh || sh.dead) return 0;
+    var sh = this.ships[shipN]; if (!sh || sh.dead || !tgt) return 0;
+    // проверка приказа: годится и для сервера, где он придёт от игрока
+    var k = tgt.k, foe = this.ships[tgt.ship];
+    if (k !== 'auto' && k !== 'fighters') {
+      if (!foe || foe.dead || foe.side === sh.side) return 0;
+      if (k === 'sys' && !SYS_BY[tgt.sys]) return 0;
+      if (k === 'room' && !foe.plan.roomByN[tgt.room]) return 0;
+      if (k !== 'hull' && k !== 'sys' && k !== 'room') return 0;
+    }
+    if (!guns || !guns.length) return 0;
     var n = 0;
     for (var i = 0; i < guns.length; i++) {
-      var g = sh.guns[guns[i]]; if (!g) continue;
+      var g = (guns[i] === (guns[i] | 0)) ? sh.guns[guns[i]] : null; if (!g) continue;
       g.tgt = { k: tgt.k, ship: tgt.ship, sys: tgt.sys, room: tgt.room }; g.cur = null; n++;
     }
     return n;
   };
   Battle.prototype.order = function(shipN, x, y) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
+    if (x != null && !(isFinite(x) && isFinite(y))) return;
     sh.order = x == null ? null : { x: x, y: y }; sh.ai = x == null;
   };
 
@@ -208,7 +236,7 @@
     e.bridge = (c.sysEff('bridge') * 2 + (hasType(sh.plan, 'cic') ? c.sysEff('cic') : 1)) / 3;
     e.hangar = hasType(sh.plan, 'hangar') ? c.sysEff('hangar') : 0;
     e.power = 0.3 + 0.7 * e.reactor;
-    // щиты: восстановление, если сектор не били 3 с
+    // щиты: восстановление, если сектор не били 5 с
     for (var s = 0; s < 4; s++) {
       sh.shHit[s] = Math.max(0, sh.shHit[s] - dt);
       if (sh.shHit[s] <= 0) sh.sh[s] = Math.min(sh.shMax, sh.sh[s] + sh.regen * e.shield * e.power * dt);
@@ -253,10 +281,9 @@
         var range = mainRange(sh) * 0.7;
         if (fd > range) { want = brg; wantV = vmax; }
         else {
-          // бортом: поворот на ±90° к линии на врага — та сторона, что ближе
-          var side = wrap(sh.hd - brg) > 0 ? 1 : -1;
-          want = brg + side * Math.PI / 2; wantV = vmax * 0.35;
-          if (fd < range * 0.5) { want = brg + side * Math.PI * 0.75; wantV = vmax * 0.6; }
+          // встать так, чтобы на врага смотрело больше стволов (нос, борт или скула)
+          var o = bestFacing(sh, fd < range * 0.5);
+          want = brg + o; wantV = vmax * (fd < range * 0.5 ? 0.6 : 0.3);
         }
       }
     }
@@ -270,6 +297,25 @@
     sh.hd = wrap(sh.hd);
     sh.x += Math.cos(sh.hd) * sh.v * dt; sh.y += Math.sin(sh.hd) * sh.v * dt;
   };
+  // Поворот относительно линии на врага, при котором бьёт больше всего стволов.
+  // away — только курсы с отходом (враг слишком близко).
+  var OFFS = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2, Math.PI * 3 / 4, -Math.PI * 3 / 4];
+  function bestFacing(sh, away) {
+    var best = 0, bv = -1;
+    for (var i = 0; i < OFFS.length; i++) {
+      var o = OFFS[i]; if (away && Math.abs(o) < Math.PI / 2) continue;
+      var a = -o, v = 0;
+      for (var g = 0; g < sh.guns.length; g++) {
+        var gun = sh.guns[g]; if (gun.t === 'pd' || gun.out) continue;
+        if (Math.abs(wrap(a - gun.face)) <= gun.arc) v += gun.T.dmg * gun.k / gun.T.reload;
+      }
+      // при равенстве — тот курс, что ближе к нынешнему (не крутиться зря)
+      v -= Math.abs(wrap(o - (sh.lastO || 0))) * 0.01;
+      if (v > bv) { bv = v; best = o; }
+    }
+    sh.lastO = best;
+    return best;
+  }
   // Дистанция боя для ИИ — по средней пушке главного калибра (не по самой дальней)
   function mainRange(sh) {
     var r = [];
@@ -424,7 +470,7 @@
     var w = this.toWorld(sh, p.lx, p.ly);
     // щит сектора
     var s = this.sector(sh, p.fx, p.fy);
-    sh.shHit[s] = 3;
+    sh.shHit[s] = 5;
     if (sh.sh[s] > 0) {
       var absorb = dmg * T.sh;
       if (absorb <= sh.sh[s]) {
@@ -462,7 +508,7 @@
   };
   Battle.prototype.kill = function(sh, why) {
     if (sh.dead) return;
-    sh.dead = true; sh.deadAt = this.t; sh.why = why; sh.hull = Math.max(0, sh.hull);
+    sh.dead = true; sh.deadAt = this.t; sh.why = why; sh.hull = Math.max(0, sh.hull); sh.crit = 0; sh.order = null;
     this.ev.booms.push({ x: sh.x, y: sh.y, r: sh.len * 0.6, t0: this.t, big: 1, ship: sh.n });
     this.ev.kills.push({ ship: sh.n, side: sh.side, why: why });
     for (var i = 0; i < this.craft.length; i++) if (this.craft[i].home === sh.n && this.craft[i].docked) this.craft[i].dead = true;

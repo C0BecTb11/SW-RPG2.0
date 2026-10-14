@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
+<title>Космический бой 2.0</title>
+<link rel="stylesheet" href="space.css?v=2">
+</head>
+<body>
+<canvas id="sp-canvas"></canvas>
+
+<a id="sp-back" href="../game/galaxy-map.html">← В игру</a>
+<div id="sp-clock"><b id="sp-time">0:00</b> · <span id="sp-fps">0</span> к/с</div>
+
+<div class="sp-panel sp-top" id="sp-top">
+  <div class="sp-row">
+    <span class="sp-kicker" id="sp-kicker">Космический бой 2.0</span>
+    <span class="sp-spacer"></span>
+    <span class="sp-side" id="sp-side">Республика</span>
+  </div>
+  <div class="sp-row sp-scen" id="sp-scen">
+    <button class="sp-chip" data-scen="vp">Венатор × Провиденс</button>
+    <button class="sp-chip" data-scen="am">Акламатор × Щедрый</button>
+    <button class="sp-chip" data-scen="2x2">Два на два</button>
+  </div>
+  <div class="sp-fleet" id="sp-fleet"></div>
+</div>
+
+<div class="sp-panel sp-bottom" id="sp-bottom">
+  <button class="sp-fold" id="sp-fold">▾ свернуть</button>
+  <div class="sp-body">
+    <div id="sp-ship"></div>
+    <div class="sp-guns-head" id="sp-quick">
+      <span>Орудия</span>
+      <button class="sp-link" data-q="all">все</button>
+      <button class="sp-link" data-q="main">главные</button>
+      <button class="sp-link" data-q="pd">ПВО</button>
+      <button class="sp-link" data-q="none">снять</button>
+    </div>
+    <div class="sp-guns" id="sp-guns"></div>
+    <div class="sp-tg" id="sp-tg" hidden>
+      <div class="sp-tg-head" id="sp-tg-head">Цель для выбранных</div>
+      <div class="sp-tg-foe" id="sp-tg-foe"></div>
+      <div class="sp-tg-grid" id="sp-tg-grid"></div>
+    </div>
+    <div class="sp-btns">
+      <button class="sp-btn" id="sp-move">Ход</button>
+      <button class="sp-btn gold" id="sp-inside">Внутри</button>
+      <button class="sp-btn" id="sp-view">Обзор</button>
+    </div>
+  </div>
+</div>
+
+<div class="sp-end" id="sp-end" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Итог боя</div>
+    <h2 id="sp-end-title">Победа</h2>
+    <p id="sp-end-text"></p>
+    <div class="sp-btns" style="grid-template-columns:1fr 1fr">
+      <button class="sp-btn" id="sp-end-look">Осмотреть</button>
+      <button class="sp-btn gold" id="sp-end-again">Ещё бой</button>
+    </div>
+  </div>
+</div>
+
+<div class="sp-toast" id="sp-toast"></div>
+
+<script src="../shared/rt-core.js?v=5"></script>
+<script src="../shared/rt-figures.js?v=5"></script>
+<script src="../shared/rt-ship.js?v=1"></script>
+<script src="../shared/rt-crew.js?v=1"></script>
+<script src="../shared/rt-space.js?v=1"></script>
+<script src="../ships/ship-art.js?v=3"></script>
+<script src="space.js?v=1"></script>
+</body>
+</html>

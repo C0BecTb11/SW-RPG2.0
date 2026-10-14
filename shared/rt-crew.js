@@ -1,0 +1,665 @@
+// Экипаж корабля 2.0: живые люди (дроиды) внутри отсеков.
+//
+// Каждый — отдельное тело радиусом 0,3 клетки (0,6 м):
+//  - не проходит сквозь переборки, технику и мебель (круг против клеток);
+//  - не проходит сквозь других (раздвигаются, в проходах держатся правой стороны);
+//  - ходит по полям направлений: дальний путь — к отсеку, ближний — внутри отсека.
+//
+// Задачи (ИИ без хозяина):
+//  - мир: несут вахту, ходят в соседние отсеки и обратно;
+//  - тревога: все бегут на боевые посты;
+//  - пожар: ближайшие ремонтники и резерв тушат; если своих нет — тушит расчёт отсека;
+//  - поломка: ремонтники и инженеры чинят отсек, когда огня нет;
+//  - погиб расчётчик орудия, реактора, мостика — его место занимает резерв.
+//
+// Огонь — по клеткам отсеков: разгорается, перекидывается на соседние клетки,
+// жжёт людей и портит отсек. Состояние отсека (целость, оглушение ионным
+// ударом, кто на посту) даёт эффективность систем для космического боя.
+//
+// ES5, без зависимостей. Работает в браузере и в Node (сервер боёв).
+
+(function(root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.SWCrew = api;
+})(typeof self !== 'undefined' ? self : this, function() {
+  'use strict';
+
+  var K = { VOID: 0, TECH: 1, HULL: 2, WALL: 3, FLOOR: 4, DOOR: 5 };
+  var DX = [1, 1, 0, -1, -1, -1, 0, 1], DY = [0, 1, 1, 1, 0, -1, -1, -1], DC = [10, 14, 10, 14, 10, 14, 10, 14];
+  var STEP = 0.05;                 // шаг расчёта, с (20 в секунду)
+  var R = 0.3;                     // радиус тела, клетки
+  var WALK = 1.25, RUN = 3;        // клеток в секунду (2,5 и 6 м/с)
+
+  // Сколько людей на посту каждого типа отсека
+  var POST = { bridge: 6, flight: 5, cic: 5, gun: 3, pdgun: 2, reactor: 3, shield: 2, engine: 4, hyper: 2, hangar: 6,
+               quarters: 3, troops: 6, mess: 4, medbay: 3, armory: 2, storage: 1, hold: 1, workshop: 3, airlock: 1,
+               dock: 2, comms: 3, observe: 2, vehicle: 3, droids: 2 };
+  // Посты, которые держат системы корабля (их заполняют из резерва)
+  var KEY = { gun: 1, pdgun: 1, reactor: 1, shield: 1, engine: 1, bridge: 1, cic: 1, flight: 1, hyper: 1 };
+  // Кто в резерве: могут тушить, чинить и заменять погибших
+  var RESERVE = { quarters: 1, troops: 1, mess: 1, storage: 1, hold: 1, armory: 1, droids: 1, vehicle: 1, observe: 1, dock: 1, airlock: 1 };
+  // Ремонтники по должности
+  var FIXER = { workshop: 1, reactor: 1, engine: 1, hyper: 1, shield: 1 };
+
+  function rng(seed) {
+    var s = (seed >>> 0) || 1;
+    return function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  }
+
+  // ---------------------------------------------------------------- поля направлений
+  // Алгоритм Диала по проходимым клеткам в рамке [x0,y0,w,h] карты корабля.
+  // Диагональ — только если оба боковых свободны (никто не срезает угол).
+  function Flows(crew) {
+    this.c = crew; this.m = new Map(); this.max = 40; this.built = 0;
+    this.local = new Map(); this.lmax = 160;
+  }
+  // Рабочие массивы поиска — одни на все корабли (берутся по самому большому)
+  var SCR = { n: 0, dist: null, q: null, head: new Int32Array(16), tail: new Int32Array(16) };
+  function scratch(n) {
+    if (SCR.n < n) { SCR.n = n; SCR.dist = new Uint16Array(n); SCR.q = new Int32Array(16 * n); }
+    return SCR;
+  }
+  Flows.prototype.build = function(tx, ty, bx, by, bw, bh) {
+    var c = this.c, W = c.w, walk = c.walk, n = bw * bh;
+    var S = scratch(n), dir = new Uint8Array(n), dist = S.dist, q = S.q, head = S.head, tail = S.tail, B = 15;
+    dir.fill(255);
+    if (tx < bx || ty < by || tx >= bx + bw || ty >= by + bh || !walk[ty * W + tx]) return { dir: dir, bx: bx, by: by, bw: bw, bh: bh, tx: tx, ty: ty };
+    for (var i = 0; i < n; i++) dist[i] = 65535;
+    head.fill(0); tail.fill(0);
+    var start = (ty - by) * bw + (tx - bx);
+    dist[start] = 0; dir[start] = 254; q[0] = start; tail[0] = 1;
+    var cur = 0, left = 1;
+    while (left > 0) {
+      var b = cur % B;
+      if (head[b] === tail[b]) { cur++; continue; }
+      var cc = q[b * n + (head[b] % n)]; head[b]++; left--;
+      if (dist[cc] !== cur) continue;
+      var lx = cc % bw, ly = (cc - lx) / bw;
+      for (var d = 0; d < 8; d++) {
+        var nx = lx + DX[d], ny = ly + DY[d];
+        if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+        if (!walk[(ny + by) * W + nx + bx]) continue;
+        if (d & 1) {
+          if (!walk[(ly + by) * W + nx + bx] || !walk[(ny + by) * W + lx + bx]) continue;
+        }
+        var nc = ny * bw + nx, nd = cur + DC[d];
+        if (nd < dist[nc]) {
+          dist[nc] = nd; dir[nc] = (d + 4) & 7;
+          var nb = nd % B; q[nb * n + (tail[nb] % n)] = nc; tail[nb]++; left++;
+        }
+      }
+    }
+    this.built++;
+    return { dir: dir, bx: bx, by: by, bw: bw, bh: bh, tx: tx, ty: ty };
+  };
+  // Весь корабль → к точке (обычно к «входу» отсека)
+  Flows.prototype.global = function(tx, ty) {
+    var key = ty * this.c.w + tx, f = this.m.get(key);
+    if (f) { this.m.delete(key); this.m.set(key, f); return f; }
+    if (this.c.budget <= 0) return null;
+    this.c.budget--; this.c.flowT = 0.15;
+    f = this.build(tx, ty, 0, 0, this.c.w, this.c.h);
+    this.m.set(key, f);
+    if (this.m.size > this.max) this.m.delete(this.m.keys().next().value);
+    return f;
+  };
+  // Внутри отсека (рамка отсека плюс кайма) → к своей клетке
+  Flows.prototype.inRoom = function(room, tx, ty) {
+    var key = room.n * 1048576 + ty * this.c.w + tx, f = this.local.get(key);
+    if (f) { this.local.delete(key); this.local.set(key, f); return f; }
+    var c = this.c, bx = Math.max(0, room.x - 2), by = Math.max(0, room.y - 2);
+    var bw = Math.min(c.w, room.x + room.w + 2) - bx, bh = Math.min(c.h, room.y + room.h + 2) - by;
+    f = this.build(tx, ty, bx, by, bw, bh);
+    this.local.set(key, f);
+    if (this.local.size > this.lmax) this.local.delete(this.local.keys().next().value);
+    return f;
+  };
+  function flowDir(f, x, y) {
+    var lx = x - f.bx, ly = y - f.by;
+    if (lx < 0 || ly < 0 || lx >= f.bw || ly >= f.bh) return 255;
+    return f.dir[ly * f.bw + lx];
+  }
+
+  // ---------------------------------------------------------------- экипаж
+  function Crew(ship, opts) {
+    opts = opts || {};
+    this.ship = ship; this.w = ship.w; this.h = ship.h;
+    this.R = rng(opts.seed || (ship.w * 7919 + ship.h));
+    var n = ship.w * ship.h, i;
+    // проходимо: пол и двери без предметов
+    this.walk = new Uint8Array(n);
+    for (i = 0; i < n; i++) {
+      var k = ship.kind[i];
+      this.walk[i] = (k === K.FLOOR || k === K.DOOR) && !ship.prop[i] ? 1 : 0;
+    }
+    this.mainOnly();
+    this.fire = new Uint8Array(n);      // сила огня в клетке 0..100
+    this.burning = [];                  // номера горящих клеток
+    this.flows = new Flows(this);
+    this.budget = 2;
+    this.alertOn = !!opts.alert;
+    this.t = 0; this.acc = 0; this.think = 0; this.fireT = 0; this.flowT = 0;
+    this.ev = { deaths: [], ignites: [] };
+    // отсеки: состояние
+    this.rooms = {};
+    this.roomList = [];
+    for (i = 0; i < ship.rooms.length; i++) {
+      var r = ship.rooms[i];
+      var st = { n: r.n, t: r.t, r: r, integ: 100, stun: 0, need: POST[r.t] || 1, fires: 0, anchor: null,
+                 staffed: 0, assigned: 0, fixers: 0, fighters: 0 };
+      st.anchor = this.anchorOf(r);
+      this.rooms[r.n] = st; this.roomList.push(st);
+    }
+    // люди
+    this.agents = [];
+    var figs = opts.figs || [0];
+    for (i = 0; i < this.roomList.length; i++) {
+      var rs = this.roomList[i];
+      if (!rs.anchor) continue;
+      for (var j = 0; j < rs.need; j++) {
+        var p = this.spotIn(rs.r);
+        if (!p) break;
+        this.agents.push({
+          id: this.agents.length, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, alive: true,
+          home: rs.n, spot: p, role: KEY[rs.t] ? 'post' : FIXER[rs.t] ? 'fixer' : 'reserve',
+          task: 'post', goalRoom: rs.n, goal: p, at: true, wait: this.R() * 4, stuck: 0, lastD: 1e9, wig: 0,
+          job: null, fig: figs[Math.floor(this.R() * figs.length)], aim: this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28, busy: false
+        });
+        rs.assigned++;
+      }
+    }
+    // сетка соседства
+    this.cellHead = new Int32Array(n).fill(-1);
+    this.nextIn = new Int32Array(Math.max(1, this.agents.length));
+    this.used = [];
+  }
+
+  // Пятачки пола, отрезанные мебелью от остального корабля, — не для людей
+  Crew.prototype.mainOnly = function() {
+    var W = this.w, n = W * this.h, walk = this.walk, lab = new Int32Array(n), best = 0, bestN = 0, k = 0, st = [];
+    for (var i = 0; i < n; i++) {
+      if (!walk[i] || lab[i]) continue;
+      k++; lab[i] = k; st.push(i); var sz = 0;
+      while (st.length) {
+        var p = st.pop(); sz++;
+        var x = p % W;
+        if (x > 0 && walk[p - 1] && !lab[p - 1]) { lab[p - 1] = k; st.push(p - 1); }
+        if (x < W - 1 && walk[p + 1] && !lab[p + 1]) { lab[p + 1] = k; st.push(p + 1); }
+        if (p >= W && walk[p - W] && !lab[p - W]) { lab[p - W] = k; st.push(p - W); }
+        if (p + W < n && walk[p + W] && !lab[p + W]) { lab[p + W] = k; st.push(p + W); }
+      }
+      if (sz > bestN) { bestN = sz; best = k; }
+    }
+    for (i = 0; i < n; i++) if (walk[i] && lab[i] !== best) walk[i] = 0;
+  };
+  // «Вход» отсека — свободная клетка ближе к середине
+  Crew.prototype.anchorOf = function(r) {
+    var cx = Math.floor(r.x + r.w / 2), cy = Math.floor(r.y + r.h / 2), best = null, bd = 1e9;
+    for (var y = r.y; y < r.y + r.h; y++) for (var x = r.x; x < r.x + r.w; x++) {
+      var i = y * this.w + x;
+      if (!this.walk[i] || this.ship.room[i] !== r.n) continue;
+      var d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+      if (d < bd) { bd = d; best = [x, y]; }
+    }
+    return best;
+  };
+  Crew.prototype.spotIn = function(r) {
+    var sh = this.ship;
+    for (var t = 0; t < 60; t++) {
+      var x = r.x + 1 + Math.floor(this.R() * Math.max(1, r.w - 2)), y = r.y + 1 + Math.floor(this.R() * Math.max(1, r.h - 2));
+      var i = y * this.w + x;
+      if (this.walk[i] && sh.room[i] === r.n && !this.fire[i]) return [x, y];
+    }
+    var st = this.rooms[r.n];
+    return st && st.anchor ? [st.anchor[0], st.anchor[1]] : null;
+  };
+
+  // ---------------------------------------------------------------- внешние воздействия
+  Crew.prototype.alert = function(on) {
+    this.alertOn = !!on;
+    for (var i = 0; i < this.agents.length; i++) {
+      var a = this.agents[i];
+      if (!a.alive || a.job) continue;
+      this.sendPost(a);
+      a.wait = on ? this.R() * 1.2 : this.R() * 3;
+    }
+  };
+  // Попадание в клетку: пожар
+  Crew.prototype.ignite = function(x, y, power) {
+    x = Math.floor(x); y = Math.floor(y);
+    var sh = this.ship, best = -1, bd = 1e9;
+    // тяжёлые машины (турели, ядро реактора) бронированы — горит вокруг них
+    for (var dy = -8; dy <= 8; dy++) for (var dx = -8; dx <= 8; dx++) {
+      var gx = x + dx, gy = y + dy;
+      if (gx < 0 || gy < 0 || gx >= this.w || gy >= this.h) continue;
+      var i = gy * this.w + gx;
+      if (!this.burnable(i)) continue;
+      var d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; }
+    }
+    if (best < 0) return false;
+    if (!this.fire[best]) this.burning.push(best);
+    this.fire[best] = Math.min(100, Math.max(this.fire[best], power || 40));
+    this.ev.ignites.push(best);
+    return true;
+  };
+  Crew.prototype.burnable = function(i) {
+    var sh = this.ship, k = sh.kind[i];
+    return !!sh.room[i] && (k === K.FLOOR || k === K.DOOR) && sh.prop[i] !== 2;
+  };
+  // Взрыв в клетке: ранит и убивает рядом
+  Crew.prototype.blast = function(x, y, rad, dmg) {
+    var r2 = rad * rad;
+    for (var i = 0; i < this.agents.length; i++) {
+      var a = this.agents[i];
+      if (!a.alive) continue;
+      var dx = a.x - x, dy = a.y - y, d = dx * dx + dy * dy;
+      if (d <= r2) this.hurt(a, dmg * (1 - Math.sqrt(d) / (rad + 0.01) * 0.5));
+    }
+  };
+  Crew.prototype.damageRoom = function(n, amount, stun) {
+    var st = this.rooms[n]; if (!st) return;
+    st.integ = Math.max(0, st.integ - amount);
+    if (stun) st.stun = Math.max(st.stun, stun);
+  };
+  Crew.prototype.hurt = function(a, d) {
+    a.hp -= d;
+    if (a.hp <= 0 && a.alive) {
+      a.alive = false; a.hp = 0; this.ev.deaths.push(a.id);
+      this.releaseJob(a);
+      var st = this.rooms[a.home]; if (st) st.assigned--;
+    }
+  };
+
+  // ---------------------------------------------------------------- эффективность
+  // Отсек: целость × люди на посту. Без людей пост орудия молчит.
+  Crew.prototype.roomEff = function(n) {
+    var st = this.rooms[n]; if (!st) return 0;
+    if (st.stun > 0 || st.integ < 12) return 0;
+    var people = Math.min(1, st.staffed / st.need);
+    var fire = st.fires ? Math.max(0.35, 1 - st.fires / 40) : 1;
+    if (KEY[st.t] && st.t !== 'reactor' && st.t !== 'engine' && st.t !== 'shield' && st.t !== 'hyper') return st.integ / 100 * people * fire;
+    return st.integ / 100 * (0.3 + 0.7 * people) * fire;
+  };
+  // Система по типу отсеков (среднее), например 'engine', 'reactor'
+  Crew.prototype.sysEff = function(t) {
+    var s = 0, n = 0;
+    for (var i = 0; i < this.roomList.length; i++) if (this.roomList[i].t === t) { s += this.roomEff(this.roomList[i].n); n++; }
+    return n ? s / n : 1;
+  };
+  Crew.prototype.alive = function() { var n = 0; for (var i = 0; i < this.agents.length; i++) if (this.agents[i].alive) n++; return n; };
+
+  // ---------------------------------------------------------------- задачи
+  Crew.prototype.sendPost = function(a) {
+    var st = this.rooms[a.home];
+    if (!st) return;
+    if (!a.spot || this.fire[a.spot[1] * this.w + a.spot[0]] > 0) a.spot = this.spotIn(st.r) || a.spot;
+    this.go(a, st.n, a.spot, 'post');
+  };
+  Crew.prototype.go = function(a, roomN, cell, task) {
+    a.goalRoom = roomN; a.goal = cell; a.task = task; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wig = 0;
+  };
+  Crew.prototype.releaseJob = function(a) {
+    if (!a.job) return;
+    var st = this.rooms[a.job.room];
+    if (st) { if (a.job.kind === 'fire') st.fighters--; else st.fixers--; }
+    a.job = null;
+  };
+
+  // Раз в полсекунды: кто куда бежит
+  Crew.prototype.dispatch = function() {
+    var i, j, st, a, rs = this.roomList, ag = this.agents;
+    // 1. Счёт: кто на посту, сколько огня по отсекам
+    for (i = 0; i < rs.length; i++) { rs[i].staffed = 0; rs[i].fires = 0; }
+    for (i = 0; i < this.burning.length; i++) { st = this.rooms[this.ship.room[this.burning[i]]]; if (st) st.fires++; }
+    for (i = 0; i < ag.length; i++) {
+      a = ag[i];
+      if (a.alive && !a.job && a.task === 'post' && a.at && this.ship.room[Math.floor(a.y) * this.w + Math.floor(a.x)] === a.home) {
+        st = this.rooms[a.home]; if (st) st.staffed++;
+      }
+    }
+    // 2. Освободить тех, чья работа кончилась
+    for (i = 0; i < ag.length; i++) {
+      a = ag[i];
+      if (!a.alive || !a.job) continue;
+      st = this.rooms[a.job.room];
+      var done = a.job.kind === 'fire' ? st.fires === 0 : (st.integ >= 99.5 || st.fires > 0);
+      if (done) { this.releaseJob(a); this.sendPost(a); }
+    }
+    if (!this.alertOn && !this.burning.length) return;
+    // 3. Пожары: нужно бойцов по размеру огня
+    for (i = 0; i < rs.length; i++) {
+      st = rs[i];
+      if (!st.fires) continue;
+      var need = Math.min(8, 2 + Math.ceil(st.fires / 6));
+      if (st.fighters < need) this.assign(st, 'fire', need - st.fighters);
+    }
+    // 4. Поломки без огня
+    for (i = 0; i < rs.length; i++) {
+      st = rs[i];
+      if (st.fires || st.integ >= 95) continue;
+      var needF = st.integ < 50 ? 4 : 2;
+      if (KEY[st.t]) needF++;
+      if (st.fixers < needF) this.assign(st, 'fix', needF - st.fixers);
+    }
+    // 5. Пустые ключевые посты — резерв встаёт на место погибших
+    if (this.alertOn) {
+      for (i = 0; i < rs.length; i++) {
+        st = rs[i];
+        if (!KEY[st.t] || st.assigned >= st.need || !st.anchor) continue;
+        for (j = st.assigned; j < st.need; j++) {
+          var b = this.nearest(st, function(x) { return x.role === 'reserve' && !x.job; });
+          if (!b) break;
+          var old = this.rooms[b.home]; if (old) old.assigned--;
+          b.home = st.n; b.role = 'post'; b.spot = this.spotIn(st.r); st.assigned++;
+          this.sendPost(b);
+        }
+      }
+    }
+  };
+  // Кого послать: ближайшие по «цене» пути. Ремонтники дешевле резерва,
+  // свои в горящем отсеке — первые (они уже здесь). Расчёты чужих постов не трогаем.
+  Crew.prototype.assign = function(st, kind, count) {
+    var ag = this.agents, ax = st.anchor[0], ay = st.anchor[1], cand = [];
+    for (var i = 0; i < ag.length; i++) {
+      var a = ag[i];
+      if (!a.alive || a.job) continue;
+      var own = a.home === st.n, w;
+      if (kind === 'fire') w = own ? 0.3 : a.role === 'fixer' ? 0.6 : a.role === 'reserve' ? 1 : -1;
+      else w = own && a.role === 'post' ? -1 : a.role === 'fixer' ? 0.6 : a.role === 'reserve' ? 1 : -1;
+      if (w < 0) continue;
+      var dx = a.x - ax, dy = a.y - ay;
+      cand.push([Math.sqrt(dx * dx + dy * dy) * w, a]);
+    }
+    cand.sort(function(p, q) { return p[0] - q[0]; });
+    for (var k = 0; k < cand.length && count > 0; k++, count--) {
+      var b = cand[k][1];
+      b.job = { kind: kind, room: st.n };
+      if (kind === 'fire') st.fighters++; else st.fixers++;
+      this.goJob(b);
+    }
+  };
+  Crew.prototype.nearest = function(st, ok, maxD) {
+    var best = null, bd = (maxD || 1e9) * (maxD || 1e9), ax = st.anchor[0], ay = st.anchor[1];
+    for (var i = 0; i < this.agents.length; i++) {
+      var a = this.agents[i];
+      if (!a.alive || !ok(a)) continue;
+      var dx = a.x - ax, dy = a.y - ay, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = a; }
+    }
+    return best;
+  };
+  // Куда встать для работы: у ближайшей горящей клетки / у машины отсека
+  Crew.prototype.goJob = function(a) {
+    var st = this.rooms[a.job.room], cell = null;
+    if (a.job.kind === 'fire') cell = this.fireSpot(st, a);
+    if (!cell) cell = this.spotIn(st.r);
+    if (cell) this.go(a, st.n, cell, a.job.kind);
+  };
+  Crew.prototype.fireSpot = function(st, a) {
+    var best = -1, bd = 1e9, W = this.w, sh = this.ship;
+    for (var i = 0; i < this.burning.length; i++) {
+      var c = this.burning[i]; if (sh.room[c] !== st.n) continue;
+      var x = c % W, y = (c - x) / W, d = (x - a.x) * (x - a.x) + (y - a.y) * (y - a.y);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (best < 0) return null;
+    // соседняя клетка, где можно стоять (лучше без огня)
+    var bx = best % W, by = (best - bx) / W, pick = null, pv = 1e9;
+    for (var r = 1; r <= 7 && !pick; r++) {
+      for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        var gx = bx + dx, gy = by + dy;
+        if (gx < 0 || gy < 0 || gx >= W || gy >= this.h) continue;
+        var k = gy * W + gx;
+        if (!this.walk[k] || sh.room[k] !== st.n) continue;
+        var v = this.fire[k] * 4 + (gx - a.x) * (gx - a.x) + (gy - a.y) * (gy - a.y);
+        if (v < pv) { pv = v; pick = [gx, gy]; }
+      }
+    }
+    return pick;
+  };
+
+  // ---------------------------------------------------------------- огонь
+  Crew.prototype.stepFire = function(dt) {
+    var W = this.w, sh = this.ship, f = this.fire, list = this.burning, R = this.R, i;
+    var add = [];
+    for (i = list.length - 1; i >= 0; i--) {
+      var c = list[i], v = f[c];
+      if (v === 0) { list[i] = list[list.length - 1]; list.pop(); continue; }
+      f[c] = Math.min(100, v + 9 * dt);
+      var st = this.rooms[sh.room[c]];
+      if (st) st.integ = Math.max(0, st.integ - v * 0.0005 * dt);
+      if (v > 45 && list.length + add.length < 2500) {
+        var x = c % W, y = (c - x) / W;
+        for (var d = 0; d < 8; d += 2) {
+          var nx = x + DX[d], ny = y + DY[d];
+          if (nx < 0 || ny < 0 || nx >= W || ny >= this.h) continue;
+          var nc = ny * W + nx;
+          if (f[nc] || !this.burnable(nc)) continue;
+          if (R() < 0.035 * dt * (v / 100)) { f[nc] = 12; add.push(nc); }
+        }
+      }
+    }
+    for (i = 0; i < add.length; i++) list.push(add[i]);
+  };
+
+  // ---------------------------------------------------------------- шаг
+  Crew.prototype.step = function(dt) {
+    this.acc = Math.min(this.acc + dt, 0.5);
+    while (this.acc >= STEP) { this.acc -= STEP; this.tick(STEP); }
+  };
+  Crew.prototype.tick = function(dt) {
+    this.t += dt;
+    // дальний путь по всему кораблю дорогой (5–15 мс) — не чаще ~6 раз в секунду
+    this.flowT -= dt; this.budget = this.flowT <= 0 ? 1 : 0;
+    var i, rs = this.roomList;
+    for (i = 0; i < rs.length; i++) if (rs[i].stun > 0) rs[i].stun = Math.max(0, rs[i].stun - dt);
+    this.fireT += dt;
+    if (this.fireT >= 0.25) { this.stepFire(this.fireT); this.fireT = 0; }
+    this.think -= dt;
+    if (this.think <= 0) { this.think = 0.5; this.dispatch(); }
+    var ag = this.agents;
+    for (i = 0; i < ag.length; i++) if (ag[i].alive) this.think1(ag[i], dt);
+    this.collide(dt);
+  };
+
+  // Решение одного человека на шаг: куда хочет идти
+  Crew.prototype.think1 = function(a, dt) {
+    var W = this.w, cx = Math.floor(a.x), cy = Math.floor(a.y), here = cy * W + cx;
+    // огонь жжёт
+    if (this.fire[here]) this.hurt(a, this.fire[here] * (a.job && a.job.kind === 'fire' ? 0.05 : 0.14) * dt);
+    if (!a.alive) return;
+    a.dvx = 0; a.dvy = 0;
+    if (a.at) {
+      a.mv += (0 - a.mv) * Math.min(1, dt * 6);
+      this.work(a, dt);
+      return;
+    }
+    if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
+    var gx = a.goal[0], gy = a.goal[1];
+    var ddx = gx + 0.5 - a.x, ddy = gy + 0.5 - a.y, dist = Math.sqrt(ddx * ddx + ddy * ddy);
+    if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.1 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; return; }
+    // где следующий шаг
+    var room = this.ship.roomByN[a.goalRoom], f = null, d = 255;
+    if (room && this.ship.room[here] === a.goalRoom) f = this.flows.inRoom(room, gx, gy);
+    if (f) d = flowDir(f, cx, cy);
+    if (!f || d === 255) {
+      var st = this.rooms[a.goalRoom];
+      var an = st && st.anchor;
+      if (an) {
+        if (cx === an[0] && cy === an[1]) { f = this.flows.inRoom(room, gx, gy); d = flowDir(f, cx, cy); }
+        else { f = this.flows.global(an[0], an[1]); d = f ? flowDir(f, cx, cy) : 255; }
+      }
+    }
+    if (!f) { a.wait = 0.1; return; }          // поле строится в следующий шаг
+    var tx, ty;
+    if (d === 254) { tx = gx + 0.5; ty = gy + 0.5; }
+    else if (d === 255) {
+      // путь закрыт (огонь не в счёт — закрыто стенами): выбрать новое место
+      a.goal = this.spotIn(room) || a.goal; a.wait = 0.5; return;
+    } else {
+      var nx = cx + DX[d], ny = cy + DY[d], d2 = flowDir(f, nx, ny);
+      tx = nx + 0.5; ty = ny + 0.5;
+      if (d2 < 8) { tx += DX[d2] * 0.5; ty += DY[d2] * 0.5; }   // плавнее на поворотах
+    }
+    var dx = tx - a.x, dy = ty - a.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
+    var urgent = this.alertOn || a.job;
+    var sp = urgent ? RUN : WALK;
+    // застрял — шаг в сторону
+    if (dist < a.lastD - 0.05) { a.lastD = dist; a.stuck = 0; } else a.stuck += dt;
+    if (a.stuck > 1.5) { a.wig = 0.6; a.stuck = 0; a.side = this.R() < 0.5 ? 1 : -1; }
+    if (a.wig > 0) { a.wig -= dt; var px = -dy / L * a.side, py = dx / L * a.side; dx = dx / L + px * 0.9; dy = dy / L + py * 0.9; L = Math.sqrt(dx * dx + dy * dy); }
+    a.dvx = dx / L * sp; a.dvy = dy / L * sp;
+    var ang = Math.atan2(dy, dx);
+    a.legs = turn(a.legs, ang, 9 * dt); a.aim = turn(a.aim, ang, 7 * dt);
+    a.mv += (1 - a.mv) * Math.min(1, dt * 6);
+    a.phase = (a.phase + dt * (urgent ? 10 : 7)) % (Math.PI * 2);
+  };
+
+  // На месте: вахта, тушение, ремонт, прогулки в мирное время
+  Crew.prototype.work = function(a, dt) {
+    if (a.job && a.job.kind === 'fire') {
+      var W = this.w, cx = Math.floor(a.x), cy = Math.floor(a.y), any = false;
+      // струя на ближайшую горящую клетку в шаге-двух и чуть по соседним
+      // струя бьёт до 7 клеток (14 м): огонь на машинах достают из прохода
+      var bk = -1, bd = 999;
+      for (var dy = -7; dy <= 7; dy++) for (var dx = -7; dx <= 7; dx++) {
+        var gx = cx + dx, gy = cy + dy;
+        if (gx < 0 || gy < 0 || gx >= W || gy >= this.h) continue;
+        var k = gy * W + gx;
+        if (!this.fire[k]) continue;
+        any = true;
+        var dd = dx * dx + dy * dy;
+        if (dd < bd) { bd = dd; bk = k; }
+        if (dd <= 2) this.fire[k] = Math.max(0, this.fire[k] - 8 * dt);
+      }
+      if (bk >= 0) {
+        this.fire[bk] = Math.max(0, this.fire[bk] - 30 * dt);
+        var fx = bk % W, fy = (bk - fx) / W;
+        a.aim = turn(a.aim, Math.atan2(fy + 0.5 - a.y, fx + 0.5 - a.x), 8 * dt);
+      }
+      a.phase = (a.phase + dt * 4) % 6.28;
+      if (!any) { var c = this.fireSpot(this.rooms[a.job.room], a); if (c) this.go(a, a.job.room, c, 'fire'); }
+      return;
+    }
+    if (a.job && a.job.kind === 'fix') {
+      var st = this.rooms[a.job.room];
+      if (st && !st.fires) st.integ = Math.min(100, st.integ + 0.9 * dt);
+      a.phase = (a.phase + dt * 3) % 6.28;
+      a.wait -= dt;
+      if (a.wait < -4) { a.wait = 0; var p = this.spotIn(st.r); if (p) this.go(a, st.n, p, 'fix'); }
+      return;
+    }
+    if (this.alertOn) return;
+    // мирное время: постоял — прошёлся
+    a.wait -= dt;
+    if (a.wait > 0) return;
+    a.wait = 2 + this.R() * 6;
+    if (this.R() < 0.15) {
+      var back = a.goalRoom !== a.home;
+      var r2 = back ? this.ship.roomByN[a.home] : this.ship.rooms[Math.floor(this.R() * this.ship.rooms.length)];
+      var p2 = r2 && this.spotIn(r2);
+      if (p2) { this.go(a, r2.n, p2, 'post'); a.wait = 0; }
+    } else {
+      var r = this.ship.roomByN[a.goalRoom], p3 = r && this.spotIn(r);
+      if (p3 && Math.abs(p3[0] - a.x) + Math.abs(p3[1] - a.y) < 14) { this.go(a, r.n, p3, 'post'); a.wait = 0; }
+    }
+  };
+
+  function turn(cur, to, step) {
+    var d = to - cur;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return Math.abs(d) <= step ? to : cur + (d > 0 ? step : -step);
+  }
+
+  // ---------------------------------------------------------------- тела
+  // Движение → раздвинуть людей (правостороннее расхождение) → вытолкнуть из стен.
+  Crew.prototype.collide = function(dt) {
+    var ag = this.agents, W = this.w, head = this.cellHead, next = this.nextIn, used = this.used, i, a;
+    for (i = 0; i < ag.length; i++) {
+      a = ag[i]; if (!a.alive) continue;
+      var k = Math.min(1, dt * 10);
+      a.vx += ((a.dvx || 0) - a.vx) * k; a.vy += ((a.dvy || 0) - a.vy) * k;
+      a.x += a.vx * dt; a.y += a.vy * dt;
+      this.wall(a);
+    }
+    // сетка
+    for (i = 0; i < used.length; i++) head[used[i]] = -1;
+    used.length = 0;
+    for (i = 0; i < ag.length; i++) {
+      a = ag[i]; if (!a.alive) continue;
+      var c = Math.floor(a.y) * W + Math.floor(a.x);
+      if (head[c] === -1) used.push(c);
+      next[i] = head[c]; head[c] = i;
+    }
+    var D = R * 2, D2 = D * D;
+    for (i = 0; i < ag.length; i++) {
+      a = ag[i]; if (!a.alive) continue;
+      var ax = Math.floor(a.x), ay = Math.floor(a.y);
+      for (var yy = ay - 1; yy <= ay + 1; yy++) {
+        if (yy < 0 || yy >= this.h) continue;
+        for (var xx = ax - 1; xx <= ax + 1; xx++) {
+          if (xx < 0 || xx >= W) continue;
+          for (var j = head[yy * W + xx]; j !== -1; j = next[j]) {
+            if (j <= i) continue;
+            var b = ag[j], dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+            if (d2 >= D2) continue;
+            var d = Math.sqrt(d2);
+            if (d < 1e-4) { dx = (i & 1 ? 1 : -1) * 0.01; dy = 0.01; d = 0.0141; }
+            var over = D - d, nx = dx / d, ny = dy / d;
+            // кто стоит — уступает тому, кто идёт
+            var am = a.at ? 0 : 1, bm = b.at ? 0 : 1;
+            var wa = am === bm ? 0.5 : am ? 0.25 : 0.75, wb = 1 - wa;
+            a.x -= nx * over * wa; a.y -= ny * over * wa;
+            b.x += nx * over * wb; b.y += ny * over * wb;
+            // встречные — каждый вправо от своего хода
+            if (am && bm && (a.dvx * b.dvx + a.dvy * b.dvy) < 0) {
+              var sa = Math.sqrt(a.dvx * a.dvx + a.dvy * a.dvy) || 1, sb = Math.sqrt(b.dvx * b.dvx + b.dvy * b.dvy) || 1;
+              var side = 0.35 * over;
+              a.x += -a.dvy / sa * side; a.y += a.dvx / sa * side;
+              b.x += -b.dvy / sb * side; b.y += b.dvx / sb * side;
+            }
+            // стоящего толкнули — не вечно, вернётся на своё место
+            if (a.at && wa > 0.5 && over > 0.15) { a.at = false; a.lastD = 1e9; }
+            if (b.at && wb > 0.5 && over > 0.15) { b.at = false; b.lastD = 1e9; }
+          }
+        }
+      }
+    }
+    for (i = 0; i < ag.length; i++) if (ag[i].alive) this.wall(ag[i]);
+  };
+  // Круг против непроходимых клеток: вытолкнуть наружу
+  Crew.prototype.wall = function(a) {
+    var W = this.w, H = this.h, walk = this.walk;
+    for (var pass = 0; pass < 2; pass++) {
+      var cx = Math.floor(a.x), cy = Math.floor(a.y);
+      // центр сам оказался в стене (сильный толчок) — назад на ближайшую свободную клетку
+      if (cx < 0 || cy < 0 || cx >= W || cy >= H || !walk[cy * W + cx]) { this.unstick(a); cx = Math.floor(a.x); cy = Math.floor(a.y); }
+      for (var y = cy - 1; y <= cy + 1; y++) for (var x = cx - 1; x <= cx + 1; x++) {
+        if (x >= 0 && y >= 0 && x < W && y < H && walk[y * W + x]) continue;
+        var px = Math.max(x, Math.min(x + 1, a.x)), py = Math.max(y, Math.min(y + 1, a.y));
+        var dx = a.x - px, dy = a.y - py, d2 = dx * dx + dy * dy;
+        if (d2 >= R * R) continue;
+        var d = Math.sqrt(d2);
+        if (d < 1e-5) continue;
+        var push = R - d;
+        a.x += dx / d * push; a.y += dy / d * push;
+      }
+    }
+  };
+  Crew.prototype.unstick = function(a) {
+    var W = this.w, cx = Math.floor(a.x), cy = Math.floor(a.y), best = null, bd = 1e9;
+    for (var r = 1; r <= 4 && !best; r++) {
+      for (var y = cy - r; y <= cy + r; y++) for (var x = cx - r; x <= cx + r; x++) {
+        if (x < 0 || y < 0 || x >= W || y >= this.h || !this.walk[y * W + x]) continue;
+        var dx = x + 0.5 - a.x, dy = y + 0.5 - a.y, d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = [x + 0.5, y + 0.5]; }
+      }
+    }
+    if (best) { a.x = best[0]; a.y = best[1]; }
+  };
+
+  return { Crew: Crew, POST: POST, KEY: KEY, K: K, STEP: STEP, R: R };
+});

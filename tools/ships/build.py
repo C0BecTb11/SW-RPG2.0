@@ -169,7 +169,7 @@ def build(ship_id, spec):
                     c = reach([(x, y)]); seen |= c; comps.append(c)
         return comps
 
-    for _ in range(40):
+    for _ in range(600):
         comps = components()
         if len(comps) <= 1: break
         comps.sort(key=lambda c: -int(c.sum()))

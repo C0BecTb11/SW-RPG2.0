@@ -17,6 +17,9 @@
 | `server/deploy/` | установка на Hetzner: `cloud-config.yaml` → `install.sh`, автообновление `update.sh` |
 | `server/bench/load.js` | нагрузочный замер сервера: `node server/bench/load.js 120 10` |
 | `proto/` | прототип боя на ~500 и ~2000 войск с замером плавности: https://c0bectb11.github.io/SW-RPG2.0/proto/ |
+| `ships/` | корабли 2.0 снаружи и изнутри: https://c0bectb11.github.io/SW-RPG2.0/ships/ |
+| `shared/ships/*.json`, `shared/rt-ship.js` | планы отсеков кораблей (клетка 2 м) и их чтение |
+| `tools/ships/` | сборка планов из спрайта карты и плана по канону: `python3 tools/ships/build.py` |
 | `sql/` | данные и миграции базы; `rt_2_0_*.sql` — таблицы сервера боёв и блокировка «бой 2.0 / старая игра» |
 
 ## Блокировка между старой игрой и 2.0

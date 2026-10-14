@@ -17,35 +17,8 @@
     { id: 'providence', short: 'Провиденс' }
   ];
 
-  // ---------- палитры ----------
-  // Республика — светлые переборки, синие и красные метки; КНС — бронза и
-  // тёмный металл, синие огни. Пол отсека тонирован по его назначению.
-  var PAL = {
-    republic: {
-      wall: '#c3c9d1', wallTop: '#e6eaef', wallEdge: '#4a525c', corridor: '#666e78', plate: 'rgba(28,32,38,0.93)',
-      lamp: '#f2f6ff', lampGlow: 'rgba(200,225,255,0.22)', stripGlow: 'rgba(160,210,255,0.18)', screenGlow: 'rgba(120,190,255,0.16)',
-      doorGlow: 'rgba(130,230,150,0.12)', accentSoft: 'rgba(192,69,58,0.55)', corridorLine: 'rgba(230,236,242,0.35)',
-      accent: '#c0453a', light: '#9fd0ff', door: '#8b939c', doorLight: '#7fe08a', tech: 'rgba(6,9,14,0.55)',
-      floor: {
-        hangar: '#565d66', bridge: '#2b405c', flight: '#2b405c', cic: '#2e3f5a', gun: '#5d4640', pdgun: '#5a4642',
-        reactor: '#5f5130', shield: '#2c5560', engine: '#544a40', hyper: '#463e5e', quarters: '#555d54', troops: '#525a52',
-        mess: '#5c5b4c', medbay: '#3d5f59', armory: '#5d4b4b', storage: '#5a5548', hold: '#5a5548', workshop: '#5a5848',
-        airlock: '#4a4e57', dock: '#4c5562', comms: '#33506a', observe: '#2b405c', vehicle: '#535a63', droids: '#585042'
-      }
-    },
-    cis: {
-      wall: '#8b8170', wallTop: '#b3a68e', wallEdge: '#2f2a23', corridor: '#4f4b45', plate: 'rgba(26,24,22,0.93)',
-      lamp: '#ffd8a8', lampGlow: 'rgba(255,190,120,0.20)', stripGlow: 'rgba(110,160,240,0.18)', screenGlow: 'rgba(255,160,90,0.14)',
-      doorGlow: 'rgba(230,160,70,0.12)', accentSoft: 'rgba(61,116,214,0.55)', corridorLine: 'rgba(110,160,230,0.35)',
-      accent: '#3d74d6', light: '#7fb3ff', door: '#6c655a', doorLight: '#e3a24a', tech: 'rgba(8,8,10,0.6)',
-      floor: {
-        hangar: '#4a4741', bridge: '#2a3446', flight: '#2a3446', cic: '#2c3344', gun: '#54403a', pdgun: '#523f3a',
-        reactor: '#58492a', shield: '#284650', engine: '#4a4038', hyper: '#3e3550', quarters: '#4b4c44', troops: '#4a4b44',
-        mess: '#504d40', medbay: '#344c48', armory: '#504141', storage: '#4f4a3f', hold: '#4c473c', workshop: '#4f4c3e',
-        airlock: '#40424a', dock: '#424852', comms: '#2c4258', observe: '#2a3446', vehicle: '#474b52', droids: '#4d4537'
-      }
-    }
-  };
+  // Палитры отсеков — в ship-art.js (общие с космическим боем)
+  var PAL = window.ShipArt.PAL;
 
   // ---------- состояние ----------
   var V = { ship: null, map: null, img: null, pal: null, flows: null, crew: [], sel: null, labels: true, cache: {} };
@@ -58,7 +31,7 @@
     toast('Загружаю ' + nameOf(id) + '…');
     var tasks = [];
     if (!V.cache[id]) {
-      tasks.push(fetch('../shared/ships/' + id + '.json?v=2').then(function(r) {
+      tasks.push(fetch('../shared/ships/' + id + '.json?v=3').then(function(r) {
         if (!r.ok) throw new Error('план не найден'); return r.json();
       }).then(function(d) { V.cache[id] = { data: d }; }));
     }
@@ -70,8 +43,6 @@
       V.ship = c.ship; V.img = c.img; V.pal = PAL[V.ship.faction] || PAL.republic;
       if (!c.clip) c.clip = makeClip(c.ship, c.img);
       V.clip = c.clip;
-      V.map = SH.rtMap(V.ship, S);
-      V.flows = new S.FlowCache(V.map, 24);
       V.sel = null;
       CHUNKS.clear();
       makeCrew();
@@ -190,90 +161,16 @@
   }
 
   // ---------- экипаж ----------
-  // Сколько народу на каком посту; бродят по отсеку, иногда идут в другой
-  var CREW_PER = { bridge: 6, flight: 5, cic: 5, gun: 3, pdgun: 2, reactor: 3, shield: 2, engine: 4, hyper: 2, hangar: 6,
-                   quarters: 3, troops: 6, mess: 4, medbay: 3, armory: 2, storage: 1, hold: 1, workshop: 2, airlock: 1,
-                   dock: 2, comms: 3, observe: 2, vehicle: 3, droids: 2 };
-
+  // Живые тела (shared/rt-crew.js): не проходят сквозь стены, мебель и друг
+  // друга, в проходах расходятся правым плечом, несут вахту по отсекам.
   function makeCrew() {
-    V.crew = [];
     var sh = V.ship, rep = sh.faction === 'republic';
-    var types = rep ? [S.TYPE_BY_ID.rep_dc15a, S.TYPE_BY_ID.rep_heavy] : [S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b2];
-    var R = S.rng(sh.w * 31 + sh.h);
-    for (var i = 0; i < sh.rooms.length; i++) {
-      var r = sh.rooms[i], n = CREW_PER[r.t] || 1;
-      for (var k = 0; k < n; k++) {
-        var p = freeCellIn(r, R);
-        if (!p) break;
-        V.crew.push({ x: p[0] + 0.5, y: p[1] + 0.5, home: r.n, room: r.n, tx: p[0] + 0.5, ty: p[1] + 0.5, wait: R() * 4,
-                      flow: null, type: types[Math.floor(R() * types.length)], aim: R() * TAU, legs: 0, mv: 0, phase: R() * TAU });
-      }
-    }
+    var figs = rep ? [S.TYPE_BY_ID.rep_dc15a, S.TYPE_BY_ID.rep_heavy] : [S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b1, S.TYPE_BY_ID.cis_b2];
+    V.sim = new window.SWCrew.Crew(sh, { seed: sh.w * 31 + sh.h, figs: figs });
+    V.crew = V.sim.agents;
     $('sv-crew').textContent = V.crew.length;
   }
-
-  function freeCellIn(r, R) {
-    var sh = V.ship;
-    for (var t = 0; t < 40; t++) {
-      var x = r.x + 2 + Math.floor(R() * Math.max(1, r.w - 4)), y = r.y + 2 + Math.floor(R() * Math.max(1, r.h - 4));
-      var i = y * sh.w + x;
-      if (sh.kind[i] === K.FLOOR && !sh.prop[i] && sh.room[i] === r.n) return [x, y];
-    }
-    return null;
-  }
-
-  var CR = S.rng(7);
-  function stepCrew(dt) {
-    var sh = V.ship, map = V.map, w = sh.w;
-    for (var i = 0; i < V.crew.length; i++) {
-      var m = V.crew[i];
-      if (m.wait > 0) { m.wait -= dt; m.mv += (0 - m.mv) * Math.min(1, dt * 6); continue; }
-      var spd = 1.1 * dt, dx, dy, L;
-      if (m.flow) {
-        // идёт по полю направлений в другой отсек
-        var cx = Math.floor(m.x), cy = Math.floor(m.y), d = m.flow.dir[cy * w + cx];
-        var gx, gy;
-        if (d === 254 || d === 255) { m.flow = null; m.room = m.next; m.wait = 2 + CR() * 6; continue; }
-        gx = cx + S.DX[d] + 0.5; gy = cy + S.DY[d] + 0.5;
-        dx = gx - m.x; dy = gy - m.y; L = Math.sqrt(dx * dx + dy * dy) || 1;
-        m.x += dx / L * Math.min(L, spd * 1.4); m.y += dy / L * Math.min(L, spd * 1.4);
-        walk(m, dx, dy, dt);
-        continue;
-      }
-      dx = m.tx - m.x; dy = m.ty - m.y; L = Math.sqrt(dx * dx + dy * dy);
-      if (L < 0.08) {
-        m.wait = 1 + CR() * 5;
-        if (CR() < 0.12) {
-          // сменить пост: свой отсек ↔ соседний
-          var r2 = CR() < 0.5 ? sh.roomByN[m.home] : sh.rooms[Math.floor(CR() * sh.rooms.length)];
-          var p2 = r2 && freeCellIn(r2, CR);
-          if (p2 && r2.n !== m.room) { m.flow = V.flows.get(p2[0], p2[1]); m.next = r2.n; continue; }
-        }
-        var r = sh.roomByN[m.room], p = r && freeCellIn(r, CR);
-        if (p && straight(m.x, m.y, p[0] + 0.5, p[1] + 0.5)) { m.tx = p[0] + 0.5; m.ty = p[1] + 0.5; }
-        continue;
-      }
-      var st = Math.min(L, spd);
-      m.x += dx / L * st; m.y += dy / L * st;
-      walk(m, dx, dy, dt);
-    }
-  }
-  function walk(m, dx, dy, dt) {
-    var a = Math.atan2(dy, dx);
-    m.legs = S.turn(m.legs, a, 8 * dt); m.aim = S.turn(m.aim, a, 6 * dt);
-    m.mv += (1 - m.mv) * Math.min(1, dt * 6);
-    m.phase = (m.phase + dt * 7) % TAU;
-  }
-  // прямая видимость по полу — чтобы не ходить сквозь мебель
-  function straight(x0, y0, x1, y1) {
-    var sh = V.ship, n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2);
-    for (var i = 1; i <= n; i++) {
-      var x = Math.floor(x0 + (x1 - x0) * i / n), y = Math.floor(y0 + (y1 - y0) * i / n), k = y * sh.w + x;
-      if (sh.kind[k] !== K.FLOOR && sh.kind[k] !== K.DOOR) return false;
-      if (sh.prop[k]) return false;
-    }
-    return true;
-  }
+  function stepCrew(dt) { if (V.sim) V.sim.step(dt); }
 
   // ---------- атлас фигурок (с защитой от «пустого» холста на Android) ----------
   var ATLAS = null, ATLAS_TRIES = 0, SIZES = [56, 44, 36];
@@ -376,17 +273,18 @@
     var scale = 1.3;    // фигурки крупнее жизни, иначе в отсеках по 50 м их не разглядеть
     for (var i = 0; i < V.crew.length; i++) {
       var m = V.crew[i];
+      if (!m.alive) continue;
       if (m.x < x0 || m.x > x1 || m.y < y0 || m.y > y1) continue;
       var p = toScreen(m.x, m.y);
       if (A.ok) {
         var size = s * A.scale * scale, half = size / 2, per = A.dirs * A.frames;
         var dir = Math.round(((m.aim % TAU) + TAU) % TAU / TAU * A.dirs) % A.dirs;
         var fr = m.mv > 0.3 ? 1 + Math.floor(m.phase / (TAU / 4)) % 4 : 0;
-        var kk = m.type * per + dir * A.frames + fr;
+        var kk = m.fig * per + dir * A.frames + fr;
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
       } else {
         c.save(); c.translate(p[0], p[1]); c.scale(s * scale, s * scale);
-        F.draw(c, S.TYPES[m.type], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
+        F.draw(c, S.TYPES[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
         c.restore();
       }
     }
@@ -496,7 +394,7 @@
     var r = V.sel, box = $('sv-info');
     if (r) {
       var T = SH.TYPES[r.t] || { name: r.t, sys: '', about: '' };
-      var crew = 0; for (var k = 0; k < V.crew.length; k++) if (V.crew[k].room === r.n) crew++;
+      var crew = 0; for (var k = 0; k < V.crew.length; k++) if (V.crew[k].alive && V.crew[k].home === r.n) crew++;
       var mount = null; for (var q = 0; q < sh.mounts.length; q++) if (sh.mounts[q].room === r.n) mount = sh.mounts[q];
       box.innerHTML = '<div class="sv-info-head"><b>' + esc(r.name) + '</b><span class="sv-tag">' + esc(T.name) + '</span></div>' +
         '<div class="sv-info-row"><span>Система</span><b>' + esc(T.sys) + '</b>' +

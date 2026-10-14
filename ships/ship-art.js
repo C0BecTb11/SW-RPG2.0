@@ -704,6 +704,36 @@
     }
   }
 
+  // ---------- палитры ----------
+  // Республика — светлые переборки, синие и красные метки; КНС — бронза и
+  // тёмный металл, синие огни. Пол отсека тонирован по его назначению.
+  A.PAL = {
+    republic: {
+      wall: '#c3c9d1', wallTop: '#e6eaef', wallEdge: '#4a525c', corridor: '#666e78', plate: 'rgba(28,32,38,0.93)',
+      lamp: '#f2f6ff', lampGlow: 'rgba(200,225,255,0.22)', stripGlow: 'rgba(160,210,255,0.18)', screenGlow: 'rgba(120,190,255,0.16)',
+      doorGlow: 'rgba(130,230,150,0.12)', accentSoft: 'rgba(192,69,58,0.55)', corridorLine: 'rgba(230,236,242,0.35)',
+      accent: '#c0453a', light: '#9fd0ff', door: '#8b939c', doorLight: '#7fe08a', tech: 'rgba(6,9,14,0.55)',
+      floor: {
+        hangar: '#565d66', bridge: '#2b405c', flight: '#2b405c', cic: '#2e3f5a', gun: '#5d4640', pdgun: '#5a4642',
+        reactor: '#5f5130', shield: '#2c5560', engine: '#544a40', hyper: '#463e5e', quarters: '#555d54', troops: '#525a52',
+        mess: '#5c5b4c', medbay: '#3d5f59', armory: '#5d4b4b', storage: '#5a5548', hold: '#5a5548', workshop: '#5a5848',
+        airlock: '#4a4e57', dock: '#4c5562', comms: '#33506a', observe: '#2b405c', vehicle: '#535a63', droids: '#585042'
+      }
+    },
+    cis: {
+      wall: '#8b8170', wallTop: '#b3a68e', wallEdge: '#2f2a23', corridor: '#4f4b45', plate: 'rgba(26,24,22,0.93)',
+      lamp: '#ffd8a8', lampGlow: 'rgba(255,190,120,0.20)', stripGlow: 'rgba(110,160,240,0.18)', screenGlow: 'rgba(255,160,90,0.14)',
+      doorGlow: 'rgba(230,160,70,0.12)', accentSoft: 'rgba(61,116,214,0.55)', corridorLine: 'rgba(110,160,230,0.35)',
+      accent: '#3d74d6', light: '#7fb3ff', door: '#6c655a', doorLight: '#e3a24a', tech: 'rgba(8,8,10,0.6)',
+      floor: {
+        hangar: '#4a4741', bridge: '#2a3446', flight: '#2a3446', cic: '#2c3344', gun: '#54403a', pdgun: '#523f3a',
+        reactor: '#58492a', shield: '#284650', engine: '#4a4038', hyper: '#3e3550', quarters: '#4b4c44', troops: '#4a4b44',
+        mess: '#504d40', medbay: '#344c48', armory: '#504141', storage: '#4f4a3f', hold: '#4c473c', workshop: '#4f4c3e',
+        airlock: '#40424a', dock: '#424852', comms: '#2c4258', observe: '#2a3446', vehicle: '#474b52', droids: '#4d4537'
+      }
+    }
+  };
+
   A.chunk = chunk;
   A.init = function(V, K) { A.V = V; A.K = K; };
   root.ShipArt = A;

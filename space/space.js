@@ -65,6 +65,7 @@
         // каждый бой — свежий экипаж: план копируется не нужно, состояние живёт в Crew
         B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figs: figs });
       });
+      G.who = null;
       G.B = B; G.fx = { shots: [], booms: [], shields: [] }; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
       G.sel = -1; G.foe = -1;
       for (var i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side) { G.sel = i; break; }
@@ -196,6 +197,12 @@
     drawShots(c);
     drawShields(c, T);
     drawBooms(c);
+    // отметка касания
+    if (G.mark) {
+      var mk = (performance.now() - G.mark.t) / 600;
+      if (mk < 1) { var mp = toS(G.mark.x, G.mark.y); c.strokeStyle = 'rgba(217,169,64,' + (1 - mk) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(mp[0], mp[1], 6 + mk * 22, 0, TAU); c.stroke(); }
+      else G.mark = null;
+    }
     // точка хода
     if (G.sel >= 0) {
       var me = B.ships[G.sel];
@@ -204,6 +211,13 @@
         c.strokeStyle = 'rgba(217,169,64,0.55)'; c.setLineDash([5, 5]); c.lineWidth = 1;
         c.beginPath(); c.moveTo(q[0], q[1]); c.lineTo(p[0], p[1]); c.stroke(); c.setLineDash([]);
         c.strokeStyle = '#d9a940'; c.beginPath(); c.arc(p[0], p[1], 7 + Math.sin(T * 5) * 1.5, 0, TAU); c.stroke();
+        if (me.order.face) {
+          var ang = Math.atan2(p[1] - q[1], p[0] - q[0]);
+          c.fillStyle = '#d9a940'; c.beginPath();
+          c.moveTo(p[0] + Math.cos(ang) * 12, p[1] + Math.sin(ang) * 12);
+          c.lineTo(p[0] + Math.cos(ang + 2.5) * 8, p[1] + Math.sin(ang + 2.5) * 8);
+          c.lineTo(p[0] + Math.cos(ang - 2.5) * 8, p[1] + Math.sin(ang - 2.5) * 8); c.closePath(); c.fill();
+        }
       }
     }
   }
@@ -464,11 +478,45 @@
     return ch;
   }
 
+  // Эффекты внутри: взрывы попаданий, выстрелы своих орудий, копоть, тряска
+  var IN = { ship: -1, bt: -1, gt: -1, blasts: [], guns: [], scorch: [], shake: 0 };
+  function innerFx(sh) {
+    var cr = sh.crew, t = cr.t, i;
+    if (IN.ship !== sh.n) { IN = { ship: sh.n, bt: t, gt: t, blasts: [], guns: [], scorch: [], shake: 0 }; return; }
+    var bl = cr.ev.blasts, gn = cr.ev.guns;
+    for (i = 0; i < bl.length; i++) if (bl[i].t > IN.bt) {
+      IN.blasts.push({ x: bl[i].x, y: bl[i].y, r: bl[i].r, t: bl[i].t });
+      if (Math.abs(bl[i].x - ICAM.x) * ICAM.s < CAM.vw && Math.abs(bl[i].y - ICAM.y) * ICAM.s < CAM.vh) IN.shake = Math.max(IN.shake, 0.45);
+    }
+    for (i = 0; i < gn.length; i++) if (gn[i].t > IN.gt) {
+      IN.guns.push({ n: gn[i].n, t: gn[i].t });
+      var gr = sh.plan.roomByN[gn[i].n];
+      if (gr && Math.abs(gr.cx - ICAM.x) * ICAM.s < CAM.vw / 2 && Math.abs(gr.cy - ICAM.y) * ICAM.s < CAM.vh / 2) IN.shake = Math.max(IN.shake, 0.15);
+    }
+    if (bl.length) IN.bt = bl[bl.length - 1].t;
+    if (gn.length) IN.gt = gn[gn.length - 1].t;
+    IN.blasts = IN.blasts.filter(function(b) { return t - b.t < 0.9; });
+    IN.guns = IN.guns.filter(function(g) { return t - g.t < 0.35; });
+  }
+
   function drawInside(T) {
-    var c = CTX, B = G.B, sh = B.ships[G.sel], s = ICAM.s;
+    var c = CTX, B = G.B, sh = B.ships[G.sel];
     c.setTransform(CAM.dpr, 0, 0, CAM.dpr, 0, 0);
     c.clearRect(0, 0, CAM.vw, CAM.vh);
     if (!sh) return;
+    innerFx(sh);
+    // тряска от попаданий рядом
+    var sx0 = ICAM.x, sy0 = ICAM.y;
+    if (IN.shake > 0) {
+      IN.shake = Math.max(0, IN.shake - 1 / 60);
+      var amp = IN.shake * 6 / ICAM.s;
+      ICAM.x += (Math.random() - 0.5) * amp; ICAM.y += (Math.random() - 0.5) * amp;
+    }
+    drawInside2(c, sh, T);
+    ICAM.x = sx0; ICAM.y = sy0;
+  }
+  function drawInside2(c, sh, T) {
+    var s = ICAM.s;
     var p = sh.plan;
     // весь корабль на экране — разрез одной картинкой (кусками было бы сотни сборок)
     if (s < 2.6) {
@@ -515,11 +563,80 @@
       }
     }
     // огонь
+    drawScorch(c, sh);
+    drawGunFlash(c, sh, T);
     drawFire(c, sh, T);
-    // люди
-    drawCrew(c, sh);
+    // люди и их дела
+    drawCrew(c, sh, T);
+    drawBlasts(c, sh);
+    drawAlarm(c, sh, T);
     // подписи: имя, целость, огонь
     drawLabels(c, sh);
+  }
+  function drawScorch(c, sh) {
+    var s = ICAM.s, list = sh.crew.scorch;
+    for (var i = 0; i < list.length; i++) {
+      var q = list[i], p = itoS(q.x, q.y), r = q.r * s;
+      if (p[0] < -r || p[1] < -r || p[0] > CAM.vw + r || p[1] > CAM.vh + r) continue;
+      var g = c.createRadialGradient(p[0], p[1], 0, p[0], p[1], r);
+      g.addColorStop(0, 'rgba(12,10,8,0.6)'); g.addColorStop(0.6, 'rgba(20,16,12,0.3)'); g.addColorStop(1, 'rgba(20,16,12,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(p[0], p[1], r, 0, TAU); c.fill();
+      // трещины
+      if (s > 6) {
+        c.strokeStyle = 'rgba(8,6,4,0.55)'; c.lineWidth = Math.max(1, s * 0.08);
+        c.beginPath();
+        for (var k = 0; k < 5; k++) { var a = q.a + k * 1.26; c.moveTo(p[0], p[1]); c.lineTo(p[0] + Math.cos(a) * r * 0.9, p[1] + Math.sin(a) * r * 0.9); }
+        c.stroke();
+      }
+    }
+  }
+  // Выстрел своей пушки: вспышка у погона башни и отсвет по отсеку
+  function drawGunFlash(c, sh, T) {
+    var t = sh.crew.t, s = ICAM.s;
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < IN.guns.length; i++) {
+      var g = IN.guns[i], r = sh.plan.roomByN[g.n]; if (!r) continue;
+      var k = 1 - (t - g.t) / 0.35; if (k <= 0) continue;
+      var p = itoS(r.cx, r.cy), rad = Math.max(r.w, r.h) * 0.6 * s;
+      var gr = c.createRadialGradient(p[0], p[1], 0, p[0], p[1], rad);
+      gr.addColorStop(0, 'rgba(255,230,170,' + 0.45 * k + ')'); gr.addColorStop(1, 'rgba(255,160,60,0)');
+      c.fillStyle = gr; c.beginPath(); c.arc(p[0], p[1], rad, 0, TAU); c.fill();
+    }
+    c.restore();
+  }
+  // Попадание: вспышка, ударная волна, обломки
+  function drawBlasts(c, sh) {
+    var t = sh.crew.t, s = ICAM.s;
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < IN.blasts.length; i++) {
+      var b = IN.blasts[i], k = (t - b.t) / 0.9; if (k < 0 || k > 1) continue;
+      var p = itoS(b.x, b.y), R = b.r * s * (0.6 + k * 1.8);
+      var g = c.createRadialGradient(p[0], p[1], 0, p[0], p[1], R);
+      g.addColorStop(0, 'rgba(255,250,220,' + (1 - k) + ')'); g.addColorStop(0.4, 'rgba(255,160,60,' + (0.8 * (1 - k)) + ')'); g.addColorStop(1, 'rgba(255,60,20,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(p[0], p[1], R, 0, TAU); c.fill();
+      c.strokeStyle = 'rgba(255,220,180,' + (0.6 * (1 - k)) + ')'; c.lineWidth = 2;
+      c.beginPath(); c.arc(p[0], p[1], b.r * s * (0.5 + k * 3), 0, TAU); c.stroke();
+      c.fillStyle = 'rgba(255,200,120,' + (1 - k) + ')';
+      for (var d = 0; d < 10; d++) {
+        var a = d * 0.628 + b.x, L = (b.r * 0.5 + k * b.r * 2.5) * s * (0.6 + (d % 3) * 0.25);
+        c.fillRect(p[0] + Math.cos(a) * L - 1, p[1] + Math.sin(a) * L - 1, 2.2, 2.2);
+      }
+    }
+    c.restore();
+  }
+  // Боевая тревога: красные огни пульсируют по краям; горящие отсеки — оранжевым
+  function drawAlarm(c, sh, T) {
+    var k = 0.5 + 0.5 * Math.sin(T * 4.2);
+    var g = c.createRadialGradient(CAM.vw / 2, CAM.vh / 2, Math.min(CAM.vw, CAM.vh) * 0.45, CAM.vw / 2, CAM.vh / 2, Math.max(CAM.vw, CAM.vh) * 0.75);
+    g.addColorStop(0, 'rgba(200,20,20,0)'); g.addColorStop(1, 'rgba(210,25,20,' + (0.14 + 0.16 * k) + ')');
+    c.fillStyle = g; c.fillRect(0, 0, CAM.vw, CAM.vh);
+    var s = ICAM.s, rs = sh.crew.roomList;
+    for (var i = 0; i < rs.length; i++) {
+      var st = rs[i]; if (!st.fires) continue;
+      var r = st.r, o = itoS(r.x, r.y);
+      if (o[0] > CAM.vw || o[1] > CAM.vh || o[0] + r.w * s < 0 || o[1] + r.h * s < 0) continue;
+      c.fillStyle = 'rgba(255,90,30,' + (0.05 + 0.07 * k) + ')'; c.fillRect(o[0], o[1], r.w * s, r.h * s);
+    }
   }
   // Отсеки плоско — для вида «весь корабль»
   function roomsFlat(c, sh, s) {
@@ -569,30 +686,101 @@
     }
     return ATLAS;
   }
-  function drawCrew(c, sh) {
+  // Фигурки крупнее жизни: человек 0,6 м в отсеке на 50 м иначе теряется
+  var FIGK = 1.75;
+  function drawCrew(c, sh, T) {
     var s = ICAM.s; if (s < 4) return;
-    var A = atlas(), ag = sh.crew.agents, alpha = Math.min(1, (s - 4) / 3);
-    var hw = CAM.vw / 2 / s + 1, hh = CAM.vh / 2 / s + 1;
+    var A = atlas(), ag = sh.crew.agents, alpha = Math.min(1, (s - 4) / 3), p, i, m;
+    var hw = CAM.vw / 2 / s + 2, hh = CAM.vh / 2 / s + 2, W = sh.plan.w;
+    var vis = function(m) { return Math.abs(m.x - ICAM.x) <= hw && Math.abs(m.y - ICAM.y) <= hh; };
     c.globalAlpha = alpha;
-    for (var i = 0; i < ag.length; i++) {
-      var m = ag[i]; if (!m.alive) continue;
-      if (Math.abs(m.x - ICAM.x) > hw || Math.abs(m.y - ICAM.y) > hh) continue;
-      var p = itoS(m.x, m.y);
-      // кто чем занят: тушит — оранжевый круг, чинит — жёлтый
-      if (m.job && s > 7) {
-        c.strokeStyle = m.job.kind === 'fire' ? 'rgba(255,140,60,0.8)' : 'rgba(217,169,64,0.8)'; c.lineWidth = 1.2;
-        c.beginPath(); c.arc(p[0], p[1], s * 0.75, 0, TAU); c.stroke();
+    // погибшие — на полу
+    for (i = 0; i < ag.length; i++) {
+      m = ag[i]; if (m.alive || !vis(m)) continue;
+      p = itoS(m.x, m.y);
+      c.save(); c.translate(p[0], p[1]); F.corpse(c, S.TYPES[m.fig], m.aim + 0.6, s * FIGK); c.restore();
+    }
+    // дела: под фигурками
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (i = 0; i < ag.length; i++) {
+      m = ag[i]; if (!m.alive || !m.at || !vis(m)) continue;
+      p = itoS(m.x, m.y);
+      if (m.job && m.job.kind === 'fire' && m.sprayAt >= 0) {
+        // струя пены: частицы летят от бойца к огню
+        var fx = m.sprayAt % W + 0.5, fy = (m.sprayAt - (m.sprayAt % W)) / W + 0.5, q = itoS(fx, fy);
+        for (var k = 0; k < 9; k++) {
+          var u = ((T * 2.2 + k / 9 + m.id * 0.37) % 1), jx = Math.sin(k * 7.1 + T * 9) * s * 0.25 * u, jy = Math.cos(k * 5.3 + T * 8) * s * 0.25 * u;
+          c.fillStyle = 'rgba(210,235,255,' + (0.75 - u * 0.5) + ')';
+          c.beginPath(); c.arc(p[0] + (q[0] - p[0]) * u + jx, p[1] + (q[1] - p[1]) * u + jy, Math.max(1, s * (0.1 + u * 0.18)), 0, TAU); c.fill();
+        }
+        // пар над тем, куда бьёт струя
+        c.fillStyle = 'rgba(200,210,220,' + (0.18 + 0.1 * Math.sin(T * 6 + m.id)) + ')';
+        c.beginPath(); c.arc(q[0] + Math.sin(T * 3 + m.id) * s * 0.3, q[1] - s * 0.3, s * 0.8, 0, TAU); c.fill();
+      } else if (m.job && m.job.kind === 'fix' && m.fixAt >= 0) {
+        // сварка: искры у машины
+        var mx = m.fixAt % W + 0.5, my = (m.fixAt - (m.fixAt % W)) / W + 0.5, w0 = itoS((m.x + mx) / 2, (m.y + my) / 2);
+        if (Math.sin(T * 17 + m.id * 3) > -0.3) {
+          c.fillStyle = 'rgba(255,250,210,0.95)'; c.beginPath(); c.arc(w0[0], w0[1], Math.max(1.5, s * 0.16), 0, TAU); c.fill();
+          for (var sp = 0; sp < 6; sp++) {
+            var ua = ((T * 3 + sp / 6 + m.id * 0.21) % 1), ang = sp * 1.05 + m.id + Math.floor(T * 5);
+            c.fillStyle = 'rgba(255,' + (190 - ua * 90 | 0) + ',60,' + (1 - ua) + ')';
+            c.fillRect(w0[0] + Math.cos(ang) * ua * s * 0.9, w0[1] + Math.sin(ang) * ua * s * 0.9 + ua * ua * s * 0.4, Math.max(1, s * 0.08), Math.max(1, s * 0.08));
+          }
+        }
+      } else if (m.job && m.job.kind === 'heal') {
+        var pt = ag[m.job.who];
+        if (pt && pt.alive) {
+          var pq = itoS(pt.x, pt.y), gl = c.createRadialGradient(pq[0], pq[1], 0, pq[0], pq[1], s);
+          gl.addColorStop(0, 'rgba(120,255,160,' + (0.3 + 0.15 * Math.sin(T * 5)) + ')'); gl.addColorStop(1, 'rgba(120,255,160,0)');
+          c.fillStyle = gl; c.beginPath(); c.arc(pq[0], pq[1], s, 0, TAU); c.fill();
+        }
+      } else if (!m.job && m.task === 'post' && m.face != null && sh.crew.alertOn) {
+        // работа у пульта: экран светится перед бойцом
+        var cx = itoS(m.x + Math.cos(m.face) * 0.75, m.y + Math.sin(m.face) * 0.75);
+        c.fillStyle = 'rgba(110,200,255,' + (0.35 + 0.25 * Math.sin(T * 3 + m.id)) + ')';
+        c.beginPath(); c.arc(cx[0], cx[1], Math.max(1.2, s * 0.22), 0, TAU); c.fill();
+      }
+    }
+    c.restore();
+    // сами бойцы
+    for (i = 0; i < ag.length; i++) {
+      m = ag[i]; if (!m.alive || !vis(m)) continue;
+      p = itoS(m.x, m.y);
+      if (G.who === m.id) {
+        c.strokeStyle = 'rgba(240,200,106,' + (0.7 + 0.3 * Math.sin(T * 6)) + ')'; c.lineWidth = 2;
+        c.beginPath(); c.arc(p[0], p[1], s * 0.85, 0, TAU); c.stroke();
       }
       if (A.ok) {
-        var size = s * A.scale * 1.3, half = size / 2, per = A.dirs * A.frames;
+        var size = s * A.scale * FIGK, half = size / 2, per = A.dirs * A.frames;
         var dir = Math.round(((m.aim % TAU) + TAU) % TAU / TAU * A.dirs) % A.dirs;
         var fr = m.mv > 0.3 ? 1 + Math.floor(m.phase / (TAU / 4)) % 4 : 0;
         var kk = m.fig * per + dir * A.frames + fr;
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
       } else {
-        c.save(); c.translate(p[0], p[1]); c.scale(s * 1.3, s * 1.3);
+        c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK);
         F.draw(c, S.TYPES[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
         c.restore();
+      }
+      // в руках: ящик боеприпасов / огнетушитель; над головой — крест медика, ранение
+      if (s > 6) {
+        if (m.carry) {
+          var bx = p[0] + Math.cos(m.aim) * s * 0.45, by = p[1] + Math.sin(m.aim) * s * 0.45, bs = s * 0.42;
+          c.fillStyle = '#7a6a3a'; c.fillRect(bx - bs / 2, by - bs / 2, bs, bs);
+          c.strokeStyle = '#d9a940'; c.lineWidth = 1; c.strokeRect(bx - bs / 2, by - bs / 2, bs, bs);
+        }
+        if (m.job && m.job.kind === 'fire') {
+          var ex = p[0] + Math.cos(m.aim + 0.5) * s * 0.35, ey = p[1] + Math.sin(m.aim + 0.5) * s * 0.35;
+          c.fillStyle = '#c0453a'; c.beginPath(); c.arc(ex, ey, Math.max(1.5, s * 0.14), 0, TAU); c.fill();
+        }
+        if (m.role === 'medic') {
+          var hx = p[0], hy = p[1] - s * 0.95, cs = Math.max(2, s * 0.16);
+          c.fillStyle = '#e8eef2'; c.fillRect(hx - cs * 1.5, hy - cs / 2, cs * 3, cs); c.fillRect(hx - cs / 2, hy - cs * 1.5, cs, cs * 3);
+          c.fillStyle = '#c0453a'; c.fillRect(hx - cs, hy - cs / 4, cs * 2, cs / 2); c.fillRect(hx - cs / 4, hy - cs, cs / 2, cs * 2);
+        }
+        if (m.hp < 70) {
+          c.fillStyle = 'rgba(20,26,34,0.9)'; c.fillRect(p[0] - s * 0.5, p[1] + s * 0.75, s, Math.max(2, s * 0.1));
+          c.fillStyle = m.hp < 35 ? '#ff6a55' : '#e8d9a8'; c.fillRect(p[0] - s * 0.5, p[1] + s * 0.75, s * m.hp / 100, Math.max(2, s * 0.1));
+        }
       }
     }
     c.globalAlpha = 1;
@@ -633,7 +821,7 @@
         if (v > score) { score = v; best = st.r; }
       });
       var v = view();
-      ICAM.s = Math.max(6, Math.min(14, (CAM.vw - 20) / (best.w + 30)));
+      ICAM.s = Math.max(10, Math.min(16, (CAM.vw - 20) / (best.w + 10)));
       ICAM.x = best.x + best.w / 2; ICAM.y = best.y + best.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
       G.room = best;
     } else G.room = null;
@@ -641,12 +829,21 @@
   }
 
   // ---------------------------------------------------------------- ввод
-  var PTR = new Map(), GES = null;
+  var PTR = new Map(), GES = null, LONG = 0;
   function bind() {
     CV.addEventListener('pointerdown', function(e) {
       CV.setPointerCapture(e.pointerId);
       PTR.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
-      if (PTR.size === 1) GES = { moved: false };
+      if (PTR.size === 1) {
+        GES = { moved: false };
+        // удержание пальца в космосе — развернуть корабль носом к точке
+        var g0 = GES, px0 = e.clientX, py0 = e.clientY;
+        clearTimeout(LONG);
+        if (G.mode === 'space') LONG = setTimeout(function() {
+          if (GES !== g0 || g0.moved || PTR.size !== 1) return;
+          g0.long = true; faceAt(px0, py0);
+        }, 450);
+      }
       else if (PTR.size === 2 && GES) {
         GES.moved = true;
         var ps = Array.from(PTR.values());
@@ -673,7 +870,7 @@
     function up(e) {
       var p = PTR.get(e.pointerId); PTR.delete(e.pointerId);
       if (!GES) return;
-      if (PTR.size === 0) { if (p && !GES.moved && e.type === 'pointerup') tap(p.x, p.y); GES = null; }
+      if (PTR.size === 0) { clearTimeout(LONG); if (p && !GES.moved && !GES.long && e.type === 'pointerup') tap(p.x, p.y); GES = null; }
       else GES.pinch = null;
     }
     CV.addEventListener('pointerup', up); CV.addEventListener('pointercancel', up);
@@ -697,14 +894,17 @@
   function tap(px, py) {
     var B = G.B; if (!B) return;
     if (G.mode === 'inside') {
-      var w = itoW(px, py), r = SH.roomAt(B.ships[G.sel].plan, w[0], w[1]);
+      var sh0 = B.ships[G.sel], w = itoW(px, py), r = SH.roomAt(sh0.plan, w[0], w[1]);
+      // боец под пальцем?
+      var who = null, wd = Math.max(1.2, 16 / ICAM.s);
+      wd *= wd;
+      sh0.crew.agents.forEach(function(a) { if (!a.alive) return; var dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < wd) { wd = d; who = a; } });
+      G.who = who ? who.id : null;
+      if (who) r = SH.roomAt(sh0.plan, who.x, who.y) || r;
       G.room = r || null; hud();
       return;
     }
     var p = toW(px, py);
-    if (G.move && G.sel >= 0) {
-      B.order(G.sel, p[0], p[1]); G.move = false; toast('Курс задан', 'gold'); hud(); return;
-    }
     var hit = shipAt(p[0], p[1]);
     if (G.aim && G.foe >= 0) {
       var foe = B.ships[G.foe];
@@ -717,7 +917,25 @@
     if (hit) {
       if (hit.side === G.side) { selectShip(hit.n); }
       else { G.foe = hit.n; buildTargets(); hud(); toast('Цель: ' + hit.name, 'gold'); }
+      return;
     }
+    // касание пустого космоса — курс своему кораблю
+    if (G.aim) return;
+    var me = B.ships[G.sel];
+    if (me && !me.dead) {
+      B.order(G.sel, p[0], p[1]);
+      G.mark = { x: p[0], y: p[1], t: performance.now(), face: false };
+      if (!G.taught) { G.taught = true; toast('Курс задан. Удержи палец — развернуться носом к точке', 'gold'); }
+      hud();
+    }
+  }
+  function faceAt(px, py) {
+    var B = G.B, me = B && B.ships[G.sel]; if (!me || me.dead || G.aim) return;
+    var p = toW(px, py);
+    B.order(G.sel, p[0], p[1], true);
+    G.mark = { x: p[0], y: p[1], t: performance.now(), face: true };
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {}
+    toast('Разворот носом к точке', 'gold'); hud();
   }
   function nearRoom(sh, lx, ly) {
     var best = null, bd = 1e9;
@@ -851,7 +1069,9 @@
           (st.stun > 0 ? ' · <b style="color:#9fe7ff">ионный сбой ' + Math.ceil(st.stun) + ' с</b>' : '') +
           '<br>на посту <b>' + st.staffed + '/' + st.need + '</b> · в отсеке за ним <b>' + ppl + '</b>' +
           (st.fires ? ' · горит клеток <b style="color:#ffb070">' + st.fires + '</b>' : '') + (ff ? ' · тушат <b>' + ff + '</b>' : '') + (fx ? ' · чинят <b>' + fx + '</b>' : '') + '</div>';
-      } else inside = '<div class="sp-hint" style="margin-top:6px">Коснись отсека — покажу, что с ним и кто там работает. Тушат — в оранжевом круге, чинят — в жёлтом.</div>';
+      } else inside = '<div class="sp-hint" style="margin-top:6px">Коснись отсека или бойца — покажу, что там происходит.</div>';
+      var wa = G.who != null && sh.crew.agents[G.who];
+      if (wa) inside = '<div class="sp-hint" style="margin-top:6px">' + whoLine(sh, wa) + '</div>' + inside;
     }
     box.innerHTML = head + sys + shs + inside;
     // пушки
@@ -884,9 +1104,24 @@
       b.classList.toggle('cur', !!cur);
     }
     var mv = $('sp-move');
-    mv.textContent = G.move ? 'Куда?' : sh.ai ? 'Ход' : 'Сам';
-    mv.classList.toggle('on', G.move);
+    mv.textContent = sh.ai ? 'Курс: сам' : 'Курс: твой';
+    mv.classList.toggle('on', !sh.ai);
     $('sp-view').textContent = G.mode === 'inside' ? 'Весь корабль' : 'Обзор';
+  }
+  var ROLE = { post: 'расчёт поста', fixer: 'ремонтник', medic: 'медик', reserve: 'резерв' };
+  function whoLine(sh, a) {
+    var rn = function(n) { var r = sh.plan.roomByN[n]; return r ? r.name : 'коридор'; };
+    if (!a.alive) return '<b>Погиб</b> · ' + ROLE[a.role];
+    var j = a.job, what;
+    if (j && j.kind === 'fire') what = a.at ? 'тушит пожар' : 'бежит тушить';
+    else if (j && j.kind === 'fix') what = a.at ? 'чинит машины' : 'бежит чинить';
+    else if (j && j.kind === 'heal') { var pt = sh.crew.agents[j.who]; what = (a.at ? 'перевязывает раненого' : 'бежит к раненому') + (pt ? ' (' + Math.round(pt.hp) + '%)' : ''); }
+    else if (j && j.kind === 'carry') what = 'несёт боеприпасы к орудию';
+    else if (j && j.kind === 'back') what = 'возвращается на склад';
+    else what = a.at ? (sh.crew.alertOn ? 'на посту у пульта' : 'несёт вахту') : 'идёт на пост';
+    var where = j && j.room ? rn(j.room) : rn(a.goalRoom || a.home);
+    return '<b>' + ROLE[a.role].charAt(0).toUpperCase() + ROLE[a.role].slice(1) + '</b> · ' + what + ' · ' + esc(where) +
+      ' · здоровье <b' + (a.hp < 50 ? ' style="color:#ff8a5c"' : '') + '>' + Math.round(a.hp) + '%</b>';
   }
   function sysCell(name, v) {
     var p = Math.round(v * 100), cls = p < 35 ? 'bad' : p < 75 ? 'mid' : '';
@@ -943,9 +1178,8 @@
     });
     $('sp-move').onclick = function() {
       var sh = G.B && G.B.ships[G.sel]; if (!sh || sh.dead) return;
-      if (G.move) { G.move = false; }
-      else if (!sh.ai) { G.B.order(G.sel, null); toast('Корабль ведёт сам: дистанция и борт к врагу', 'gold'); }
-      else { G.move = true; G.aim = false; if (G.mode === 'inside') setMode('space'); toast('Коснись космоса — туда пойдёт корабль', 'gold'); }
+      if (!sh.ai) { G.B.order(G.sel, null); toast('Корабль ведёт сам: дистанция и борт к врагу', 'gold'); }
+      else { G.B.order(G.sel, 'hold'); toast('Курс твой: коснись космоса — ход, удержи — разворот', 'gold'); }
       hud();
     };
     $('sp-inside').onclick = function() { if (G.B && G.B.ships[G.sel] && !G.B.ships[G.sel].dead) setMode(G.mode === 'inside' ? 'space' : 'inside'); };

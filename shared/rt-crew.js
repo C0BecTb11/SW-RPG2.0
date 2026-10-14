@@ -41,6 +41,9 @@
   var RESERVE = { quarters: 1, troops: 1, mess: 1, storage: 1, hold: 1, armory: 1, droids: 1, vehicle: 1, observe: 1, dock: 1, airlock: 1 };
   // Ремонтники по должности
   var FIXER = { workshop: 1, reactor: 1, engine: 1, hyper: 1, shield: 1 };
+  // Откуда носят боеприпасы к орудиям
+  var STORE = { storage: 1, armory: 1, hold: 1 };
+  function roleOf(t) { return KEY[t] ? 'post' : FIXER[t] ? 'fixer' : t === 'medbay' ? 'medic' : 'reserve'; }
 
   function rng(seed) {
     var s = (seed >>> 0) || 1;
@@ -141,15 +144,20 @@
     this.budget = 2;
     this.alertOn = !!opts.alert;
     this.t = 0; this.acc = 0; this.think = 0; this.fireT = 0; this.flowT = 0;
-    this.ev = { deaths: [], ignites: [] };
+    this.ev = { deaths: [], ignites: [], blasts: [], guns: [] };
+    this.claim = new Int32Array(n);     // клетка занята как место работы: id + 1
+    this.scorch = [];                   // следы взрывов
     // отсеки: состояние
     this.rooms = {};
     this.roomList = [];
     for (i = 0; i < ship.rooms.length; i++) {
       var r = ship.rooms[i];
-      var st = { n: r.n, t: r.t, r: r, integ: 100, stun: 0, need: POST[r.t] || 1, fires: 0, anchor: null,
-                 staffed: 0, assigned: 0, fixers: 0, fighters: 0 };
+      // людей по размеру отсека: большой зал — больше рук (до трёх норм поста)
+      var base = POST[r.t] || 1, need = Math.min(base * 3, base + Math.floor((r.area || r.w * r.h) / 140));
+      var st = { n: r.n, t: r.t, r: r, integ: 100, stun: 0, need: need, fires: 0, anchor: null,
+                 staffed: 0, assigned: 0, fixers: 0, fighters: 0, firedAt: -99, runner: 0, spots: null };
       st.anchor = this.anchorOf(r);
+      st.spots = this.workSpots(r);
       this.rooms[r.n] = st; this.roomList.push(st);
     }
     // люди
@@ -159,14 +167,17 @@
       var rs = this.roomList[i];
       if (!rs.anchor) continue;
       for (var j = 0; j < rs.need; j++) {
-        var p = this.spotIn(rs.r);
+        var id = this.agents.length, p = this.workSpot(rs, id) || this.spotIn(rs.r);
         if (!p) break;
-        this.agents.push({
-          id: this.agents.length, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, alive: true,
-          home: rs.n, spot: p, role: KEY[rs.t] ? 'post' : FIXER[rs.t] ? 'fixer' : 'reserve',
+        var ag = {
+          id: id, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, alive: true,
+          home: rs.n, spot: p, role: roleOf(rs.t),
           task: 'post', goalRoom: rs.n, goal: p, at: true, wait: this.R() * 4, stuck: 0, lastD: 1e9, wig: 0,
-          job: null, fig: figs[Math.floor(this.R() * figs.length)], aim: this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28, busy: false
-        });
+          job: null, fig: figs[Math.floor(this.R() * figs.length)], aim: p[2] != null ? p[2] : this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
+          face: p[2] != null ? p[2] : null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1
+        };
+        this.agents.push(ag);
+        this.claimCell(ag, p);
         rs.assigned++;
       }
     }
@@ -193,6 +204,38 @@
       if (sz > bestN) { bestN = sz; best = k; }
     }
     for (i = 0; i < n; i++) if (walk[i] && lab[i] !== best) walk[i] = 0;
+  };
+  // Места работы: пол рядом с пультом или машиной отсека, лицом к ним
+  Crew.prototype.workSpots = function(r) {
+    var sh = this.ship, W = this.w, out = [];
+    for (var y = r.y + 1; y < r.y + r.h - 1; y++) for (var x = r.x + 1; x < r.x + r.w - 1; x++) {
+      var i = y * W + x;
+      if (!this.walk[i] || sh.room[i] !== r.n) continue;
+      for (var d = 0; d < 8; d += 2) {
+        var k = (y + DY[d]) * W + x + DX[d];
+        if (sh.prop[k] && sh.room[k] === r.n) { out.push([x, y, Math.atan2(DY[d], DX[d]), k]); break; }
+      }
+    }
+    return out;
+  };
+  // Свободное место работы в отсеке (не занятое другим)
+  Crew.prototype.workSpot = function(st, id) {
+    var sp = st.spots;
+    if (!sp || !sp.length) return null;
+    for (var t = 0; t < 14; t++) {
+      var q = sp[Math.floor(this.R() * sp.length)], c = q[1] * this.w + q[0];
+      if (this.fire[c]) continue;
+      if (this.claim[c] && this.claim[c] !== id + 1) continue;
+      return q;
+    }
+    return null;
+  };
+  Crew.prototype.claimCell = function(a, p) {
+    if (a.claimed >= 0 && this.claim[a.claimed] === a.id + 1) this.claim[a.claimed] = 0;
+    a.claimed = -1;
+    if (!p) return;
+    var c = p[1] * this.w + p[0];
+    if (!this.claim[c]) { this.claim[c] = a.id + 1; a.claimed = c; }
   };
   // «Вход» отсека — свободная клетка ближе к середине
   Crew.prototype.anchorOf = function(r) {
@@ -251,12 +294,22 @@
   // Взрыв в клетке: ранит и убивает рядом
   Crew.prototype.blast = function(x, y, rad, dmg) {
     var r2 = rad * rad;
+    this.ev.blasts.push({ x: x, y: y, r: rad, t: this.t });
+    // копоть остаётся на полу
+    this.scorch.push({ x: x, y: y, r: rad * 1.3, a: (x * 7.13 + y) % 6.28 });
+    if (this.scorch.length > 200) this.scorch.splice(0, 50);
     for (var i = 0; i < this.agents.length; i++) {
       var a = this.agents[i];
       if (!a.alive) continue;
       var dx = a.x - x, dy = a.y - y, d = dx * dx + dy * dy;
       if (d <= r2) this.hurt(a, dmg * (1 - Math.sqrt(d) / (rad + 0.01) * 0.5));
     }
+  };
+  // Орудие этого поста выстрелило: вспышка в отсеке, подносчикам — работа
+  Crew.prototype.gunFired = function(n) {
+    var st = this.rooms[n]; if (!st) return;
+    st.firedAt = this.t;
+    this.ev.guns.push({ n: n, t: this.t });
   };
   Crew.prototype.damageRoom = function(n, amount, stun) {
     var st = this.rooms[n]; if (!st) return;
@@ -266,8 +319,9 @@
   Crew.prototype.hurt = function(a, d) {
     a.hp -= d;
     if (a.hp <= 0 && a.alive) {
-      a.alive = false; a.hp = 0; this.ev.deaths.push(a.id);
-      this.releaseJob(a);
+      a.alive = false; a.hp = 0; a.diedAt = this.t; this.ev.deaths.push(a.id);
+      this.releaseJob(a); this.claimCell(a, null);
+      if (a.medic >= 0) { var m = this.agents[a.medic]; if (m && m.job && m.job.kind === 'heal') { this.releaseJob(m); this.sendPost(m); } }
       var st = this.rooms[a.home]; if (st) st.assigned--;
     }
   };
@@ -294,17 +348,24 @@
   Crew.prototype.sendPost = function(a) {
     var st = this.rooms[a.home];
     if (!st) return;
-    if (!a.spot || this.fire[a.spot[1] * this.w + a.spot[0]] > 0) a.spot = this.spotIn(st.r) || a.spot;
+    if (!a.spot || this.fire[a.spot[1] * this.w + a.spot[0]] > 0 || this.ship.room[a.spot[1] * this.w + a.spot[0]] !== st.n)
+      a.spot = this.workSpot(st, a.id) || this.spotIn(st.r) || a.spot;
+    a.face = a.spot && a.spot[2] != null ? a.spot[2] : null;
     this.go(a, st.n, a.spot, 'post');
   };
   Crew.prototype.go = function(a, roomN, cell, task) {
     a.goalRoom = roomN; a.goal = cell; a.task = task; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wig = 0;
+    a.sprayAt = -1; a.fixAt = -1;
+    this.claimCell(a, cell);
   };
   Crew.prototype.releaseJob = function(a) {
     if (!a.job) return;
-    var st = this.rooms[a.job.room];
-    if (st) { if (a.job.kind === 'fire') st.fighters--; else st.fixers--; }
-    a.job = null;
+    var j = a.job, st = this.rooms[j.room];
+    if (j.kind === 'fire') { if (st) st.fighters--; }
+    else if (j.kind === 'fix') { if (st) st.fixers--; }
+    else if (j.kind === 'carry' || j.kind === 'back') { if (st && j.kind === 'carry') st.runner--; a.carry = false; }
+    else if (j.kind === 'heal') { var pt = this.agents[j.who]; if (pt && pt.medic === a.id) pt.medic = -1; }
+    a.job = null; a.sprayAt = -1; a.fixAt = -1;
   };
 
   // Раз в полсекунды: кто куда бежит
@@ -315,7 +376,7 @@
     for (i = 0; i < this.burning.length; i++) { st = this.rooms[this.ship.room[this.burning[i]]]; if (st) st.fires++; }
     for (i = 0; i < ag.length; i++) {
       a = ag[i];
-      if (a.alive && !a.job && a.task === 'post' && a.at && this.ship.room[Math.floor(a.y) * this.w + Math.floor(a.x)] === a.home) {
+      if (a.alive && !a.job && a.task === 'post' && this.ship.room[Math.floor(a.y) * this.w + Math.floor(a.x)] === a.home) {
         st = this.rooms[a.home]; if (st) st.staffed++;
       }
     }
@@ -323,8 +384,18 @@
     for (i = 0; i < ag.length; i++) {
       a = ag[i];
       if (!a.alive || !a.job) continue;
+      var kind = a.job.kind;
       st = this.rooms[a.job.room];
-      var done = a.job.kind === 'fire' ? st.fires === 0 : (st.integ >= 99.5 || st.fires > 0);
+      var done = false;
+      if (kind === 'fire') done = st.fires === 0;
+      else if (kind === 'fix') done = st.integ >= 99.5 || st.fires > 0;
+      else if (kind === 'heal') {
+        var pt = this.agents[a.job.who];
+        done = !pt || !pt.alive || pt.hp >= 99;
+        // пациент сместился — догнать
+        if (!done && !a.at && (Math.abs(pt.x - a.goal[0] - 0.5) > 2 || Math.abs(pt.y - a.goal[1] - 0.5) > 2)) this.goNear(a, pt, 'heal');
+        else if (!done && a.at && (Math.abs(pt.x - a.x) > 2 || Math.abs(pt.y - a.y) > 2)) this.goNear(a, pt, 'heal');
+      }
       if (done) { this.releaseJob(a); this.sendPost(a); }
     }
     if (!this.alertOn && !this.burning.length) return;
@@ -343,7 +414,38 @@
       if (KEY[st.t]) needF++;
       if (st.fixers < needF) this.assign(st, 'fix', needF - st.fixers);
     }
-    // 5. Пустые ключевые посты — резерв встаёт на место погибших
+    // 5. Раненые — ближайший свободный медик идёт лечить
+    for (i = 0; i < ag.length; i++) {
+      a = ag[i];
+      if (!a.alive || a.hp >= 70 || a.medic >= 0 || a.role === 'medic') continue;
+      var md = null, mdD = 1e18;
+      for (j = 0; j < ag.length; j++) {
+        var m = ag[j]; if (!m.alive || m.role !== 'medic' || m.job) continue;
+        var dd = (m.x - a.x) * (m.x - a.x) + (m.y - a.y) * (m.y - a.y);
+        if (dd < mdD) { mdD = dd; md = m; }
+      }
+      if (!md) break;
+      md.job = { kind: 'heal', room: 0, who: a.id }; a.medic = md.id;
+      this.goNear(md, a, 'heal');
+    }
+    // 6. Подносчики: от склада к орудию, что стреляет
+    if (this.alertOn) {
+      for (i = 0; i < rs.length; i++) {
+        st = rs[i];
+        if (st.t !== 'gun' || st.runner > 0 || this.t - st.firedAt > 15 || !st.anchor || st.fires) continue;
+        var rn = null, rd = 1e18;
+        for (j = 0; j < ag.length; j++) {
+          var b2 = ag[j];
+          if (!b2.alive || b2.job || b2.role !== 'reserve' || !STORE[this.rooms[b2.home] && this.rooms[b2.home].t]) continue;
+          var d2 = (b2.x - st.anchor[0]) * (b2.x - st.anchor[0]) + (b2.y - st.anchor[1]) * (b2.y - st.anchor[1]);
+          if (d2 < rd) { rd = d2; rn = b2; }
+        }
+        if (!rn || rd > 140 * 140) continue;
+        rn.job = { kind: 'carry', room: st.n }; rn.carry = true; st.runner++;
+        this.go(rn, st.n, this.workSpot(st, rn.id) || this.spotIn(st.r), 'carry');
+      }
+    }
+    // 7. Пустые ключевые посты — резерв встаёт на место погибших
     if (this.alertOn) {
       for (i = 0; i < rs.length; i++) {
         st = rs[i];
@@ -352,7 +454,7 @@
           var b = this.nearest(st, function(x) { return x.role === 'reserve' && !x.job; });
           if (!b) break;
           var old = this.rooms[b.home]; if (old) old.assigned--;
-          b.home = st.n; b.role = 'post'; b.spot = this.spotIn(st.r); st.assigned++;
+          b.home = st.n; b.role = 'post'; b.spot = this.workSpot(st, b.id) || this.spotIn(st.r); st.assigned++;
           this.sendPost(b);
         }
       }
@@ -366,6 +468,7 @@
       var a = ag[i];
       if (!a.alive || a.job) continue;
       var own = a.home === st.n, w;
+      if (a.role === 'medic') continue;
       if (kind === 'fire') w = own ? 0.3 : a.role === 'fixer' ? 0.6 : a.role === 'reserve' ? 1 : -1;
       else w = own && a.role === 'post' ? -1 : a.role === 'fixer' ? 0.6 : a.role === 'reserve' ? 1 : -1;
       if (w < 0) continue;
@@ -415,8 +518,22 @@
   Crew.prototype.goJob = function(a) {
     var st = this.rooms[a.job.room], cell = null;
     if (a.job.kind === 'fire') cell = this.fireSpot(st, a);
+    else cell = this.workSpot(st, a.id);
     if (!cell) cell = this.spotIn(st.r);
-    if (cell) this.go(a, st.n, cell, a.job.kind);
+    if (cell) { this.go(a, st.n, cell, a.job.kind); a.face = cell[2] != null ? cell[2] : null; a.fixCell = cell[3] != null ? cell[3] : -1; }
+  };
+  // Подойти к человеку (лечить): соседняя свободная клетка
+  Crew.prototype.goNear = function(a, pt, task) {
+    var W = this.w, px = Math.floor(pt.x), py = Math.floor(pt.y), best = null, bd = 1e9;
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      var x = px + dx, y = py + dy;
+      if (x < 0 || y < 0 || x >= W || y >= this.h || !this.walk[y * W + x]) continue;
+      var d = (x - a.x) * (x - a.x) + (y - a.y) * (y - a.y);
+      if (d < bd) { bd = d; best = [x, y]; }
+    }
+    if (!best) best = [px, py];
+    this.go(a, this.ship.room[best[1] * W + best[0]], best, task);
   };
   Crew.prototype.fireSpot = function(st, a) {
     var best = -1, bd = 1e9, W = this.w, sh = this.ship;
@@ -428,14 +545,20 @@
     if (best < 0) return null;
     // соседняя клетка, где можно стоять (лучше без огня)
     var bx = best % W, by = (best - bx) / W, pick = null, pv = 1e9;
-    for (var r = 1; r <= 7 && !pick; r++) {
+    for (var r = 1; r <= 7 && (!pick || r <= 3); r++) {
       for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         var gx = bx + dx, gy = by + dy;
         if (gx < 0 || gy < 0 || gx >= W || gy >= this.h) continue;
         var k = gy * W + gx;
         if (!this.walk[k] || sh.room[k] !== st.n) continue;
-        var v = this.fire[k] * 4 + (gx - a.x) * (gx - a.x) + (gy - a.y) * (gy - a.y);
+        // не вставать вплотную к другому пожарному: обступают огонь, а не толпятся
+        var crowd = 0;
+        for (var qy = -1; qy <= 1; qy++) for (var qx = -1; qx <= 1; qx++) {
+          var qk = k + qy * W + qx, cl = this.claim[qk];
+          if (cl && cl !== a.id + 1) crowd++;
+        }
+        var v = this.fire[k] * 4 + crowd * 60 + (gx - a.x) * (gx - a.x) + (gy - a.y) * (gy - a.y);
         if (v < pv) { pv = v; pick = [gx, gy]; }
       }
     }
@@ -475,6 +598,8 @@
     this.t += dt;
     if (this.ev.deaths.length > 200) this.ev.deaths.splice(0, 100);
     if (this.ev.ignites.length > 200) this.ev.ignites.splice(0, 100);
+    if (this.ev.blasts.length > 60) this.ev.blasts.splice(0, 30);
+    if (this.ev.guns.length > 60) this.ev.guns.splice(0, 30);
     // дальний путь по всему кораблю дорогой (5–15 мс) — не чаще ~6 раз в секунду
     this.flowT -= dt; this.budget = this.flowT <= 0 ? 1 : 0;
     var i, rs = this.roomList;
@@ -501,6 +626,7 @@
       return;
     }
     if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
+    if (a.hold > 0) { a.hold -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     var gx = a.goal[0], gy = a.goal[1];
     var ddx = gx + 0.5 - a.x, ddy = gy + 0.5 - a.y, dist = Math.sqrt(ddx * ddx + ddy * ddy);
     if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.1 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; return; }
@@ -508,7 +634,8 @@
     var room = this.ship.roomByN[a.goalRoom], f = null, d = 255;
     if (room && this.ship.room[here] === a.goalRoom) f = this.flows.inRoom(room, gx, gy);
     if (f) d = flowDir(f, cx, cy);
-    if (!f || d === 255) {
+    if (!room) { f = this.flows.global(gx, gy); d = f ? flowDir(f, cx, cy) : 255; }     // цель в коридоре
+    else if (!f || d === 255) {
       var st = this.rooms[a.goalRoom];
       var an = st && st.anchor;
       if (an) {
@@ -521,7 +648,7 @@
     if (d === 254) { tx = gx + 0.5; ty = gy + 0.5; }
     else if (d === 255) {
       // путь закрыт (огонь не в счёт — закрыто стенами): выбрать новое место
-      a.goal = this.spotIn(room) || a.goal; a.wait = 0.5; return;
+      a.goal = (room && this.spotIn(room)) || a.goal; a.wait = 0.5; return;
     } else {
       var nx = cx + DX[d], ny = cy + DY[d], d2 = flowDir(f, nx, ny);
       tx = nx + 0.5; ty = ny + 0.5;
@@ -541,11 +668,11 @@
     a.phase = (a.phase + dt * (urgent ? 10 : 7)) % (Math.PI * 2);
   };
 
-  // На месте: вахта, тушение, ремонт, прогулки в мирное время
+  // На месте: вахта у пультов, тушение, ремонт, лечение, подноска; в мирное время — прогулки
   Crew.prototype.work = function(a, dt) {
-    if (a.job && a.job.kind === 'fire') {
-      var W = this.w, cx = Math.floor(a.x), cy = Math.floor(a.y), any = false;
-      // струя на ближайшую горящую клетку в шаге-двух и чуть по соседним
+    var j = a.job, W = this.w;
+    if (j && j.kind === 'fire') {
+      var cx = Math.floor(a.x), cy = Math.floor(a.y), any = false;
       // струя бьёт до 7 клеток (14 м): огонь на машинах достают из прохода
       var bk = -1, bd = 999;
       for (var dy = -7; dy <= 7; dy++) for (var dx = -7; dx <= 7; dx++) {
@@ -556,26 +683,73 @@
         any = true;
         var dd = dx * dx + dy * dy;
         if (dd < bd) { bd = dd; bk = k; }
-        if (dd <= 2) this.fire[k] = Math.max(0, this.fire[k] - 8 * dt);
       }
+      a.sprayAt = bk;
       if (bk >= 0) {
-        this.fire[bk] = Math.max(0, this.fire[bk] - 30 * dt);
+        // пеной по ближайшей клетке и её соседям
         var fx = bk % W, fy = (bk - fx) / W;
+        this.fire[bk] = Math.max(0, this.fire[bk] - 16 * dt);
+        for (var ny = -1; ny <= 1; ny++) for (var nx = -1; nx <= 1; nx++) {
+          var nk = (fy + ny) * W + fx + nx;
+          if (nk !== bk && nk >= 0 && nk < this.fire.length && this.fire[nk]) this.fire[nk] = Math.max(0, this.fire[nk] - 4 * dt);
+        }
         a.aim = turn(a.aim, Math.atan2(fy + 0.5 - a.y, fx + 0.5 - a.x), 8 * dt);
+        // огонь далеко (больше 4 клеток) — подойти ближе
+        if (bd > 16) { var c0 = this.fireSpot(this.rooms[j.room], a); if (c0 && (c0[0] !== a.goal[0] || c0[1] !== a.goal[1])) this.go(a, j.room, c0, 'fire'); }
       }
       a.phase = (a.phase + dt * 4) % 6.28;
-      if (!any) { var c = this.fireSpot(this.rooms[a.job.room], a); if (c) this.go(a, a.job.room, c, 'fire'); }
+      if (!any) { var c = this.fireSpot(this.rooms[j.room], a); if (c) this.go(a, j.room, c, 'fire'); }
       return;
     }
-    if (a.job && a.job.kind === 'fix') {
-      var st = this.rooms[a.job.room];
+    if (j && j.kind === 'fix') {
+      var st = this.rooms[j.room];
       if (st && !st.fires) st.integ = Math.min(100, st.integ + 0.9 * dt);
+      a.fixAt = a.fixCell >= 0 ? a.fixCell : -1;
+      if (a.face != null) a.aim = turn(a.aim, a.face, 6 * dt);
       a.phase = (a.phase + dt * 3) % 6.28;
-      a.wait -= dt;
-      if (a.wait < -4) { a.wait = 0; var p = this.spotIn(st.r); if (p) this.go(a, st.n, p, 'fix'); }
+      a.busyT -= dt;
+      if (a.busyT <= 0) {
+        // к следующей машине отсека
+        a.busyT = 4 + this.R() * 4;
+        var p = this.workSpot(st, a.id) || this.spotIn(st.r);
+        if (p) { this.go(a, st.n, p, 'fix'); a.face = p[2] != null ? p[2] : null; a.fixCell = p[3] != null ? p[3] : -1; }
+      }
       return;
     }
-    if (this.alertOn) return;
+    if (j && j.kind === 'heal') {
+      var pt = this.agents[j.who];
+      if (!pt || !pt.alive) return;
+      var ddx = pt.x - a.x, ddy = pt.y - a.y;
+      if (ddx * ddx + ddy * ddy < 2.6) {
+        pt.hp = Math.min(100, pt.hp + 9 * dt); pt.hold = 0.4;
+        a.aim = turn(a.aim, Math.atan2(ddy, ddx), 8 * dt);
+        a.phase = (a.phase + dt * 3) % 6.28;
+      } else this.goNear(a, pt, 'heal');
+      return;
+    }
+    if (j && j.kind === 'carry') {
+      // отдал ящик расчёту — назад на склад
+      a.carry = false; var gs = this.rooms[j.room]; if (gs) gs.runner--;
+      a.job = { kind: 'back', room: j.room };
+      var hs = this.rooms[a.home];
+      if (hs) { a.wait = 1 + this.R(); this.go(a, hs.n, this.workSpot(hs, a.id) || this.spotIn(hs.r), 'back'); }
+      return;
+    }
+    if (j && j.kind === 'back') { this.releaseJob(a); this.sendPost(a); return; }
+    // вахта: лицом к пульту, время от времени — к соседнему
+    if (a.face != null) a.aim = turn(a.aim, a.face + Math.sin(this.t * 0.7 + a.id) * 0.25, 3 * dt);
+    a.busyT -= dt;
+    if (this.alertOn) {
+      if (a.busyT <= 0) {
+        a.busyT = 6 + this.R() * 10;
+        var hs2 = this.rooms[a.home];
+        if (hs2 && hs2.spots && hs2.spots.length > 1 && this.R() < 0.6) {
+          var q = this.workSpot(hs2, a.id);
+          if (q) { a.spot = q; this.sendPost(a); }
+        }
+      }
+      return;
+    }
     // мирное время: постоял — прошёлся
     a.wait -= dt;
     if (a.wait > 0) return;
@@ -583,11 +757,12 @@
     if (this.R() < 0.15) {
       var back = a.goalRoom !== a.home;
       var r2 = back ? this.ship.roomByN[a.home] : this.ship.rooms[Math.floor(this.R() * this.ship.rooms.length)];
-      var p2 = r2 && this.spotIn(r2);
-      if (p2) { this.go(a, r2.n, p2, 'post'); a.wait = 0; }
+      var st2 = r2 && this.rooms[r2.n];
+      var p2 = st2 && (this.workSpot(st2, a.id) || this.spotIn(r2));
+      if (p2) { this.go(a, r2.n, p2, 'post'); a.face = p2[2] != null ? p2[2] : null; a.wait = 0; }
     } else {
-      var r = this.ship.roomByN[a.goalRoom], p3 = r && this.spotIn(r);
-      if (p3 && Math.abs(p3[0] - a.x) + Math.abs(p3[1] - a.y) < 14) { this.go(a, r.n, p3, 'post'); a.wait = 0; }
+      var r = this.ship.roomByN[a.goalRoom], st3 = r && this.rooms[r.n], p3 = st3 && (this.workSpot(st3, a.id) || this.spotIn(r));
+      if (p3 && Math.abs(p3[0] - a.x) + Math.abs(p3[1] - a.y) < 14) { this.go(a, r.n, p3, 'post'); a.face = p3[2] != null ? p3[2] : null; a.wait = 0; }
     }
   };
 

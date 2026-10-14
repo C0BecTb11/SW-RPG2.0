@@ -303,6 +303,12 @@ def auto_rooms(spec, rooms, kind, room, W, H):
         free[max(0, y - 3):y + h + 3, max(0, x - 3):x + w + 3] = False
 
 
+# Малые корабли по сторонам: (картинка, размер рамки в клетках по 2 м)
+CRAFT = {
+    'republic': [('arc170', 12), ('ywing', 12)],
+    'cis':      [('vulture', 5), ('hyena', 6)],
+}
+
 # ---------------------------------------------------------------- мебель
 def place_props(spec, rooms, kind, room, W, H):
     rep = spec['faction'] == 'republic'
@@ -342,18 +348,36 @@ def place_props(spec, rooms, kind, room, W, H):
     for r in rooms:
         n, t = r['n'], r['t']
         cx, cy = int(r['cx']), int(r['cy'])
-        if t == 'hangar':
-            craft = 'laat' if rep else 'vulture'
-            if r['w'] > r['h']: grid(n, r, craft, 9, 9, 4, 4, BLOCK, 1, ship=craft)
+        if t in ('hangar', 'dock'):
+            # Малые корабли — картинки из assets/ships (те же, что на карте).
+            # Рамка по размаху крыльев: ARC-170 ~23 м, Y-wing ~23 м в длину,
+            # «Стервятник» ~8 м, «Гиена» ~10 м. Носом к выходу (к носу корабля).
+            pool = CRAFT['republic' if rep else 'cis']
+            if t == 'dock':
+                cid, size = pool[0]
+                put('craft', cx - size // 2, cy - size // 2, size, size, BLOCK, n, 1, ship=cid)
+                continue
+            big = max(sz for _, sz in pool)
+            if r['w'] > r['h'] * 1.3:
+                # поперечный ангар — ряды поперёк
+                k = 0
+                for y in range(r['y'] + 3, r['y'] + r['h'] - big - 2, big + 4):
+                    for x in range(r['x'] + 3, r['x'] + r['w'] - big - 2, big + 3):
+                        cid, size = pool[k % len(pool)]; k += 1
+                        put('craft', x, y, size, size, BLOCK, n, 1, ship=cid)
             else:
-                # ряды машин вдоль бортов, по центру — полоса для взлёта
-                lane = 4
-                # LAAT ~17 м — 9×9 клеток по 2 м
-                for y in range(r['y'] + 4, r['y'] + r['h'] - 12, 12):
-                    put(craft, r['x'] + 3, y, 9, 9, BLOCK, n, 1, ship=craft, a=0)
-                    put(craft, r['x'] + r['w'] - 12, y, 9, 9, BLOCK, n, 1, ship=craft, a=1)
-                for y in range(r['y'] + 6, r['y'] + r['h'] - 8, 22):
-                    put('crates', cx - 2, y, 3, 2, COVER, n, 1)
+                # продольный ангар: два ряда у бортов, посередине — полоса вылета
+                lane = max(8, r['w'] // 4)
+                k = 0
+                for y in range(r['y'] + 4, r['y'] + r['h'] - big - 3, big + 3):
+                    cid, size = pool[k % len(pool)]; k += 1
+                    off = (big - size) // 2
+                    put('craft', r['x'] + 3 + off, y + off, size, size, BLOCK, n, 1, ship=cid)
+                    if r['w'] >= 2 * big + lane + 6:
+                        put('craft', r['x'] + r['w'] - 3 - big + off, y + off, size, size, BLOCK, n, 1, ship=cid)
+                    # третий ряд у широких ангаров
+                    if r['w'] >= 3 * big + 2 * lane:
+                        pass
         elif t in ('quarters', 'troops'):
             grid(n, r, 'bunk', 4, 2, 2, 2, COVER, 0)
         elif t == 'mess':
@@ -397,6 +421,13 @@ def place_props(spec, rooms, kind, room, W, H):
         elif t == 'pdgun':
             put('pd_base', cx - 2, cy - 2, 4, 4, BLOCK, n, 1)
             along_walls(n, r, 'console', 2, 5, COVER)
+
+    # колонны в больших залах — чтобы зал держал перекрытие и не был пустой коробкой
+    for r in rooms:
+        if r['t'] in ('hangar', 'dock', 'reactor', 'gun', 'engine') or r['w'] < 34 or r['h'] < 30: continue
+        for y in range(r['y'] + 9, r['y'] + r['h'] - 8, 14):
+            for x in range(r['x'] + 9, r['x'] + r['w'] - 8, 16):
+                put('pillar', x, y, 2, 2, BLOCK, r['n'], 1)
 
     # пометки предметов → обратно пол; проходимость предметов хранится в props
     kind[kind == 7] = FLOOR; kind[kind == 8] = FLOOR

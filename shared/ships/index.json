@@ -1,0 +1,26 @@
+[
+ {
+  "id": "venator",
+  "name": "Венатор",
+  "faction": "republic",
+  "length_m": 1137
+ },
+ {
+  "id": "acclamator",
+  "name": "Акламатор",
+  "faction": "republic",
+  "length_m": 752
+ },
+ {
+  "id": "munificent",
+  "name": "Щедрый",
+  "faction": "cis",
+  "length_m": 825
+ },
+ {
+  "id": "providence",
+  "name": "Провиденс",
+  "faction": "cis",
+  "length_m": 1088
+ }
+]

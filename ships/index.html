@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
+<title>Корабли 2.0</title>
+<link rel="stylesheet" href="ships.css?v=1">
+</head>
+<body>
+<canvas id="sv-canvas"></canvas>
+
+<a id="sv-back" href="../game/galaxy-map.html">← В игру</a>
+
+<div class="sv-top" id="sv-top">
+  <div class="sv-row">
+    <span class="sv-kicker">Корабли 2.0</span>
+    <span class="sv-spacer"></span>
+    <span class="sv-side" id="sv-side"></span>
+  </div>
+  <div class="sv-row sv-title">
+    <b id="sv-name">…</b>
+    <span class="sv-dim"><b id="sv-len">0 м</b></span>
+    <span class="sv-dim">отсеков <b id="sv-rooms">0</b></span>
+  </div>
+  <div class="sv-row sv-dim sv-small">
+    <span>орудия <b id="sv-guns">0</b></span>
+    <span>экипаж <b id="sv-crew">0</b></span>
+    <span class="sv-spacer"></span>
+    <span><b id="sv-fps">0</b> к/с</span>
+  </div>
+  <div class="sv-ships">
+    <button class="sv-chip rep" id="sv-ship-venator">Венатор</button>
+    <button class="sv-chip rep" id="sv-ship-acclamator">Акламатор</button>
+    <button class="sv-chip cis" id="sv-ship-munificent">Щедрый</button>
+    <button class="sv-chip cis" id="sv-ship-providence">Провиденс</button>
+  </div>
+</div>
+
+<div class="sv-bottom" id="sv-bottom">
+  <div class="sv-info" id="sv-info"></div>
+  <div class="sv-btns">
+    <button class="sv-btn gold" id="sv-zoom">Разрез</button>
+    <button class="sv-btn on" id="sv-labels">Подписи</button>
+  </div>
+</div>
+
+<div class="sv-toast" id="sv-toast"></div>
+
+<script src="../shared/rt-core.js?v=5"></script>
+<script src="../shared/rt-figures.js?v=5"></script>
+<script src="../shared/rt-ship.js?v=1"></script>
+<script src="ship-view.js?v=1"></script>
+</body>
+</html>

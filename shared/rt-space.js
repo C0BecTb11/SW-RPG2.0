@@ -192,10 +192,13 @@
     }
     return n;
   };
-  Battle.prototype.order = function(shipN, x, y) {
+  // Курс: к точке; face — только развернуться носом к точке; x == null — корабль ведёт ИИ;
+  // hold — стоять (свой курс без точки)
+  Battle.prototype.order = function(shipN, x, y, face) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
+    if (x === 'hold') { sh.order = null; sh.ai = false; return; }
     if (x != null && !(isFinite(x) && isFinite(y))) return;
-    sh.order = x == null ? null : { x: x, y: y }; sh.ai = x == null;
+    sh.order = x == null ? null : { x: x, y: y, face: !!face }; sh.ai = x == null;
   };
 
   // ---------------------------------------------------------------- шаг
@@ -272,7 +275,11 @@
     var want = null, wantV = 0;
     if (sh.order) {
       var dx = sh.order.x - sh.x, dy = sh.order.y - sh.y, d = Math.sqrt(dx * dx + dy * dy);
-      if (d < 120) { sh.order = null; }
+      if (sh.order.face) {
+        want = Math.atan2(dy, dx); wantV = 0;
+        if (Math.abs(wrap(want - sh.hd)) < 0.02) sh.order = null;
+      }
+      else if (d < 120) { sh.order = null; }
       else { want = Math.atan2(dy, dx); wantV = Math.min(vmax, d / 20); }
     } else if (sh.ai) {
       var foe = this.nearestFoe(sh);
@@ -345,6 +352,7 @@
       g.aimAt = aim;
       if (!aim || g.cd > 0) continue;
       g.cd = g.T.reload * (0.9 + this.R() * 0.2);
+      if (g.room) sh.crew.gunFired(g.room);
       if (aim.craft) this.shootCraft(sh, g, aim.craft);
       else this.shootShip(sh, g, aim);
     }

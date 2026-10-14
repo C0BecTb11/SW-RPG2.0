@@ -22,7 +22,9 @@
   // тёмный металл, синие огни. Пол отсека тонирован по его назначению.
   var PAL = {
     republic: {
-      wall: '#c3c9d1', wallTop: '#e6eaef', wallEdge: '#4a525c', corridor: '#666e78', plate: 'rgba(28,32,38,0.93)', corridorLine: 'rgba(230,236,242,0.35)',
+      wall: '#c3c9d1', wallTop: '#e6eaef', wallEdge: '#4a525c', corridor: '#666e78', plate: 'rgba(28,32,38,0.93)',
+      lamp: '#f2f6ff', lampGlow: 'rgba(200,225,255,0.22)', stripGlow: 'rgba(160,210,255,0.18)', screenGlow: 'rgba(120,190,255,0.16)',
+      doorGlow: 'rgba(130,230,150,0.12)', accentSoft: 'rgba(192,69,58,0.55)', corridorLine: 'rgba(230,236,242,0.35)',
       accent: '#c0453a', light: '#9fd0ff', door: '#8b939c', doorLight: '#7fe08a', tech: 'rgba(6,9,14,0.55)',
       floor: {
         hangar: '#565d66', bridge: '#2b405c', flight: '#2b405c', cic: '#2e3f5a', gun: '#5d4640', pdgun: '#5a4642',
@@ -32,7 +34,9 @@
       }
     },
     cis: {
-      wall: '#8b8170', wallTop: '#b3a68e', wallEdge: '#2f2a23', corridor: '#4f4b45', plate: 'rgba(26,24,22,0.93)', corridorLine: 'rgba(110,160,230,0.35)',
+      wall: '#8b8170', wallTop: '#b3a68e', wallEdge: '#2f2a23', corridor: '#4f4b45', plate: 'rgba(26,24,22,0.93)',
+      lamp: '#ffd8a8', lampGlow: 'rgba(255,190,120,0.20)', stripGlow: 'rgba(110,160,240,0.18)', screenGlow: 'rgba(255,160,90,0.14)',
+      doorGlow: 'rgba(230,160,70,0.12)', accentSoft: 'rgba(61,116,214,0.55)', corridorLine: 'rgba(110,160,230,0.35)',
       accent: '#3d74d6', light: '#7fb3ff', door: '#6c655a', doorLight: '#e3a24a', tech: 'rgba(8,8,10,0.6)',
       floor: {
         hangar: '#4a4741', bridge: '#2a3446', flight: '#2a3446', cic: '#2c3344', gun: '#54403a', pdgun: '#523f3a',
@@ -54,14 +58,14 @@
     toast('Загружаю ' + nameOf(id) + '…');
     var tasks = [];
     if (!V.cache[id]) {
-      tasks.push(fetch('../shared/ships/' + id + '.json?v=1').then(function(r) {
+      tasks.push(fetch('../shared/ships/' + id + '.json?v=2').then(function(r) {
         if (!r.ok) throw new Error('план не найден'); return r.json();
       }).then(function(d) { V.cache[id] = { data: d }; }));
     }
     Promise.all(tasks).then(function() {
       var c = V.cache[id];
       if (!c.ship) c.ship = SH.load(c.data);
-      return loadImg('../' + c.ship.sprite).then(function(img) { c.img = img; return c; });
+      return loadImg('../' + c.ship.sprite).then(function(img) { c.img = img; return loadCraft(); }).then(function() { return c; });
     }).then(function(c) {
       V.ship = c.ship; V.img = c.img; V.pal = PAL[V.ship.faction] || PAL.republic;
       if (!c.clip) c.clip = makeClip(c.ship, c.img);
@@ -93,6 +97,15 @@
     c.drawImage(m, 0, 0, cw, chh);
     c.drawImage(img, sh.crop[0], sh.crop[1], cw, chh, 0, 0, cw, chh);
     return cv;
+  }
+  // Малые корабли в ангарах — те же картинки, что на космической карте
+  var CRAFT_IDS = ['arc170', 'ywing', 'vulture', 'hyena'];
+  function loadCraft() {
+    if (V.craft) return Promise.resolve();
+    var out = {};
+    return Promise.all(CRAFT_IDS.map(function(id) {
+      return loadImg('../assets/ships/' + id + '.png').then(function(im) { out[id] = im; }, function() {});
+    })).then(function() { V.craft = out; });
   }
   function nameOf(id) { for (var i = 0; i < LIST.length; i++) if (LIST[i].id === id) return LIST[i].short; return id; }
   function loadImg(src) {
@@ -161,116 +174,7 @@
     return ch;
   }
 
-  function buildChunk(cx, cy, tp) {
-    var sh = V.ship, P = V.pal, cv = document.createElement('canvas');
-    cv.width = cv.height = CH * tp;
-    var c = cv.getContext('2d'), x0 = cx * CH, y0 = cy * CH, x, y, i, k;
-    var w = sh.w, crop = sh.crop, sx = (crop[2] - crop[0]) / sh.w, sy = (crop[3] - crop[1]) / sh.h;
-    // 1. техпространство — тот же корпус со спрайта, притушенный
-    c.imageSmoothingEnabled = true;
-    c.drawImage(V.clip, x0 * sx, y0 * sy, CH * sx, CH * sy, 0, 0, CH * tp, CH * tp);
-    c.globalCompositeOperation = 'source-atop';
-    c.fillStyle = tp >= 8 ? P.plate : P.tech; c.fillRect(0, 0, CH * tp, CH * tp);
-    if (tp >= 8) {
-      // техпространство вблизи — тёмные плиты с заклёпками, а не размытый спрайт
-      c.fillStyle = 'rgba(255,255,255,0.035)';
-      for (y = 0; y < CH; y += 4) for (x = (y >> 2) % 2 * 2; x < CH; x += 4) c.fillRect(x * tp, y * tp, tp * 2, tp * 2);
-    }
-    c.globalCompositeOperation = 'source-over';
-    // трубы и кабели по техпространству — только вблизи
-    if (tp >= 8) {
-      c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = Math.max(1, tp * 0.18);
-      c.beginPath();
-      for (y = 0; y < CH; y += 3) {
-        for (x = 0; x < CH; x++) {
-          var gx = x0 + x, gy = y0 + y;
-          if (gx >= sh.w || gy >= sh.h || sh.kind[gy * w + gx] !== K.TECH) continue;
-          if (hash(gx >> 3, gy) < 0.55) { c.moveTo(x * tp, (y + 0.5) * tp); c.lineTo((x + 1) * tp, (y + 0.5) * tp); }
-        }
-      }
-      c.stroke();
-    }
-    // 2. пол отсеков и коридоров
-    for (y = 0; y < CH; y++) {
-      for (x = 0; x < CH; x++) {
-        var gx2 = x0 + x, gy2 = y0 + y;
-        if (gx2 >= sh.w || gy2 >= sh.h) continue;
-        i = gy2 * w + gx2; k = sh.kind[i];
-        if (k !== K.FLOOR && k !== K.DOOR) continue;
-        var r = sh.room[i] ? sh.roomByN[sh.room[i]] : null;
-        c.fillStyle = r ? (P.floor[r.t] || P.corridor) : P.corridor;
-        c.fillRect(x * tp, y * tp, tp, tp);
-      }
-    }
-    // плиты пола 4×4 м и полосы коридоров
-    if (tp >= 8) {
-      c.strokeStyle = 'rgba(0,0,0,0.11)'; c.lineWidth = 1;
-      c.beginPath();
-      for (y = 0; y < CH; y++) for (x = 0; x < CH; x++) {
-        var gx3 = x0 + x, gy3 = y0 + y;
-        if (gx3 >= sh.w || gy3 >= sh.h) continue;
-        i = gy3 * w + gx3;
-        if (sh.kind[i] !== K.FLOOR) continue;
-        if (gx3 % 2 === 0) { c.moveTo(x * tp + 0.5, y * tp); c.lineTo(x * tp + 0.5, (y + 1) * tp); }
-        if (gy3 % 2 === 0) { c.moveTo(x * tp, y * tp + 0.5); c.lineTo((x + 1) * tp, y * tp + 0.5); }
-      }
-      c.stroke();
-      // коридор: светлая разметка по оси
-      c.fillStyle = P.corridorLine;
-      for (y = 0; y < CH; y++) for (x = 0; x < CH; x++) {
-        var gx4 = x0 + x, gy4 = y0 + y;
-        if (gx4 >= sh.w || gy4 >= sh.h) continue;
-        i = gy4 * w + gx4;
-        if (sh.kind[i] !== K.FLOOR || sh.room[i]) continue;
-        var hz = isCorr(gx4 - 1, gy4) && isCorr(gx4 + 1, gy4), vt = isCorr(gx4, gy4 - 1) && isCorr(gx4, gy4 + 1);
-        var wallN = !isCorr(gx4, gy4 - 1), wallW = !isCorr(gx4 - 1, gy4);
-        if (wallN && hz && (gx4 % 4 < 2)) c.fillRect(x * tp, y * tp + tp * 0.08, tp, tp * 0.1);
-        if (wallW && vt && (gy4 % 4 < 2)) c.fillRect(x * tp + tp * 0.08, y * tp, tp * 0.1, tp);
-      }
-    }
-    // 3. переборки: стены отсеков и края техпространства вдоль коридоров —
-    // сплошной лентой; тёмная кромка только со стороны пола
-    var wallish = function(gx, gy) {
-      if (gx < 0 || gy < 0 || gx >= sh.w || gy >= sh.h) return false;
-      var kk = sh.kind[gy * w + gx];
-      if (kk === K.WALL) return true;
-      if (kk !== K.TECH && kk !== K.HULL) return false;
-      return isOpen(gx - 1, gy) || isOpen(gx + 1, gy) || isOpen(gx, gy - 1) || isOpen(gx, gy + 1);
-    };
-    var lw = Math.max(1, tp * 0.14);
-    for (y = 0; y < CH; y++) {
-      for (x = 0; x < CH; x++) {
-        var gx5 = x0 + x, gy5 = y0 + y;
-        if (gx5 >= sh.w || gy5 >= sh.h || !wallish(gx5, gy5)) continue;
-        c.fillStyle = P.wall; c.fillRect(x * tp, y * tp, tp, tp);
-        c.fillStyle = P.wallEdge;
-        if (isOpen(gx5, gy5 - 1)) c.fillRect(x * tp, y * tp, tp, lw);
-        if (isOpen(gx5, gy5 + 1)) c.fillRect(x * tp, (y + 1) * tp - lw, tp, lw);
-        if (isOpen(gx5 - 1, gy5)) c.fillRect(x * tp, y * tp, lw, tp);
-        if (isOpen(gx5 + 1, gy5)) c.fillRect((x + 1) * tp - lw, y * tp, lw, tp);
-        if (tp >= 8 && !wallish(gx5, gy5 - 1) && !isOpen(gx5, gy5 - 1)) { c.fillStyle = P.wallTop; c.fillRect(x * tp, y * tp, tp, tp * 0.2); }
-      }
-    }
-    // 4. двери
-    for (i = 0; i < sh.doors.length; i++) {
-      var d = sh.doors[i];
-      if (d.x < x0 - 2 || d.y < y0 - 2 || d.x >= x0 + CH + 2 || d.y >= y0 + CH + 2) continue;
-      drawDoor(c, d, (d.x - x0) * tp, (d.y - y0) * tp, tp);
-    }
-    // 5. техника и мебель
-    for (i = 0; i < sh.props.length; i++) {
-      var p = sh.props[i];
-      if (p.x + p.w < x0 || p.y + p.h < y0 || p.x > x0 + CH || p.y > y0 + CH) continue;
-      c.save(); c.translate((p.x - x0) * tp, (p.y - y0) * tp);
-      drawProp(c, p, tp);
-      c.restore();
-    }
-    // 6. обшивка поверх — чистый край корпуса
-    c.globalCompositeOperation = 'destination-in';
-    c.drawImage(V.clip, x0 * sx, y0 * sy, CH * sx, CH * sy, 0, 0, CH * tp, CH * tp);
-    c.globalCompositeOperation = 'source-over';
-    return { cv: cv, tp: tp };
-  }
+  function buildChunk(cx, cy, tp) { return window.ShipArt.chunk(cx, cy, tp); }
 
   function isOpen(x, y) {
     var sh = V.ship;
@@ -283,220 +187,6 @@
     if (x < 0 || y < 0 || x >= sh.w || y >= sh.h) return false;
     var i = y * sh.w + x;
     return (sh.kind[i] === K.FLOOR || sh.kind[i] === K.DOOR) && !sh.room[i];
-  }
-
-  function drawDoor(c, d, px, py, tp) {
-    var P = V.pal, len = (d.w || 2) * tp, deep = (d.d === 2 ? 2 : 1) * tp;
-    var w = d.v ? deep : len, h = d.v ? len : deep;
-    c.fillStyle = P.door; c.fillRect(px, py, w, h);
-    c.fillStyle = 'rgba(0,0,0,0.35)';
-    if (d.v) { c.fillRect(px + w / 2 - tp * 0.06, py, tp * 0.12, h); }
-    else { c.fillRect(px, py + h / 2 - tp * 0.06, w, tp * 0.12); }
-    // створки разъехались — щель посередине, огоньки по краям проёма
-    if (tp >= 8) {
-      c.fillStyle = P.doorLight;
-      var r = Math.max(1, tp * 0.12);
-      if (d.v) { c.fillRect(px + w / 2 - r / 2, py + tp * 0.1, r, r); c.fillRect(px + w / 2 - r / 2, py + h - tp * 0.1 - r, r, r); }
-      else { c.fillRect(px + tp * 0.1, py + h / 2 - r / 2, r, r); c.fillRect(px + w - tp * 0.1 - r, py + h / 2 - r / 2, r, r); }
-    }
-  }
-
-  // ---------- рисунки техники и мебели (сверху) ----------
-  function rr(c, x, y, w, h, r) {
-    r = Math.min(r, w / 2, h / 2);
-    c.beginPath(); c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
-    c.lineTo(x + w, y + h - r); c.quadraticCurveTo(x + w, y + h, x + w - r, y + h); c.lineTo(x + r, y + h);
-    c.quadraticCurveTo(x, y + h, x, y + h - r); c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
-  }
-  function disc(c, x, y, r) { c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
-  function glow(c, x, y, r, col) {
-    var g = c.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = g; disc(c, x, y, r);
-  }
-
-  function drawProp(c, p, tp) {
-    var P = V.pal, W = p.w * tp, H = p.h * tp, rep = V.ship.faction === 'republic';
-    var shade = 'rgba(0,0,0,0.35)';
-    switch (p.t) {
-      case 'laat': return craft(c, W, H, tp, 'laat', p.a);
-      case 'vulture': return craft(c, W, H, tp, 'vulture', p.a);
-      case 'shuttle': return craft(c, W, H, tp, 'shuttle', 0);
-      case 'atte': case 'aat': return vehicle(c, W, H, tp, p.t);
-      case 'bunk':
-        c.fillStyle = shade; c.fillRect(tp * 0.2, tp * 0.2, W, H);
-        c.fillStyle = rep ? '#9aa3ad' : '#76705f'; rr(c, 0, 0, W, H, tp * 0.2); c.fill();
-        c.fillStyle = rep ? '#d6dbe1' : '#a49a85'; rr(c, tp * 0.15, tp * 0.15, W - tp * 0.3, H / 2 - tp * 0.2, tp * 0.15); c.fill();
-        c.fillRect(tp * 0.15, H / 2 + tp * 0.05, W - tp * 0.3, H / 2 - tp * 0.2);
-        c.fillStyle = rep ? '#eef1f4' : '#c3b79e'; c.fillRect(tp * 0.2, tp * 0.2, tp * 0.6, H / 2 - tp * 0.3);
-        return;
-      case 'table':
-        c.fillStyle = shade; c.fillRect(tp * 0.2, tp * 0.2, W, H);
-        c.fillStyle = rep ? '#a8b0b9' : '#80786a'; rr(c, 0, 0, W, H, tp * 0.3); c.fill();
-        c.fillStyle = 'rgba(0,0,0,0.25)';
-        for (var s = tp * 0.6; s < W - tp * 0.4; s += tp) { disc(c, s, -tp * 0.3, tp * 0.22); disc(c, s, H + tp * 0.3, tp * 0.22); }
-        return;
-      case 'bed':
-        c.fillStyle = '#c9d3d6'; rr(c, 0, 0, W, H, tp * 0.25); c.fill();
-        c.fillStyle = '#7fbfb3'; c.fillRect(tp * 0.15, H * 0.3, W - tp * 0.3, H * 0.6);
-        c.fillStyle = '#eef3f4'; c.fillRect(tp * 0.2, tp * 0.15, W - tp * 0.4, H * 0.18);
-        return;
-      case 'bacta':
-        glow(c, W / 2, H / 2, W * 0.75, 'rgba(90,220,210,0.45)');
-        c.fillStyle = '#2a3b40'; disc(c, W / 2, H / 2, W * 0.46);
-        c.fillStyle = 'rgba(120,240,225,0.85)'; disc(c, W / 2, H / 2, W * 0.34);
-        return;
-      case 'crates':
-        for (var cx = 0; cx < p.w; cx++) for (var cy = 0; cy < p.h; cy++) {
-          var hh = hash(p.x + cx, p.y + cy);
-          if (hh < 0.18) continue;
-          c.fillStyle = shade; c.fillRect(cx * tp + tp * 0.18, cy * tp + tp * 0.18, tp * 0.9, tp * 0.9);
-          c.fillStyle = rep ? (hh < 0.6 ? '#8e8a7a' : '#a7a18c') : (hh < 0.6 ? '#6d6350' : '#857a62');
-          c.fillRect(cx * tp + tp * 0.06, cy * tp + tp * 0.06, tp * 0.88, tp * 0.88);
-          if (tp >= 8) { c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1; c.strokeRect(cx * tp + tp * 0.18, cy * tp + tp * 0.18, tp * 0.64, tp * 0.64); }
-        }
-        return;
-      case 'console': {
-        var f = p.f || 0;
-        c.fillStyle = '#20262e'; rr(c, 0, 0, W, H, tp * 0.2); c.fill();
-        c.fillStyle = P.light; c.globalAlpha = 0.75;
-        c.fillRect(tp * 0.2, f === 0 ? H * 0.55 : H * 0.15, W - tp * 0.4, H * 0.3);
-        c.globalAlpha = 1;
-        return;
-      }
-      case 'holotable':
-        c.fillStyle = '#1b2129'; disc(c, W / 2, H / 2, W * 0.5);
-        glow(c, W / 2, H / 2, W * 0.9, rep ? 'rgba(120,190,255,0.5)' : 'rgba(255,170,90,0.45)');
-        c.strokeStyle = rep ? 'rgba(170,215,255,0.9)' : 'rgba(255,200,140,0.9)'; c.lineWidth = Math.max(1, tp * 0.1);
-        c.beginPath(); c.arc(W / 2, H / 2, W * 0.3, 0, TAU); c.stroke();
-        return;
-      case 'turret_base': {
-        // помещение под башней: поворотный погон с метками, механизм наводки,
-        // казённики двух стволов и лотки подачи
-        var cxp = W / 2, cyp = H / 2, R = Math.min(W, H) / 2;
-        c.fillStyle = shade; disc(c, cxp + tp * 0.4, cyp + tp * 0.4, R);
-        c.fillStyle = rep ? '#7e868f' : '#5e564a'; disc(c, cxp, cyp, R);
-        c.fillStyle = rep ? '#5a6169' : '#463f35'; disc(c, cxp, cyp, R * 0.86);
-        c.strokeStyle = rep ? '#b9c0c8' : '#8e8370'; c.lineWidth = Math.max(1, tp * 0.12);
-        c.beginPath();
-        for (var a = 0; a < 36; a++) {
-          var an = a / 36 * TAU, r1 = R * 0.88, r2 = R * (a % 3 ? 0.94 : 0.98);
-          c.moveTo(cxp + Math.cos(an) * r1, cyp + Math.sin(an) * r1); c.lineTo(cxp + Math.cos(an) * r2, cyp + Math.sin(an) * r2);
-        }
-        c.stroke();
-        c.fillStyle = '#23272d'; disc(c, cxp, cyp, R * 0.62);
-        // лотки подачи к казённикам
-        c.fillStyle = rep ? '#9aa1aa' : '#776d5d';
-        c.fillRect(cxp - R * 0.5, cyp + R * 0.05, R * 0.22, R * 0.55); c.fillRect(cxp + R * 0.28, cyp + R * 0.05, R * 0.22, R * 0.55);
-        // казённики и стволы
-        c.fillStyle = rep ? '#c9cfd6' : '#9a8e78'; rr(c, cxp - R * 0.34, cyp - R * 0.3, R * 0.68, R * 0.5, tp * 0.4); c.fill();
-        c.fillStyle = '#15181c';
-        c.fillRect(cxp - R * 0.2, cyp - R * 0.95, R * 0.12, R * 0.7); c.fillRect(cxp + R * 0.08, cyp - R * 0.95, R * 0.12, R * 0.7);
-        c.fillStyle = V.pal.accent; c.fillRect(cxp - R * 0.34, cyp + R * 0.12, R * 0.68, R * 0.06);
-        glow(c, cxp, cyp - R * 0.05, R * 0.35, rep ? 'rgba(120,190,255,0.35)' : 'rgba(255,140,80,0.35)');
-        return;
-      }
-      case 'pd_base':
-        c.fillStyle = rep ? '#9aa1aa' : '#6f6656'; disc(c, W / 2, H / 2, W * 0.48);
-        c.fillStyle = '#262b31'; disc(c, W / 2, H / 2, W * 0.3);
-        c.fillStyle = '#14171b'; c.fillRect(W * 0.45, 0, W * 0.1, H * 0.45);
-        return;
-      case 'reactor_core':
-        glow(c, W / 2, H / 2, W * 0.8, 'rgba(255,170,60,0.55)');
-        c.fillStyle = '#2b2620'; disc(c, W / 2, H / 2, W * 0.5);
-        c.strokeStyle = 'rgba(255,190,90,0.9)'; c.lineWidth = Math.max(1.5, tp * 0.2);
-        c.beginPath(); c.arc(W / 2, H / 2, W * 0.4, 0, TAU); c.stroke();
-        c.beginPath(); c.arc(W / 2, H / 2, W * 0.26, 0, TAU); c.stroke();
-        c.fillStyle = 'rgba(255,235,180,0.95)'; disc(c, W / 2, H / 2, W * 0.13);
-        return;
-      case 'shield_gen':
-        glow(c, W / 2, H / 2, W * 0.75, 'rgba(90,200,255,0.5)');
-        c.fillStyle = '#26323a'; disc(c, W / 2, H / 2, W * 0.46);
-        c.strokeStyle = 'rgba(140,220,255,0.9)'; c.lineWidth = Math.max(1, tp * 0.15);
-        c.beginPath(); c.arc(W / 2, H / 2, W * 0.32, 0, TAU); c.stroke();
-        return;
-      case 'hyper_core':
-        glow(c, W / 2, H / 2, W * 0.8, 'rgba(170,120,255,0.5)');
-        c.fillStyle = '#2a2433'; rr(c, 0, 0, W, H, tp * 0.6); c.fill();
-        c.fillStyle = 'rgba(200,170,255,0.9)'; rr(c, W * 0.3, H * 0.15, W * 0.4, H * 0.7, tp * 0.4); c.fill();
-        return;
-      case 'engine_block':
-        c.fillStyle = shade; c.fillRect(tp * 0.3, tp * 0.3, W, H);
-        c.fillStyle = rep ? '#7d858f' : '#5f574b'; rr(c, 0, 0, W, H, tp * 0.8); c.fill();
-        c.fillStyle = '#2a2f36'; rr(c, W * 0.2, H * 0.1, W * 0.6, H * 0.8, tp * 0.6); c.fill();
-        glow(c, W / 2, H * 0.85, W * 0.6, rep ? 'rgba(120,190,255,0.55)' : 'rgba(255,150,80,0.5)');
-        return;
-      case 'droid_rack':
-        c.fillStyle = '#2e2a24'; c.fillRect(0, 0, W, H);
-        c.fillStyle = '#c9b88c';
-        for (var dy = tp * 0.5; dy < H - tp * 0.2; dy += tp) { c.beginPath(); c.ellipse(W / 2, dy, W * 0.32, tp * 0.22, 0, 0, TAU); c.fill(); }
-        return;
-      case 'bench':
-        c.fillStyle = rep ? '#8f969e' : '#6b6456'; c.fillRect(0, 0, W, H);
-        c.fillStyle = '#3a4048'; c.fillRect(tp * 0.3, tp * 0.3, W * 0.35, H - tp * 0.6);
-        c.fillStyle = P.light; c.globalAlpha = 0.6; c.fillRect(W * 0.6, tp * 0.4, W * 0.3, tp * 0.3); c.globalAlpha = 1;
-        return;
-      case 'hatch':
-        c.fillStyle = '#2a2f36'; disc(c, W / 2, H / 2, W * 0.5);
-        c.strokeStyle = '#d9a940'; c.lineWidth = Math.max(1, tp * 0.15); c.setLineDash([tp * 0.4, tp * 0.3]);
-        c.beginPath(); c.arc(W / 2, H / 2, W * 0.4, 0, TAU); c.stroke(); c.setLineDash([]);
-        return;
-      case 'window':
-        c.fillStyle = 'rgba(140,190,255,0.25)'; c.fillRect(0, 0, W, H);
-        c.fillStyle = 'rgba(200,225,255,0.5)'; c.fillRect(0, 0, W, Math.max(1, H * 0.3));
-        return;
-      default:
-        c.fillStyle = shade; c.fillRect(0, 0, W, H);
-    }
-  }
-
-  // Малые корабли в ангаре: LAAT, «Стервятник», шаттл — силуэты сверху
-  function craft(c, W, H, tp, kind, flip) {
-    c.save();
-    c.translate(W / 2, H / 2);
-    if (flip) c.scale(-1, 1);
-    var s = Math.min(W, H) / 2;
-    c.fillStyle = 'rgba(0,0,0,0.4)'; c.beginPath(); c.ellipse(s * 0.12, s * 0.12, s * 0.95, s * 0.8, 0, 0, TAU); c.fill();
-    if (kind === 'laat') {
-      // LAAT/i: корпус-ящик, кабина в носу, крылья с ракетами, кормовой хвост
-      c.fillStyle = '#b9c0c8';
-      c.beginPath(); c.moveTo(-s * 0.25, -s * 0.95); c.lineTo(s * 0.25, -s * 0.95); c.lineTo(s * 0.35, s * 0.85); c.lineTo(-s * 0.35, s * 0.85); c.closePath(); c.fill();
-      c.fillStyle = '#a3abb4'; c.fillRect(-s * 0.95, -s * 0.15, s * 1.9, s * 0.38);
-      c.fillStyle = '#7d2a26'; c.fillRect(-s * 0.95, -s * 0.15, s * 0.3, s * 0.38); c.fillRect(s * 0.65, -s * 0.15, s * 0.3, s * 0.38);
-      c.fillStyle = '#2a3440'; c.fillRect(-s * 0.15, -s * 0.85, s * 0.3, s * 0.3);
-      c.fillStyle = '#6d757e'; c.fillRect(-s * 0.08, s * 0.4, s * 0.16, s * 0.55);
-    } else if (kind === 'vulture') {
-      // «Стервятник»: голова-кабина в центре, два крыла-ноги вперёд и назад
-      c.fillStyle = '#9c917b';
-      c.fillRect(-s * 0.9, -s * 0.12, s * 1.8, s * 0.24);
-      c.fillRect(-s * 0.9, -s * 0.12, s * 0.22, s * 0.9); c.fillRect(s * 0.68, -s * 0.12, s * 0.22, s * 0.9);
-      c.fillRect(-s * 0.9, -s * 0.78, s * 0.22, s * 0.7); c.fillRect(s * 0.68, -s * 0.78, s * 0.22, s * 0.7);
-      c.fillStyle = '#c3b694'; c.beginPath(); c.ellipse(0, 0, s * 0.3, s * 0.45, 0, 0, TAU); c.fill();
-      c.fillStyle = '#e3a24a'; disc(c, 0, -s * 0.25, s * 0.08);
-    } else {
-      c.fillStyle = '#c3c9d0';
-      c.beginPath(); c.moveTo(0, -s * 0.95); c.lineTo(s * 0.45, s * 0.6); c.lineTo(-s * 0.45, s * 0.6); c.closePath(); c.fill();
-      c.fillStyle = '#9aa2ab'; c.fillRect(-s * 0.85, s * 0.2, s * 1.7, s * 0.25);
-      c.fillStyle = '#2a3440'; c.fillRect(-s * 0.12, -s * 0.6, s * 0.24, s * 0.3);
-    }
-    c.restore();
-  }
-
-  function vehicle(c, W, H, tp, kind) {
-    c.fillStyle = 'rgba(0,0,0,0.4)'; c.fillRect(tp * 0.4, tp * 0.4, W, H);
-    if (kind === 'atte') {
-      // AT-TE: длинный корпус на шести ногах
-      c.fillStyle = '#5e6268';
-      for (var i = 0; i < 3; i++) { c.fillRect(W * (0.18 + i * 0.28), 0, W * 0.08, H); }
-      c.fillStyle = '#c6ccd2'; rr(c, W * 0.06, H * 0.2, W * 0.88, H * 0.6, tp * 0.4); c.fill();
-      c.fillStyle = '#7d2a26'; c.fillRect(W * 0.06, H * 0.45, W * 0.88, H * 0.1);
-      c.fillStyle = '#2a3440'; c.fillRect(W * 0.84, H * 0.38, W * 0.1, H * 0.24);
-    } else {
-      // AAT: танк на репульсорах
-      c.fillStyle = '#8e826b'; rr(c, 0, H * 0.1, W, H * 0.8, tp * 0.8); c.fill();
-      c.fillStyle = '#6a604f'; disc(c, W * 0.55, H / 2, H * 0.28);
-      c.fillStyle = '#2b2a26'; c.fillRect(W * 0.6, H * 0.46, W * 0.4, H * 0.08);
-    }
   }
 
   // ---------- экипаж ----------
@@ -625,7 +315,7 @@
     var c = CTX, sh = V.ship, s = CAM.s, k = cut();
     c.setTransform(CAM.dpr, 0, 0, CAM.dpr, 0, 0);
     c.clearRect(0, 0, CAM.vw, CAM.vh);
-    BUILD.left = 2;
+    BUILD.left = s >= 12 ? 1 : 2;
     var o = toScreen(0, 0), crop = sh.crop;
     // корпус снаружи — тот же спрайт, что на космической карте
     if (k < 1) {
@@ -854,6 +544,7 @@
   }
 
   // ---------- старт ----------
+  window.ShipArt.init(V, K);
   resize(); bind(); bindUi();
   var start = 'venator';
   var q = location.search.match(/[?&]ship=(\w+)/);

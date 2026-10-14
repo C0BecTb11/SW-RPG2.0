@@ -59,9 +59,21 @@
   // Корпуса — из ship_types старой игры
   var CLASS = {
     venator:    { hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['arc170', 'arc170', 'ywing'] },
-    acclamator: { hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
+    acclamator: { hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 1.25 },
     munificent: { hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
-    providence: { hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'] }
+    providence: { hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.5 },
+    // craft — звенья по 4 машины; у самых больших ангаров число звеньев урезано до 6;
+    // bal — множитель урона по прогонам ИИ против ИИ (равные по старой игре корпуса ≈ 50/50)
+    rep_mandator:   { hp: 2400, shield: 300, regen: 15, acc: 85, eva: 1,  hangar: 6, move: 4,  dmg: 220, craft: ['arc170', 'arc170', 'ywing', 'arc170', 'ywing', 'arc170'] },
+    rep_victory:    { hp: 1100, shield: 200, regen: 10, acc: 83, eva: 4,  hangar: 2, move: 6,  dmg: 130, craft: ['arc170', 'ywing'] },
+    rep_valiant:    { hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 5,  hangar: 0, move: 7,  dmg: 75 },
+    rep_arquitens:  { hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
+    tantive:        { hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
+    cis_subjugator: { hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'] },
+    cis_lucrehulk:  { hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
+    cis_recusant:   { hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.1 },
+    cis_diamond:    { hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1.15 },
+    hardcell:       { hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50 }
   };
   // Малые корабли — тоже из ship_types
   var CRAFT = {
@@ -71,6 +83,7 @@
     hyena:   { name: 'Гиена',      role: 'bomber',  hp: 140, speed: 180, img: 'hyena',  len: 8.1 }
   };
 
+  function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
   function rng(seed) {
     var s = (seed >>> 0) || 1;
     return function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
@@ -95,8 +108,10 @@
       n: this.ships.length, id: o.id || (o.cls + '-' + this.ships.length), cls: o.cls, name: o.name || plan.name, side: o.side,
       plan: plan, len: plan.h * plan.cellM, wid: plan.w * plan.cellM,
       x: o.x || 0, y: o.y || 0, hd: o.hd || 0, v: 0, order: null, ai: o.ai !== false,
-      hullMax: C.hp * 3, hull: C.hp * 3, shMax: C.shield * 2, sh: [C.shield * 2, C.shield * 2, C.shield * 2, C.shield * 2],
-      shHit: [0, 0, 0, 0], regen: C.regen * 0.5, acc: C.acc / 100, eva: C.eva / 100,
+      hullMax: C.hp * 3, hull: C.hp * 3, shMax: C.shield * 1.6, sh: [C.shield * 1.6, C.shield * 1.6, C.shield * 1.6, C.shield * 1.6],
+      // генератор щитов рассчитан на огонь корабля своего класса: у малых кораблей
+      // восстановление и перекачка слабее, иначе их пушки не продавливают щит вовсе
+      shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true }),
       guns: [], eff: {}, hangar: (C.craft || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
@@ -135,6 +150,9 @@
     var hw = 0, hs = 0;
     for (g = 0; g < sh.guns.length; g++) { var gt = sh.guns[g]; if (gt.t === 'pd') continue; hw += gt.T.dmg / gt.T.reload * gt.T.hull; hs += gt.T.dmg / gt.T.reload; }
     if (hw > 0) k *= Math.min(1.5, hs / hw);
+    // bal — поправка по итогам прогонов ИИ против ИИ (раскладка пушек у корпусов разная:
+    // где-то стволы стоят кучно и выбиваются разом, где-то бьют только с носа)
+    k *= C.bal || 1;
     for (g = 0; g < sh.guns.length; g++) if (sh.guns[g].t !== 'pd') sh.guns[g].k = k;
     this.ships.push(sh);
     this.place(sh);
@@ -239,11 +257,7 @@
     e.bridge = (c.sysEff('bridge') * 2 + (hasType(sh.plan, 'cic') ? c.sysEff('cic') : 1)) / 3;
     e.hangar = hasType(sh.plan, 'hangar') ? c.sysEff('hangar') : 0;
     e.power = 0.3 + 0.7 * e.reactor;
-    // щиты: восстановление, если сектор не били 5 с
-    for (var s = 0; s < 4; s++) {
-      sh.shHit[s] = Math.max(0, sh.shHit[s] - dt);
-      if (sh.shHit[s] <= 0) sh.sh[s] = Math.min(sh.shMax, sh.sh[s] + sh.regen * e.shield * e.power * dt);
-    }
+    this.shields(sh, dt);
     // орудия: люди на посту, целость, питание
     for (var g = 0; g < sh.guns.length; g++) {
       var gun = sh.guns[g], re = gun.room ? c.roomEff(gun.room) : 1;
@@ -258,6 +272,53 @@
       if (sh.crit <= 0) { sh.crit = 0; this.kill(sh, 'reactor'); }
     }
   };
+  // Секторные щиты.
+  //  - Предел сектора: усиленный сектор ×1,25, остальные ×0,9; разбитый генератор
+  //    снижает предел (до 40% при нуле).
+  //  - Восстановление: полное, если по сектору не били 5 с; под огнём — 12%;
+  //    усиленный сектор — ×1,4. Скорость зависит от класса корабля (shK).
+  //  - Перекачка: спокойные сектора с запасом больше половины отдают (xfer ед/с)
+  //    самому просевшему из тех, что под огнём, — без хозяина корабля это делает экипаж.
+  Battle.prototype.shieldCap = function(sh, s) {
+    var k = sh.focus < 0 ? 1 : s === sh.focus ? 1.25 : 0.9;
+    return sh.shMax * k * (0.4 + 0.6 * (sh.eff.shield == null ? 1 : sh.eff.shield));
+  };
+  Battle.prototype.shields = function(sh, dt) {
+    var e = sh.eff, s, base = sh.regen * e.shield * e.power;
+    if (sh.focusAuto) this.autoFocus(sh, dt);
+    var need = -1, nv = 1e9;
+    for (s = 0; s < 4; s++) {
+      sh.shHit[s] = Math.max(0, sh.shHit[s] - dt);
+      var cap = this.shieldCap(sh, s), r = base * (sh.shHit[s] > 0 ? 0.12 : 1) * (s === sh.focus ? 1.4 : 1);
+      sh.sh[s] = Math.min(cap, sh.sh[s] + r * dt);
+      if (sh.sh[s] > cap) sh.sh[s] = cap;
+      if (sh.shHit[s] > 0 && sh.sh[s] / cap < nv) { nv = sh.sh[s] / cap; need = s; }
+    }
+    if (need >= 0) {
+      for (s = 0; s < 4; s++) {
+        if (s === need || sh.shHit[s] > 0) continue;
+        var c2 = this.shieldCap(sh, s);
+        if (sh.sh[s] <= c2 * 0.5) continue;
+        var give = Math.min(sh.xfer * e.power * dt, sh.sh[s] - c2 * 0.5, this.shieldCap(sh, need) - sh.sh[need]);
+        if (give > 0) { sh.sh[s] -= give; sh.sh[need] += give; }
+      }
+    }
+  };
+  // ИИ (и экипаж корабля без хозяина) усиливает сектор, что смотрит на ближайшего врага
+  Battle.prototype.autoFocus = function(sh, dt) {
+    sh.focusT = (sh.focusT || 0) - dt;
+    if (sh.focusT > 0) return;
+    sh.focusT = 3;
+    var foe = this.nearestFoe(sh);
+    sh.focus = foe ? this.sector(sh, foe.x, foe.y) : -1;
+  };
+  // Приказ игрока: усилить сектор (0 нос, 1 правый, 2 корма, 3 левый), −1 — ровно
+  Battle.prototype.setFocus = function(shipN, s) {
+    var sh = this.ships[shipN]; if (!sh || sh.dead) return;
+    sh.focus = (s === 0 || s === 1 || s === 2 || s === 3) ? s : -1;
+    sh.focusAuto = false;
+  };
+
   function hasType(plan, t) {
     if (!plan._types) { plan._types = {}; for (var i = 0; i < plan.rooms.length; i++) plan._types[plan.rooms[i].t] = 1; }
     return !!plan._types[t];
@@ -487,8 +548,10 @@
         if (T.stun && this.R() < 0.25) this.hitRoom(sh, p.lx, p.ly, 0, T, 0.4);   // ионный удар пробивает и сквозь щит
         return;
       }
-      dmg = (absorb - sh.sh[s]) / T.sh; sh.sh[s] = 0;
-      this.ev.shields.push({ ship: sh.n, s: s, x: w[0], y: w[1], t0: this.t, down: 1 });
+      // «щит упал» — только когда сектор держал заметный запас (не каждое добивание остатка)
+      var was = sh.sh[s], solid = was > this.shieldCap(sh, s) * 0.15;
+      dmg = (absorb - was) / T.sh; sh.sh[s] = 0;
+      this.ev.shields.push({ ship: sh.n, s: s, x: w[0], y: w[1], t0: this.t, down: solid ? 1 : 0 });
     }
     sh.hull -= dmg * T.hull;
     this.ev.booms.push({ x: w[0], y: w[1], r: 14 + dmg * 1.4, t0: this.t, ship: sh.n, ion: !!T.stun });
@@ -543,8 +606,11 @@
     var type = sh.hangar[0];
     sh.wing = (sh.wing || 0) + 1;
     if (sh.wing >= 4) { sh.wing = 0; sh.hangar.shift(); sh.launchT = 6; } else sh.launchT = 1.5;
-    var h = null;
-    for (var i = 0; i < sh.plan.rooms.length; i++) if (sh.plan.rooms[i].t === 'hangar') { h = sh.plan.rooms[i]; break; }
+    // звенья вылетают по очереди из всех ангаров корабля
+    var hs = [];
+    for (var i = 0; i < sh.plan.rooms.length; i++) if (sh.plan.rooms[i].t === 'hangar') hs.push(sh.plan.rooms[i]);
+    var h = hs.length ? hs[(sh.wingN || 0) % hs.length] : null;
+    if (sh.wing === 0) sh.wingN = (sh.wingN || 0) + 1;
     var w = h ? this.toWorld(sh, h.cx + (sh.wing - 1.5) * 6, h.y + 4) : [sh.x, sh.y];
     var C = CRAFT[type];
     this.craft.push({ id: this.nextCraft++, type: type, role: C.role, img: C.img, side: sh.side, home: sh.n,

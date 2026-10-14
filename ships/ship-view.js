@@ -11,10 +11,20 @@
   var TAU = Math.PI * 2, CH = 32;
 
   var LIST = [
+    { id: 'rep_mandator', short: 'Мандатор' },
     { id: 'venator', short: 'Венатор' },
+    { id: 'rep_victory', short: 'Победа' },
     { id: 'acclamator', short: 'Акламатор' },
+    { id: 'rep_valiant', short: 'Валиант' },
+    { id: 'rep_arquitens', short: 'Аркитенс' },
+    { id: 'tantive', short: 'Тантив' },
+    { id: 'cis_subjugator', short: 'Покоритель' },
+    { id: 'cis_lucrehulk', short: 'Лукрехалк' },
+    { id: 'cis_recusant', short: 'Рекусант' },
+    { id: 'providence', short: 'Провиденс' },
     { id: 'munificent', short: 'Щедрый' },
-    { id: 'providence', short: 'Провиденс' }
+    { id: 'cis_diamond', short: 'Даймонд' },
+    { id: 'hardcell', short: 'Хардселл' }
   ];
 
   // Палитры отсеков — в ship-art.js (общие с космическим боем)
@@ -31,7 +41,7 @@
     toast('Загружаю ' + nameOf(id) + '…');
     var tasks = [];
     if (!V.cache[id]) {
-      tasks.push(fetch('../shared/ships/' + id + '.json?v=3').then(function(r) {
+      tasks.push(fetch('../shared/ships/' + id + '.json?v=5').then(function(r) {
         if (!r.ok) throw new Error('план не найден'); return r.json();
       }).then(function(d) { V.cache[id] = { data: d }; }));
     }
@@ -248,6 +258,8 @@
     if (k < 0.9) drawMounts(c, 1 - k, T);
     // экипаж
     if (k > 0.5 && s >= 5) drawCrew(c, Math.min(1, (s - 5) / 3) * k);
+    // абордаж: шлюзы, цели, турели, лазы
+    if (V.board && k > 0.4) drawBoard(c, T, k);
     // подписи отсеков
     if (V.labels && k > 0.6) drawLabels(c, k);
   }
@@ -289,6 +301,54 @@
       }
     }
     c.globalAlpha = 1;
+  }
+
+  // Слой абордажа (правила старой игры, перенесённые в 2.0)
+  var BCOL = { goal: '#f0c86a', att: '#ff8a6a', any: '#7fc4ff', def: '#7fe08a', port: '#ffb060' };
+  function roleCol(b) { return b.goal ? BCOL.goal : b.spawn === 'def' ? BCOL.def : b.role === 'port' ? BCOL.port : b.who === 'any' ? BCOL.any : BCOL.att; }
+  function drawBoard(c, T, k) {
+    var sh = V.ship, s = CAM.s, i;
+    c.save(); c.globalAlpha = k;
+    // отсеки с ролью
+    for (i = 0; i < sh.rooms.length; i++) {
+      var r = sh.rooms[i], b = SH.boardRole(sh, r); if (!b) continue;
+      var p = toScreen(r.x, r.y), col = roleCol(b);
+      c.strokeStyle = col; c.lineWidth = b.goal ? 2.5 : 1.5;
+      if (b.goal) { c.setLineDash([8, 4]); c.lineDashOffset = -T * 12; }
+      c.strokeRect(p[0] + 1, p[1] + 1, r.w * s - 2, r.h * s - 2); c.setLineDash([]);
+      c.globalAlpha = k * (b.goal ? 0.16 : 0.08); c.fillStyle = col; c.fillRect(p[0], p[1], r.w * s, r.h * s); c.globalAlpha = k;
+    }
+    // турели: точка и дальность огня (24 м)
+    for (i = 0; i < sh.props.length; i++) {
+      var q = sh.props[i]; if (q.t !== 'apturret') continue;
+      var tp = toScreen(q.x + 1, q.y + 1);
+      c.fillStyle = 'rgba(255,70,50,0.10)'; c.beginPath(); c.arc(tp[0], tp[1], 12 * s, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ff5a3a'; c.beginPath(); c.arc(tp[0], tp[1], Math.max(3, s * 0.9), 0, Math.PI * 2); c.fill();
+    }
+    // лазы
+    c.strokeStyle = 'rgba(160,220,255,0.8)'; c.lineWidth = 1.5; c.setLineDash([3, 4]);
+    for (i = 0; i < sh.ducts.length; i++) {
+      var du = sh.ducts[i], a = toScreen(du.a[0] + 0.5, du.a[1] + 0.5), bq = toScreen(du.b[0] + 0.5, du.b[1] + 0.5);
+      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(bq[0], bq[1]); c.stroke();
+    }
+    c.setLineDash([]);
+    // бронедвери крупно (вблизи они видны и так)
+    if (s < 6) for (i = 0; i < sh.doors.length; i++) {
+      var d = sh.doors[i]; if (d.k !== 'blast' && d.k !== 'lock') continue;
+      var dp = toScreen(d.x, d.y), w = (d.v ? 1 : d.w) * s, h = (d.v ? d.w : 1) * s;
+      c.fillStyle = d.k === 'lock' ? '#ff7a4a' : '#e3b04a'; c.fillRect(dp[0] - 1, dp[1] - 1, Math.max(3, w + 2), Math.max(3, h + 2));
+    }
+    // шлюзы: трап снаружи к порту
+    for (i = 0; i < sh.rooms.length; i++) {
+      var rr = sh.rooms[i]; if (rr.t !== 'airlock' || !rr.port) continue;
+      var pp = toScreen(rr.port[0] + 0.5, rr.port[1] + 0.5), dir = rr.port[2] === 'L' ? -1 : 1, L = Math.max(18, 14 * s);
+      var pulse = 0.6 + 0.4 * Math.sin(T * 4 + i);
+      c.strokeStyle = 'rgba(255,176,96,' + pulse + ')'; c.lineWidth = Math.max(2, s * 0.8);
+      c.beginPath(); c.moveTo(pp[0] + dir * L, pp[1]); c.lineTo(pp[0], pp[1]); c.stroke();
+      c.fillStyle = '#ffb060';
+      c.beginPath(); c.moveTo(pp[0], pp[1]); c.lineTo(pp[0] + dir * 8, pp[1] - 5); c.lineTo(pp[0] + dir * 8, pp[1] + 5); c.closePath(); c.fill();
+    }
+    c.restore();
   }
 
   function drawLabels(c, k) {
@@ -381,7 +441,12 @@
   // ---------- интерфейс ----------
   function hud() {
     var sh = V.ship;
-    for (var i = 0; i < LIST.length; i++) $('sv-ship-' + LIST[i].id).classList.toggle('on', !!sh && sh.id === LIST[i].id);
+    for (var i = 0; i < LIST.length; i++) {
+      var chip = $('sv-ship-' + LIST[i].id), on = !!sh && sh.id === LIST[i].id;
+      chip.classList.toggle('on', on);
+      if (on && V.chipFor !== sh.id) { var row = chip.parentNode; row.scrollLeft = Math.max(0, chip.offsetLeft - row.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2); }
+    }
+    if (sh) V.chipFor = sh.id;
     if (!sh) return;
     var top = $('sv-top');
     top.classList.toggle('cis', sh.faction === 'cis');
@@ -400,13 +465,30 @@
         '<div class="sv-info-row"><span>Система</span><b>' + esc(T.sys) + '</b>' +
         '<span>Площадь</span><b>' + (r.area * sh.cellM * sh.cellM) + ' м²</b>' +
         '<span>Экипаж</span><b>' + crew + '</b></div>' +
-        '<div class="sv-info-about">' + esc(T.about) + (mount ? ' Орудие на корпусе отмечено кольцом.' : '') + '</div>';
+        '<div class="sv-info-about">' + esc(T.about) + (mount ? ' Орудие на корпусе отмечено кольцом.' : '') + '</div>' + boardInfo(r);
       box.hidden = false;
     } else {
-      box.innerHTML = '<div class="sv-info-about">' + (cut() < 0.5 ? 'Приблизь корабль — откроется разрез с отсеками. Коснись отсека или орудия на корпусе.' : 'Коснись отсека — покажу, что в нём и кто служит.') + '</div>';
+      box.innerHTML = V.board ? boardLegend() : '<div class="sv-info-about">' + (cut() < 0.5 ? 'Приблизь корабль — откроется разрез с отсеками. Коснись отсека или орудия на корпусе.' : 'Коснись отсека — покажу, что в нём и кто служит.') + '</div>';
       box.hidden = false;
     }
     hudZoom();
+  }
+  function boardLegend() {
+    var sh = V.ship, locks = 0, blast = 0, tur = 0;
+    sh.rooms.forEach(function(r) { if (r.t === 'airlock') locks++; });
+    sh.doors.forEach(function(d) { if (d.k === 'blast') blast++; });
+    sh.props.forEach(function(p) { if (p.t === 'apturret') tur++; });
+    return '<div class="sv-info-head"><b>Абордаж</b><span class="sv-tag">шлюзов ' + locks + ' · бронедверей ' + blast + ' · турелей ' + tur + ' · лазов ' + sh.ducts.length + '</span></div>' +
+      '<div class="sv-legend"><span><i style="background:' + BCOL.goal + '"></i>цели</span><span><i style="background:' + BCOL.att + '"></i>системы</span>' +
+      '<span><i style="background:' + BCOL.any + '"></i>бонусы</span><span><i style="background:' + BCOL.def + '"></i>защитники</span><span><i style="background:' + BCOL.port + '"></i>шлюзы</span>' +
+      '<span><i style="background:#ff5a3a;border-radius:50%"></i>турели</span></div>';
+  }
+  function boardInfo(r) {
+    var b = SH.boardRole(V.ship, r); if (!b) return '';
+    var txt = b.goal ? b.goal : b.spawn === 'def' ? 'Абордаж: ' + b.eff : b.role === 'port' ? 'Абордаж: ' + b.eff :
+      'Абордаж: кто держит отсек ' + (b.who === 'att' ? '(атакующий)' : '(любая сторона)') + ' — ' + b.eff;
+    var tur = 0; V.ship.props.forEach(function(p) { if (p.t === 'apturret' && SH.roomAt(V.ship, p.x, p.y) === r) tur++; });
+    return '<div class="sv-info-about" style="color:' + roleCol(b) + ';margin-top:4px">' + esc(txt) + (tur ? ' · турелей: ' + tur : '') + '</div>';
   }
   var lastCut = -1;
   function hudZoom() {
@@ -435,6 +517,12 @@
       }
     };
     $('sv-labels').onclick = function() { V.labels = !V.labels; $('sv-labels').classList.toggle('on', V.labels); };
+    $('sv-board').classList.add('red');
+    $('sv-board').onclick = function() {
+      V.board = !V.board; $('sv-board').classList.toggle('on', V.board);
+      if (V.board && cut() < 0.5 && V.ship) { var sp = Math.max(minS() * 1.6, 4); flyTo(V.ship.w / 2, V.ship.h / 2, sp); }
+      hud();
+    };
   }
   function biggest() {
     var b = null; V.ship.rooms.forEach(function(r) { if (r.t === 'bridge' && (!b || r.area > b.area)) b = r; });

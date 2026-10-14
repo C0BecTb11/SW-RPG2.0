@@ -34,19 +34,19 @@
   // Сколько людей на посту каждого типа отсека
   var POST = { bridge: 6, flight: 5, cic: 5, gun: 3, pdgun: 2, reactor: 3, shield: 2, engine: 4, hyper: 2, hangar: 6,
                quarters: 3, troops: 6, mess: 4, medbay: 3, armory: 2, storage: 1, hold: 1, workshop: 3, airlock: 1,
-               dock: 2, comms: 3, observe: 2, vehicle: 3, droids: 2 };
+               dock: 2, comms: 3, observe: 2, vehicle: 3, droids: 2, power: 2, pumps: 2 };
   // Посты, которые держат системы корабля (их заполняют из резерва)
   var KEY = { gun: 1, pdgun: 1, reactor: 1, shield: 1, engine: 1, bridge: 1, cic: 1, flight: 1, hyper: 1 };
   // Кто в резерве: могут тушить, чинить и заменять погибших
   var RESERVE = { quarters: 1, troops: 1, mess: 1, storage: 1, hold: 1, armory: 1, droids: 1, vehicle: 1, observe: 1, dock: 1, airlock: 1 };
   // Ремонтники по должности
-  var FIXER = { workshop: 1, reactor: 1, engine: 1, hyper: 1, shield: 1 };
+  var FIXER = { workshop: 1, reactor: 1, engine: 1, hyper: 1, shield: 1, power: 1, pumps: 1 };
   // Откуда носят боеприпасы к орудиям
   var STORE = { storage: 1, armory: 1, hold: 1 };
   // Кто служит в отсеке: мостик — офицеры, машины — инженеры, лазарет — медики,
   // казармы — десант, орудия и прочие посты — расчёты
   var GROUP = { bridge: 'bridge', cic: 'bridge', flight: 'bridge', comms: 'bridge', observe: 'bridge',
-                reactor: 'eng', engine: 'eng', workshop: 'eng', medbay: 'medic',
+                reactor: 'eng', engine: 'eng', workshop: 'eng', power: 'eng', pumps: 'eng', medbay: 'medic',
                 troops: 'troops', droids: 'troops', vehicle: 'troops', armory: 'troops',
                 quarters: 'crew', mess: 'crew', storage: 'crew', hold: 'crew' };
   function roleOf(t) { return KEY[t] ? 'post' : FIXER[t] ? 'fixer' : t === 'medbay' ? 'medic' : 'reserve'; }
@@ -475,6 +475,7 @@
   // Кого послать: ближайшие по «цене» пути. Ремонтники дешевле резерва,
   // свои в горящем отсеке — первые (они уже здесь). Расчёты чужих постов не трогаем.
   Crew.prototype.assign = function(st, kind, count) {
+    if (!st.anchor) return;            // в отсек не пройти (на плане нет свободного пола)
     var ag = this.agents, ax = st.anchor[0], ay = st.anchor[1], cand = [];
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i];
@@ -517,6 +518,7 @@
     return -1;
   };
   Crew.prototype.nearest = function(st, ok, maxD) {
+    if (!st.anchor) return null;
     var best = null, bd = (maxD || 1e9) * (maxD || 1e9), ax = st.anchor[0], ay = st.anchor[1];
     for (var i = 0; i < this.agents.length; i++) {
       var a = this.agents[i];

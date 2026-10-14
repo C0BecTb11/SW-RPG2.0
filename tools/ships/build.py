@@ -60,6 +60,9 @@ def neighbors4(x, y, W, H):
 
 def build(ship_id, spec):
     inside, crop, W, H = hull_mask(ship_id, spec['length_m'])
+    # переходные рукава между частями корпуса, разделёнными на спрайте пустотой
+    for (x, y, w, h) in spec.get('joins', []):
+        inside[max(0, y * K):min(H, (y + h) * K), max(0, x * K):min(W, (x + w) * K)] = True
     kind = np.full((H, W), VOID, np.uint8)
     kind[inside] = TECH
     room = np.zeros((H, W), np.int32)       # номер комнаты + 1
@@ -100,7 +103,9 @@ def build(ship_id, spec):
         sub = kind[y0:y1, x0:x1]
         sub[(sub == TECH)] = FLOOR
 
+    add_airlocks(spec, rooms, kind, room, W, H)
     auto_rooms(spec, rooms, kind, room, W, H)
+    special_rooms(rooms)
     by_name = {r['name']: r for r in rooms}
 
     doors = []
@@ -188,7 +193,9 @@ def build(ship_id, spec):
                 prev[(nx, ny)] = (x, y)
                 if main[ny, nx]: hit = (nx, ny); break
                 q.append((nx, ny))
-        if hit is None: print('  ! не связать кусок пола'); break
+        if hit is None:
+            print('  ! не связать кусок пола: %d клеток, x %d-%d, y %d-%d' % (int(other.sum()), xs_.min(), xs_.max(), ys_.min(), ys_.max()))
+            break
         p = prev[hit]; path = []
         while p is not None and not other[p[1], p[0]]:
             path.append(p); p = prev[p]
@@ -200,7 +207,15 @@ def build(ship_id, spec):
                 for nx, ny in ((x + 1, y), (x, y + 1)):
                     if 0 <= nx < W and 0 <= ny < H and kind[ny, nx] == TECH: kind[ny, nx] = FLOOR
 
-    props = place_props(spec, rooms, kind, room, W, H)
+    corridor_bulkheads(spec, kind, room, doors, W, H)
+    classify_doors(rooms, doors, kind, room, W, H)
+    ducts = make_ducts(rooms, kind, room, W, H)
+
+    # концы лазов — пометка, чтобы мебель не встала на них
+    for d in ducts:
+        for (x, y) in (d['a'], d['b']): kind[y, x] = DUCT_MARK
+    props = place_props(spec, rooms, kind, room, W, H, doors)
+    kind[kind == DUCT_MARK] = FLOOR
 
     # орудия на корпусе
     mounts = []
@@ -234,7 +249,177 @@ def build(ship_id, spec):
         'id': ship_id, 'name': spec['name'], 'faction': spec['faction'], 'length_m': spec['length_m'],
         'cell_m': CELL_M, 'w': W, 'h': H, 'sprite': 'assets/ships/%s.png' % ship_id, 'crop': list(crop),
         'kind': rle(kind), 'room': rle(room), 'rooms': rooms, 'doors': doors, 'props': props, 'mounts': mounts,
+        'ducts': ducts,
     }, kind, room
+
+
+# ---------------------------------------------------------------- абордаж
+# Шлюзы по бортам — сюда пристыковываются абордажные трапы. На каждом борту
+# 1–4 шлюза по длине корабля (каждые ~400 м). Шлюз — отсек 12×12 м вплотную к
+# обшивке; «порт» — клетка обшивки снаружи, куда встаёт трап.
+AIRLOCK = 6
+
+def add_airlocks(spec, rooms, kind, room, W, H):
+    L = H * CELL_M
+    per = 1 if L < 300 else 2 if L < 800 else 3 if L < 1300 else 4
+    have = {'L': [], 'R': []}
+    for r in rooms:
+        if r['t'] != 'airlock': continue
+        side = 'L' if r['cx'] < W / 2 else 'R'
+        r['side'] = side; r['port'] = hull_port(kind, W, H, r, side)
+        have[side].append(r['cy'])
+    for side in ('L', 'R'):
+        k = len(have[side])
+        for i in range(per):
+            if k >= per: break
+            ty = int(H * (i + 1) / (per + 1))
+            if any(abs(ty - y) < H / (per + 1) * 0.6 for y in have[side]): continue
+            spot = None; span = int(H / (per + 1) * 0.45)
+            for S in (AIRLOCK, AIRLOCK - 1, AIRLOCK - 2):
+                for dy in sorted(range(-span, span + 1, 2), key=abs):
+                    y0 = ty + dy
+                    if y0 < 4 or y0 + S > H - 4: continue
+                    if any(abs(y0 + S / 2 - y) < H / (per + 1) * 0.5 for y in have[side]): continue
+                    xs = range(2, W // 2 - S) if side == 'L' else range(W - 2 - S, W // 2, -1)
+                    for x0 in xs:
+                        blk = kind[y0:y0 + S, x0:x0 + S]
+                        if not ((blk == TECH).all() and (room[y0:y0 + S, x0:x0 + S] == 0).all()):
+                            # дальше от обшивки искать нет смысла, если упёрлись в отсек
+                            if (room[y0:y0 + S, x0:x0 + S] != 0).any(): break
+                            continue
+                        edge = kind[y0:y0 + S, x0 - 1] if side == 'L' else kind[y0:y0 + S, x0 + S]
+                        if (edge == HULL).sum() >= S - 2: spot = (x0, y0, S)
+                        break
+                    if spot: break
+                if spot: break
+            if not spot: continue
+            x0, y0, S = spot
+            n = len(rooms) + 1
+            reg = np.zeros((H, W), bool); reg[y0:y0 + S, x0:x0 + S] = True
+            room[reg] = n
+            rp = np.pad(reg, 1, constant_values=False)
+            inner = reg & rp[:-2, 1:-1] & rp[2:, 1:-1] & rp[1:-1, :-2] & rp[1:-1, 2:]
+            kind[reg] = WALL; kind[inner] = FLOOR
+            k += 1
+            r = {'n': n, 't': 'airlock', 'name': 'Шлюз %s-%d' % ('ЛБ' if side == 'L' else 'ПБ', k),
+                 'x': x0, 'y': y0, 'w': S, 'h': S, 'cx': x0 + S / 2, 'cy': y0 + S / 2, 'area': int(inner.sum()), 'side': side}
+            r['port'] = hull_port(kind, W, H, r, side)
+            rooms.append(r); have[side].append(r['cy'])
+
+
+def hull_port(kind, W, H, r, side):
+    y = int(r['cy'])
+    if side == 'L':
+        for x in range(int(r['x']), -1, -1):
+            if kind[y, x] == VOID: return [x + 1, y, 'L']
+        return [0, y, 'L']           # обшивка у края картинки: снаружи — сам край
+    for x in range(int(r['x'] + r['w']), W):
+        if kind[y, x] == VOID: return [x - 1, y, 'R']
+    return [W - 1, y, 'R']
+
+
+# Энергоузел (свет и турели палуб) и насосная (продувка отсеков) — из
+# вспомогательных отсеков: ближайший к реактору и ближайший к двигателям
+def special_rooms(rooms):
+    autos = [r for r in rooms if r.get('auto')]
+    def near(t):
+        tgt = [r for r in rooms if r['t'] == t]
+        if not tgt or not autos: return None
+        c = tgt[0]
+        return min(autos, key=lambda r: (r['cx'] - c['cx']) ** 2 + (r['cy'] - c['cy']) ** 2)
+    for t, nt, name in (('reactor', 'power', 'Энергоузел'), ('engine', 'pumps', 'Насосная')):
+        if any(r['t'] == nt for r in rooms): continue
+        r = near(t) or (autos[0] if autos else None)
+        if not r: continue
+        autos.remove(r)
+        r['t'] = nt; r['name'] = name; r.pop('auto', None)
+
+
+# Переборки в длинных коридорах: бронедверь поперёк коридора каждые ~140 м
+def corridor_bulkheads(spec, kind, room, doors, W, H):
+    for (x, y, w, h) in spec['corridors']:
+        x0, y0, x1, y1 = x * K, y * K, min(W, (x + w) * K), min(H, (y + h) * K)
+        vert = (y1 - y0) >= (x1 - x0)
+        L = (y1 - y0) if vert else (x1 - x0)
+        if L < 90: continue
+        for off in range(45, L - 30, 70):
+            ok = False
+            for d in (0, 4, -4, 8, -8, 12, -12):
+                if vert:
+                    yy = y0 + off + d
+                    if not (y0 + 6 <= yy < y1 - 6): continue
+                    row = kind[yy, x0:x1]; rm = room[yy, x0:x1]
+                    if not ((row == FLOOR).all() and (rm == 0).all()): continue
+                    sides = [kind[yy + q, x0 - 1] for q in range(-3, 4) if x0 > 0] + [kind[yy + q, x1] for q in range(-3, 4) if x1 < W]
+                    if any(v in (FLOOR, DOOR) for v in sides): continue
+                    kind[yy, x0:x1] = DOOR
+                    doors.append({'x': x0, 'y': yy, 'v': 0, 'w': x1 - x0, 'd': 1, 'k': 'blast', 'bulk': 1})
+                else:
+                    xx = x0 + off + d
+                    if not (x0 + 6 <= xx < x1 - 6): continue
+                    col = kind[y0:y1, xx]; rm = room[y0:y1, xx]
+                    if not ((col == FLOOR).all() and (rm == 0).all()): continue
+                    sides = [kind[y0 - 1, xx + q] for q in range(-3, 4)] + [kind[y1, xx + q] for q in range(-3, 4) if y1 < H]
+                    if any(v in (FLOOR, DOOR) for v in sides): continue
+                    kind[y0:y1, xx] = DOOR
+                    doors.append({'x': xx, 'y': y0, 'v': 1, 'w': y1 - y0, 'd': 1, 'k': 'blast', 'bulk': 1})
+                ok = True
+                break
+
+
+# Виды дверей: шлюз — внутренняя дверь шлюза; бронедверь — у мостика, реактора,
+# щитов, связи, энергоузла, арсенала и переборки; остальное — обычные
+BLAST = ('bridge', 'cic', 'reactor', 'shield', 'comms', 'power', 'armory')
+
+def classify_doors(rooms, doors, kind, room, W, H):
+    rt = {r['n']: r['t'] for r in rooms}
+    for i, d in enumerate(doors):
+        d['id'] = 'd%d' % i
+        if d.get('k'): continue
+        x, y, w, v, dd = d['x'], d['y'], d.get('w', 1), d.get('v', 0), d.get('d', 1)
+        if v: xs, ys = range(x - 2, x + dd + 2), range(y - 1, y + w + 1)
+        else: xs, ys = range(x - 1, x + w + 1), range(y - 2, y + dd + 2)
+        near = set()
+        for yy in ys:
+            for xx in xs:
+                if 0 <= xx < W and 0 <= yy < H and room[yy, xx] and kind[yy, xx] == FLOOR: near.add(rt.get(room[yy, xx]))
+        d['k'] = 'lock' if 'airlock' in near else 'blast' if near & set(BLAST) else 'door'
+        d['rooms'] = sorted(int(n) for n in set(room[yy, xx] for yy in ys for xx in xs if 0 <= xx < W and 0 <= yy < H and room[yy, xx] and kind[yy, xx] == FLOOR))
+
+
+# Лазы: вентиляционный ход сквозь техпространство к мостику, реактору и
+# энергоузлу из ближайшего отсека — обходной путь для абордажа (их можно заварить)
+def make_ducts(rooms, kind, room, W, H):
+    out = []; seen = set()
+    goal = [r for r in rooms if r['t'] in ('bridge', 'reactor', 'power')]
+    for g in goal:
+        best = None
+        for r in rooms:
+            if r is g or r['t'] in ('airlock',): continue
+            gx = max(0, max(r['x'] - (g['x'] + g['w']), g['x'] - (r['x'] + r['w'])))
+            gy = max(0, max(r['y'] - (g['y'] + g['h']), g['y'] - (r['y'] + r['h'])))
+            gap = max(gx, gy)
+            if gap < 3 or gap > 26: continue
+            if best is None or gap < best[0]: best = (gap, r)
+        if not best: continue
+        r = best[1]
+        pair = frozenset((g['n'], r['n']))
+        if pair in seen: continue          # мостик↔реактор находят друг друга дважды
+        a = edge_cell(g, r, kind, room); b = edge_cell(r, g, kind, room)
+        if a and b: out.append({'a': a, 'b': b, 'ra': g['n'], 'rb': r['n']}); seen.add(pair)
+    return out
+
+
+def edge_cell(r, other, kind, room):
+    # клетка пола у стены отсека r, ближайшая к отсеку other
+    ox, oy = other['cx'], other['cy']; best = None
+    for y in range(r['y'] + 1, r['y'] + r['h'] - 1):
+        for x in range(r['x'] + 1, r['x'] + r['w'] - 1):
+            if kind[y, x] != FLOOR or room[y, x] != r['n']: continue
+            if not (x in (r['x'] + 1, r['x'] + r['w'] - 2) or y in (r['y'] + 1, r['y'] + r['h'] - 2)): continue
+            d = (x - ox) ** 2 + (y - oy) ** 2
+            if best is None or d < best[0]: best = (d, [x, y])
+    return best[1] if best else None
 
 
 # ---------------------------------------------------------------- добивка
@@ -310,7 +495,7 @@ CRAFT = {
 }
 
 # ---------------------------------------------------------------- мебель
-def place_props(spec, rooms, kind, room, W, H):
+def place_props(spec, rooms, kind, room, W, H, doors=()):
     rep = spec['faction'] == 'republic'
     props = []
 
@@ -421,6 +606,45 @@ def place_props(spec, rooms, kind, room, W, H):
         elif t == 'pdgun':
             put('pd_base', cx - 2, cy - 2, 4, 4, BLOCK, n, 1)
             along_walls(n, r, 'console', 2, 5, COVER)
+        elif t == 'power':
+            grid(n, r, 'capacitor', 3, 3, 3, 3, BLOCK, 1)
+        elif t == 'pumps':
+            grid(n, r, 'pump', 4, 4, 3, 3, BLOCK, 1)
+
+    # Противоабордажные турели: у входов в мостик, реактор, тактический центр,
+    # генератор щитов, связь и энергоузел — внутри, сбоку от двери
+    byn = {r['n']: r for r in rooms}
+    tcount = {}
+    for d in doors:
+        if d.get('k') != 'blast' or d.get('bulk'): continue
+        for rn in d.get('rooms', []):
+            r = byn.get(rn)
+            if not r or r['t'] not in ('bridge', 'reactor', 'cic', 'shield', 'comms', 'power'): continue
+            if tcount.get(rn, 0) >= 2: continue
+            mx = d['x'] + (0 if d['v'] else d['w'] // 2); my = d['y'] + (d['w'] // 2 if d['v'] else 0)
+            ix = 1 if mx < r['cx'] else -1; iy = 1 if my < r['cy'] else -1
+            placed = False
+            for depth in (3, 4, 5, 6):
+                for side in (4, -4, 6, -6, 3, -3):
+                    if d['v']: px, py = mx + ix * depth, my + side
+                    else: px, py = mx + side, my + iy * depth
+                    if put('apturret', px - 1, py - 1, 2, 2, BLOCK, rn, 0, door=d['id']):
+                        placed = True; break
+                if placed: break
+            if placed: tcount[rn] = tcount.get(rn, 0) + 1
+
+    # Укрытия в длинных коридорах: ящики у стены через ~50 м, по очереди у разных стен
+    for (x, y, w, h) in spec['corridors']:
+        x0, y0, x1, y1 = x * K, y * K, min(W, (x + w) * K), min(H, (y + h) * K)
+        vert = (y1 - y0) >= (x1 - x0)
+        if min(x1 - x0, y1 - y0) < 6: continue
+        L = (y1 - y0) if vert else (x1 - x0)
+        for j, off in enumerate(range(20, L - 12, 25)):
+            if vert: px, py, pw, ph = (x0 if j % 2 == 0 else x1 - 1), y0 + off, 1, 2
+            else: px, py, pw, ph = x0 + off, (y0 if j % 2 == 0 else y1 - 1), 2, 1
+            blk = kind[max(0, py - 4):py + ph + 4, max(0, px - 4):px + pw + 4]
+            if (blk == DOOR).any(): continue
+            put('barricade', px, py, pw, ph, COVER, 0, 0)
 
     # колонны в больших залах — чтобы зал держал перекрытие и не был пустой коробкой
     for r in rooms:
@@ -429,9 +653,51 @@ def place_props(spec, rooms, kind, room, W, H):
             for x in range(r['x'] + 9, r['x'] + r['w'] - 8, 16):
                 put('pillar', x, y, 2, 2, BLOCK, r['n'], 1)
 
+    unblock(props, rooms, kind, W, H)
     # пометки предметов → обратно пол; проходимость предметов хранится в props
     kind[kind == 7] = FLOOR; kind[kind == 8] = FLOOR
     return props
+
+
+# Предметы не должны отрезать часть корабля: экипаж и десант ходят только по
+# клеткам без предметов. Если предмет перегородил проход (баррикада в узком
+# месте, башня в проходной орудийной), его убирают, а крупное оборудование —
+# уменьшают, пока все отсеки снова не связаны.
+DUCT_MARK = 9
+CORE = ('turret_base', 'reactor_core', 'hyper_core', 'shield_gen', 'pd_base', 'holotable', 'bacta')
+DROP_FIRST = ('barricade', 'pillar', 'apturret', 'crates', 'console', 'bunk', 'bench', 'table', 'bed', 'droid_rack', 'capacitor', 'pump', 'engine_block')
+
+def unblock(props, rooms, kind, W, H):
+    from scipy import ndimage
+    for _ in range(400):
+        walk = (kind == FLOOR) | (kind == DOOR) | (kind == DUCT_MARK)
+        lab, nl = ndimage.label(walk)
+        if nl <= 1: return
+        sizes = ndimage.sum(walk, lab, range(1, nl + 1))
+        main = int(np.argmax(sizes)) + 1
+        bad = set(i + 1 for i, sz in enumerate(sizes) if i + 1 != main and sz > 3)
+        if not bad: return
+        best = None
+        for pi, q in enumerate(props):
+            # соседи по сторонам (без углов: связность ndimage.label — по 4 направлениям)
+            x0, y0, x1, y1 = q['x'], q['y'], q['x'] + q['w'], q['y'] + q['h']
+            ls = set()
+            if y0 > 0: ls.update(lab[y0 - 1, x0:x1].tolist())
+            if y1 < H: ls.update(lab[y1, x0:x1].tolist())
+            if x0 > 0: ls.update(lab[y0:y1, x0 - 1].tolist())
+            if x1 < W: ls.update(lab[y0:y1, x1].tolist())
+            if main not in ls or not (ls & bad): continue
+            pr = DROP_FIRST.index(q['t']) if q['t'] in DROP_FIRST else (50 if q['t'] in CORE else 100)
+            if best is None or pr < best[0]: best = (pr, pi)
+        if best is None: return
+        q = props[best[1]]
+        kind[q['y']:q['y'] + q['h'], q['x']:q['x'] + q['w']] = FLOOR
+        if q['t'] in CORE and min(q['w'], q['h']) >= 6:
+            # крупное оборудование — уже на 2 клетки с каждой стороны
+            q['x'] += 2; q['y'] += 2; q['w'] -= 4; q['h'] -= 4
+            kind[q['y']:q['y'] + q['h'], q['x']:q['x'] + q['w']] = 6 + q['s']
+        else:
+            props.pop(best[1])
 
 
 # ---------------------------------------------------------------- проверка
@@ -472,13 +738,15 @@ if __name__ == '__main__':
     png_dir = sys.argv[sys.argv.index('--png') + 1] if '--png' in sys.argv else None
     out_dir = os.path.join(ROOT, 'shared', 'ships'); os.makedirs(out_dir, exist_ok=True)
     index = []
+    only = [a for i, a in enumerate(sys.argv[1:]) if not a.startswith('--') and (i == 0 or sys.argv[i] != '--png')]
     for sid, spec in SHIPS.items():
+        index.append({'id': sid, 'name': spec['name'], 'faction': spec['faction'], 'length_m': spec['length_m']})
+        if only and sid not in only: continue
         data, kind, room = build(sid, spec)
         with open(os.path.join(out_dir, sid + '.json'), 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
         walk = int(((kind == FLOOR) | (kind == DOOR)).sum())
         print('%-11s %3dx%-3d клеток  комнат %2d  дверей %2d  предметов %3d  пол %d' % (sid, data['w'], data['h'], len(data['rooms']), len(data['doors']), len(data['props']), walk))
-        index.append({'id': sid, 'name': spec['name'], 'faction': spec['faction'], 'length_m': spec['length_m']})
         if png_dir: preview(data, kind, room, os.path.join(png_dir, 'ship_%s.png' % sid))
     with open(os.path.join(out_dir, 'index.json'), 'w', encoding='utf-8') as f:
         json.dump(index, f, ensure_ascii=False, indent=1)

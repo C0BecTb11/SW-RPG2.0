@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
 <title>Корабли 2.0</title>
-<link rel="stylesheet" href="ships.css?v=1">
+<link rel="stylesheet" href="ships.css?v=3">
 </head>
 <body>
 <canvas id="sv-canvas"></canvas>
@@ -29,11 +29,23 @@
     <span class="sv-spacer"></span>
     <span><b id="sv-fps">0</b> к/с</span>
   </div>
-  <div class="sv-ships">
+  <div class="sv-ships"><span class="sv-ships-lab rep">Респ.</span>
+    <button class="sv-chip rep" id="sv-ship-rep_mandator">Мандатор</button>
     <button class="sv-chip rep" id="sv-ship-venator">Венатор</button>
+    <button class="sv-chip rep" id="sv-ship-rep_victory">Победа</button>
     <button class="sv-chip rep" id="sv-ship-acclamator">Акламатор</button>
-    <button class="sv-chip cis" id="sv-ship-munificent">Щедрый</button>
+    <button class="sv-chip rep" id="sv-ship-rep_valiant">Валиант</button>
+    <button class="sv-chip rep" id="sv-ship-rep_arquitens">Аркитенс</button>
+    <button class="sv-chip rep" id="sv-ship-tantive">Тантив</button>
+  </div>
+  <div class="sv-ships"><span class="sv-ships-lab cis">КНС</span>
+    <button class="sv-chip cis" id="sv-ship-cis_subjugator">Покоритель</button>
+    <button class="sv-chip cis" id="sv-ship-cis_lucrehulk">Лукрехалк</button>
+    <button class="sv-chip cis" id="sv-ship-cis_recusant">Рекусант</button>
     <button class="sv-chip cis" id="sv-ship-providence">Провиденс</button>
+    <button class="sv-chip cis" id="sv-ship-munificent">Щедрый</button>
+    <button class="sv-chip cis" id="sv-ship-cis_diamond">Даймонд</button>
+    <button class="sv-chip cis" id="sv-ship-hardcell">Хардселл</button>
   </div>
 </div>
 
@@ -42,6 +54,7 @@
   <div class="sv-btns">
     <button class="sv-btn gold" id="sv-zoom">Разрез</button>
     <button class="sv-btn on" id="sv-labels">Подписи</button>
+    <button class="sv-btn" id="sv-board">Абордаж</button>
   </div>
 </div>
 
@@ -49,9 +62,9 @@
 
 <script src="../shared/rt-core.js?v=5"></script>
 <script src="../shared/rt-figures.js?v=6"></script>
-<script src="../shared/rt-ship.js?v=1"></script>
-<script src="../shared/rt-crew.js?v=4"></script>
-<script src="ship-art.js?v=3"></script>
-<script src="ship-view.js?v=4"></script>
+<script src="../shared/rt-ship.js?v=2"></script>
+<script src="../shared/rt-crew.js?v=5"></script>
+<script src="ship-art.js?v=4"></script>
+<script src="ship-view.js?v=6"></script>
 </body>
 </html>

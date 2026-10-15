@@ -172,6 +172,9 @@
     this.agents = [];
     var figs = opts.figs || [0], fmap = opts.figMap || null;
     var self = this;
+    // roster — бойцы трюма поимённо (бой 2.0): казармы без «своих» солдат, только купленные;
+    // без roster (просмотр кораблей) — казармы заполнены, как раньше
+    var roster = opts.roster || null;
     var figOf = function(t) {
       var list = fmap && (fmap[GROUP[t] || 'post'] || fmap.post);
       if (!list || !list.length) list = figs;
@@ -180,12 +183,13 @@
     for (i = 0; i < this.roomList.length; i++) {
       var rs = this.roomList[i];
       if (!rs.anchor) continue;
+      if (roster && (rs.t === 'troops' || rs.t === 'droids')) continue;
       for (var j = 0; j < rs.need; j++) {
         var id = this.agents.length, p = this.workSpot(rs, id) || this.spotIn(rs.r);
         if (!p) break;
         var ag = {
           id: id, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, hpMax: 100, alive: true, team: this.team,
-          home: rs.n, spot: p, role: roleOf(rs.t), grp: GROUP[rs.t] || 'post',
+          home: rs.n, spot: p, role: roleOf(rs.t), grp: roster && GROUP[rs.t] === 'troops' ? 'crew' : GROUP[rs.t] || 'post',
           task: 'post', goalRoom: rs.n, goal: p, at: true, wait: this.R() * 4, stuck: 0, lastD: 1e9, wig: 0,
           job: null, fig: figOf(rs.t), aim: p[2] != null ? p[2] : this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
           face: p[2] != null ? p[2] : null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1
@@ -209,6 +213,37 @@
           face: null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1
         });
         bq.assigned++; have++;
+      }
+    }
+    // экипажа недостаёт (погибшие в прошлых боях, не пополнены на верфи): их нет на борту
+    if (opts.crewLost > 0) {
+      var pool = this.agents.filter(function(a) { return a.grp !== 'troops'; });
+      for (var cl = 0; cl < opts.crewLost && pool.length; cl++) {
+        var gone = pool.splice(Math.floor(this.R() * pool.length), 1)[0];
+        gone.alive = false; gone.gone = true; gone.absent = true;
+        var gs = this.rooms[gone.home]; if (gs) gs.assigned--;
+        this.claimCell(gone, null);
+      }
+      this.crewLost = opts.crewLost;
+    }
+    // десант трюма поимённо: в казармы и стеллажи дроидов (нет их — арсенал, техника, кубрики)
+    if (roster) {
+      var bays = this.roomList.filter(function(q) { return (q.t === 'troops' || q.t === 'droids') && q.anchor; });
+      if (!bays.length) bays = this.roomList.filter(function(q) { return (q.t === 'armory' || q.t === 'vehicle') && q.anchor; });
+      var ids = opts.figIds || null, kitOf = opts.kit || null;
+      for (var ri = 0; ri < roster.length && bays.length; ri++) {
+        var u = roster[ri], kt = kitOf ? kitOf(u.type) : null, bay = bays[ri % bays.length], sp = this.spotIn(bay.r);
+        if (!sp || !kt) continue;
+        var fi = ids ? ids.indexOf(kt.fig) : -1;
+        this.agents.push({
+          id: this.agents.length, x: sp[0] + 0.5, y: sp[1] + 0.5, vx: 0, vy: 0, hp: u.hp, hpMax: u.hpMax, alive: true, team: this.team,
+          home: bay.n, spot: sp, role: 'reserve', grp: 'troops', task: 'post', goalRoom: bay.n, goal: sp, at: true, wait: this.R() * 4,
+          stuck: 0, lastD: 1e9, wig: 0, job: null, fig: fi >= 0 ? fi : figOf(bay.t), aim: this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
+          face: null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1,
+          // кто это в игре: тип бойца, имя героя, строка базы; оружие и урон — по типу
+          utype: u.type, uname: u.name || '', uid: u.uid || '', wpn: kt.wpn, dmgK: kt.dmgK * (u.dmgX || 1), eng: kt.eng, medicU: kt.medic, hero: kt.hero
+        });
+        bay.assigned++;
       }
     }
     // сетка соседства
@@ -468,7 +503,7 @@
         var rn = null, rd = 1e18;
         for (j = 0; j < ag.length; j++) {
           var b2 = ag[j];
-          if (!b2.alive || b2.job || b2.role !== 'reserve' || !STORE[this.rooms[b2.home] && this.rooms[b2.home].t]) continue;
+          if (!b2.alive || b2.job || b2.role !== 'reserve' || b2.utype || !STORE[this.rooms[b2.home] && this.rooms[b2.home].t]) continue;
           var d2 = (b2.x - st.anchor[0]) * (b2.x - st.anchor[0]) + (b2.y - st.anchor[1]) * (b2.y - st.anchor[1]);
           if (d2 < rd) { rd = d2; rn = b2; }
         }
@@ -483,7 +518,8 @@
         st = rs[i];
         if (!KEY[st.t] || st.assigned >= st.need || !st.anchor) continue;
         for (j = st.assigned; j < st.need; j++) {
-          var b = this.nearest(st, function(x) { return x.role === 'reserve' && !x.job; });
+          // на пост погибшего — резерв экипажа; купленные бойцы трюма — десант, не расчёт
+          var b = this.nearest(st, function(x) { return x.role === 'reserve' && !x.job && !x.utype; });
           if (!b) break;
           var old = this.rooms[b.home]; if (old) old.assigned--;
           b.home = st.n; b.role = 'post'; b.spot = this.workSpot(st, b.id) || this.spotIn(st.r); st.assigned++;

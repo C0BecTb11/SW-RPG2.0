@@ -34,7 +34,11 @@
     b1:     { name: 'E-5',          hp: 90,  range: 11, acc: 0.46, dmg: 8,  rof: 0.8, spd: 0.95 },
     b2:     { name: 'Наручный бластер', hp: 180, range: 9, acc: 0.48, dmg: 6, rof: 1.3, spd: 0.75 },
     bx:     { name: 'E-5 (BX)',     hp: 140, range: 12, acc: 0.62, dmg: 10, rof: 0.85, spd: 1.15 },
-    tool:   { name: 'Пистолет',     hp: 100, range: 8,  acc: 0.35, dmg: 6,  rof: 0.6, spd: 1    }
+    tool:   { name: 'Пистолет',     hp: 100, range: 8,  acc: 0.35, dmg: 6,  rof: 0.6, spd: 1    },
+    // бойцы из игры: снайпер, гранатомёт (по площади), световой меч (вплотную, герои)
+    sniper: { name: 'Снайперская винтовка', hp: 70, range: 20, acc: 0.8, dmg: 22, rof: 0.4, spd: 0.9 },
+    launcher: { name: 'Гранатомёт', hp: 90, range: 10, acc: 0.45, dmg: 18, rof: 0.35, spd: 0.9, splash: 1.6 },
+    saber:  { name: 'Световой меч', hp: 280, range: 2.6, acc: 0.9, dmg: 26, rof: 1.6, spd: 1.35 }
   };
   var FIG_WPN = { rep_dc15a: 'rifle', rep_heavy: 'heavy', rep_sniper: 'rifle', cis_b1: 'b1', cis_b2: 'b2', cis_bx: 'bx',
                   rep_engineer: 'tool', cis_engineer: 'tool' };
@@ -221,7 +225,8 @@
       var w = WPN[pm.wpn] || WPN.rifle;
       var ag = {
         id: c.agents.length, x: p[0] + 0.5 + (this.R() - 0.5) * 0.4, y: p[1] + 0.5 + (this.R() - 0.5) * 0.4, vx: 0, vy: 0,
-        hp: w.hp, hpMax: w.hp, alive: true, team: this.att, home: -1, spot: null, role: pm.eng ? 'sapper' : 'boarder', grp: 'board',
+        hp: pm.hp || w.hp, hpMax: pm.hpMax || w.hp, dmgK: pm.dmgK || 1, utype: pm.utype || '', uname: pm.uname || '', uid: pm.uid || '',
+        hero: !!pm.hero, medicU: !!pm.medicU, src: pm.src, alive: true, team: this.att, home: -1, spot: null, role: pm.eng ? 'sapper' : 'boarder', grp: 'board',
         task: 'board', goalRoom: roomN, goal: p, at: false, wait: 0.4 + this.R() * 0.8, stuck: 0, lastD: 1e9, wig: 0,
         job: { kind: 'board' }, fig: pm.fig, aim: 0, legs: 0, mv: 0, phase: this.R() * 6.28, face: null, sprayAt: -1, fixAt: -1,
         carry: false, medic: -1, hold: 0, busyT: 0, claimed: -1, wpn: pm.wpn, eng: !!pm.eng, sq: sq.id,
@@ -592,9 +597,18 @@
       var hit = this.R() < p;
       this.shot(a.x, a.y, tg.x, tg.y, a.team, hit, a.wpn);
       if (hit) {
-        var dmg = w.dmg * dmgK[a.team] * (0.8 + this.R() * 0.4);
+        var dmg = w.dmg * dmgK[a.team] * (a.dmgK || 1) * (0.8 + this.R() * 0.4);
         if (a.tgt >= 100000) this.hitTurret(this.turrets[a.tgt - 100000], dmg);
         else { var b = ag[a.tgt]; c.hurt(b, dmg); if (!b.alive) a.tgt = -1; }
+        // граната: задевает и тех, кто рядом с целью (своих — тоже)
+        if (w.splash) {
+          for (var sj = 0; sj < ag.length; sj++) {
+            var sb = ag[sj]; if (!sb.alive || sj === a.tgt) continue;
+            var sdx = sb.x - tg.x, sdy = sb.y - tg.y;
+            if (sdx * sdx + sdy * sdy < w.splash * w.splash) c.hurt(sb, dmg * 0.5);
+          }
+          this.ev.booms.push({ t: c.t, x: tg.x, y: tg.y, r: w.splash * 0.8 });
+        }
       }
     }
     this.turretsStep(dt);
@@ -663,6 +677,15 @@
   };
   Board.prototype.medStep = function(dt) {
     var c = this.c, sh = this.ship, W = this.W;
+    // медик в бою: лечит раненого рядом (3 клетки), пока сам не стреляет
+    for (var mi = 0; mi < c.agents.length; mi++) {
+      var md = c.agents[mi]; if (!md.alive || !md.medicU || md.tgt >= 0) continue;
+      for (var mj = 0; mj < c.agents.length; mj++) {
+        var pt = c.agents[mj]; if (!pt.alive || pt.team !== md.team || pt.hp >= pt.hpMax || mj === mi) continue;
+        var mdx = pt.x - md.x, mdy = pt.y - md.y;
+        if (mdx * mdx + mdy * mdy < 9) { pt.hp = Math.min(pt.hpMax, pt.hp + 4 * dt); break; }
+      }
+    }
     for (var i = 0; i < c.agents.length; i++) {
       var a = c.agents[i]; if (!a.alive || a.hp >= a.hpMax) continue;
       var n = sh.room[Math.floor(a.y) * W + Math.floor(a.x)], s = n && this.rs[n];

@@ -22,10 +22,11 @@
   var node = typeof module === 'object' && module.exports;
   var crew = node ? require('./rt-crew.js') : root.SWCrew;
   var board = node ? require('./rt-board.js') : root.SWBoard;
-  var api = factory(crew, board);
+  var army = node ? require('./rt-army.js') : root.SWArmy;
+  var api = factory(crew, board, army);
   if (node) module.exports = api;
   else root.SWSpace = api;
-})(typeof self !== 'undefined' ? self : this, function(SWCrew, SWBoard) {
+})(typeof self !== 'undefined' ? self : this, function(SWCrew, SWBoard, SWArmy) {
   'use strict';
 
   var TAU = Math.PI * 2, TICK = 0.1, BOLT = 4200;     // скорость болта, м/с
@@ -114,9 +115,12 @@
     for (var i = 0; i < list.length; i++) this.addShip(list[i]);
   }
 
-  // { cls, plan (SWShip.load), side, x, y, hd, figs, name }
+  // { cls, plan (SWShip.load), side, x, y, hd, figs, name, army }
+  // army — что есть у корабля в игре (SWArmy.fromGame или типовой состав полигона):
+  //   roster (бойцы трюма), hangar (машины), hpK/shK (целость), hpBonus/shBonus/dmgK
+  //   (улучшения), crewLost (недобор экипажа). Без army на борту ни бойцов, ни машин.
   Battle.prototype.addShip = function(o) {
-    var C = CLASS[o.cls] || CLASS.acclamator, plan = o.plan;
+    var C = CLASS[o.cls] || CLASS.acclamator, plan = o.plan, A = o.army || {};
     var sh = {
       n: this.ships.length, id: o.id || (o.cls + '-' + this.ships.length), cls: o.cls, name: o.name || plan.name, side: o.side,
       plan: plan, len: plan.h * plan.cellM, wid: plan.w * plan.cellM,
@@ -128,9 +132,11 @@
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
-      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side, troops: C.troops }),
+      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
+                                    roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0 }),
+      vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
       figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1,
-      guns: [], eff: {}, hangar: (C.craft || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
+      guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
     };
     // орудия с секторами обстрела
     var main = 0, raw = 0;
@@ -169,7 +175,13 @@
     // bal — поправка по итогам прогонов ИИ против ИИ (раскладка пушек у корпусов разная:
     // где-то стволы стоят кучно и выбиваются разом, где-то бьют только с носа)
     k *= C.bal || 1;
+    k *= A.dmgK || 1;                                  // улучшение орудий корабля в игре
     for (g = 0; g < sh.guns.length; g++) if (sh.guns[g].t !== 'pd') sh.guns[g].k = k;
+    // корпус и щиты — с улучшениями и тем, что осталось после прошлых боёв
+    if (A.hpBonus) { sh.hullMax *= A.hpBonus; sh.hull = sh.hullMax; }
+    if (A.hpK != null) sh.hull = Math.max(1, sh.hullMax * A.hpK);
+    if (A.shBonus) sh.shMax *= A.shBonus;
+    for (var q = 0; q < 4; q++) sh.sh[q] = sh.shMax * (A.shK && A.shK[q] != null ? A.shK[q] : 1);
     this.ships.push(sh);
     this.place(sh);
     // разведка перед боем: где противник стоял на старте, обе стороны знают
@@ -693,9 +705,11 @@
     if (!sh.hangar.length) return;
     sh.launchT -= dt;
     if (sh.launchT > 0 || sh.eff.hangar < 0.3) return;
-    var type = sh.hangar[0];
+    // в ангаре — машины поштучно (как в игре: одна строка ships — одна машина); вылет по одной,
+    // звеньями по четыре с паузой
+    var type = sh.hangar.shift();
     sh.wing = (sh.wing || 0) + 1;
-    if (sh.wing >= 4) { sh.wing = 0; sh.hangar.shift(); sh.launchT = 6; } else sh.launchT = 1.5;
+    if (sh.wing >= 4) { sh.wing = 0; sh.launchT = 6; } else sh.launchT = 1.5;
     // звенья вылетают по очереди из всех ангаров корабля
     var hs = [];
     for (var i = 0; i < sh.plan.rooms.length; i++) if (sh.plan.rooms[i].t === 'hangar') hs.push(sh.plan.rooms[i]);
@@ -836,7 +850,9 @@
     if (!a || !b || a.dead || b.dead) return { ok: false, why: 'цели нет', party: 0 };
     if (a.side === b.side) return { ok: false, why: 'это свой корабль', party: 0 };
     if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью', party: 0 };
-    var avail = this.troopsOf(a, all).length, cap = boardCap(b);
+    var tro = this.troopsOf(a, all), avail = tro.length, cap = boardCap(b);
+    // меньше четырёх бойцов на абордаж не идут — кроме героя (джедай, ситх)
+    var minP = tro.some(function(x) { return x.hero; }) ? 1 : 4;
     var bd = b.crew.board, on = !!(bd && bd.over < 0 && bd.att === a.side && bd.started);
     if (bd && bd.over < 0 && bd.started && bd.att !== a.side) return { ok: false, why: 'на борту цели уже идёт чужой абордаж', party: 0 };
     // в бою на борту уже свои — подкрепление: места в шлюзах за вычетом тех, кто там и в пути
@@ -845,8 +861,8 @@
     var party = Math.min(avail, Math.max(0, cap - inside - b.inbound * SHUTTLE_MAX));
     if (a.boardCd > 0) return { ok: false, why: 'шаттлы вернутся через ' + Math.ceil(a.boardCd) + ' с', party: party, cap: cap };
     var own = a.crew.board;
-    if (avail < 4) return { ok: false, why: own && own.started && own.over < 0 ? 'десант обороняет свой корабль' : 'на борту нет десанта', party: 0, cap: cap };
-    if (party < 4) return { ok: false, why: 'шлюзы цели заняты своими', party: 0, cap: cap };
+    if (avail < minP) return { ok: false, why: own && own.started && own.over < 0 ? 'десант обороняет свой корабль' : 'на борту нет десанта', party: 0, cap: cap };
+    if (party < minP) return { ok: false, why: 'шлюзы цели заняты своими', party: 0, cap: cap };
     var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
     if (gap > BOARD_GAP) return { ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, нужно ближе ' + BOARD_GAP / 1000 + ' км', party: party, cap: cap };
     if (!on) {
@@ -888,13 +904,14 @@
   };
   // Снять с корабля команду абордажа: бойцы и 1–2 инженера (вскрывать двери, ставить заряд)
   Battle.prototype.takeParty = function(a, count, all) {
-    var troops = this.troopsOf(a, all), party = [], i;
-    var engs = [], ag = a.crew.agents;
-    for (i = 0; i < ag.length && engs.length < 2; i++) if (ag[i].alive && ag[i].team === a.side && ag[i].grp === 'eng' && !ag[i].job) engs.push(ag[i]);
-    var nEng = Math.min(engs.length, count >= 8 ? 2 : 1);
+    // инженеры — купленные бойцы-инженеры трюма (экипаж корабля на абордаж не идёт)
+    var all0 = this.troopsOf(a, all), engs = all0.filter(function(x) { return x.eng; }), troops = all0.filter(function(x) { return !x.eng; }), party = [], i;
+    // герои — первыми (малой группой идут только с героем); инженер — в группе от четырёх
+    troops.sort(function(p, q) { return (q.hero ? 1 : 0) - (p.hero ? 1 : 0); });
+    var nEng = count >= 4 ? Math.min(engs.length, count >= 8 ? 2 : 1) : 0;
     var take = troops.slice(0, count - nEng).concat(engs.slice(0, nEng));
     for (i = 0; i < take.length; i++) {
-      var m = take[i], eng = m.grp === 'eng';
+      var m = take[i];
       if (m.job && m.job.kind === 'defend') {
         // снят с обороны своего корабля: из отряда защитников вон
         var ob = a.crew.board, oq = ob && m.dsq && ob.dsq[m.dsq - 1];
@@ -904,7 +921,8 @@
       a.crew.releaseJob(m); a.crew.claimCell(m, null);
       m.alive = false; m.gone = true;                       // ушёл на шаттл
       var st = a.crew.rooms[m.home]; if (st) st.assigned--;
-      party.push({ fig: m.fig, wpn: eng ? 'tool' : this.wpnFor(a, m), eng: eng, src: m.id });
+      party.push({ fig: m.fig, wpn: m.wpn || this.wpnFor(a, m), eng: !!m.eng, src: m.id, hp: m.hp, hpMax: m.hpMax, dmgK: m.dmgK || 1,
+                   utype: m.utype || '', uname: m.uname || '', uid: m.uid || '', hero: !!m.hero, medicU: !!m.medicU });
     }
     return party;
   };
@@ -997,7 +1015,8 @@
         // ИИ не бросает десант на свежий корабль: цель побита или обездвижена, свой — держится
         if (!(o.hull < o.hullMax * 0.85 || o.eff.engine < 0.3) || sh.hull < sh.hullMax * 0.35) continue;
         var can = this.canBoard(i, j);
-        if (can.ok && (can.reinforce || this.R() < 0.35)) { this.board(i, j); break; }
+        // ИИ одним героем не рискует: от четырёх бойцов
+        if (can.ok && can.party >= 4 && (can.reinforce || this.R() < 0.35)) { this.board(i, j); break; }
       }
     }
   };

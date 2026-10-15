@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
 <title>Космический бой 2.0</title>
-<link rel="stylesheet" href="space.css?v=9">
+<link rel="stylesheet" href="space.css?v=10">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
@@ -31,15 +31,15 @@
   <div class="sp-row sp-scen" id="sp-scen">
     <button class="sp-chip net" data-poly="1">◎ Полигон</button>
     <button class="sp-chip net" data-net="1">⇄ По сети</button>
-    <button class="sp-chip" data-scen="vp">Венатор × Провиденс</button>
+    <button class="sp-chip" data-scen="vp">Венатор × Провидение</button>
     <button class="sp-chip" data-scen="am">Акламатор × Щедрый</button>
     <button class="sp-chip" data-scen="2x2">Два на два</button>
     <button class="sp-chip" data-scen="fl">Мандатор × Покоритель</button>
     <button class="sp-chip" data-scen="lr">Венатор × Лукрехалк</button>
-    <button class="sp-chip" data-scen="vk">Победа × Провиденс</button>
-    <button class="sp-chip" data-scen="vr">Валиант × Рекусант</button>
-    <button class="sp-chip" data-scen="ad">Аркитенс × Даймонд</button>
-    <button class="sp-chip" data-scen="th">Тантив × Хардселл</button>
+    <button class="sp-chip" data-scen="vk">Победа × Провидение</button>
+    <button class="sp-chip" data-scen="vr">Валиант × Бунтарь</button>
+    <button class="sp-chip" data-scen="ad">Аркитенс × Алмаз</button>
+    <button class="sp-chip" data-scen="th">Тантив × Хардсел</button>
   </div>
   <div class="sp-row sp-netrow" id="sp-netrow" hidden>
     <span class="sp-net-dot" id="sp-net-dot"></span>
@@ -103,6 +103,7 @@
     <div class="sp-poly-tabs">
       <button class="sp-chip on" data-ptab="tasks" type="button">Задачи</button>
       <button class="sp-chip" data-ptab="own" type="button">Свой бой</button>
+      <button class="sp-chip" data-ptab="fleet" type="button">Мой флот</button>
       <span class="sp-poly-prog" id="sp-poly-prog"></span>
     </div>
     <div id="sp-poly-tasks">
@@ -114,6 +115,7 @@
       <div class="sp-poly-lab">Республика · до трёх</div><div class="sp-poly-chips" id="sp-poly-a"></div>
       <div class="sp-poly-lab">КНС · до трёх</div><div class="sp-poly-chips" id="sp-poly-b"></div>
       <div class="sp-poly-lab">Дистанция</div><div class="sp-poly-chips" id="sp-poly-dist"></div>
+      <div class="sp-poly-lab">Трюмы — типовой десант</div><div class="sp-poly-chips" id="sp-poly-fill"></div>
       <div class="sp-poly-lab">Противник (один, против ИИ)</div><div class="sp-poly-chips" id="sp-poly-foe"></div>
       <div class="sp-poly-sum" id="sp-poly-sum"></div>
       <div class="sp-btns" style="grid-template-columns:1fr 1fr">
@@ -121,6 +123,7 @@
         <button class="sp-btn" id="sp-poly-net" type="button">⇄ Этот бой по сети</button>
       </div>
     </div>
+    <div id="sp-poly-fleet" hidden></div>
     <div class="sp-btns" style="grid-template-columns:1fr">
       <button class="sp-btn" id="sp-poly-close" type="button">Закрыть</button>
     </div>
@@ -161,14 +164,15 @@
 <script src="../shared/rt-core.js?v=5"></script>
 <script src="../shared/rt-figures.js?v=6"></script>
 <script src="../shared/rt-ship.js?v=2"></script>
-<script src="../shared/rt-crew.js?v=6"></script>
-<script src="../shared/rt-board.js?v=2"></script>
-<script src="../shared/rt-space.js?v=10"></script>
-<script src="../shared/rt-space-net.js?v=2"></script>
+<script src="../shared/rt-crew.js?v=7"></script>
+<script src="../shared/rt-board.js?v=3"></script>
+<script src="../shared/rt-army.js?v=2"></script>
+<script src="../shared/rt-space.js?v=12"></script>
+<script src="../shared/rt-space-net.js?v=3"></script>
 <script src="../ships/ship-art.js?v=4"></script>
 <script src="space-sfx.js?v=2"></script>
 <script src="space-wreck.js?v=1"></script>
-<script src="space-tasks.js?v=1"></script>
-<script src="space.js?v=11"></script>
+<script src="space-tasks.js?v=2"></script>
+<script src="space.js?v=12"></script>
 </body>
 </html>

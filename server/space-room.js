@@ -13,6 +13,7 @@ var SWShip = require('../shared/rt-ship.js');
 var SWSpace = require('../shared/rt-space.js');
 var Net = require('../shared/rt-space-net.js');
 var FIG = require('../shared/rt-figures.js').SWRTFig;
+var Army = require('../shared/rt-army.js');
 
 var ALL = FIG.withCrew(SWRT.TYPES);
 var FIG_IDS = ALL.map(function(t) { return t.id; });
@@ -35,11 +36,13 @@ function SpaceRoom(name, code, scen, cfg) {
 
 SpaceRoom.prototype.newBattle = function() {
   // свой бой создателя комнаты или бой из списка
-  var ships = this.cfg ? Net.layout(this.cfg) : Net.SCEN[this.scen].ships;
+  var ships = this.cfg ? Net.layout(this.cfg) : Net.SCEN[this.scen].ships, fill = this.cfg ? this.cfg.fill : 1;
   var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [true, true] });
   ships.forEach(function(s) {
     var p = plan(s[0]);
-    B.addShip({ cls: s[0], plan: p, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: FIG.crewFigs(p.faction, ALL), figIds: FIG_IDS });
+    // пока бой по сети — тестовый: типовой трюм и ангар (свой флот из игры — следующий шаг)
+    B.addShip({ cls: s[0], plan: p, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: FIG.crewFigs(p.faction, ALL), figIds: FIG_IDS,
+                army: Army.typicalArmy(s[0], fill), name: Army.shipName(s[0]) });
   });
   this.B = B; this.round = (this.round || 0) + 1;
   this.battle = { tick: 0 };                       // для общего цикла сервера (index.js)

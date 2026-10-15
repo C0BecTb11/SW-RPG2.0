@@ -144,6 +144,8 @@ button { font-family: inherit; }
 .sp-unit.cis { border-left: 2px solid #d94a4a; }
 .sp-unit.on { border-color: rgba(217,169,64,0.75); }
 .sp-unit.dead { opacity: 0.4; }
+.sp-unit.ally .sp-unit-name em { color: #8fb8e8; }
+.sp-unit.ally { border-style: dashed; border-left-style: solid; }
 /* враг вне датчиков: полоски застыли на последнем, что видели */
 .sp-unit.lost { border-style: dashed; }
 .sp-unit.lost .sp-bar { opacity: 0.3; }
@@ -236,6 +238,8 @@ button { font-family: inherit; }
 
 .sp-tg { margin-top: 6px; padding-top: 6px; border-top: 1px solid #141a22; }
 .sp-tg[hidden] { display: none; }
+/* бой с союзниками без своих кораблей: только смотреть */
+body.spectate #sp-quick, body.spectate #sp-guns, body.spectate #sp-tg, body.spectate #sp-move, body.spectate #sp-inside { display: none; }
 .sp-tg-head { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #d9a940; margin-bottom: 5px; }
 .sp-tg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .sp-tg-grid .wide { grid-column: span 2; }
@@ -428,6 +432,7 @@ body.inside .sp-top .sp-scen, body.inside .sp-top .sp-fleet { display: none; }
 .sp-net-code { flex: none; letter-spacing: 2px; color: #e8d9a8; }
 .sp-net-foe { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-net-foe b { color: #e8d9a8; font-weight: normal; }
+.sp-net-foe em { font-style: normal; color: #6c7884; }
 body.net .sp-top .sp-scen { display: none; }
 body.net #sp-side { cursor: default !important; }
 .sp-net .sp-end-card { text-align: left; }

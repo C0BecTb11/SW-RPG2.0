@@ -27,7 +27,7 @@
   var BIN = { AGENTS: 11, FIRE: 12, AGENTS_D: 13 };
   var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board', 'weld'];
   var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
-  var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper'];
+  var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper', 'guard'];
   var ROLE_N = {}; for (var ri = 0; ri < ROLES.length; ri++) ROLE_N[ROLES[ri]] = ri;
   var WPNS = ['', 'rifle', 'heavy', 'b1', 'b2', 'bx', 'tool', 'sniper', 'launcher', 'saber'];
   var WPN_N = {}; for (var wi = 0; wi < WPNS.length; wi++) WPN_N[WPNS[wi]] = wi;
@@ -85,8 +85,9 @@
   function r2(x) { return Math.round(x * 100) / 100; }
 
   // ================================================================ сервер
-  function Viewer(B, side) {
-    this.B = B; this.side = side;
+  // user — кто смотрит (бой с союзниками: приказы — только своим кораблям; «dev» и без user — всей стороне)
+  function Viewer(B, side, user) {
+    this.B = B; this.side = side; this.user = user || null;
     this.sel = -1; this.foe = -1; this.view = -1;
     this.k = 0;
     this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
@@ -110,24 +111,30 @@
   Viewer.prototype.shipLight = function(sh) {
     var B = this.B, own = sh.side === this.side, i, g;
     if (!own && !sh.dead && !B.sees(this.side, sh)) { var hb = this.boardLight(sh); return hb ? { n: sh.n, hid: 1, bd: hb } : { n: sh.n, hid: 1 }; }
-    var o = { n: sh.n, x: r1(sh.x), y: r1(sh.y), hd: Math.round(sh.hd * 1000) / 1000, v: r1(sh.v), hull: r0(sh.hull),
-              sh: [r0(sh.sh[0]), r0(sh.sh[1]), r0(sh.sh[2]), r0(sh.sh[3])], f: sh.focus, fa: sh.focusAuto ? 1 : 0,
-              e: [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0)],
-              crit: r1(sh.crit), dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
+    // туман: про чужой корабль (без нашего десанта на борту) — только то, что видно снаружи:
+    // корпус с шагом 5%, щиты по сектору четвертями, без систем, реактора и экипажа
+    var bdI = sh.crew.board, intel = own || (bdI && bdI.started && bdI.over < 0 && bdI.att === this.side);
+    var hq = intel ? r0(sh.hull) : Math.ceil(sh.hull / (sh.hullMax * 0.05)) * sh.hullMax * 0.05;
+    var sq = function(v) { return intel ? r0(v) : Math.min(4, Math.ceil(v / (sh.shMax * 0.25) - 0.01)) * sh.shMax * 0.25; };
+    var o = { n: sh.n, x: r1(sh.x), y: r1(sh.y), hd: Math.round(sh.hd * 1000) / 1000, v: r1(sh.v), hull: r0(hq),
+              sh: [r0(sq(sh.sh[0])), r0(sq(sh.sh[1])), r0(sq(sh.sh[2])), r0(sq(sh.sh[3]))], f: own ? sh.focus : -1, fa: sh.focusAuto ? 1 : 0,
+              e: intel ? [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0)] : null,
+              crit: intel ? r1(sh.crit) : 0, dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
               burn: sh.crew.burning.length, ct: r2(sh.crew.t) };
     if (own) {
-      o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.at = sh.foeT != null ? sh.foeT : -1; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
+      o.ow = this.ctl(sh) ? 1 : 2; o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.gd = sh.guard ? 1 : 0; o.at = sh.foeT != null ? sh.foeT : -1; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
       o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
       // трюм: десант на борту / всего, герои, техника, недобор экипажа
       var tA = 0, tN = 0, hn = [];
       for (i = 0; i < sh.crew.agents.length; i++) { var ta = sh.crew.agents[i]; if (ta.team !== sh.side || !ta.utype) continue; tN++; if (ta.alive) { tA++; if (ta.hero && ta.uname) hn.push(ta.uname); } }
-      o.tr = [tA, tN]; o.hn = hn; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
+      o.tr = [tA, tN]; o.hn = hn;
+      var gA = 0, gN = 0; for (i = 0; i < sh.crew.agents.length; i++) { var ga = sh.crew.agents[i]; if (ga.team === sh.side && ga.role === 'guard') { gN++; if (ga.alive) gA++; } } o.gu = [gA, gN]; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
       o.g = [];
       for (i = 0; i < sh.guns.length; i++) {
         g = sh.guns[i];
         var a = g.aimAt;
         o.g.push([a && a.ship ? a.ship.n : -1, a && a.ship ? (a.room || 0) : 0, a && a.craft ? a.craft.id : 0, g.out ? 1 : 0,
-                  r2(Math.max(0, g.cd) / g.T.reload), g.tgt.k, g.tgt.ship != null ? g.tgt.ship : -1, g.tgt.sys || '', g.tgt.room || 0]);
+                  r2(Math.max(0, g.cd) / g.T.reload), g.tgt.k, g.tgt.ship != null ? g.tgt.ship : -1, g.tgt.sys || '', g.tgt.room || 0, g.keep ? (g.keep.sys || 'hull') : '']);
       }
     } else {
       // чужие пушки — только те, что смотрят на наши корабли (видно, куда бьёт враг)
@@ -151,7 +158,7 @@
     var bd = sh.crew.board;
     if (bd && bd.started && (bd.att === this.side || bd.def === this.side)) {
       var su = bd.summary();
-      return { over: bd.over, att: bd.att, def: bd.def, alarm: bd.alarm ? 1 : 0, alarmCd: r0(bd.alarmCd), bt: r1(bd.bridgeT), hn: bd.holdNeed,
+      return { over: bd.over, att: bd.att, def: bd.def, alarm: bd.alarm ? 1 : 0, alarmCd: r0(bd.alarmCd), bt: r1(bd.bridgeT), hn: bd.holdNeed, pr: r1(bd.prep || 0),
                ch: bd.charge ? { a: bd.charge.armed ? 1 : 0, l: r1(bd.charge.left), p: r1(bd.charge.plant), d: r1(bd.charge.defuse) } : null,
                su: { att: su.att, def: su.def, crew: su.crew, sq: su.sq, dsq: bd.def === this.side ? su.dsq : [] }, held: this.heldList(bd), seq: bd.seq || 0,
                br: bd.bridge && bd.rs[bd.bridge] ? [bd.rs[bd.bridge].held ? 1 : 0, r1(bd.rs[bd.bridge].hold), bd.rs[bd.bridge].cnt[0], bd.rs[bd.bridge].cnt[1]] : null,
@@ -200,9 +207,10 @@
     // пары «наш корабль → цель»: выбранный → цель (или корабль, куда смотрим);
     // свой корабль под абордажем → корабль атакующих (контрабордаж снимает бойцов с обороны)
     var tgt = this.view >= 0 && B.ships[this.view] && B.ships[this.view].side !== side ? this.view : this.foe, pairs = [];
-    if (this.sel >= 0 && B.ships[this.sel] && B.ships[this.sel].side === side && tgt >= 0 && B.ships[tgt]) pairs.push([this.sel, tgt]);
+    var self = this;
+    if (this.sel >= 0 && B.ships[this.sel] && this.ctl(B.ships[this.sel]) && tgt >= 0 && B.ships[tgt]) pairs.push([this.sel, tgt]);
     var vs = this.view >= 0 && B.ships[this.view];
-    if (vs && vs.side === side && vs.crew.board && vs.crew.board.started && vs.crew.board.over < 0) {
+    if (vs && self.ctl(vs) && vs.crew.board && vs.crew.board.started && vs.crew.board.over < 0) {
       B.ships.forEach(function(o) { if (!o.dead && o.side !== side) pairs.push([vs.n, o.n]); });
     }
     out.can = pairs.slice(0, 4).map(function(p) {
@@ -221,7 +229,8 @@
     var own = sh.side === this.side, bd = sh.crew.board, involved = bd && bd.started && (bd.att === this.side || bd.def === this.side);
     var c = sh.crew, m = this.mk(n), i, st, out = { t: 'h', n: n, ct: r2(c.t), rooms: [] };
     if (mode === 'foe') {
-      if (own || !B.sees(this.side, sh)) return null;
+      // чужой корабль: чертёж класса известен, состояние отсеков — нет (только при нашем десанте на борту)
+      if (own || !involved || !B.sees(this.side, sh)) return null;
       out.lite = 2;
       for (i = 0; i < c.roomList.length; i++) { st = c.roomList[i]; if (st.integ < 99.5) out.rooms.push([st.n, r0(st.integ)]); }
       return out;
@@ -362,10 +371,12 @@
     if (sh.side === this.side) return true;
     var bd = sh.crew.board; return !!(bd && bd.started && bd.att === this.side);
   };
+  // Корабль под командой этого игрока: своей стороны и его (или ничей; «dev» — вся сторона)
+  Viewer.prototype.ctl = function(sh) { return sh.side === this.side && (!sh.owner || !this.user || this.user === 'dev' || sh.owner === this.user); };
   // Приказ игрока: проверка, что корабль свой, и исполнение
   Viewer.prototype.command = function(m) {
     var B = this.B, side = this.side, sh = B.ships[m.n | 0], bd;
-    var mine = sh && sh.side === side && !sh.dead && m.n === (m.n | 0);
+    var mine = sh && sh.side === side && !sh.dead && m.n === (m.n | 0) && this.ctl(sh);
     switch (m.k) {
       case 'view': this.sel = m.sel | 0; this.foe = m.foe == null ? -1 : m.foe | 0; this.view = m.view == null ? -1 : m.view | 0; return true;
       case 'target': if (!mine || !Array.isArray(m.guns) || !m.tgt || typeof m.tgt !== 'object') return false;
@@ -415,6 +426,7 @@
     B.order = function(n, x, y, face) {
       send({ t: 'cmd', k: 'order', n: n, x: x === undefined ? null : x, y: y, face: !!face });
       var s = B.ships[n]; if (!s) return; lock(s);
+      s.guard = false;
       if (x === 'hold') { s.ai = false; s.order = null; } else if (x == null) { s.ai = true; s.order = null; } else s.order = { x: x, y: y, face: !!face };
     };
     // атака: на экране сразу — цель корабля и пушки, что на неё переходят (как сделает сервер)
@@ -499,7 +511,8 @@
     var mine = !(sh.netLock > Date.now());
     sh.v = o.v; sh.hull = o.hull; sh.sh = o.sh;
     if (mine) { sh.focus = o.f; sh.focusAuto = !!o.fa; }
-    sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5];
+    if (o.e) { sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5]; }
+    else { sh.eff.engine = sh.eff.reactor = sh.eff.shield = sh.eff.bridge = sh.eff.hangar = sh.eff.power = 1; }   // чужой: систем не видно — рисуем как исправный
     sh.crit = o.crit; if (o.dead && !sh.dead) { sh.dead = true; sh.deadAt = B.t; } sh.why = o.why || sh.why; if (o.cap != null) sh.captured = o.cap; sh.inbound = o.inb;
     sh.netBurn = o.burn; if (this.viewN !== sh.n) { sh.netCt = o.ct; sh.netCtAt = Date.now(); }
     if (o.fs) {
@@ -508,16 +521,17 @@
     }
     if (sh.side === this.side) {
       sh.boardCd = o.cd;
-      if (mine) { sh.ai = !!o.ai; sh.foeT = o.at >= 0 ? o.at : null; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
+      sh.ctl = o.ow !== 2;
+      if (mine) { sh.ai = !!o.ai; sh.guard = !!o.gd; sh.foeT = o.at >= 0 ? o.at : null; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
       sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
-      sh.netTroops = o.tr || null; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
+      sh.netTroops = o.tr || null; sh.netGuards = o.gu || null; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
       if (o.veh != null && (!sh.vehicles || sh.vehicles.length !== o.veh)) { sh.vehicles = []; for (var vv = 0; vv < o.veh; vv++) sh.vehicles.push('?'); }
       for (var i = 0; i < o.g.length && i < sh.guns.length; i++) {
         var g = sh.guns[i], a = o.g[i];
         g.aimAt = a[0] >= 0 ? { ship: B.ships[a[0]], room: a[1] } : a[2] ? { craft: this.craftById(a[2]) } : null;
         if (g.aimAt && g.aimAt.craft === null) g.aimAt = null;
         g.out = !!a[3]; g.cd = a[4] * g.T.reload;
-        if (!(g.netLock > Date.now())) g.tgt = { k: a[5], ship: a[6] >= 0 ? a[6] : undefined, sys: a[7] || undefined, room: a[8] || undefined };
+        if (!(g.netLock > Date.now())) { g.tgt = { k: a[5], ship: a[6] >= 0 ? a[6] : undefined, sys: a[7] || undefined, room: a[8] || undefined }; g.keep = a[9] ? (a[9] === 'hull' ? { k: 'hull' } : { k: 'sys', sys: a[9] }) : null; }
       }
       if (!sh.crew.netAlive) { sh.crew.netAlive = true; sh.crew.alive = function() { return sh.netAlive || 0; }; }
     } else {
@@ -540,7 +554,7 @@
       bd = new this.SWBoard.Board(sh.crew, { flagship: sh.len >= 1200, figIds: sh.figIds, seed: 1 });
       bd.started = true;
     }
-    bd.started = true; bd.over = o.over; bd.alarm = !!o.alarm; bd.alarmCd = o.alarmCd; bd.bridgeT = o.bt; bd.holdNeed = o.hn; bd.t = o.t;
+    bd.started = true; bd.over = o.over; bd.alarm = !!o.alarm; bd.alarmCd = o.alarmCd; bd.bridgeT = o.bt; bd.holdNeed = o.hn; bd.t = o.t; bd.prep = o.pr || 0;
     bd.charge = o.ch ? { armed: !!o.ch.a, left: o.ch.l, plant: o.ch.p, defuse: o.ch.d } : null;
     var held = {}; o.held.forEach(function(n) { held[n] = 1; });
     for (var k in bd.rs) bd.rs[k].held = !!held[k];
@@ -582,7 +596,7 @@
     }
     // отряды: члены по номерам (для центра отряда и меток)
     var keep = function(list, src) {
-      return src.map(function(q) { var old = null; for (var i = 0; i < (list || []).length; i++) if (list[i].id === q.id) old = list[i]; return { id: q.id, members: old ? old.members : [], room: q.room, auto: q.auto }; });
+      return src.map(function(q) { var old = null; for (var i = 0; i < (list || []).length; i++) if (list[i].id === q.id) old = list[i]; return { id: q.id, members: old ? old.members : [], room: q.room, auto: q.auto, wait: q.w || 0, land: q.w ? q.room : -1 }; });
     };
     if (o.su && o.su.sq) bd.squads = keep(bd.squads, o.su.sq);
     if (o.su && o.su.dsq) bd.dsq = keep(bd.dsq, o.su.dsq);

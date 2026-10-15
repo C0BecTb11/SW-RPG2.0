@@ -43,6 +43,9 @@
   var FIG_WPN = { rep_dc15a: 'rifle', rep_heavy: 'heavy', rep_sniper: 'rifle', cis_b1: 'b1', cis_b2: 'b2', cis_bx: 'bx',
                   rep_engineer: 'tool', cis_engineer: 'tool' };
   var TURRET = { hp: 150, range: 11, acc: 0.7, dmg: 25, rof: 0.4 };
+  // PREP — подготовка после первой стыковки: штурмовики ждут в шлюзе (получают приказы),
+  // защитники запирают, заваривают, расставляют отряды; HOLD_SOLO — подкрепление игрока без приказа ждёт столько
+  var PREP = 45, HOLD_SOLO = 20;
   var CAPTURE = 6, RETAKE = 6, BREACH = 10, PLANT = 6, FUSE = 90, DEFUSE = 8, VENT_CD = 300, VENT_DMG = 40;
   // оборона: обычную дверь вскрывают вдвое быстрее брони; заваренную — вдвое дольше; заварка 6 с
   var WELD = 6, DSQ_MAX = 10;
@@ -205,13 +208,16 @@
 
   // ---------------------------------------------------------------- высадка
   // party: [{ fig, wpn, eng }]; room — шлюз высадки (номер отсека)
-  Board.prototype.addParty = function(party, roomN) {
+  // manual — атакующая сторона за игроком: отряд ждёт приказа (без него — ИИ по истечении ожидания)
+  Board.prototype.addParty = function(party, roomN, manual) {
     var c = this.c, st = c.rooms[roomN], r = this.ship.roomByN[roomN], i;
     if (!st || !r) return null;
     if (!this.started) {
       this.started = true;
+      this.prep = PREP;
       this.setAlarm(true);
-      this.msg('Абордаж! Тревога: шлюзы и бронедвери заперты', this.def, 'bad');
+      this.msg('Абордаж! Тревога: шлюзы и бронедвери заперты. До штурма ' + PREP + ' с — запирай, заваривай, ставь отряды', this.def, 'bad');
+      this.msg('Стыковка. Подготовка ' + PREP + ' с: раздай отрядам цели — штурм начнётся сам', this.att, 'gold');
       // бойцы из казарм — к обороне (кто уже встал на пост погибшего расчётчика — остаётся на посту)
       for (i = 0; i < c.agents.length; i++) {
         var a = c.agents[i];
@@ -219,7 +225,8 @@
       }
       this.makeDefSquads();
     }
-    var sq = { id: this.squads.length + 1, members: [], room: this.bridge || roomN, auto: true };
+    var sq = manual ? { id: this.squads.length + 1, members: [], room: roomN, auto: false, wait: Math.max(this.prep || 0, HOLD_SOLO), land: roomN }
+                    : { id: this.squads.length + 1, members: [], room: this.bridge || roomN, auto: true };
     for (i = 0; i < party.length; i++) {
       var pm = party[i], p = c.spotIn(r) || st.anchor; if (!p) break;
       var w = WPN[pm.wpn] || WPN.rifle;
@@ -236,12 +243,13 @@
     }
     if (!sq.members.length) return null;
     this.squads.push(sq);
-    this.orderSquad(sq, sq.room, true);
+    this.orderSquad(sq, sq.room, !manual);
     this.msg('Отряд ' + sq.id + ' высадился: ' + sq.members.length + ' бойцов', this.att, 'gold');
     return sq;
   };
   Board.prototype.isTrooper = function(a) {
     var st = this.c.rooms[a.home];
+    if (a.role === 'guard') return true;                 // штатная охрана — всегда в оборону
     return a.grp === 'troops' && a.role === 'reserve' && !!st && (st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory');
   };
   Board.prototype.toDefend = function(a) {
@@ -281,7 +289,7 @@
     for (var i = 0; i < this.squads.length; i++) {
       var sq = this.squads[i];
       if (sqIds && sqIds.indexOf(sq.id) < 0) continue;
-      if (this.alive(sq) && this.orderSquad(sq, roomN, false)) n++;
+      if (this.alive(sq) && this.orderSquad(sq, roomN, false)) { sq.wait = 0; n++; }
     }
     return n;
   };
@@ -441,6 +449,11 @@
     if (!a.alive) return;
     a.dvx = 0; a.dvy = 0;
     if (a.job && a.job.kind === 'weld') { this.weldThink(a, dt); return; }
+    // подготовка: штурмовики ждут в шлюзе (стреляют, если к ним пришли), никуда не идут
+    if (this.prep > 0 && a.team === this.att) {
+      var tp = this.tgtPos(a); if (tp) a.aim = turn(a.aim, Math.atan2(tp.y - a.y, tp.x - a.x), 7 * dt);
+      a.mv += (0 - a.mv) * Math.min(1, dt * 6); return;
+    }
     if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     var w = WPN[a.wpn] || WPN.rifle;
     var tg = this.tgtPos(a);
@@ -577,10 +590,20 @@
     var c = this.c, ag = c.agents, i, a;
     this.t += dt;
     if (this.alarmCd > 0) this.alarmCd -= dt;
+    if (this.prep > 0) {
+      this.prep = Math.max(0, this.prep - dt);
+      if (this.prep === 0) { this.msg('Штурм! Шлюз вскрывают', this.att, 'gold'); this.msg('Штурм начался — враг вскрывает шлюз', this.def, 'bad'); }
+    }
+    // отряд игрока без приказа: ждал свой срок — ведёт ИИ (к мостику)
+    for (var si = 0; si < this.squads.length; si++) {
+      var wq = this.squads[si]; if (!(wq.wait > 0)) continue;
+      wq.wait = Math.max(0, wq.wait - dt);
+      if (wq.wait === 0 && !wq.auto && wq.room === wq.land && this.alive(wq)) { wq.auto = true; this.msg('Отряд ' + wq.id + ' без приказа — идёт к мостику сам', this.att, 'gold'); }
+    }
     this.ventCd[0] = Math.max(0, this.ventCd[0] - dt); this.ventCd[1] = Math.max(0, this.ventCd[1] - dt);
     var dmgK = [this.armoryK(0), this.armoryK(1)];
-    // стрельба бойцов
-    for (i = 0; i < ag.length; i++) {
+    // стрельба бойцов (на подготовке шлюз ещё не вскрыт: штурмовики в стыковочном рукаве — огня нет)
+    for (i = 0; i < ag.length && !(this.prep > 0); i++) {
       a = ag[i]; if (!a.alive || !a.wpn) continue;
       if (a.team === this.def && !(a.job && a.job.kind === 'defend')) continue;
       var w = WPN[a.wpn];
@@ -611,12 +634,12 @@
         }
       }
     }
-    this.turretsStep(dt);
+    if (!(this.prep > 0)) this.turretsStep(dt);
     // лазарет: свои внутри лечатся
     this.medStep(dt);
     // раз в полсекунды: кто держит отсеки, цели, ИИ
     this.capT = (this.capT || 0) + dt;
-    if (this.capT >= 0.5) { this.capture(this.capT); this.capT = 0; }
+    if (this.capT >= 0.5) { if (!(this.prep > 0)) this.capture(this.capT); this.capT = 0; }
     this.defT -= dt;
     if (this.defT <= 0) { this.defT = 1; this.defenders(); this.attackers(); }
     this.visT -= dt;
@@ -862,6 +885,7 @@
   };
   // Продувка: насосная своя — отсек под удар (все внутри, свои и чужие)
   Board.prototype.canVent = function(team) {
+    if (this.prep > 0) return 'идёт подготовка к штурму';
     var has = false;
     for (var k in this.rs) if (this.rs[k].t === 'pumps') { has = true; if (this.heldBy(+k) !== team) return 'насосная не наша'; }
     if (!has) return 'насосной нет';
@@ -896,19 +920,19 @@
 
   // Сводка для экрана
   Board.prototype.summary = function() {
-    var c = this.c, out = { att: 0, def: 0, crew: 0, sq: [] };
+    var c = this.c, out = { att: 0, def: 0, crew: 0, sq: [], prep: this.prep > 0 ? Math.ceil(this.prep) : 0 };
     for (var i = 0; i < c.agents.length; i++) {
       var a = c.agents[i]; if (!a.alive) continue;
       if (a.team === this.att) out.att++;
       else if (a.job && a.job.kind === 'defend') out.def++;
       else out.crew++;
     }
-    for (i = 0; i < this.squads.length; i++) out.sq.push({ id: this.squads[i].id, n: this.alive(this.squads[i]), room: this.squads[i].room, auto: this.squads[i].auto });
+    for (i = 0; i < this.squads.length; i++) { var oq = this.squads[i]; out.sq.push({ id: oq.id, n: this.alive(oq), room: oq.room, auto: oq.auto, w: oq.wait > 0 && !oq.auto && oq.room === oq.land ? Math.ceil(oq.wait) : 0 }); }
     out.dsq = [];
     for (i = 0; i < this.dsq.length; i++) out.dsq.push({ id: this.dsq[i].id, n: this.alive(this.dsq[i]), room: this.dsq[i].room, auto: this.dsq[i].auto });
     return out;
   };
 
   return { Board: Board, WPN: WPN, FIG_WPN: FIG_WPN, TURRET: TURRET, ROOM_EFF: ROOM_EFF, KEYROOM: KEYROOM,
-           CAPTURE: CAPTURE, BREACH: BREACH, FUSE: FUSE, PLANT: PLANT, WELD: WELD, DEFUSE: DEFUSE, RETAKE: RETAKE };
+           CAPTURE: CAPTURE, PREP: PREP, BREACH: BREACH, FUSE: FUSE, PLANT: PLANT, WELD: WELD, DEFUSE: DEFUSE, RETAKE: RETAKE };
 });

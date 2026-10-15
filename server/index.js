@@ -74,6 +74,8 @@ function flushLog() {
 var TOKENS = new Map();   // токен → { user, side, nick, until }
 function verify(token) {
   if (CFG.dev && token === 'dev') return Promise.resolve({ user: 'dev', side: 0, nick: 'dev' });
+  // замеры с союзниками: «dev:имя» — отдельный игрок (места, свои корабли)
+  if (CFG.dev && /^dev:[a-z0-9]{1,12}$/.test(String(token))) return Promise.resolve({ user: token, side: 0, nick: token.slice(4) });
   if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return Promise.reject(new Error('нет токена'));
   var hit = TOKENS.get(token);
   if (hit && hit.until > Date.now()) return Promise.resolve(hit);

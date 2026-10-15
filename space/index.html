@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
 <title>Космический бой 2.0</title>
-<link rel="stylesheet" href="space.css?v=7">
+<link rel="stylesheet" href="space.css?v=8">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
@@ -25,6 +25,7 @@
     <span class="sp-side" id="sp-side">Республика</span>
   </div>
   <div class="sp-row sp-scen" id="sp-scen">
+    <button class="sp-chip net" data-net="1">⇄ По сети</button>
     <button class="sp-chip" data-scen="vp">Венатор × Провиденс</button>
     <button class="sp-chip" data-scen="am">Акламатор × Щедрый</button>
     <button class="sp-chip" data-scen="2x2">Два на два</button>
@@ -34,6 +35,14 @@
     <button class="sp-chip" data-scen="vr">Валиант × Рекусант</button>
     <button class="sp-chip" data-scen="ad">Аркитенс × Даймонд</button>
     <button class="sp-chip" data-scen="th">Тантив × Хардселл</button>
+  </div>
+  <div class="sp-row sp-netrow" id="sp-netrow" hidden>
+    <span class="sp-net-dot" id="sp-net-dot"></span>
+    <span class="sp-net-lab">по сети</span>
+    <span class="sp-net-code" id="sp-net-code"></span>
+    <span class="sp-net-foe" id="sp-net-foe"></span>
+    <button class="sp-mini gold" id="sp-net-link" type="button">Ссылка</button>
+    <button class="sp-mini" id="sp-net-quit" type="button">Выйти</button>
   </div>
   <div class="sp-fleet" id="sp-fleet"></div>
 </div>
@@ -75,6 +84,26 @@
   </div>
 </div>
 
+<div class="sp-end sp-net" id="sp-net" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Бой по сети</div>
+    <h2>Двое — один бой</h2>
+    <p>Бой считает игровой сервер, телефоны только показывают. Создай комнату и отправь ссылку сопернику — он встанет за другую сторону. Пока его нет, за неё воюет ИИ.</p>
+    <div class="sp-net-scen">бой: <b id="sp-net-scen"></b></div>
+    <button class="sp-btn gold sp-net-make" id="sp-net-make" type="button">Создать комнату</button>
+    <div class="sp-net-or"><span>или по коду</span></div>
+    <div class="sp-net-joinrow">
+      <input class="sp-net-in" id="sp-net-in" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="код или ссылка">
+      <button class="sp-btn" id="sp-net-join" type="button">Войти</button>
+    </div>
+    <div class="sp-net-err" id="sp-net-err" hidden></div>
+    <div class="sp-btns" style="grid-template-columns:1fr 1fr">
+      <button class="sp-btn" id="sp-net-retry" type="button" hidden>Ещё раз</button>
+      <button class="sp-btn" id="sp-net-close" type="button">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <div class="sp-load" id="sp-load" hidden>
   <div class="sp-load-card">
     <div class="sp-kicker">Внутри корабля</div>
@@ -92,9 +121,10 @@
 <script src="../shared/rt-crew.js?v=6"></script>
 <script src="../shared/rt-board.js?v=1"></script>
 <script src="../shared/rt-space.js?v=9"></script>
+<script src="../shared/rt-space-net.js?v=1"></script>
 <script src="../ships/ship-art.js?v=4"></script>
 <script src="space-sfx.js?v=2"></script>
 <script src="space-wreck.js?v=1"></script>
-<script src="space.js?v=9"></script>
+<script src="space.js?v=10"></script>
 </body>
 </html>

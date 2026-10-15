@@ -216,8 +216,9 @@
     var k = tgt.k, foe = this.ships[tgt.ship];
     if (k !== 'auto' && k !== 'fighters') {
       if (!foe || foe.dead || foe.side === sh.side) return 0;
-      if (k === 'sys' && !SYS_BY[tgt.sys]) return 0;
-      if (k === 'room' && !foe.plan.roomByN[tgt.room]) return 0;
+      // имена — только свои ключи (с сервера может прийти «constructor» и т. п.)
+      if (k === 'sys' && !(typeof tgt.sys === 'string' && Object.prototype.hasOwnProperty.call(SYS_BY, tgt.sys))) return 0;
+      if (k === 'room' && !(tgt.room === (tgt.room | 0) && Object.prototype.hasOwnProperty.call(foe.plan.roomByN, tgt.room))) return 0;
       if (k !== 'hull' && k !== 'sys' && k !== 'room') return 0;
     }
     if (!guns || !guns.length) return 0;
@@ -801,7 +802,7 @@
   };
   // Огонь по кораблю, где идёт свой абордаж: вести (по орудиям) или прекратить
   Battle.prototype.setHold = function(n, t, on) {
-    var sh = this.ships[n]; if (!sh) return;
+    var sh = this.ships[n], o = this.ships[t]; if (!sh || !o || o.side === sh.side) return;
     sh.hold = sh.hold || {}; sh.hold[t] = !!on;
   };
   Battle.prototype.ourBoard = function(side, o) {

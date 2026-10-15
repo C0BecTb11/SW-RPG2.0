@@ -19,11 +19,13 @@
 // ES5, без зависимостей кроме rt-crew. Работает в браузере и в Node.
 
 (function(root, factory) {
-  var crew = (typeof module === 'object' && module.exports) ? require('./rt-crew.js') : root.SWCrew;
-  var api = factory(crew);
-  if (typeof module === 'object' && module.exports) module.exports = api;
+  var node = typeof module === 'object' && module.exports;
+  var crew = node ? require('./rt-crew.js') : root.SWCrew;
+  var board = node ? require('./rt-board.js') : root.SWBoard;
+  var api = factory(crew, board);
+  if (node) module.exports = api;
   else root.SWSpace = api;
-})(typeof self !== 'undefined' ? self : this, function(SWCrew) {
+})(typeof self !== 'undefined' ? self : this, function(SWCrew, SWBoard) {
   'use strict';
 
   var TAU = Math.PI * 2, TICK = 0.1, BOLT = 4200;     // скорость болта, м/с
@@ -58,30 +60,36 @@
 
   // Корпуса — из ship_types старой игры
   var CLASS = {
-    venator:    { hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['arc170', 'arc170', 'ywing'] },
-    acclamator: { hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 1.25 },
-    munificent: { hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
-    providence: { hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.5 },
+    venator:    { troops: 60, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['arc170', 'arc170', 'ywing'] },
+    acclamator: { troops: 80, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 1.25 },
+    munificent: { troops: 40, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
+    providence: { troops: 60, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.5 },
+    // troops — десант в трюме (бойцы абордажа и обороны);
     // craft — звенья по 4 машины; у самых больших ангаров число звеньев урезано до 6;
     // bal — множитель урона по прогонам ИИ против ИИ (равные по старой игре корпуса ≈ 50/50)
-    rep_mandator:   { hp: 2400, shield: 300, regen: 15, acc: 85, eva: 1,  hangar: 6, move: 4,  dmg: 220, craft: ['arc170', 'arc170', 'ywing', 'arc170', 'ywing', 'arc170'] },
-    rep_victory:    { hp: 1100, shield: 200, regen: 10, acc: 83, eva: 4,  hangar: 2, move: 6,  dmg: 130, craft: ['arc170', 'ywing'] },
-    rep_valiant:    { hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 5,  hangar: 0, move: 7,  dmg: 75 },
-    rep_arquitens:  { hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
-    tantive:        { hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
-    cis_subjugator: { hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'] },
-    cis_lucrehulk:  { hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
-    cis_recusant:   { hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.1 },
-    cis_diamond:    { hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1.15 },
-    hardcell:       { hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50 }
+    rep_mandator:   { troops: 90, hp: 2400, shield: 300, regen: 15, acc: 85, eva: 1,  hangar: 6, move: 4,  dmg: 220, craft: ['arc170', 'arc170', 'ywing', 'arc170', 'ywing', 'arc170'] },
+    rep_victory:    { troops: 60, hp: 1100, shield: 200, regen: 10, acc: 83, eva: 4,  hangar: 2, move: 6,  dmg: 130, craft: ['arc170', 'ywing'] },
+    rep_valiant:    { troops: 40, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 5,  hangar: 0, move: 7,  dmg: 75 },
+    rep_arquitens:  { troops: 20, hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
+    tantive:        { troops: 12, hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
+    cis_subjugator: { troops: 90, hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'] },
+    cis_lucrehulk:  { troops: 120, hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
+    cis_recusant:   { troops: 40, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.1 },
+    cis_diamond:    { troops: 50, hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1.15 },
+    hardcell:       { troops: 30, hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50 }
   };
   // Малые корабли — тоже из ship_types
   var CRAFT = {
     arc170:  { name: 'ARC-170',    role: 'fighter', hp: 90,  speed: 230, img: 'arc170', len: 14.2 },
     ywing:   { name: 'Y-wing',     role: 'bomber',  hp: 140, speed: 170, img: 'ywing',  len: 16 },
     vulture: { name: 'Стервятник', role: 'fighter', hp: 90,  speed: 250, img: 'vulture', len: 6.9 },
-    hyena:   { name: 'Гиена',      role: 'bomber',  hp: 140, speed: 180, img: 'hyena',  len: 8.1 }
+    hyena:   { name: 'Гиена',      role: 'bomber',  hp: 140, speed: 180, img: 'hyena',  len: 8.1 },
+    // абордажный шаттл: до 12 бойцов; сбит — команда погибла
+    shuttle: { name: 'Абордажный шаттл', role: 'shuttle', hp: 700, speed: 240, img: null, len: 18 }
   };
+  // Абордаж: сколько бойцов принимают шлюзы цели (старая игра: малый 20, большой 30, флагман 36)
+  function boardCap(sh) { return sh.len >= 1200 ? 36 : sh.len >= 700 ? 30 : 20; }
+  var BOARD_GAP = 3000, BOARD_CD = 60, SHUTTLE_MAX = 12;
 
   function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
   function rng(seed) {
@@ -95,8 +103,10 @@
   function Battle(opts) {
     this.R = rng(opts.seed || 7);
     this.t = 0; this.ships = []; this.craft = []; this.pending = []; this.nextCraft = 1;
-    this.ev = { shots: [], booms: [], shields: [], kills: [] };
+    this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
     this.over = -1;          // сторона-победитель
+    this.aiBoard = opts.aiBoard || [false, false];   // стороны, за которые абордаж решает ИИ
+    this.boardT = 3;
     // туман войны: что видит каждая сторона (fog: false — видно всё)
     this.fog = opts.fog !== false;
     this.vis = [{}, {}]; this.visC = [{}, {}]; this.last = [{}, {}]; this.senseT = 0;
@@ -118,7 +128,8 @@
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
-      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true }),
+      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side, troops: C.troops }),
+      figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1,
       guns: [], eff: {}, hangar: (C.craft || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
     };
     // орудия с секторами обстрела
@@ -245,6 +256,7 @@
     }
     this.senseT -= dt;
     if (this.senseT <= 0) { this.senseT = 0.5; this.sense(); }
+    this.boardStep(dt);
     for (i = 0; i < this.ships.length; i++) if (!this.ships[i].dead) this.fireGuns(this.ships[i], dt);
     this.flyCraft(dt);
     // попадания долетают
@@ -267,6 +279,8 @@
     e.hangar = hasType(sh.plan, 'hangar') ? c.sysEff('hangar') : 0;
     e.power = 0.3 + 0.7 * e.reactor;
     this.shields(sh, dt);
+    // генератор щитов в руках абордажной команды — щиты погашены
+    if (sh.crew.board && sh.crew.board.heldType('shield')) { sh.sh[0] = sh.sh[1] = sh.sh[2] = sh.sh[3] = 0; }
     // орудия: люди на посту, целость, питание
     for (var g = 0; g < sh.guns.length; g++) {
       var gun = sh.guns[g], re = gun.room ? c.roomEff(gun.room) : 1;
@@ -488,6 +502,10 @@
     var tgtShip = this.ships[t.ship];
     if (!tgtShip || tgtShip.dead || tgtShip.side === sh.side) { g.tgt = { k: 'auto' }; return null; }
     if (!this.sees(sh.side, tgtShip)) return null;      // цель потеряна в тумане — пушка ждёт
+    if (this.ourBoard(sh.side, tgtShip)) {
+      if (sh.hold && sh.hold[tgtShip.n]) return null;   // приказ: по кораблю со своим десантом не стрелять
+      if (k === 'hull' || k === 'room') return this.inArc(sh, g, tgtShip.x, tgtShip.y, tgtShip) ? { ship: tgtShip, room: this.gunRoomFree(tgtShip, sh.side, g) } : null;
+    }
     if (!this.inArc(sh, g, tgtShip.x, tgtShip.y, tgtShip)) return null;
     if (k === 'hull') return { ship: tgtShip, room: 0 };
     if (k === 'room') return tgtShip.plan.roomByN[t.room] ? { ship: tgtShip, room: t.room } : { ship: tgtShip, room: 0 };
@@ -498,6 +516,8 @@
   // остальные — по мостику и корпусу
   Battle.prototype.autoAim = function(sh, g, foe) {
     var sys = null;
+    // на борту свой абордаж: бить по орудиям цели, мимо отсеков, где наши
+    if (this.ourBoard(sh.side, foe)) return { ship: foe, room: this.gunRoomFree(foe, sh.side, g) };
     if (g.t === 'ion') sys = foe.sh[this.sector(foe, g.x, g.y)] > foe.shMax * 0.2 ? (hasType(foe.plan, 'shield') ? 'shield' : 'engine') : 'engine';
     else if (g.t === 'heavy') sys = this.sector(foe, g.x, g.y) === 2 ? 'engine' : 'guns';
     else if (g.t === 'pd') return { ship: foe, room: 0 };
@@ -528,6 +548,7 @@
     var best = null, bd = 1e18;
     for (var i = 0; i < this.ships.length; i++) {
       var o = this.ships[i]; if (o.dead || o.side === sh.side || !this.sees(sh.side, o)) continue;
+      if (sh.hold && sh.hold[o.n] && this.ourBoard(sh.side, o)) continue;   // приказ: по кораблю со своим десантом не стрелять
       if (!this.inArc(sh, g, o.x, o.y, o)) continue;
       var dx = o.x - g.x, dy = o.y - g.y, d = dx * dx + dy * dy;
       if (d < bd) { bd = d; best = o; }
@@ -541,7 +562,7 @@
       var dx = c.x - g.x, dy = c.y - g.y, d = dx * dx + dy * dy;
       if (d > bd || !this.inArc(sh, g, c.x, c.y, null)) continue;
       // бомбардировщики, что идут на нас, — первыми
-      if (c.role === 'bomber') d *= 0.5;
+      if (c.role === 'bomber' || c.role === 'shuttle') d *= 0.5;
       if (d < bd) { bd = d; best = c; }
     }
     return best;
@@ -576,7 +597,7 @@
   };
   Battle.prototype.shootCraft = function(sh, g, c) {
     var T = g.T, R = this.R;
-    var hit = T.accF * (0.6 + 0.4 * sh.eff.bridge) * (c.role === 'bomber' ? 1.25 : 1);
+    var hit = T.accF * (0.6 + 0.4 * sh.eff.bridge) * (c.role === 'bomber' ? 1.25 : c.role === 'shuttle' ? 1.2 : 1);
     var miss = R() > hit;
     var fly = Math.sqrt((c.x - g.x) * (c.x - g.x) + (c.y - g.y) * (c.y - g.y)) / BOLT;
     var ox = miss ? (R() - 0.5) * 120 : 0, oy = miss ? (R() - 0.5) * 120 : 0;
@@ -589,7 +610,11 @@
     if (p.craft) {
       var c = this.craftById(p.craft); if (!c || c.dead) return;
       c.hp -= p.dmg;
-      if (c.hp <= 0) { c.dead = true; c.deadAt = this.t; this.ev.booms.push({ x: c.x, y: c.y, r: 30, t0: this.t, craft: 1 }); this.ev.kills.push({ craft: c.type, side: c.side }); }
+      if (c.hp <= 0) {
+        c.dead = true; c.deadAt = this.t; this.ev.booms.push({ x: c.x, y: c.y, r: 30, t0: this.t, craft: 1 });
+        this.ev.kills.push({ craft: c.type, side: c.side, party: c.party ? c.party.length : 0 });
+        if (c.role === 'shuttle') this.shuttleLost(c);
+      }
       return;
     }
     var sh = this.ships[p.ship]; if (!sh || sh.dead) return;
@@ -680,6 +705,7 @@
     for (i = 0; i < this.craft.length; i++) {
       c = this.craft[i]; if (c.dead) continue;
       var gx, gy, want;
+      if (c.role === 'shuttle') { this.flyShuttle(c, dt); continue; }
       if (c.role === 'fighter') {
         // истребитель: ближайший вражеский малый корабль, иначе прикрывает свой корабль
         var foe = this.nearCraft(c, 9000);
@@ -756,17 +782,204 @@
     for (var i = 0; i < this.craft.length; i++) {
       var o = this.craft[i]; if (o.dead || o.side === c.side || !this.visC[c.side][o.id]) continue;
       var dx = o.x - c.x, dy = o.y - c.y, d = dx * dx + dy * dy;
-      if (o.role === 'bomber') d *= 0.6;
+      if (o.role === 'bomber' || o.role === 'shuttle') d *= 0.6;
       if (d < bd) { bd = d; best = o; }
     }
     return best;
   };
 
+  // ---------------------------------------------------------------- абордаж
+  Battle.prototype.gunRoomFree = function(foe, side, g) {
+    var bd = foe.crew.board, best = 0, bdist = 1e18, rooms = foe.plan.rooms;
+    for (var i = 0; i < rooms.length; i++) {
+      var r = rooms[i]; if (r.t !== 'gun' && r.t !== 'pdgun') continue;
+      var st = bd.rs[r.n]; if (st && (st.cnt[side] || st.held)) continue;
+      var w = this.toWorld(foe, r.cx, r.cy), dx = w[0] - g.x, dy = w[1] - g.y, d = dx * dx + dy * dy;
+      if (d < bdist) { bdist = d; best = r.n; }
+    }
+    return best;
+  };
+  // Огонь по кораблю, где идёт свой абордаж: вести (по орудиям) или прекратить
+  Battle.prototype.setHold = function(n, t, on) {
+    var sh = this.ships[n]; if (!sh) return;
+    sh.hold = sh.hold || {}; sh.hold[t] = !!on;
+  };
+  Battle.prototype.ourBoard = function(side, o) {
+    var bd = o.crew.board;
+    return !!(bd && bd.started && bd.over < 0 && bd.att === side);
+  };
+  // Свободные бойцы десанта на корабле (не в обороне своего корабля)
+  Battle.prototype.troopsOf = function(sh) {
+    var out = [], ag = sh.crew.agents;
+    for (var i = 0; i < ag.length; i++) {
+      var a = ag[i];
+      var st = sh.crew.rooms[a.home];
+      // десант — те, кто в казармах (встал на пост погибшего расчётчика — нужен на посту)
+      if (a.alive && a.team === sh.side && a.grp === 'troops' && a.role === 'reserve' && !(a.job && a.job.kind === 'defend') &&
+          st && (st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory')) out.push(a);
+    }
+    return out;
+  };
+  // Можно ли идти на абордаж: { ok, why, party, cap, reinforce }
+  Battle.prototype.canBoard = function(n, t) {
+    var a = this.ships[n], b = this.ships[t];
+    if (!a || !b || a.dead || b.dead) return { ok: false, why: 'цели нет', party: 0 };
+    if (a.side === b.side) return { ok: false, why: 'это свой корабль', party: 0 };
+    if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью', party: 0 };
+    var avail = this.troopsOf(a).length, cap = boardCap(b);
+    var bd = b.crew.board, on = !!(bd && bd.over < 0 && bd.att === a.side && bd.started);
+    if (bd && bd.over < 0 && bd.started && bd.att !== a.side) return { ok: false, why: 'на борту цели уже идёт чужой абордаж', party: 0 };
+    // в бою на борту уже свои — подкрепление: места в шлюзах за вычетом тех, кто там и в пути
+    var inside = 0;
+    if (on) { var ag = b.crew.agents; for (var i = 0; i < ag.length; i++) if (ag[i].alive && ag[i].team === a.side) inside++; }
+    var party = Math.min(avail, Math.max(0, cap - inside - b.inbound * SHUTTLE_MAX));
+    if (a.boardCd > 0) return { ok: false, why: 'шаттлы вернутся через ' + Math.ceil(a.boardCd) + ' с', party: party, cap: cap };
+    var own = a.crew.board;
+    if (avail < 4) return { ok: false, why: own && own.started && own.over < 0 ? 'десант обороняет свой корабль' : 'на борту нет десанта', party: 0, cap: cap };
+    if (party < 4) return { ok: false, why: 'шлюзы цели заняты своими', party: 0, cap: cap };
+    var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
+    if (gap > BOARD_GAP) return { ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, нужно ближе ' + BOARD_GAP / 1000 + ' км', party: party, cap: cap };
+    if (!on) {
+      var s = this.sector(b, a.x, a.y), cap2 = this.shieldCap(b, s);
+      var down = b.sh[s] <= cap2 * 0.15, stuck = b.eff.engine < 0.3;
+      if (!down && !stuck) return { ok: false, why: 'щит цели с этой стороны ' + Math.round(b.sh[s] / Math.max(1, cap2) * 100) + '% — нужно ниже 15% или стоящие двигатели', party: party, cap: cap };
+    }
+    return { ok: true, why: '', party: party, cap: cap, reinforce: on };
+  };
+  // Шлюз корабля b, ближайший к точке from
+  Battle.prototype.portFor = function(b, from) {
+    var best = null, bd = 1e18, rooms = b.plan.rooms;
+    for (var i = 0; i < rooms.length; i++) {
+      var r = rooms[i]; if (r.t !== 'airlock' || !r.port) continue;
+      var w = this.toWorld(b, r.port[0], r.port[1]), dx = w[0] - from.x, dy = w[1] - from.y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = r; }
+    }
+    return best;
+  };
+  // Высадка: бойцы уходят с корабля в шаттлы (по 12), шаттлы летят к шлюзу цели
+  Battle.prototype.board = function(n, t) {
+    var can = this.canBoard(n, t); if (!can.ok) return can;
+    var a = this.ships[n], b = this.ships[t], lock = this.portFor(b, a);
+    if (!lock) return { ok: false, why: 'у цели нет шлюзов' };
+    var troops = this.troopsOf(a), party = [], i;
+    // два инженера: вскрывать двери вдвое быстрее и ставить заряд у реактора
+    var engs = [], ag = a.crew.agents;
+    for (i = 0; i < ag.length && engs.length < 2; i++) if (ag[i].alive && ag[i].team === a.side && ag[i].grp === 'eng' && !ag[i].job) engs.push(ag[i]);
+    var nEng = Math.min(engs.length, can.party >= 8 ? 2 : 1);
+    var take = troops.slice(0, can.party - nEng).concat(engs.slice(0, nEng));
+    for (i = 0; i < take.length; i++) {
+      var m = take[i], eng = m.grp === 'eng';
+      a.crew.releaseJob(m); a.crew.claimCell(m, null);
+      m.alive = false; m.gone = true;                       // ушёл на шаттл
+      var st = a.crew.rooms[m.home]; if (st) st.assigned--;
+      party.push({ fig: m.fig, wpn: eng ? 'tool' : this.wpnFor(a, m), eng: eng, src: m.id });
+    }
+    // шаттлы стартуют от шлюза атакующего, ближнего к цели
+    var from = this.portFor(a, b), p0 = from ? this.toWorld(a, from.port[0], from.port[1]) : [a.x, a.y];
+    var C = CRAFT.shuttle, k = 0;
+    for (i = 0; i < party.length; i += SHUTTLE_MAX) {
+      var grp = party.slice(i, i + SHUTTLE_MAX), off = (k++ - 1) * 60;
+      this.craft.push({ id: this.nextCraft++, type: 'shuttle', role: 'shuttle', img: null, side: a.side, home: n, tgt: t, lock: lock.n,
+                        port: lock.port, party: grp, x: p0[0] + off, y: p0[1] - off, hd: Math.atan2(b.y - a.y, b.x - a.x), v: C.speed * 0.4,
+                        hp: C.hp, max: C.hp, speed: C.speed, cd: 0, dead: false, len: C.len, born: this.t, faction: a.plan.faction });
+      b.inbound++;
+    }
+    a.boardCd = BOARD_CD;
+    this.ev.boards.push({ n: n, t: t, count: party.length, shuttles: k, reinforce: !!can.reinforce });
+    return { ok: true, party: party.length, shuttles: k };
+  };
+  Battle.prototype.wpnFor = function(sh, m) {
+    var id = sh.figIds && sh.figIds[m.fig];
+    if (id && SWBoard.FIG_WPN[id]) return SWBoard.FIG_WPN[id];
+    return sh.plan.faction === 'cis' ? (m.id % 4 === 3 ? 'b2' : 'b1') : (m.id % 5 === 4 ? 'heavy' : 'rifle');
+  };
+  Battle.prototype.flyShuttle = function(c, dt) {
+    var b = this.ships[c.tgt], home = this.ships[c.home], gx, gy;
+    if (!b || b.dead) {
+      // цели нет — назад; команда возвращается в казармы
+      if (!c.back) { c.back = true; if (b) b.inbound = Math.max(0, b.inbound - 1); c.speed = CRAFT.shuttle.speed; }
+      if (!home || home.dead) { c.dead = true; c.deadAt = this.t; return; }
+      gx = home.x; gy = home.y;
+      if ((gx - c.x) * (gx - c.x) + (gy - c.y) * (gy - c.y) < Math.pow(home.len * 0.4, 2)) { this.shuttleHome(c, home); return; }
+    } else {
+      var w = this.toWorld(b, c.port[0], c.port[1]); gx = w[0]; gy = w[1];
+      var dx = gx - c.x, dy = gy - c.y, d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 70) { this.dock(c, b); return; }
+      // у цели — сбросить ход, чтобы не проскочить
+      c.speed = CRAFT.shuttle.speed * Math.max(0.35, Math.min(1, d / 900));
+    }
+    var want = Math.atan2(gy - c.y, gx - c.x);
+    c.hd = turnTo(c.hd, want, 2.4 * dt);
+    c.v += (c.speed - c.v) * Math.min(1, dt * 1.2);
+    c.x += Math.cos(c.hd) * c.v * dt; c.y += Math.sin(c.hd) * c.v * dt;
+  };
+  Battle.prototype.dock = function(c, b) {
+    c.dead = true; c.docked = true; c.deadAt = this.t;
+    b.inbound = Math.max(0, b.inbound - 1);
+    var bd = b.crew.board;
+    // первый абордаж — новый бой внутри; прошлый отбит — тот же корабль, двери и турели как есть
+    if (!bd) bd = new SWBoard.Board(b.crew, { flagship: b.len >= 1200, figIds: b.figIds, seed: b.n * 131 + Math.floor(this.t) });
+    else if (bd.over >= 0) bd.reopen();
+    if (bd.att !== c.side) return;
+    bd.inFlight = b.inbound;
+    bd.addParty(c.party, c.lock);
+    this.ev.boards.push({ dock: 1, n: c.home, t: b.n, count: c.party.length });
+  };
+  Battle.prototype.shuttleLost = function(c) {
+    var b = this.ships[c.tgt];
+    if (b && !c.back) b.inbound = Math.max(0, b.inbound - 1);
+  };
+  Battle.prototype.shuttleHome = function(c, home) {
+    c.dead = true; c.docked = true; c.deadAt = this.t;
+    var ag = home.crew.agents;
+    for (var i = 0; i < c.party.length; i++) {
+      var m = ag[c.party[i].src]; if (!m || !m.gone) continue;
+      m.alive = true; m.gone = false; m.job = null; var st = home.crew.rooms[m.home]; if (st) st.assigned++;
+      var hb = home.crew.board;
+      if (hb && hb.started && hb.over < 0) hb.toDefend(m);   // свой корабль под абордажем — сразу в оборону
+      else home.crew.sendPost(m);
+    }
+  };
+  // Итоги абордажей и решения ИИ
+  Battle.prototype.boardStep = function(dt) {
+    var i, sh;
+    for (i = 0; i < this.ships.length; i++) {
+      sh = this.ships[i];
+      if (sh.boardCd > 0) sh.boardCd -= dt;
+      var bd = sh.crew.board; if (!bd || sh.dead) continue;
+      bd.inFlight = sh.inbound;
+      if (bd.over === 1) this.capture(sh, bd.att);
+      else if (bd.over === 2) this.kill(sh, 'reactor');
+    }
+    // ИИ: свободный десант — на абордаж, если можно
+    this.boardT -= dt;
+    if (this.boardT > 0) return;
+    this.boardT = 4;
+    for (i = 0; i < this.ships.length; i++) {
+      sh = this.ships[i];
+      if (sh.dead || !this.aiBoard[sh.side]) continue;
+      for (var j = 0; j < this.ships.length; j++) {
+        var o = this.ships[j]; if (o.dead || o.side === sh.side) continue;
+        // ИИ не бросает десант на свежий корабль: цель побита или обездвижена, свой — держится
+        if (!(o.hull < o.hullMax * 0.85 || o.eff.engine < 0.3) || sh.hull < sh.hullMax * 0.35) continue;
+        var can = this.canBoard(i, j);
+        if (can.ok && (can.reinforce || this.R() < 0.35)) { this.board(i, j); break; }
+      }
+    }
+  };
+  // Мостик удержан: корабль — трофей атакующих (выходит из боя целым)
+  Battle.prototype.capture = function(sh, side) {
+    if (sh.dead) return;
+    sh.dead = true; sh.deadAt = this.t; sh.why = 'captured'; sh.captured = side; sh.crit = 0; sh.order = null; sh.v = 0;
+    this.ev.kills.push({ ship: sh.n, side: sh.side, why: 'captured', by: side });
+    for (var i = 0; i < this.craft.length; i++) if (this.craft[i].home === sh.n && this.craft[i].docked) this.craft[i].dead = true;
+  };
+
   // События кадра для отрисовки (забрать и очистить)
   Battle.prototype.takeEvents = function() {
-    var e = this.ev; this.ev = { shots: [], booms: [], shields: [], kills: [] };
+    var e = this.ev; this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
     return e;
   };
 
-  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap };
+  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP };
 });

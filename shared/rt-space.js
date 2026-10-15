@@ -128,7 +128,7 @@
       hullMax: C.hp * 3, hull: C.hp * 3, shMax: C.shield * 1.6, sh: [C.shield * 1.6, C.shield * 1.6, C.shield * 1.6, C.shield * 1.6],
       // генератор щитов рассчитан на огонь корабля своего класса: у малых кораблей
       // восстановление и перекачка слабее, иначе их пушки не продавливают щит вовсе
-      shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
+      shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, foeT: null, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
@@ -240,6 +240,43 @@
       g.tgt = { k: tgt.k, ship: tgt.ship, sys: tgt.sys, room: tgt.room }; g.cur = null; n++;
     }
     return n;
+  };
+  // Атака: корабль берёт врага в цель. Пушки «сама» бьют его первым (кто его не
+  // достаёт — по ближайшему в секторе), пушки с приказом по чужому кораблю
+  // переводятся на него (отсек → корпус), ИИ-курс идёт к нему, щиты и бомбардировщики
+  // — тоже на него. to == null — снять цель (корабль снова выбирает сам).
+  Battle.prototype.attack = function(shipN, to) {
+    var sh = this.ships[shipN]; if (!sh || sh.dead) return 0;
+    if (to == null || to < 0) { sh.foeT = null; return 0; }
+    var foe = this.ships[to];
+    if (!foe || foe.dead || foe.side === sh.side || to !== (to | 0)) return 0;
+    sh.foeT = to;
+    var n = 0;
+    for (var i = 0; i < sh.guns.length; i++) {
+      var g = sh.guns[i], k = g.tgt.k;
+      if (k === 'auto') { g.cur = null; n++; continue; }
+      if ((k === 'hull' || k === 'sys' || k === 'room') && g.tgt.ship !== to) {
+        g.tgt = k === 'sys' ? { k: 'sys', ship: to, sys: g.tgt.sys } : { k: 'hull', ship: to }; g.cur = null; n++;
+      } else if (k === 'hull' || k === 'sys' || k === 'room') n++;
+    }
+    // свои бомбардировщики выбирают цель заново
+    // (кто только что отбомбился и уходит — сменит цель после отхода, не раньше)
+    for (i = 0; i < this.craft.length; i++) { var c = this.craft[i]; if (c.home === sh.n && c.role === 'bomber' && c.tgt !== to) { if (c.mode === 'out') c.retgt = true; else c.tgt = null; } }
+    return n;
+  };
+  // Цель корабля: назначенная игроком (видна — она; ушла в туман — курс к её последней
+  // засечке, пока не дошли: там не нашли — цель потеряна), иначе ближайший враг
+  Battle.prototype.foeOf = function(sh) {
+    if (sh.foeT != null) {
+      var t = this.ships[sh.foeT];
+      if (t && !t.dead && t.side !== sh.side) {
+        if (this.sees(sh.side, t)) return t;
+        var L = this.last[sh.side][t.n];
+        if (L && (L.x - sh.x) * (L.x - sh.x) + (L.y - sh.y) * (L.y - sh.y) > 1500 * 1500) return { x: L.x, y: L.y, ghost: true, n: t.n };
+      }
+      sh.foeT = null;
+    }
+    return this.nearestFoe(sh);
   };
   // Курс: к точке; face — только развернуться носом к точке; x == null — корабль ведёт ИИ;
   // hold — стоять (свой курс без точки)
@@ -385,7 +422,7 @@
         else if (this.t - sh.order.bt > 12 && this.t - (sh.touchT || -99) < 2) { sh.order = null; want = null; wantV = 0; }
       }
     } else if (sh.ai) {
-      var foe = this.nearestFoe(sh);
+      var foe = this.foeOf(sh);
       if (foe) {
         var fx = foe.x - sh.x, fy = foe.y - sh.y, fd = Math.sqrt(fx * fx + fy * fy), brg = Math.atan2(fy, fx);
         var range = mainRange(sh) * 0.7;
@@ -576,6 +613,9 @@
   };
   Battle.prototype.foeInArc = function(sh, g) {
     var best = null, bd = 1e18;
+    // цель корабля — первой, если пушка её достаёт
+    var ft = sh.foeT != null ? this.ships[sh.foeT] : null;
+    if (ft && !ft.dead && ft.side !== sh.side && this.sees(sh.side, ft) && !(sh.hold && sh.hold[ft.n] && this.ourBoard(sh.side, ft)) && this.inArc(sh, g, ft.x, ft.y, ft)) return ft;
     for (var i = 0; i < this.ships.length; i++) {
       var o = this.ships[i]; if (o.dead || o.side === sh.side || !this.sees(sh.side, o)) continue;
       if (sh.hold && sh.hold[o.n] && this.ourBoard(sh.side, o)) continue;   // приказ: по кораблю со своим десантом не стрелять
@@ -877,7 +917,7 @@
           }
         } else {
           var home = this.ships[c.home];
-          var tgtS = home && !home.dead ? this.nearestFoe(home) : null;
+          var tgtS = home && !home.dead ? this.foeOf(home) : null;
           var cx = tgtS && home ? (home.x * 0.4 + tgtS.x * 0.6) : (home ? home.x : c.x), cy = tgtS && home ? (home.y * 0.4 + tgtS.y * 0.6) : (home ? home.y : c.y);
           var orb = this.t * 0.25 + c.id;
           gx = cx + Math.cos(orb) * 1400; gy = cy + Math.sin(orb) * 1400;
@@ -887,7 +927,10 @@
         var ship = c.tgt != null ? this.ships[c.tgt] : null;
         if (!ship || ship.dead) {
           var h = this.ships[c.home] || c, best = null, bd = 1e18;
-          for (var s = 0; s < this.ships.length; s++) {
+          // цель своего корабля — первой (если её видно)
+          var hft = h.foeT != null ? this.ships[h.foeT] : null;
+          if (hft && !hft.dead && hft.side !== c.side && this.sees(c.side, hft)) { best = hft; bd = -1; }
+          for (var s = 0; s < this.ships.length && bd >= 0; s++) {
             var o = this.ships[s]; if (o.dead || o.side === c.side || !this.sees(c.side, o)) continue;
             var ddx = o.x - c.x, ddy = o.y - c.y, dd = ddx * ddx + ddy * ddy;
             if (dd < bd) { bd = dd; best = o; }
@@ -916,7 +959,7 @@
           } else {
             c.outT -= dt;
             gx = c.x + Math.cos(c.hd) * 1000; gy = c.y + Math.sin(c.hd) * 1000;
-            if (c.outT <= 0) { c.mode = 'go'; if (R() < 0.3) c.tgt = null; }
+            if (c.outT <= 0) { c.mode = 'go'; if (R() < 0.3 || c.retgt) { c.tgt = null; c.retgt = false; } }
           }
         }
       }

@@ -29,33 +29,33 @@
   var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
   var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper'];
   var ROLE_N = {}; for (var ri = 0; ri < ROLES.length; ri++) ROLE_N[ROLES[ri]] = ri;
-  var WPNS = ['', 'rifle', 'heavy', 'b1', 'b2', 'bx', 'tool'];
+  var WPNS = ['', 'rifle', 'heavy', 'b1', 'b2', 'bx', 'tool', 'sniper', 'launcher', 'saber'];
   var WPN_N = {}; for (var wi = 0; wi < WPNS.length; wi++) WPN_N[WPNS[wi]] = wi;
   var DOOR_ST = ['open', 'locked', 'broken'], DOOR_N = { open: 0, locked: 1, broken: 2 };
 
   // Бои для пробы: [класс, сторона, x, y]; сторона 0 смотрит носом вправо, 1 — влево
   var SCEN = {
-    vp:  { name: 'Венатор × Провиденс', ships: [['venator', 0, 0, 0], ['providence', 1, 9000, 1400]] },
+    vp:  { name: 'Венатор × Провидение', ships: [['venator', 0, 0, 0], ['providence', 1, 9000, 1400]] },
     am:  { name: 'Акламатор × Щедрый', ships: [['acclamator', 0, 0, 0], ['munificent', 1, 8500, -1000]] },
     '2x2': { name: 'Два на два', ships: [['venator', 0, 0, -1300], ['acclamator', 0, -600, 1500], ['providence', 1, 9500, -900], ['munificent', 1, 9000, 1800]] },
     fl:  { name: 'Мандатор × Покоритель', ships: [['rep_mandator', 0, 0, 0], ['cis_subjugator', 1, 11000, 1500]] },
     lr:  { name: 'Венатор × Лукрехалк', ships: [['venator', 0, 0, 0], ['cis_lucrehulk', 1, 10500, 1200]] },
-    vk:  { name: 'Победа × Провиденс', ships: [['rep_victory', 0, 0, 0], ['providence', 1, 9000, 1400]] },
-    vr:  { name: 'Валиант × Рекусант', ships: [['rep_valiant', 0, 0, 0], ['cis_recusant', 1, 8500, 1200]] },
-    ad:  { name: 'Аркитенс × Даймонд', ships: [['rep_arquitens', 0, 0, 0], ['cis_diamond', 1, 7500, -900]] },
-    th:  { name: 'Тантив × Хардселл', ships: [['tantive', 0, 0, 0], ['hardcell', 1, 6000, 700]] }
+    vk:  { name: 'Победа × Провидение', ships: [['rep_victory', 0, 0, 0], ['providence', 1, 9000, 1400]] },
+    vr:  { name: 'Валиант × Бунтарь', ships: [['rep_valiant', 0, 0, 0], ['cis_recusant', 1, 8500, 1200]] },
+    ad:  { name: 'Аркитенс × Алмаз', ships: [['rep_arquitens', 0, 0, 0], ['cis_diamond', 1, 7500, -900]] },
+    th:  { name: 'Тантив × Хардсел', ships: [['tantive', 0, 0, 0], ['hardcell', 1, 6000, 700]] }
   };
 
   // Корабли для своего боя: [класс, имя, сторона, длина]
   var SHIPS = [['venator', 'Венатор', 0, 1137], ['acclamator', 'Акламатор', 0, 752], ['rep_mandator', 'Мандатор', 0, 1500], ['rep_victory', 'Победа', 0, 900],
                ['rep_valiant', 'Валиант', 0, 700], ['rep_arquitens', 'Аркитенс', 0, 325], ['tantive', 'Тантив', 0, 150],
-               ['providence', 'Провиденс', 1, 1088], ['munificent', 'Щедрый', 1, 825], ['cis_subjugator', 'Покоритель', 1, 1500], ['cis_lucrehulk', 'Лукрехалк', 1, 1200],
-               ['cis_recusant', 'Рекусант', 1, 1187], ['cis_diamond', 'Даймонд', 1, 600], ['hardcell', 'Хардселл', 1, 225]];
+               ['providence', 'Провидение', 1, 1088], ['munificent', 'Щедрый', 1, 825], ['cis_subjugator', 'Покоритель', 1, 1500], ['cis_lucrehulk', 'Лукрехалк', 1, 1200],
+               ['cis_recusant', 'Бунтарь', 1, 1187], ['cis_diamond', 'Алмаз', 1, 600], ['hardcell', 'Хардсел', 1, 225]];
   var SHIP_BY = {}; for (var si = 0; si < SHIPS.length; si++) SHIP_BY[SHIPS[si][0]] = SHIPS[si];
   // Свой бой: { a: [классы Республики], b: [классы КНС], dist } → проверенный или null
   function cfgClean(cfg) {
     if (!cfg || typeof cfg !== 'object') return null;
-    var out = { a: [], b: [], dist: Math.max(3000, Math.min(25000, +cfg.dist || 8000)) };
+    var out = { a: [], b: [], dist: Math.max(3000, Math.min(25000, +cfg.dist || 8000)), fill: cfg.fill === 0 || cfg.fill === 0.5 ? cfg.fill : 1 };
     var side = function(list, sd) {
       if (!Array.isArray(list)) return false;
       for (var i = 0; i < list.length && i < 3; i++) {
@@ -117,6 +117,10 @@
     if (own) {
       o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
       o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
+      // трюм: десант на борту / всего, герои, техника, недобор экипажа
+      var tA = 0, tN = 0, hn = [];
+      for (i = 0; i < sh.crew.agents.length; i++) { var ta = sh.crew.agents[i]; if (ta.team !== sh.side || !ta.utype) continue; tN++; if (ta.alive) { tA++; if (ta.hero && ta.uname) hn.push(ta.uname); } }
+      o.tr = [tA, tN]; o.hn = hn; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
       o.g = [];
       for (i = 0; i < sh.guns.length; i++) {
         g = sh.guns[i];
@@ -155,7 +159,7 @@
     return null;
   };
   // Кадр не дошёл (медленная связь): всё разностное — заново полным
-  Viewer.prototype.lost = function() { this.scFor = -1; this.agPrev = null; this.rmPrev = null; this.craftKnown = {}; };
+  Viewer.prototype.lost = function() { this.scFor = -1; this.agPrev = null; this.rmPrev = null; this.craftKnown = {}; this.whoFor = -1; };
   Viewer.prototype.heldList = function(bd) { var out = []; for (var k in bd.rs) if (bd.rs[k].held) out.push(+k); return out; };
   Viewer.prototype.newMsgs = function(sh, bd) {
     var m = this.mk(sh.n), out = [];
@@ -233,6 +237,11 @@
     }
     if (mode === 'full') this.rmPrev = { n: n, m: rm };
     if (mode === 'lite') { out.lite = 1; return out; }
+    // кто есть кто из бойцов игры (тип, имя героя) — когда список поменялся
+    if (this.whoFor !== n || this.whoN !== c.agents.length) {
+      this.whoFor = n; this.whoN = c.agents.length; out.who = [];
+      for (i = 0; i < c.agents.length; i++) { var wa = c.agents[i]; if (wa.utype) out.who.push([i, wa.utype, wa.uname || '', wa.hero ? 1 : 0]); }
+    }
     // копоть: с первого кадра внутри — вся, дальше — новая (массив подрезается с начала)
     var sc = c.scorch, from = 0;
     if (this.scFor === n && m.scLast) { from = sc.lastIndexOf(m.scLast) + 1; if (from === 0) out.scAll = 1; }
@@ -338,7 +347,7 @@
         if (h) { out.push(this.agentsBin(v, tick)); var hv = this.heavy(v, 'full'); if (hv) out.push(JSON.stringify(hv)); }
       }
       if (tick % HEAVY_EVERY === 0 && this.heavyOk(v)) out.push(this.fireBin(v));
-    } else { this.scFor = -1; this.agPrev = null; this.rmPrev = null; }
+    } else { this.scFor = -1; this.agPrev = null; this.rmPrev = null; this.whoFor = -1; }
     if (tick % HEAVY_EVERY === 0) {
       // свой выбранный корабль: отсеки для панели; цель — целость отсеков для схемы прицела
       var S = this.B.ships;
@@ -390,7 +399,7 @@
     this.B = B; this.side = side; this.send = send; this.SWBoard = SWBoard;
     this.snap = [];            // два последних лёгких кадра: { T, at, ships, craft }
     this.queue = { shots: [], booms: [], shields: [], kills: [], boards: [] };
-    this.craftMeta = {}; this.agFull = -1; this.agVis = null; this.viewN = -1;
+    this.craftMeta = {}; this.agFull = -1; this.agVis = null; this.viewN = -1; this.whoMap = {};
     var self = this;
     B.fog = true;
     // команды — на сервер; на экране — сразу (кадры, что уже в пути, этого не отменят: LOCK)
@@ -489,6 +498,8 @@
       sh.boardCd = o.cd;
       if (mine) { sh.ai = !!o.ai; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
       sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
+      sh.netTroops = o.tr || null; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
+      if (o.veh != null && (!sh.vehicles || sh.vehicles.length !== o.veh)) { sh.vehicles = []; for (var vv = 0; vv < o.veh; vv++) sh.vehicles.push('?'); }
       for (var i = 0; i < o.g.length && i < sh.guns.length; i++) {
         var g = sh.guns[i], a = o.g[i];
         g.aimAt = a[0] >= 0 ? { ship: B.ships[a[0]], room: a[1] } : a[2] ? { craft: this.craftById(a[2]) } : null;
@@ -585,6 +596,7 @@
     // время экипажа: к нему привязаны вспышки и выстрелы внутри
     sh.netCt = m.ct; sh.netCtAt = Date.now();
     if (m.scAll) c.scorch = [];
+    if (m.who) { var wm = this.whoMap[m.n] = {}; m.who.forEach(function(w) { wm[w[0]] = w; }); this.applyWho(sh); }
     (m.scorch || []).forEach(function(q) { c.scorch.push({ x: q[0], y: q[1], r: q[2], a: q[3] }); });
     if (c.scorch.length > 200) c.scorch.splice(0, 50);
     (m.blasts || []).forEach(function(b) { c.ev.blasts.push({ x: b[0], y: b[1], r: b[2], t: b[3] }); });
@@ -670,6 +682,7 @@
         else if (jk === 'heal') a.job.who = this.nearAgent(ag, x + dx, y + dy, i);
       } else a.job = null;
     }
+    this.applyWho(sh);
     // кто в каком отряде — по всем людям (в разностном кадре пришли не все)
     if (bd) {
       bd.vis = vis;
@@ -682,6 +695,11 @@
       if (bd.squads) bd.squads.forEach(function(q) { q.members = sqm[q.id] || []; });
       if (bd.dsq) bd.dsq.forEach(function(q) { q.members = dqm[q.id] || []; });
     }
+  };
+  Mirror.prototype.applyWho = function(sh) {
+    var wm = this.whoMap[sh.n]; if (!wm) return;
+    var ag = sh.crew.agents;
+    for (var k in wm) { var a = ag[k]; if (a) { a.utype = wm[k][1]; a.uname = wm[k][2]; a.hero = !!wm[k][3]; } }
   };
   Mirror.prototype.nearAgent = function(ag, x, y, self) {
     var best = -1, bd = 4;

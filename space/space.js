@@ -75,12 +75,14 @@
     var ids = []; sc.ships.forEach(function(s) { if (ids.indexOf(s[0]) < 0) ids.push(s[0]); });
     return Promise.all(ids.map(loadPlan).concat([loadCraft()]));
   }
+  // s: [класс, сторона, x, y, армия] — армия из игры («Мой флот») или типовая для полигона
   function makeBattle(sc, aiBoard) {
     var B = new SP.Battle({ seed: 1977 + Date.now() % 1000, aiBoard: aiBoard });
     sc.ships.forEach(function(s) {
-      var plan = G.plans[s[0]];
+      var plan = G.plans[s[0]], army = s[4] || window.SWArmy.typicalArmy(s[0]);
       // каждый бой — свежий экипаж (состояние живёт в Crew, план общий и не меняется)
-      B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: F.crewFigs(plan.faction, ALL), figIds: FIG_IDS });
+      B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: F.crewFigs(plan.faction, ALL), figIds: FIG_IDS,
+                  army: army, name: army.name || window.SWArmy.shipName(s[0]) });
     });
     return B;
   }
@@ -1527,6 +1529,22 @@
         F.draw(c, ALL[m.fig], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase });
         c.restore();
       }
+      // герой: световой меч светится, над головой — имя
+      if (m.hero) {
+        var hc = m.team === 0 ? '120,200,255' : '255,70,60', ha = m.aim + 0.35, hl = s * 1.05;
+        c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+        c.strokeStyle = 'rgba(' + hc + ',0.45)'; c.lineWidth = Math.max(2.5, s * 0.28);
+        c.beginPath(); c.moveTo(p[0] + Math.cos(ha) * s * 0.25, p[1] + Math.sin(ha) * s * 0.25); c.lineTo(p[0] + Math.cos(ha) * hl, p[1] + Math.sin(ha) * hl); c.stroke();
+        c.strokeStyle = 'rgba(255,255,255,0.9)'; c.lineWidth = Math.max(1, s * 0.08); c.stroke();
+        c.restore();
+        if (s > 5 && m.uname) {
+          // имя — под фигуркой (над ней метка отряда)
+          c.font = '10px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'top';
+          var hw = c.measureText('★ ' + m.uname).width, hy = p[1] + s * 1.0;
+          c.fillStyle = 'rgba(5,6,10,0.75)'; c.fillRect(p[0] - hw / 2 - 3, hy - 1, hw + 6, 13);
+          c.fillStyle = m.team === 0 ? '#9fd8ff' : '#ff9a88'; c.fillText('★ ' + m.uname, p[0], hy);
+        }
+      }
       // в руках: ящик боеприпасов / огнетушитель; над головой — крест медика, ранение
       if (s > 6) {
         if (m.carry) {
@@ -1863,6 +1881,22 @@
     $('sp-tg-grid').innerHTML = btn.join('');
   }
 
+  // Трюм корабля: десант (живые / сколько было), герои, техника; недобор экипажа
+  function holdLine(sh) {
+    var c = sh.crew, alive = 0, all = 0, heroes = [];
+    if (G.net && sh.netTroops) { alive = sh.netTroops[0]; all = sh.netTroops[1]; heroes = sh.netHeroes || []; }
+    else c.agents.forEach(function(a) {
+      if (a.team !== sh.side || !a.utype) return;
+      all++; if (a.alive) alive++;
+      if (a.hero && a.alive && a.uname) heroes.push(a.uname);
+    });
+    var out = '<div class="sp-hold">' +
+      (all ? 'десант на борту <b>' + alive + '</b><em> из ' + all + '</em>' : '<span class="sp-dim">десанта в трюме нет — бойцов грузят в игре</span>') +
+      (heroes.length ? ' · <b class="hero">★ ' + heroes.map(esc).join(', ') + '</b>' : '') +
+      (sh.vehicles && sh.vehicles.length ? ' · техника <b>' + sh.vehicles.length + '</b>' : '') +
+      (c.crewLost ? ' · <span class="foe">недобор экипажа ' + c.crewLost + '</span>' : '') + '</div>';
+    return out;
+  }
   // горящих клеток: в бою по сети снаружи видна только выборка, число — с сервера
   function burnN(s) { return s.netBurn != null && G.net ? s.netBurn : s.crew.burning.length; }
   function hud() {
@@ -1894,7 +1928,7 @@
     var e = sh.eff;
     var head = '<div class="sp-ship-head"><b>' + esc(sh.name) + '</b><span class="sp-tag">' + Math.max(0, Math.round(sh.hull / sh.hullMax * 100)) + '%</span>' +
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
-      '<span class="r">экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>';
+      '<span class="r">экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>' + holdLine(sh);
     var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Ген', e.shield) + sysCell('Мост', e.bridge) + '</div>';
     // щиты по секторам: касание — усилить сектор (повторное — вернуть экипажу)
@@ -1981,7 +2015,9 @@
     else if (j && j.kind === 'board') what = a.breach >= 0 ? 'вскрывает дверь' : a.tgt >= 0 ? 'ведёт бой' : a.at ? 'держит отсек' : 'идёт к цели';
     else what = a.at ? (sh.crew.alertOn ? 'на посту у пульта' : 'несёт вахту') : 'идёт на пост';
     var where = j && j.room ? rn(j.room) : rn(a.goalRoom || a.home);
-    var kind = ALL[a.fig] ? ALL[a.fig].name : ROLE[a.role];
+    // боец из игры — по типу (и имени героя); экипаж — по фигурке
+    var ut = a.utype && window.SWArmy && window.SWArmy.unit(a.utype);
+    var kind = ut ? (a.uname ? '★ ' + a.uname + ' · ' : '') + ut[0] : ALL[a.fig] ? ALL[a.fig].name : ROLE[a.role];
     var hp = Math.round(a.hp / (a.hpMax || 100) * 100), role = j && j.kind === 'defend' ? 'защитник' : ROLE[a.role] || 'боец';
     if (j && (j.kind === 'defend' || j.kind === 'board')) where = rn(a.goalRoom);
     return '<b>' + esc(kind) + '</b> (' + role + ') · ' + what + ' · ' + esc(where) +
@@ -2142,20 +2178,105 @@
   // Окно перед боем: задачи этапа (каждая ставит ситуацию и сама проверяет
   // итог) и свой бой (корабли сторон, дистанция, враг воюет или стоит мишенью).
   var TASKS = window.SPTasks ? window.SPTasks.LIST : [];
-  var POLY = { tab: 'tasks', side: 0, a: ['venator'], b: ['providence'], dist: 8000, idle: false };
+  var POLY = { tab: 'tasks', side: 0, a: ['venator'], b: ['providence'], dist: 8000, idle: false, fill: 1 };
   function polyLoad() {
-    try { var v = JSON.parse(localStorage.getItem('sp-poly') || 'null'); if (v && NETLIB.cfgClean(v)) { POLY.a = v.a; POLY.b = v.b; POLY.dist = v.dist; POLY.idle = !!v.idle; POLY.side = v.side === 1 ? 1 : 0; } } catch (e) {}
+    try { var v = JSON.parse(localStorage.getItem('sp-poly') || 'null'); if (v && NETLIB.cfgClean(v)) { POLY.a = v.a; POLY.b = v.b; POLY.dist = v.dist; POLY.idle = !!v.idle; POLY.side = v.side === 1 ? 1 : 0; POLY.fill = v.fill === 0 || v.fill === 0.5 ? v.fill : 1; } } catch (e) {}
   }
-  function polySave() { try { localStorage.setItem('sp-poly', JSON.stringify({ a: POLY.a, b: POLY.b, dist: POLY.dist, idle: POLY.idle, side: POLY.side })); } catch (e) {} }
+  function polySave() { try { localStorage.setItem('sp-poly', JSON.stringify({ a: POLY.a, b: POLY.b, dist: POLY.dist, idle: POLY.idle, side: POLY.side, fill: POLY.fill })); } catch (e) {} }
   function doneMap() { try { return JSON.parse(localStorage.getItem('sp-tasks') || '{}') || {}; } catch (e) { return {}; } }
   function markDone(id, v) { var m = doneMap(); if (v === 'ok' || !m[id]) m[id] = v; try { localStorage.setItem('sp-tasks', JSON.stringify(m)); } catch (e) {} }
   // Описание боя в любом виде → { name, ships }
   function scObj(s) {
     if (typeof s === 'string') return SCEN[s];
-    if (s && s.cfg) return { name: NETLIB.cfgName(s.cfg), ships: NETLIB.layout(s.cfg) };
+    if (s && s.cfg) {
+      // свой бой: трюмы — типовые, насколько заполнить задаёт игрок
+      var lay = NETLIB.layout(s.cfg), fill = s.cfg.fill == null ? 1 : s.cfg.fill;
+      lay.forEach(function(x) { x[4] = window.SWArmy.typicalArmy(x[0], fill); });
+      return { name: NETLIB.cfgName(s.cfg), ships: lay };
+    }
     return s;
   }
   function scName(s) { var o = scObj(s); return o ? o.name : ''; }
+  // ---- «Мой флот»: корабли игрока из игры как есть (только чтение, итог боя пока не пишется)
+  var FLEET = { state: 'idle', ships: [], sel: [], foe: ['providence'], err: '', side: 0, uid: null, sys: {} };
+  function sbReady() {
+    if (window.supabase && typeof window.supabase.rpc === 'function') return Promise.resolve();
+    return loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2').then(function() { return loadScript('../js/supabase-client.js'); });
+  }
+  function fleetLoad() {
+    FLEET.state = 'load'; FLEET.err = ''; polyDraw();
+    var sb, uid;
+    sbReady().then(function() { sb = window.supabase; return sb.auth.getSession(); }).then(function(r) {
+      var ses = r && r.data && r.data.session;
+      if (!ses) { FLEET.state = 'login'; polyDraw(); return null; }
+      uid = ses.user.id; FLEET.uid = uid;
+      return Promise.all([
+        sb.from('profiles').select('faction').eq('id', uid).maybeSingle(),
+        sb.from('ships').select('id,ship_type,name,hp,system_id,faction,in_transit,carrier_ship_id,shield_fore,shield_aft,shield_port,shield_starboard,shields_updated_at,trophy,boarding_eff,bonus_hp,bonus_shield,bonus_fore,bonus_damage,upgrades').eq('owner_user_id', uid),
+        sb.from('unit_positions').select('id,unit_type,quantity,hp,bonus_hp,bonus_damage,hero_name,carrier_ship_id').eq('owner_user_id', uid).not('carrier_ship_id', 'is', null),
+        sb.from('ship_types').select('id,name,max_hp,max_shield,shield_regen,damage,capacity'),
+        sb.from('systems').select('id,name'),
+        sb.from('game_settings').select('value').eq('key', 'shield_regen_seconds').maybeSingle()
+      ]);
+    }).then(function(res) {
+      if (!res) return;
+      for (var i = 0; i < res.length; i++) if (res[i].error) throw new Error(res[i].error.message);
+      var prof = res[0].data || {}, ships = res[1].data || [], units = res[2].data || [], types = {}, sys = {};
+      (res[3].data || []).forEach(function(t) { types[t.id] = t; });
+      (res[4].data || []).forEach(function(s) { sys[s.id] = s.name; });
+      FLEET.side = prof.faction === 'cis' ? 1 : 0; FLEET.sys = sys;
+      var regenSec = parseInt(res[5].data && res[5].data.value, 10) || 30;
+      var byShip = {}, hangar = {};
+      units.forEach(function(u) { (byShip[u.carrier_ship_id] = byShip[u.carrier_ship_id] || []).push(u); });
+      ships.forEach(function(s) { if (s.carrier_ship_id) (hangar[s.carrier_ship_id] = hangar[s.carrier_ship_id] || []).push(s); });
+      FLEET.ships = ships.filter(function(s) { return !s.carrier_ship_id && window.SWArmy.SHIP[s.ship_type] && NETLIB.SHIP_BY[s.ship_type]; }).map(function(s) {
+        var a = window.SWArmy.fromGame(s, types[s.ship_type] || null, byShip[s.id] || [], hangar[s.id] || [], { regenSec: regenSec });
+        a.system = s.system_id; a.transit = !!s.in_transit; a.side = window.SWArmy.SHIP[s.ship_type][1];
+        return a;
+      }).sort(function(x, y) { return (x.system || '').localeCompare(y.system || '') || y.roster.length - x.roster.length; });
+      FLEET.sel = FLEET.sel.filter(function(id) { return FLEET.ships.some(function(s) { return s.id === id; }); });
+      FLEET.foe = [FLEET.side === 0 ? 'providence' : 'venator'];
+      FLEET.state = 'ok'; polyDraw();
+    }).catch(function(e) { FLEET.state = 'err'; FLEET.err = e.message || String(e); polyDraw(); });
+  }
+  function fleetDraw() {
+    var box = $('sp-poly-fleet');
+    if (FLEET.state === 'idle') { fleetLoad(); return; }
+    if (FLEET.state === 'load') { box.innerHTML = '<p class="sp-poly-about">Загружаю твои корабли из игры…</p>'; return; }
+    if (FLEET.state === 'login') {
+      box.innerHTML = '<p class="sp-poly-about">Свой флот берётся из игры — нужно войти.</p><div class="sp-btns" style="grid-template-columns:1fr"><a class="sp-btn gold sp-a" href="../auth.html?next=' + encodeURIComponent('space/') + '">Войти в игру</a></div>';
+      return;
+    }
+    if (FLEET.state === 'err') { box.innerHTML = '<div class="sp-net-err">Не загрузилось: ' + esc(FLEET.err) + '</div><div class="sp-btns" style="grid-template-columns:1fr"><button class="sp-btn" data-fleet-reload="1">Ещё раз</button></div>'; return; }
+    if (!FLEET.ships.length) { box.innerHTML = '<p class="sp-poly-about">У тебя пока нет боевых кораблей. Их строят на верфи, а десант грузят в трюм в игре.</p>'; return; }
+    var html = '<p class="sp-poly-about">Корабли как в игре: корпус, щиты, улучшения, десант в трюме поимённо, машины в ангаре. Итог боя в игру пока не пишется. До трёх кораблей.</p>', lastSys = null;
+    FLEET.ships.forEach(function(a) {
+      if (a.system !== lastSys) { lastSys = a.system; html += '<div class="sp-poly-lab">' + esc(FLEET.sys[a.system] || a.system || 'в пути') + '</div>'; }
+      var on = FLEET.sel.indexOf(a.id) >= 0, sm = window.SWArmy.summary(a.roster), heroes = a.roster.filter(function(r) { return r.name; });
+      html += '<button class="sp-fl' + (on ? ' on' : '') + (a.transit ? ' off' : '') + '" data-fship="' + a.id + '">' +
+        '<span class="nm"><b>' + esc(a.name) + '</b><em>' + (a.name !== window.SWArmy.shipName(a.cls) ? esc(window.SWArmy.shipName(a.cls)) + ' · ' : '') + 'корпус ' + Math.round(a.hpK * 100) + '%' + (a.dmgK > 1.001 ? ' · пушки +' + Math.round((a.dmgK - 1) * 100) + '%' : '') + '</em></span>' +
+        '<span class="cg">' + (a.roster.length ? 'десант <b>' + a.roster.length + '</b>' + (heroes.length ? ' · <b class="hero">★ ' + heroes.map(function(h) { return esc(h.name); }).join(', ') + '</b>' : '') : '<i>трюм пуст</i>') +
+        (a.vehicles.length ? ' · техника ' + a.vehicles.length : '') + (a.hangar.length ? ' · машин ' + a.hangar.length : '') + '</span>' +
+        (sm.length ? '<span class="sm">' + sm.slice(0, 4).map(function(x) { return esc(x[0]) + ' ×' + x[1]; }).join(' · ') + '</span>' : '') + '</button>';
+    });
+    var foes = NETLIB.SHIPS.filter(function(x) { return x[2] !== FLEET.side; }).map(function(x) {
+      return '<button class="sp-chip' + (FLEET.foe.indexOf(x[0]) >= 0 ? ' on' : '') + '" data-ffoe="' + x[0] + '">' + esc(window.SWArmy.shipName(x[0])) + '</button>';
+    }).join('');
+    html += '<div class="sp-poly-lab">Противник · ИИ, типовой состав</div><div class="sp-poly-chips">' + foes + '</div>' +
+      '<div class="sp-btns" style="grid-template-columns:1fr"><button class="sp-btn gold" data-fgo="1">' + (FLEET.sel.length ? 'В бой: ' + FLEET.sel.length + ' ' + plural(FLEET.sel.length, 'корабль', 'корабля', 'кораблей') : 'Выбери свои корабли') + '</button></div>';
+    box.innerHTML = html;
+  }
+  function fleetGo() {
+    if (!FLEET.sel.length) { toast('Выбери хотя бы один свой корабль', 'bad'); return; }
+    var mine = FLEET.ships.filter(function(a) { return FLEET.sel.indexOf(a.id) >= 0; });
+    var side = FLEET.side, cfg = { a: [], b: [], dist: POLY.dist };
+    var list = side === 0 ? cfg.a : cfg.b, other = side === 0 ? cfg.b : cfg.a;
+    mine.forEach(function(a) { list.push(a.cls); }); FLEET.foe.forEach(function(id) { other.push(id); });
+    var lay = NETLIB.layout(cfg), k = 0;
+    lay.forEach(function(s) { if (s[1] === side) s[4] = mine[k++]; });
+    polyOpen(false);
+    start({ name: 'Мой флот', ships: lay }, side);
+  }
   function polyOpen(show) {
     var el = $('sp-poly');
     if (!show) { el.hidden = true; return; }
@@ -2167,6 +2288,8 @@
     for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-ptab') === POLY.tab);
     $('sp-poly-tasks').hidden = POLY.tab !== 'tasks';
     $('sp-poly-own').hidden = POLY.tab !== 'own';
+    $('sp-poly-fleet').hidden = POLY.tab !== 'fleet';
+    if (POLY.tab === 'fleet') fleetDraw();
     var dm = doneMap(), ok = 0;
     TASKS.forEach(function(t) { if (dm[t.id] === 'ok') ok++; });
     $('sp-poly-prog').innerHTML = 'пройдено <b>' + ok + '</b> из <b>' + TASKS.length + '</b>';
@@ -2192,7 +2315,14 @@
     $('sp-poly-foe').innerHTML = [[false, 'враг воюет'], [true, 'мишень: стоит, не стреляет']].map(function(d) {
       return '<button class="sp-chip' + (POLY.idle === d[0] ? ' on' : '') + '" data-pidle="' + (d[0] ? 1 : 0) + '">' + d[1] + '</button>';
     }).join('');
-    $('sp-poly-sum').textContent = NETLIB.cfgName(POLY) + ' · ты за ' + SIDE_NAME[POLY.side];
+    $('sp-poly-fill').innerHTML = [[0, 'пустой'], [0.5, 'половина'], [1, 'полный']].map(function(d) {
+      return '<button class="sp-chip' + (POLY.fill === d[0] ? ' on' : '') + '" data-pfill="' + d[0] + '">' + d[1] + '</button>';
+    }).join('');
+    // во что обойдётся десант в игре: типовой состав по трюмам
+    var cs = [0, 0], cn = [0, 0];
+    [POLY.a, POLY.b].forEach(function(list, sd) { list.forEach(function(id) { var r = window.SWArmy.typical(id, POLY.fill); cn[sd] += r.length; cs[sd] += window.SWArmy.cost(r); }); });
+    $('sp-poly-sum').innerHTML = esc(NETLIB.cfgName(POLY)) + ' · ты за ' + SIDE_NAME[POLY.side] +
+      '<br><span class="sp-dim">десант: Республика <b>' + cn[0] + '</b> (' + cs[0].toLocaleString('ru') + ' кр) · КНС <b>' + cn[1] + '</b> (' + cs[1].toLocaleString('ru') + ' кр) — типовой состав, в игре бойцов покупают</span>';
   }
   function polyBind() {
     var el = $('sp-poly');
@@ -2210,6 +2340,20 @@
       }
       if (b.hasAttribute('data-pdist')) { POLY.dist = +b.getAttribute('data-pdist'); polySave(); polyDraw(); return; }
       if (b.hasAttribute('data-pidle')) { POLY.idle = b.getAttribute('data-pidle') === '1'; polySave(); polyDraw(); return; }
+      if (b.hasAttribute('data-pfill')) { POLY.fill = +b.getAttribute('data-pfill'); polySave(); polyDraw(); return; }
+      if (b.hasAttribute('data-fship')) {
+        var fid = b.getAttribute('data-fship'), fk = FLEET.sel.indexOf(fid), fs = FLEET.ships.filter(function(x) { return x.id === fid; })[0];
+        if (fs && fs.transit) { toast('Корабль в пути — в бой нельзя', 'bad'); return; }
+        if (fk >= 0) FLEET.sel.splice(fk, 1); else if (FLEET.sel.length >= 3) toast('Не больше трёх кораблей', 'bad'); else FLEET.sel.push(fid);
+        polyDraw(); return;
+      }
+      if (b.hasAttribute('data-ffoe')) {
+        var ff = b.getAttribute('data-ffoe'), fi = FLEET.foe.indexOf(ff);
+        if (fi >= 0) { if (FLEET.foe.length > 1) FLEET.foe.splice(fi, 1); } else if (FLEET.foe.length >= 3) toast('Не больше трёх врагов', 'bad'); else FLEET.foe.push(ff);
+        polyDraw(); return;
+      }
+      if (b.hasAttribute('data-fgo')) { fleetGo(); return; }
+      if (b.hasAttribute('data-fleet-reload')) { FLEET.state = 'idle'; polyDraw(); return; }
       if (b.id === 'sp-poly-go') { polyOpen(false); start({ cfg: NETLIB.cfgClean(POLY) }, POLY.side, { idle: POLY.idle }); return; }
       if (b.id === 'sp-poly-net') { polyOpen(false); G.side = POLY.side; netOpen(netCode(), 'vp', POLY.side, NETLIB.cfgClean(POLY)); return; }
       if (b.id === 'sp-poly-close') { polyOpen(false); return; }
@@ -2483,5 +2627,5 @@
     if (!m1) { POLY.side = side; polyOpen(true); }
   }
   requestAnimationFrame(frame);
-  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction };
+  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw };
 })();

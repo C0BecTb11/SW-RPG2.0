@@ -137,7 +137,7 @@
       id: 'repel', title: 'Отбей абордаж', goal: 'Выбей весь десант врага с корабля',
       how: '«Оборона ›» → отряды, двери, тревога, продувка. Касание отсека — отряд встаёт там.',
       ships: PAIR, dist: 30000,
-      prep: function(B, x) { idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 30); },
+      prep: function(B, x) { idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 20); },
       look: true,
       check: function(B, x) {
         var b = boardOf(x.me); if (!b) return x.me.dead ? 'fail' : null;
@@ -146,15 +146,16 @@
       }
     },
     {
-      id: 'defuse', title: 'Сними заряд', goal: 'Враг в реакторном зале с зарядом — сними его за 90 с',
+      id: 'defuse', title: 'Сними заряд', goal: 'Враг в реакторном зале с зарядом — сними его до взрыва',
       how: '«Снять заряд» — все отряды в реактор. Выбьют врага — боец снимет заряд за 8 с.',
       ships: PAIR, dist: 30000, look: true,
       prep: function(B, x) {
-        idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 24);
+        idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 16);
         var b = boardOf(x.me); if (!b || !b.reactor) return;
-        pushInto(b, b.reactor, 10);
-        b.charge = { plant: 0, left: 90, defuse: 0, armed: true };
-        b.msg('Заряд у реактора! 90 с до взрыва', b.att, 'bad');
+        pushInto(b, b.reactor, 8);
+        // на учении фитиль длиннее: защитникам из казарм нужно добежать до реактора
+        b.charge = { plant: 0, left: 180, defuse: 0, armed: true };
+        b.msg('Заряд у реактора! 180 с до взрыва', b.att, 'bad');
       },
       check: function(B, x) {
         var b = boardOf(x.me); if (!b) return x.me.dead ? 'fail' : null;
@@ -168,9 +169,9 @@
       how: '«На мостик» — все отряды туда. Мостик снова наш, когда в нём 6 с только наши.',
       ships: PAIR, dist: 30000, look: true,
       prep: function(B, x) {
-        idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 24);
+        idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 16);
         var b = boardOf(x.me); if (!b || !b.bridge) return;
-        pushInto(b, b.bridge, 14); b.bridgeT = 30;
+        pushInto(b, b.bridge, 10); b.bridgeT = 30;
       },
       check: function(B, x) {
         var b = boardOf(x.me); if (!b) return null;

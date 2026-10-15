@@ -508,3 +508,25 @@ body.defview .sp-bottom { border-left-color: #4a90d9; }
 .sp-task-body em:empty { display: none; }
 body.task .sp-top .sp-scen { display: none; }
 body.inside .sp-taskrow .sp-task-body em { display: none; }
+
+/* ---------- трюм корабля ---------- */
+.sp-hold { margin-top: 3px; font-size: 10px; color: #8fa8c4; line-height: 1.4; }
+.sp-hold b { color: #e8d9a8; font-weight: normal; }
+.sp-hold em { font-style: normal; color: #55606c; }
+.sp-hold .hero { color: #9fd8ff; }
+body.cisside .sp-hold .hero { color: #ff9a88; }
+.sp-a { display: block; text-align: center; text-decoration: none; }
+.sp-poly-sum .sp-dim { font-size: 9.5px; }
+.sp-fl {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; margin-bottom: 5px; padding: 7px 9px; text-align: left; cursor: pointer;
+  border: 1px solid #1c2530; border-radius: 8px; background: rgba(5,6,10,0.6); color: #cfd8dc; font-family: inherit;
+}
+.sp-fl.on { border-color: rgba(217,169,64,0.7); background: rgba(217,169,64,0.08); }
+.sp-fl.off { opacity: 0.45; }
+.sp-fl .nm { display: flex; align-items: baseline; gap: 8px; }
+.sp-fl .nm b { font-weight: normal; font-size: 11.5px; color: #e8eef2; }
+.sp-fl .nm em, .sp-fl .sm { font-style: normal; font-size: 9.5px; color: #55606c; }
+.sp-fl .cg { font-size: 10px; color: #8fa8c4; }
+.sp-fl .cg b { color: #e8d9a8; font-weight: normal; }
+.sp-fl .cg i { font-style: normal; color: #55606c; }
+.sp-fl .hero { color: #9fd8ff !important; }

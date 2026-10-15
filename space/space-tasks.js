@@ -152,7 +152,7 @@
       prep: function(B, x) {
         idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 16);
         var b = boardOf(x.me); if (!b || !b.reactor) return;
-        pushInto(b, b.reactor, 8);
+        pushInto(b, b.reactor, 8); b.prep = 0;           // учение начинается посреди штурма
         // на учении фитиль длиннее: защитникам из казарм нужно добежать до реактора
         b.charge = { plant: 0, left: 180, defuse: 0, armed: true };
         b.msg('Заряд у реактора! 180 с до взрыва', b.att, 'bad');
@@ -171,7 +171,7 @@
       prep: function(B, x) {
         idle(x.foe); x.me.ai = false; B.forceBoard(x.foe.n, x.me.n, 16);
         var b = boardOf(x.me); if (!b || !b.bridge) return;
-        pushInto(b, b.bridge, 10); b.bridgeT = 30;
+        pushInto(b, b.bridge, 10); b.bridgeT = 30; b.prep = 0;
       },
       check: function(B, x) {
         var b = boardOf(x.me); if (!b) return null;

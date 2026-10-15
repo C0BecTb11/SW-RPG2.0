@@ -242,7 +242,7 @@
         var cs = G.B.ships[k.ship];
         toast(cs.name + ' захвачен' + (k.by === G.side ? ' — трофей наш!' : ' врагом'), k.by === G.side ? 'gold' : 'bad');
         if (k.ship === G.foe) { G.aim = false; G.foe = -1; }
-        if (k.ship === G.sel) { var nx = G.B.ships.filter(function(x) { return !x.dead && x.side === G.side; })[0]; if (nx) { if (G.mode === 'inside') setMode('space'); selectShip(nx.n); } }
+        if (k.ship === G.sel) { var nx = G.B.ships.filter(function(x) { return !x.dead && ctl(x); })[0]; if (nx) { if (G.mode === 'inside') setMode('space'); selectShip(nx.n); } }
         buildTargets(); hud();
         continue;
       }
@@ -254,7 +254,7 @@
         if (k.ship === G.foe) { G.aim = false; G.foe = -1; }
         if (k.ship === G.sel) {
           // свой погиб — управление переходит к живому кораблю флота
-          var next = G.B.ships.filter(function(x) { return !x.dead && x.side === G.side; })[0];
+          var next = G.B.ships.filter(function(x) { return !x.dead && ctl(x); })[0];
           if (next) { if (G.mode === 'inside') setMode('space'); selectShip(next.n); }
         }
         buildTargets(); hud();
@@ -273,6 +273,15 @@
   var TEAMC = { 0: '111,184,255', 1: '255,110,90' };
   var BD = window.SWBoard;
   function boardOf(n) { var s = G.B && G.B.ships[n]; var b = s && s.crew.board; return b && b.started ? b : null; }
+  // Туман: про чужой корабль знаем только видимое снаружи; полностью — свой или с нашим десантом на борту
+  // Корабль под моей командой (в бою с союзниками — только мои; их корабли ведут они)
+  function ctl(s) { return s.side === G.side && s.ctl !== false; }
+  function ownerNick(s) { var o = G.net && G.net.own; return o && o[s.n] ? o[s.n] : ''; }
+  function intel(s) { if (s.side === G.side) return true; var b = boardOf(s.n); return !!(b && b.over < 0 && b.att === G.side); }
+  // корпус и щиты чужого — грубо (корпус шагом 5%, щиты четвертями), как их видно по вспышкам и пробоинам
+  function hullK(s) { var k = Math.max(0, s.hull / s.hullMax); return intel(s) ? k : Math.ceil(k * 20 - 0.02) / 20; }
+  function shK(s, q) { var k = Math.max(0, s.sh[q] / s.shMax); return intel(s) ? k : Math.ceil(k * 4 - 0.04) / 4; }
+  function shAll(s) { return (shK(s, 0) + shK(s, 1) + shK(s, 2) + shK(s, 3)) / 4; }
   function liveBoards() {
     var out = [];
     G.B.ships.forEach(function(s) {
@@ -411,7 +420,10 @@
       '<div class="sp-bd-count">наши <b>' + s.att + '</b><span>·</span>защитники <b class="foe">' + s.def + '</b><span>·</span>экипаж <b>' + s.crew + '</b>' +
       (sh.inbound ? '<span>·</span>в полёте <b>' + sh.inbound + '</b>' : '') + '</div>';
     var goal, pct;
-    if (b.charge) {
+    if (b.prep > 0) {
+      goal = 'Подготовка к штурму: <b>' + Math.ceil(b.prep) + ' с</b>. Выбери отряд и коснись отсека на схеме — пойдут туда, как вскроют шлюз. Без приказа — к мостику сами';
+      pct = 1 - b.prep / BD.PREP;
+    } else if (b.charge) {
       goal = b.charge.armed ? 'Заряд у реактора: взрыв через <b>' + Math.ceil(b.charge.left) + ' с</b>' + (b.charge.defuse > 0 ? ' · <b class="foe">снимают!</b>' : '') : 'Инженер ставит заряд у реактора…';
       pct = b.charge.armed ? 1 - b.charge.left / BD.FUSE : 1 - b.charge.plant / BD.PLANT;
     } else {
@@ -427,7 +439,7 @@
       s.sq.map(function(q) {
         var r = sh.plan.roomByN[q.room];
         return '<button class="sp-chip' + (G.bsel[q.id] ? ' on' : '') + (q.n ? '' : ' dead') + '" data-bsq="' + q.id + '"><b>' + q.id + '</b> · ' + q.n +
-          (r && q.n ? ' <em>' + esc(shortRoom(r.name)) + (q.auto ? '' : ' ✓') + '</em>' : '') + '</button>';
+          (r && q.n ? ' <em>' + (q.w ? 'ждёт приказа ' + q.w + ' с' : esc(shortRoom(r.name)) + (q.auto ? '' : ' ✓')) + '</em>' : '') + '</button>';
       }).join('') + '</div>';
     var grid = '<div class="sp-bd-row sp-bd-objs">' + objectives(sh, b).map(function(o) {
       return '<button class="sp-bd-obj ' + o.state + '" data-bo="' + o.n + '"><b>' + o.name + '</b><span>' + esc(o.sub) + '</span></button>';
@@ -453,7 +465,10 @@
       '<div class="sp-bd-count">враг <b class="foe">' + s.att + '</b><span>·</span>наши бойцы <b>' + s.def + '</b><span>·</span>экипаж <b>' + s.crew + '</b>' +
       (sh.inbound ? '<span>·</span>шаттлов в пути <b class="foe">' + sh.inbound + '</b>' : '') + '</div>';
     var goal, pct, br = b.bridge && b.rs[b.bridge], bad = true;
-    if (b.charge && b.charge.armed) {
+    if (b.prep > 0) {
+      goal = 'Враг в шлюзе. До штурма <b class="foe">' + Math.ceil(b.prep) + ' с</b>: запри и завари двери на пути к мостику и реактору, поставь отряды';
+      pct = 1 - b.prep / BD.PREP;
+    } else if (b.charge && b.charge.armed) {
       goal = 'Заряд у реактора: взрыв через <b class="foe">' + Math.ceil(b.charge.left) + ' с</b>. ' + (b.charge.defuse > 0 ? 'Снимаем: <b>' + Math.floor(b.charge.defuse) + ' / ' + BD.DEFUSE + ' с</b>' : 'Выбей врага из реакторного зала — боец снимет заряд за ' + BD.DEFUSE + ' с');
       pct = b.charge.defuse > 0 ? b.charge.defuse / BD.DEFUSE : 1 - b.charge.left / BD.FUSE;
     } else if (b.charge) {
@@ -999,10 +1014,9 @@
       if (sh.len * s < 140) {
         c.font = '10px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'top';
         c.fillStyle = sh.side === G.side ? '#cfe3ff' : '#ffd0cc';
-        c.fillText(sh.name + (sh.crit ? ' ⚠' : ''), lab[0], lab[1] + 4);
-        bar(c, lab[0] - 22, lab[1] + 17, 44, sh.hull / sh.hullMax, '#5fd968');
-        var shs = (sh.sh[0] + sh.sh[1] + sh.sh[2] + sh.sh[3]) / (4 * sh.shMax);
-        bar(c, lab[0] - 22, lab[1] + 21, 44, shs, '#6fb8ff');
+        c.fillText(sh.name + (sh.crit && intel(sh) ? ' ⚠' : ''), lab[0], lab[1] + 4);
+        bar(c, lab[0] - 22, lab[1] + 17, 44, hullK(sh), '#5fd968');
+        bar(c, lab[0] - 22, lab[1] + 21, 44, shAll(sh), '#6fb8ff');
       }
     }
   }
@@ -1090,7 +1104,7 @@
       c.fillStyle = sys ? 'rgba(217,169,64,0.10)' : 'rgba(143,168,196,0.06)';
       c.strokeStyle = sys ? 'rgba(217,169,64,0.55)' : 'rgba(143,168,196,0.25)'; c.lineWidth = 1;
       c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var k = 1; k < 4; k++) c.lineTo(pts[k][0], pts[k][1]); c.closePath(); c.fill(); c.stroke();
-      if (st && st.integ < 99) {
+      if (st && st.integ < 99 && intel(sh)) {                 // целость отсеков врага не видна (только чертёж)
         var cx = (pts[0][0] + pts[2][0]) / 2, cy = (pts[0][1] + pts[2][1]) / 2;
         c.fillStyle = st.integ < 30 ? '#ff8a5c' : '#e8d9a8'; c.font = '9px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
         if (r.w * sh.plan.cellM * s > 26) c.fillText(Math.round(st.integ) + '%', cx, cy);
@@ -1151,7 +1165,7 @@
     for (var i = 0; i < list.length; i++) {
       var e = list[i], sh = B.ships[e.ship]; if (!sh || sh.dead) continue;
       var k = (t - e.t0) / 0.7; if (k < 0 || k > 1) continue;
-      shieldArc(c, sh, e.s, (1 - k) * (e.down ? 1 : 0.8), e.down ? '#ff8a5c' : '#9fd8ff', sh.sh[e.s] / sh.shMax);
+      shieldArc(c, sh, e.s, (1 - k) * (e.down ? 1 : 0.8), e.down ? '#ff8a5c' : '#9fd8ff', shK(sh, e.s));
       // вспышка в точке удара о щит
       var p = toS(e.x, e.y);
       c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = (1 - k) * 0.8;
@@ -1160,7 +1174,7 @@
     // постоянные щиты выбранного и цели — тонко, по силе сектора
     [G.sel, G.foe].forEach(function(n) {
       var sh = n >= 0 && B.ships[n]; if (!sh || sh.dead || sh.len * s < 40) return;
-      for (var q = 0; q < 4; q++) shieldArc(c, sh, q, 0.25, sh.sh[q] > 0 ? '#6fb8ff' : '#ff8a5c', sh.sh[q] / sh.shMax);
+      for (var q = 0; q < 4; q++) shieldArc(c, sh, q, 0.25, sh.sh[q] > 0 ? '#6fb8ff' : '#ff8a5c', shK(sh, q));
     });
   }
   function shieldArc(c, sh, sec, alpha, col, strength) {
@@ -1784,7 +1798,7 @@
       }
     }
     if (hit) {
-      if (hit.side === G.side) { selectShip(hit.n); }
+      if (hit.side === G.side) { if (ctl(hit)) selectShip(hit.n); else toast(hit.name + ': корабль союзника' + (ownerNick(hit) ? ' ' + ownerNick(hit) : '') + ' — ведёт он', 'gold'); }
       else if (G.aim) { G.foe = hit.n; buildTargets(); hud(); toast('Цель: ' + hit.name + ' — коснись отсека', 'gold'); }   // выбор отсека — только смена корабля
       else attackTap(hit);
       return;
@@ -1803,7 +1817,7 @@
   function attackTap(foe) {
     var B = G.B, me = B.ships[G.sel];
     G.foe = foe.n; buildTargets();
-    if (!me || me.dead || me.side !== G.side) { hud(); toast('Цель: ' + foe.name, 'gold'); return; }
+    if (!me || me.dead || !ctl(me)) { hud(); toast('Цель: ' + foe.name, 'gold'); return; }
     var n = B.attack(G.sel, foe.n);
     toast(me.name + ' атакует: ' + foe.name + (n ? ' · ' + n + ' ' + plural(n, 'орудие', 'орудия', 'орудий') : ''), 'gold');
     if (!G.taughtAtk) { G.taughtAtk = true; setTimeout(function() { toast('Пушки «сама» бьют цель, когда достают; «Курс: сам» ведёт к ней. снять цель — ✕ в панели', 'gold'); }, 1400); }
@@ -1853,7 +1867,10 @@
   function plural(n, a, b, c) { var m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 10 || h >= 20) ? b : c; }
   function tgtLabel(t, own) {
     var B = G.B, s = t.ship != null ? B.ships[t.ship] : null;
-    if (t.k === 'auto') { var ft = own && own.foeT != null ? B.ships[own.foeT] : null; return ft && !ft.dead ? 'сама · ' + ft.name : 'сама'; }
+    if (t.k === 'auto') {
+      var ft = own && own.foeT != null ? B.ships[own.foeT] : null;
+      return ft && !ft.dead ? 'сама · ' + ft.name : 'сама';
+    }
     if (t.k === 'fighters') return 'истребители';
     if (t.k === 'shuttles') return 'шаттлы абордажа';
     if (!s) return '—';
@@ -1914,10 +1931,12 @@
 
   // Трюм корабля: десант (живые / сколько было), герои, техника; недобор экипажа
   function holdLine(sh) {
-    var c = sh.crew, alive = 0, all = 0, heroes = [];
-    if (G.net && sh.netTroops) { alive = sh.netTroops[0]; all = sh.netTroops[1]; heroes = sh.netHeroes || []; }
+    var c = sh.crew, alive = 0, all = 0, heroes = [], gA = 0, gN = 0;
+    if (G.net && sh.netTroops) { alive = sh.netTroops[0]; all = sh.netTroops[1]; heroes = sh.netHeroes || []; if (sh.netGuards) { gA = sh.netGuards[0]; gN = sh.netGuards[1]; } }
     else c.agents.forEach(function(a) {
-      if (a.team !== sh.side || !a.utype) return;
+      if (a.team !== sh.side) return;
+      if (a.role === 'guard') { gN++; if (a.alive) gA++; return; }
+      if (!a.utype) return;
       all++; if (a.alive) alive++;
       if (a.hero && a.alive && a.uname) heroes.push(a.uname);
     });
@@ -1925,6 +1944,7 @@
       (all ? 'десант на борту <b>' + alive + '</b><em> из ' + all + '</em>' : '<span class="sp-dim">десанта в трюме нет — бойцов грузят в игре</span>') +
       (heroes.length ? ' · <b class="hero">★ ' + heroes.map(esc).join(', ') + '</b>' : '') +
       (sh.vehicles && sh.vehicles.length ? ' · техника <b>' + sh.vehicles.length + '</b>' : '') +
+      (gN ? ' · охрана <b>' + gA + '</b>' + (gA < gN ? '<em> из ' + gN + '</em>' : '') : '') +
       (c.crewLost ? ' · <span class="foe">недобор экипажа ' + c.crewLost + '</span>' : '') + '</div>';
     return out;
   }
@@ -1946,15 +1966,20 @@
       var el = h.parentNode.parentNode, lost = !seen(s);
       el.classList.toggle('lost', lost);
       if (lost) { $('sp-u-w' + s.n).textContent = 'нет контакта'; return; }   // полоски застывают на последнем, что видели
-      h.style.width = Math.max(0, s.hull / s.hullMax * 100) + '%';
-      $('sp-u-s' + s.n).style.width = ((s.sh[0] + s.sh[1] + s.sh[2] + s.sh[3]) / (4 * s.shMax) * 100) + '%';
+      h.style.width = hullK(s) * 100 + '%';
+      $('sp-u-s' + s.n).style.width = shAll(s) * 100 + '%';
       var ob = boardOf(s.n);
-      $('sp-u-w' + s.n).textContent = s.dead ? (s.why === 'captured' ? (s.captured === G.side ? '⚑ трофей' : '⚑ захвачен') : '✗') : ob && ob.over < 0 ? '⚔ абордаж' : s.crit ? '⚠ ' + Math.ceil(s.crit) : burnN(s) ? '🔥' : '';
+      $('sp-u-w' + s.n).textContent = s.dead ? (s.why === 'captured' ? (s.captured === G.side ? '⚑ трофей' : '⚑ захвачен') : '✗') : ob && ob.over < 0 ? '⚔ абордаж' : s.crit && intel(s) ? '⚠ ' + Math.ceil(s.crit) : burnN(s) ? '🔥' : s.side === G.side && !ctl(s) ? 'союзник' : '';
       el.classList.toggle('on', s.n === G.sel || s.n === G.foe);
       el.classList.toggle('dead', s.dead);
+      el.classList.toggle('ally', !s.dead && s.side === G.side && !ctl(s));
     });
     var t = B.t | 0; $('sp-time').textContent = Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2);
     // выбранный корабль
+    // бой с союзниками: выбран не мой корабль (раздали после входа) — к своему
+    if (G.net && B.ships[G.sel] && B.ships[G.sel].side === G.side && !ctl(B.ships[G.sel])) {
+      var mineS = B.ships.filter(function(x) { return !x.dead && ctl(x); })[0]; if (mineS) selectShip(mineS.n);
+    }
     var sh = B.ships[G.sel], box = $('sp-ship');
     var bv = attView(), dvw = defView();
     document.body.classList.toggle('boardview', !!(bv || dvw));
@@ -1963,7 +1988,14 @@
     if (!dvw && G.dmode) G.dmode = null;
     if (bv) { box.innerHTML = boardPanel(B.ships[G.view], bv); $('sp-view').textContent = 'Весь корабль'; return; }
     if (dvw) { box.innerHTML = defPanel(B.ships[G.view], dvw); $('sp-view').textContent = 'Весь корабль'; return; }
-    if (!sh) { box.innerHTML = '<div class="sp-hint">Твоих кораблей не осталось.</div>'; return; }
+    if (!sh) { document.body.classList.remove('spectate'); box.innerHTML = '<div class="sp-hint">Твоих кораблей не осталось.</div>'; return; }
+    if (!ctl(sh)) {
+      // бой с союзниками, своих кораблей нет: смотреть можно, командовать — нет
+      box.innerHTML = '<div class="sp-hint">Свободных кораблей на твоей стороне нет — ты смотришь бой. ' + esc(sh.name) + ' ведёт ' + (ownerNick(sh) ? esc(ownerNick(sh)) : 'союзник') + '.</div>';
+      document.body.classList.add('spectate'); $('sp-bottom').classList.remove('sp-tg-open');
+      return;
+    }
+    document.body.classList.remove('spectate');
     var e = sh.eff;
     var head = '<div class="sp-ship-head"><b>' + esc(sh.name) + '</b><span class="sp-tag">' + Math.max(0, Math.round(sh.hull / sh.hullMax * 100)) + '%</span>' +
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
@@ -2010,7 +2042,7 @@
     sh.guns.forEach(function(g, i) {
       var row = document.querySelector('.sp-gun[data-gun="' + i + '"]'); if (!row) return;
       row.classList.toggle('on', !!G.gsel[i]); if (G.gsel[i]) any = true;
-      $('sp-g-t' + i).textContent = tgtLabel(g.tgt, sh);
+      $('sp-g-t' + i).textContent = g.tgt.k === 'auto' && g.keep ? 'ждёт врага · ' + (g.keep.k === 'sys' && SP.SYS_BY[g.keep.sys] ? SP.SYS_BY[g.keep.sys].name.toLowerCase() : 'корпус') : tgtLabel(g.tgt, sh);
       var st = $('sp-g-s' + i), room = g.room && sh.crew.rooms[g.room], txt, cls;
       if (sh.dead) { txt = '—'; cls = 'idle'; }
       else if (g.out) { txt = room && room.stun > 0 ? 'ионный сбой' : room && room.staffed === 0 ? 'нет расчёта' : 'разбита'; cls = 'bad'; }
@@ -2035,11 +2067,12 @@
       b.classList.toggle('cur', !!cur);
     }
     var mv = $('sp-move');
-    mv.textContent = sh.ai ? 'Курс: сам' : 'Курс: твой';
+    mv.textContent = sh.guard ? 'Курс: держит' : sh.ai ? 'Курс: сам' : 'Курс: твой';
+    mv.title = sh.guard ? 'Пока тебя не было, корабль держал позицию: стоит и бьёт тех, кто подошёл. Коснись — снова твой курс' : '';
     mv.classList.toggle('on', !sh.ai);
     $('sp-view').textContent = G.mode === 'inside' ? 'Весь корабль' : 'Обзор';
   }
-  var ROLE = { post: 'расчёт поста', fixer: 'ремонтник', medic: 'медик', reserve: 'резерв', boarder: 'абордажник', sapper: 'сапёр абордажа' };
+  var ROLE = { post: 'расчёт поста', fixer: 'ремонтник', medic: 'медик', reserve: 'резерв', boarder: 'абордажник', sapper: 'сапёр абордажа', guard: 'охрана корабля' };
   function whoLine(sh, a) {
     var rn = function(n) { var r = sh.plan.roomByN[n]; return r ? r.name : 'коридор'; };
     if (!a.alive) return '<b>Погиб</b> · ' + (ROLE[a.role] || 'боец');
@@ -2086,7 +2119,7 @@
     $('sp-fleet').addEventListener('click', function(e) {
       var b = e.target.closest('[data-ship]'); if (!b || !G.B) return;
       var s = G.B.ships[+b.getAttribute('data-ship')]; if (!s || s.dead) return;
-      if (s.side === G.side) selectShip(s.n);
+      if (s.side === G.side) { if (ctl(s)) selectShip(s.n); else toast(s.name + ': корабль союзника' + (ownerNick(s) ? ' ' + ownerNick(s) : '') + ' — ведёт он', 'gold'); }
       else {
         G.foe = s.n; buildTargets();
         var sp = shownPos(s);
@@ -2165,8 +2198,9 @@
       hud();
     });
     $('sp-move').onclick = function() {
-      var sh = G.B && G.B.ships[G.sel]; if (!sh || sh.dead) return;
-      if (!sh.ai) { G.B.order(G.sel, null); toast('Корабль ведёт сам: дистанция и борт к врагу', 'gold'); }
+      var sh = G.B && G.B.ships[G.sel]; if (!sh || sh.dead || !ctl(sh)) return;
+      if (sh.guard) { G.B.order(G.sel, 'hold'); toast('Курс снова твой: коснись космоса — ход, удержи — разворот', 'gold'); }
+      else if (!sh.ai) { G.B.order(G.sel, null); toast('Корабль ведёт сам: дистанция и борт к врагу', 'gold'); }
       else { G.B.order(G.sel, 'hold'); toast('Курс твой: коснись космоса — ход, удержи — разворот', 'gold'); }
       hud();
     };
@@ -2467,6 +2501,7 @@
   var NET_TRY = [1500, 3000, 6000, 10000, 15000];
   function netParam(k) { var m = location.search.match(new RegExp('[?&]' + k + '=([^&]+)')); return m ? decodeURIComponent(m[1]) : ''; }
   // замеры на своём сервере (RT_DEV): ?srv=http://127.0.0.1:8080&dev=1 — вход без базы
+  var NET_AS = /^[a-z0-9]{1,12}$/.test(netParam('as')) ? netParam('as') : '';   // замеры с союзниками: отдельный игрок
   var NET_DEV = netParam('dev') === '1' && /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(netParam('srv')) ? netParam('srv') : '';
   function netLink(code, scen, cfg) { return location.origin + location.pathname + '?room=' + code + (cfg ? '' : '&scen=' + scen); }
   function netCode() {
@@ -2483,7 +2518,7 @@
   }
   // Вход и адрес сервера: сессия игры (Supabase) и rt_server_status
   function netAuth() {
-    if (NET_DEV) return Promise.resolve({ url: NET_DEV, token: 'dev' });
+    if (NET_DEV) return Promise.resolve({ url: NET_DEV, token: NET_AS ? 'dev:' + NET_AS : 'dev' });
     var sb = window.supabase && typeof window.supabase.rpc === 'function' ? Promise.resolve() :
       loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2').then(function() { return loadScript('../js/supabase-client.js'); });
     return sb.then(function() { return window.supabase.auth.getSession(); }).then(function(r) {
@@ -2521,7 +2556,7 @@
       if (typeof e.data !== 'string') { if (N.ready) N.M.onBin(e.data); else N.q.push(e.data); return; }
       var m; try { m = JSON.parse(e.data); } catch (er) { return; }
       if (m.t === 'hello') { N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return; }
-      if (m.t === 'roster') { N.seats = m.seats; netRow(); return; }
+      if (m.t === 'roster') { N.seats = m.seats; N.own = m.own || null; netRow(); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }
       if (m.t === 'note') { toast(m.msg, 'gold'); return; }
@@ -2598,8 +2633,11 @@
     if (N.fail) foe = esc(N.fail);
     else if (!N.ready) foe = 'подключаюсь…';
     else {
-      var s = N.seats && N.seats[1 - N.side];
-      foe = !s ? 'соперник: —' : s.on ? 'соперник в бою' + (s.nick ? ' · <b>' + esc(s.nick) + '</b>' : '') : s.away ? 'соперник вышел · ждём' : 'за соперника ИИ';
+      // соперники (и союзники, если есть): кто в бою, кто отошёл
+      var who = function(list) { return list.map(function(o) { return (o.nick ? '<b>' + esc(o.nick) + '</b>' : 'игрок') + (o.on ? '' : o.away ? ' <em>вышел</em>' : ' <em>нет</em>'); }).join(', '); };
+      var fl = N.seats && N.seats[1 - N.side] || [], al = (N.seats && N.seats[N.side] || []).filter(function(o) { return !o.me; });
+      foe = !fl.length ? 'за соперника ИИ' : 'соперник: ' + who(fl);
+      if (al.length) foe += ' · союзник: ' + who(al);
     }
     $('sp-net-dot').className = 'sp-net-dot ' + st;
     $('sp-net-code').textContent = N.code.toUpperCase();

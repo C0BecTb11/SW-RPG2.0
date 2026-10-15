@@ -32,6 +32,7 @@
   var WALK = 1.25, RUN = 3;        // клеток в секунду (2,5 и 6 м/с)
 
   // Сколько людей на посту каждого типа отсека
+  var STUN_IMM = 6;          // секунд «перезапуска» после ионного сбоя: новый сбой не берётся
   var POST = { bridge: 6, flight: 5, cic: 5, gun: 3, pdgun: 2, reactor: 3, shield: 2, engine: 4, hyper: 2, hangar: 6,
                quarters: 3, troops: 6, mess: 4, medbay: 3, armory: 2, storage: 1, hold: 1, workshop: 3, airlock: 1,
                dock: 2, comms: 3, observe: 2, vehicle: 3, droids: 2, power: 2, pumps: 2 };
@@ -246,6 +247,24 @@
         bay.assigned++;
       }
     }
+    // штатная охрана (из экипажа, не покупается): в арсенал и казармы, нет их — в кубрики;
+    // на абордаж не ходит, пожары и ремонт не её дело — обороняет корабль
+    if (opts.guards && opts.guards.n > 0) {
+      var gk = opts.guards.kit, gIds = opts.figIds || null, gFig = gk && gIds ? gIds.indexOf(gk.fig) : -1;
+      var posts = this.roomList.filter(function(q) { return (q.t === 'armory' || q.t === 'troops' || q.t === 'droids') && q.anchor; });
+      if (!posts.length) posts = this.roomList.filter(function(q) { return GROUP[q.t] === 'crew' && q.anchor; });
+      for (var gi = 0; gi < opts.guards.n && posts.length; gi++) {
+        var gp = posts[gi % posts.length], gsp = this.spotIn(gp.r); if (!gsp) continue;
+        this.agents.push({
+          id: this.agents.length, x: gsp[0] + 0.5, y: gsp[1] + 0.5, vx: 0, vy: 0, hp: opts.guards.hp || 100, hpMax: opts.guards.hp || 100, alive: true, team: this.team,
+          home: gp.n, spot: gsp, role: 'guard', grp: 'troops', task: 'post', goalRoom: gp.n, goal: gsp, at: true, wait: this.R() * 4,
+          stuck: 0, lastD: 1e9, wig: 0, job: null, fig: gFig >= 0 ? gFig : figOf(gp.t), aim: this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
+          face: null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1,
+          wpn: gk ? gk.wpn : null, dmgK: gk ? gk.dmgK : 1, guardU: true
+        });
+        gp.assigned++;
+      }
+    }
     // сетка соседства
     this.cellHead = new Int32Array(n).fill(-1);
     this.nextIn = new Int32Array(Math.max(1, this.agents.length));
@@ -379,7 +398,9 @@
   Crew.prototype.damageRoom = function(n, amount, stun) {
     var st = this.rooms[n]; if (!st) return;
     st.integ = Math.max(0, st.integ - amount);
-    if (stun) st.stun = Math.max(st.stun, stun);
+    // ионный сбой: после него системы несколько секунд перезапускаются и новый сбой не берут —
+    // иначе непрерывный ионный огонь держал бы отсек (и реактор) выключенным весь бой
+    if (stun && !(st.stunImm > 0)) st.stun = Math.max(st.stun, stun);
   };
   Crew.prototype.hurt = function(a, d) {
     a.hp -= d;
@@ -395,10 +416,12 @@
   // Отсек: целость × люди на посту. Без людей пост орудия молчит.
   Crew.prototype.roomEff = function(n) {
     var st = this.rooms[n]; if (!st) return 0;
-    if (st.stun > 0 || st.integ < 12) return 0;
+    if (st.integ < 12) return 0;
     if (this.board && this.board.heldBy(n) !== this.team) return 0;   // отсек держит абордажная команда
+    // реактор в сбое — на аварийном питании (не ноль, но не лучше работающего)
+    if (st.stun > 0) return st.t === 'reactor' ? 0.4 * st.integ / 100 * Math.min(1, st.staffed / st.need) : 0;
     var people = Math.min(1, st.staffed / st.need);
-    var fire = st.fires ? Math.max(0.35, 1 - st.fires / 40) : 1;
+    var fire = st.fires ? Math.max(st.t === 'reactor' ? 0.6 : 0.35, 1 - st.fires / (st.t === 'reactor' ? 120 : 40)) : 1;   // реактор — большой зал: пожар в углу не глушит его
     if (KEY[st.t] && st.t !== 'reactor' && st.t !== 'engine' && st.t !== 'shield' && st.t !== 'hyper') return st.integ / 100 * people * fire;
     return st.integ / 100 * (0.3 + 0.7 * people) * fire;
   };
@@ -644,7 +667,8 @@
       if (v <= 0) { f[c] = 0; this.inList[c] = 0; list[i] = list[list.length - 1]; list.pop(); continue; }
       f[c] = Math.min(100, v + 9 * dt);
       var st = this.rooms[sh.room[c]];
-      if (st) st.integ = Math.max(0, st.integ - v * 0.0005 * dt);
+      // поломка от огня — по доле горящего отсека: большой зал (реактор Венатора) не плавится быстрее малого
+      if (st) st.integ = Math.max(0, st.integ - v * 0.0005 * dt * Math.min(1, 60 / Math.max(1, st.r.area || st.r.w * st.r.h)));
       if (v > 45 && list.length + add.length < 2500) {
         var x = c % W, y = (c - x) / W;
         for (var d = 0; d < 8; d += 2) {
@@ -673,7 +697,10 @@
     // дальний путь по всему кораблю дорогой (5–15 мс) — не чаще ~6 раз в секунду
     this.flowT -= dt; this.budget = this.flowT <= 0 ? 1 : 0;
     var i, rs = this.roomList;
-    for (i = 0; i < rs.length; i++) if (rs[i].stun > 0) rs[i].stun = Math.max(0, rs[i].stun - dt);
+    for (i = 0; i < rs.length; i++) {
+      if (rs[i].stun > 0) { rs[i].stun = Math.max(0, rs[i].stun - dt); if (rs[i].stun === 0) rs[i].stunImm = STUN_IMM; }
+      else if (rs[i].stunImm > 0) rs[i].stunImm = Math.max(0, rs[i].stunImm - dt);
+    }
     this.fireT += dt;
     if (this.fireT >= 0.25) { this.stepFire(this.fireT); this.fireT = 0; }
     this.think -= dt;

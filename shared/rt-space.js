@@ -57,27 +57,39 @@
   ];
   // Броня отсеков: ядро реактора и мостик крепче
   var ARMOR = { reactor: 0.55, bridge: 0.75, shield: 0.85 };
+  // Предел поломки отсека за одно попадание: реактор глубоко в броне — одним залпом его не выбить
+  var ROOM_CAP = { reactor: 2.2, bridge: 18 };
+  var REACTOR_FUSE = 90;     // реактор разбит — столько секунд до взрыва (экипаж успевает поднять до 25% — отбой)
   var SYS_BY = {}; SYS.forEach(function(s) { SYS_BY[s.id] = s; });
+  // отсек → система (приказ «по отсеку» на другом корабле становится приказом по той же системе)
+  function sysOfRoom(t) { for (var i = 0; i < SYS.length; i++) if (SYS[i].types.indexOf(t) >= 0) return SYS[i].id; return null; }
+  // Приказ пушки, перенесённый на другой корабль: та же система (отсек → его система, иначе корпус)
+  function carryTgt(t, foe, fromShip) {
+    if (t.k === 'sys') return { k: 'sys', ship: foe.n, sys: t.sys };
+    if (t.k === 'room') { var r = fromShip && fromShip.plan.roomByN[t.room], sy = r ? sysOfRoom(r.t) : null; return sy ? { k: 'sys', ship: foe.n, sys: sy } : { k: 'hull', ship: foe.n }; }
+    return { k: 'hull', ship: foe.n };
+  }
 
   // Корпуса — из ship_types старой игры
   var CLASS = {
-    venator:    { troops: 60, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['arc170', 'arc170', 'ywing'] },
-    acclamator: { troops: 80, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 1.25 },
-    munificent: { troops: 40, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
-    providence: { troops: 60, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.5 },
+    venator:    { troops: 60, guard: 12, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['arc170', 'arc170', 'ywing'] },
+    acclamator: { troops: 80, guard: 8, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 1.25 },
+    munificent: { troops: 40, guard: 8, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
+    providence: { troops: 60, guard: 12, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.5 },
+    // guard — штатная охрана из экипажа: на абордаж не ходит, обороняет корабль;
     // troops — десант в трюме (бойцы абордажа и обороны);
     // craft — звенья по 4 машины; у самых больших ангаров число звеньев урезано до 6;
     // bal — множитель урона по прогонам ИИ против ИИ (равные по старой игре корпуса ≈ 50/50)
-    rep_mandator:   { troops: 90, hp: 2400, shield: 300, regen: 15, acc: 85, eva: 1,  hangar: 6, move: 4,  dmg: 220, craft: ['arc170', 'arc170', 'ywing', 'arc170', 'ywing', 'arc170'] },
-    rep_victory:    { troops: 60, hp: 1100, shield: 200, regen: 10, acc: 83, eva: 4,  hangar: 2, move: 6,  dmg: 130, craft: ['arc170', 'ywing'] },
-    rep_valiant:    { troops: 40, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 5,  hangar: 0, move: 7,  dmg: 75 },
-    rep_arquitens:  { troops: 20, hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
-    tantive:        { troops: 12, hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
-    cis_subjugator: { troops: 90, hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'] },
-    cis_lucrehulk:  { troops: 120, hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
-    cis_recusant:   { troops: 40, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.1 },
-    cis_diamond:    { troops: 50, hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1.15 },
-    hardcell:       { troops: 30, hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50 }
+    rep_mandator:   { troops: 90, guard: 18, hp: 2400, shield: 300, regen: 15, acc: 85, eva: 1,  hangar: 6, move: 4,  dmg: 220, craft: ['arc170', 'arc170', 'ywing', 'arc170', 'ywing', 'arc170'] },
+    rep_victory:    { troops: 60, guard: 12, hp: 1100, shield: 200, regen: 10, acc: 83, eva: 4,  hangar: 2, move: 6,  dmg: 130, craft: ['arc170', 'ywing'] },
+    rep_valiant:    { troops: 40, guard: 8, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 5,  hangar: 0, move: 7,  dmg: 75 },
+    rep_arquitens:  { troops: 20, guard: 6, hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
+    tantive:        { troops: 12, guard: 4, hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
+    cis_subjugator: { troops: 90, guard: 18, hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'] },
+    cis_lucrehulk:  { troops: 120, guard: 20, hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
+    cis_recusant:   { troops: 40, guard: 8, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.1 },
+    cis_diamond:    { troops: 50, guard: 8, hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1.15 },
+    hardcell:       { troops: 30, guard: 6, hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50 }
   };
   // Малые корабли — тоже из ship_types
   var CRAFT = {
@@ -133,7 +145,8 @@
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
       crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
-                                    roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0 }),
+                                    roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0,
+                                    guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null }),
       vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
       figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1,
       guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
@@ -237,7 +250,7 @@
     var n = 0;
     for (var i = 0; i < guns.length; i++) {
       var g = (guns[i] === (guns[i] | 0)) ? sh.guns[guns[i]] : null; if (!g) continue;
-      g.tgt = { k: tgt.k, ship: tgt.ship, sys: tgt.sys, room: tgt.room }; g.cur = null; n++;
+      g.tgt = { k: tgt.k, ship: tgt.ship, sys: tgt.sys, room: tgt.room }; g.cur = null; g.keep = null; n++;
     }
     return n;
   };
@@ -256,7 +269,7 @@
       var g = sh.guns[i], k = g.tgt.k;
       if (k === 'auto') { g.cur = null; n++; continue; }
       if ((k === 'hull' || k === 'sys' || k === 'room') && g.tgt.ship !== to) {
-        g.tgt = k === 'sys' ? { k: 'sys', ship: to, sys: g.tgt.sys } : { k: 'hull', ship: to }; g.cur = null; n++;
+        g.tgt = carryTgt(g.tgt, foe, this.ships[g.tgt.ship]); g.cur = null; n++;
       } else if (k === 'hull' || k === 'sys' || k === 'room') n++;
     }
     // свои бомбардировщики выбирают цель заново
@@ -278,10 +291,18 @@
     }
     return this.nearestFoe(sh);
   };
+  // Держать позицию (игрок отошёл): корабль стоит на месте, к врагу в досягаемости
+  // поворачивается бортом с большим числом стволов; никуда не идёт и абордаж не начинает
+  Battle.prototype.guard = function(shipN, on) {
+    var sh = this.ships[shipN]; if (!sh || sh.dead) return;
+    sh.guard = !!on;
+    if (on) { sh.ai = false; sh.order = null; sh.focusAuto = true; }
+  };
   // Курс: к точке; face — только развернуться носом к точке; x == null — корабль ведёт ИИ;
   // hold — стоять (свой курс без точки)
   Battle.prototype.order = function(shipN, x, y, face) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
+    sh.guard = false;                                   // игрок снова ведёт корабль сам
     if (x === 'hold') { sh.order = null; sh.ai = false; return; }
     if (x != null && !(isFinite(x) && isFinite(y))) return;
     sh.order = x == null ? null : { x: x, y: y, face: !!face }; sh.ai = x == null;
@@ -328,7 +349,7 @@
     e.shield = hasType(sh.plan, 'shield') ? c.sysEff('shield') : e.reactor;
     e.bridge = (c.sysEff('bridge') * 2 + (hasType(sh.plan, 'cic') ? c.sysEff('cic') : 1)) / 3;
     e.hangar = hasType(sh.plan, 'hangar') ? c.sysEff('hangar') : 0;
-    e.power = 0.3 + 0.7 * e.reactor;
+    e.power = 0.45 + 0.55 * e.reactor;           // без реактора — аварийные генераторы (почти половина)
     this.shields(sh, dt);
     // генератор щитов в руках абордажной команды — щиты погашены
     if (sh.crew.board && sh.crew.board.heldType('shield')) { sh.sh[0] = sh.sh[1] = sh.sh[2] = sh.sh[3] = 0; }
@@ -339,7 +360,7 @@
     }
     // реактор разбит — отсчёт до взрыва
     var rs = reactorState(sh);
-    if (rs !== null && rs <= 0.5) { if (!sh.crit) sh.crit = 60; }
+    if (rs !== null && rs <= 0.5) { if (!sh.crit) sh.crit = REACTOR_FUSE; }
     else if (sh.crit && rs !== null && rs > 25) sh.crit = 0;
     if (sh.crit) {
       sh.crit -= dt;
@@ -420,6 +441,13 @@
         // точка занята чужим корпусом (или туда же идёт свой): упёрся и 12 с не продвинулся — приказ снят
         if (sh.order.bd == null || d < sh.order.bd - 40) { sh.order.bd = d; sh.order.bt = this.t; }
         else if (this.t - sh.order.bt > 12 && this.t - (sh.touchT || -99) < 2) { sh.order = null; want = null; wantV = 0; }
+      }
+    } else if (sh.guard) {
+      // на позиции: враг в досягаемости — борт к нему, ход ноль
+      var gf = sh.foeT != null && this.ships[sh.foeT] && !this.ships[sh.foeT].dead && this.sees(sh.side, this.ships[sh.foeT]) ? this.ships[sh.foeT] : this.nearestFoe(sh);
+      if (gf && !gf.ghost) {
+        var gx = gf.x - sh.x, gy = gf.y - sh.y;
+        if (gx * gx + gy * gy < Math.pow(mainRange(sh) * 1.3 + gf.len / 2, 2)) { want = Math.atan2(gy, gx) + bestFacing(sh, false); wantV = 0; }
       }
     } else if (sh.ai) {
       var foe = this.foeOf(sh);
@@ -539,7 +567,7 @@
     for (var i = 0; i < sh.guns.length; i++) {
       var g = sh.guns[i];
       if (g.out) { g.aimAt = null; continue; }
-      g.cd -= dt * e.power * (0.25 + 0.75 * g.eff);
+      g.cd -= dt * (0.6 + 0.4 * e.power) * (0.25 + 0.75 * g.eff);       // у орудий свои накопители: без реактора — медленнее, но стреляют
       var aim = this.pick(sh, g);
       g.aimAt = aim;
       if (!aim || g.cd > 0) continue;
@@ -556,7 +584,9 @@
     if (k === 'auto') {
       if (g.t === 'pd') { var c0 = this.craftFor(sh, g, T.range); if (c0) return { craft: c0 }; }
       var foe = this.foeInArc(sh, g, null);
-      if (!foe) return g.t === 'pd' ? null : null;
+      if (!foe) return null;
+      // пушка помнит прошлый приказ по системе — новый враг в секторе: бить ту же систему
+      if (g.keep) { g.tgt = g.keep.k === 'sys' ? { k: 'sys', ship: foe.n, sys: g.keep.sys } : { k: 'hull', ship: foe.n }; g.keep = null; return this.pick(sh, g); }
       return this.autoAim(sh, g, foe);
     }
     if (k === 'fighters') { var c1 = this.craftFor(sh, g, T.range); return c1 ? { craft: c1 } : null; }
@@ -567,7 +597,15 @@
       var f2 = this.foeInArc(sh, g, null); return f2 ? this.autoAim(sh, g, f2) : null;
     }
     var tgtShip = this.ships[t.ship];
-    if (!tgtShip || tgtShip.dead || tgtShip.side === sh.side) { g.tgt = { k: 'auto' }; return null; }
+    if (!tgtShip || tgtShip.dead || tgtShip.side === sh.side) {
+      // цель погибла — пушка помнит, ЧТО бить (реактор, орудия…), и переходит на следующего врага;
+      // сейчас некого — ждёт «сама», выбор хранит до появления врага
+      // (каждая пушка — по своему сектору: первый враг, которого она достаёт, — по той же системе)
+      g.keep = { k: t.k === 'room' ? 'sys' : t.k, sys: t.k === 'room' ? (tgtShip && tgtShip.plan.roomByN[t.room] ? sysOfRoom(tgtShip.plan.roomByN[t.room].t) : null) : t.sys };
+      if (g.keep.k === 'sys' && !g.keep.sys) g.keep = { k: 'hull' };
+      g.tgt = { k: 'auto' };
+      return this.pick(sh, g);
+    }
     if (!this.sees(sh.side, tgtShip)) return null;      // цель потеряна в тумане — пушка ждёт
     if (this.ourBoard(sh.side, tgtShip)) {
       if (sh.hold && sh.hold[tgtShip.n]) return null;   // приказ: по кораблю со своим десантом не стрелять
@@ -721,10 +759,10 @@
         n = p.room[gy * p.w + gx];
       }
     }
-    var c = sh.crew, armor = 1;
-    if (n) { var tt = p.roomByN[n] && p.roomByN[n].t; armor = ARMOR[tt] || 1; }
+    var c = sh.crew, armor = 1, tt = null;
+    if (n) { tt = p.roomByN[n] && p.roomByN[n].t; armor = ARMOR[tt] || 1; }
     k *= armor;
-    if (n) c.damageRoom(n, Math.min(30, (dmg || 6) * T.sys * 0.7 * k), T.stun ? T.stun * k : 0);
+    if (n) c.damageRoom(n, Math.min(ROOM_CAP[tt] || 30, (dmg || 6) * T.sys * 0.7 * k), T.stun ? T.stun * k : 0);
     if (dmg > 0) {
       if (this.R() < T.fire * Math.min(2, dmg / 12)) c.ignite(lx, ly, 30 + this.R() * 40);
       c.blast(lx, ly, 2 + dmg / 12, 50 + dmg * 3 * T.hull);
@@ -1152,7 +1190,7 @@
     else if (bd.over >= 0) bd.reopen();
     if (bd.att !== c.side) return;
     bd.inFlight = b.inbound;
-    bd.addParty(c.party, c.lock);
+    bd.addParty(c.party, c.lock, !this.aiBoard[c.side]);       // сторона за игроком — отряды ждут его приказов
     this.ev.boards.push({ dock: 1, n: c.home, t: b.n, count: c.party.length });
   };
   Battle.prototype.shuttleLost = function(c) {

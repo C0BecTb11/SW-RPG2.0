@@ -23,13 +23,16 @@ function plan(id) {
   return PLANS[id];
 }
 
-var SEAT_HOLD = 90e3;       // место ушедшего игрока ждёт его полторы минуты
+var SEAT_HOLD = 90e3;       // место ушедшего игрока ждёт его полторы минуты (потом его корабли можно передать)
+var SIDE_MAX = 3;           // игроков на сторону: союзники приходят на помощь
 
+// Места: на каждой стороне до SIDE_MAX игроков, у каждого свои корабли (sh.owner = user).
+// Ушёл — его корабли держат позицию; вернулся — снова его.
 function SpaceRoom(name, code, scen, cfg) {
   this.kind = 'space';
   this.name = name; this.code = code; this.scen = scen; this.cfg = cfg || null; this.speed = 1;
   this.clients = [];
-  this.seats = [null, null];          // { user, nick, left } — кто играет за сторону
+  this.seats = [[], []];              // [{ user, nick, left }] — кто играет за сторону
   this.tickN = 0; this.bytes = 0; this.bytesRate = 0; this.rateAt = Date.now();
   this.newBattle();
 }
@@ -46,29 +49,98 @@ SpaceRoom.prototype.newBattle = function() {
   });
   this.B = B; this.round = (this.round || 0) + 1;
   this.battle = { tick: 0 };                       // для общего цикла сервера (index.js)
-  for (var i = 0; i < this.clients.length; i++) this.clients[i].viewer = new Net.Viewer(B, this.clients[i].side);
+  // реванш: давно ушедшие места снимаются, корабли раздаются — сначала тем, кто в бою
+  var self = this;
+  for (var side = 0; side < 2; side++) {
+    this.seats[side] = this.seats[side].filter(function(o) { return !self.expired(o); });
+    var order = this.seats[side].filter(function(o) { return self.here(o.user); }).concat(this.seats[side].filter(function(o) { return !self.here(o.user); }));
+    for (var k = 0; k < order.length; k++) this.giveShips(order[k], side);
+  }
+  for (var i = 0; i < this.clients.length; i++) this.clients[i].viewer = new Net.Viewer(B, this.clients[i].side, this.clients[i].who.user);
   this.syncAi();
 };
 
-// абордаж за сторону без игрока решает ИИ
+SpaceRoom.prototype.here = function(user) { return this.clients.some(function(c) { return c.who && c.who.user === user && !c.spectator; }); };
+SpaceRoom.prototype.seatOf = function(user) {
+  for (var s = 0; s < 2; s++) for (var i = 0; i < this.seats[s].length; i++) if (this.seats[s][i].user === user) return { side: s, seat: this.seats[s][i] };
+  return null;
+};
+// давно ушедший (дольше SEAT_HOLD) — его место можно занять, а корабли передать
+SpaceRoom.prototype.expired = function(st) { return !!st.left && !this.here(st.user) && Date.now() - st.left > SEAT_HOLD; };
+
+// Сторона без игроков вовсе (тест на одного) — её ведёт ИИ целиком. У стороны с игроками:
+// корабли того, кто в бою, — его; ушедшего — держат позицию (стоят, бьют подошедших,
+// абордаж не начинают; идущий абордаж и оборона — сами); «dev» (замеры) ведёт всю сторону.
 SpaceRoom.prototype.syncAi = function() {
+  var B = this.B, self = this;
   for (var s = 0; s < 2; s++) {
-    var here = this.clients.some(function(c) { return c.side === s && !c.spectator; });
-    this.B.aiBoard[s] = !here;
-    // стороны нет — её корабли ведёт ИИ (свой курс, «стоять» и щиты игрока снимаются)
-    if (!here) this.B.ships.forEach(function(sh) { if (sh.side === s && !sh.dead) { sh.ai = true; sh.order = null; sh.focusAuto = true; sh.foeT = null; } });
+    var dev = this.clients.some(function(c) { return c.side === s && c.who && c.who.user === 'dev'; });
+    var seated = this.seats[s].length > 0;
+    B.aiBoard[s] = !dev && !seated;
+    B.ships.forEach(function(sh) {
+      if (sh.side !== s || sh.dead) return;
+      if (dev) { if (sh.guard) { sh.guard = false; sh.ai = true; } return; }
+      if (sh.owner && self.here(sh.owner)) return;                        // хозяин в бою
+      if (sh.owner || seated) { if (!sh.guard) B.guard(sh.n, true); return; }   // хозяин отошёл
+      sh.guard = false; sh.ai = true; sh.order = null; sh.focusAuto = true;     // никого не было — ИИ
+    });
   }
 };
 
+// Раздать игроку корабли его стороны: ничьи; иначе корабли давно ушедшего; иначе половину
+// у того, у кого их больше всех (тестовые комнаты; в игре корабли — из флота игрока)
+SpaceRoom.prototype.giveShips = function(seat, side) {
+  var B = this.B, user = seat.user, self = this, got = [];
+  var mine = function(sh) { return sh.side === side && !sh.dead; };
+  B.ships.forEach(function(sh) { if (mine(sh) && !sh.owner) { sh.owner = user; sh.guard = false; got.push(sh); } });
+  if (!got.length) {
+    var gone = this.seats[side].filter(function(o) { return o.user !== user && self.expired(o); });
+    gone.forEach(function(o) {
+      B.ships.forEach(function(sh) { if (mine(sh) && sh.owner === o.user) { sh.owner = user; sh.guard = false; got.push(sh); } });
+      self.seats[side].splice(self.seats[side].indexOf(o), 1);
+    });
+  }
+  if (!got.length) {
+    var by = {}, top = null;
+    B.ships.forEach(function(sh) { if (mine(sh) && sh.owner && sh.owner !== user) (by[sh.owner] = by[sh.owner] || []).push(sh); });
+    for (var u in by) if (!top || by[u].length > by[top].length) top = u;
+    if (top && by[top].length >= 2) by[top].slice(Math.ceil(by[top].length / 2)).forEach(function(sh) { sh.owner = user; sh.guard = false; got.push(sh); });
+  }
+  return got;
+};
+
+// Раз в несколько секунд: место ушедшего дольше SEAT_HOLD снимается. Его корабли —
+// союзнику в бою (у кого меньше кораблей); на стороне никого — сторону снова ведёт ИИ
+SpaceRoom.prototype.expire = function() {
+  var B = this.B, self = this, changed = false;
+  for (var s = 0; s < 2; s++) {
+    var gone = this.seats[s].filter(function(o) { return self.expired(o); });
+    if (!gone.length) continue;
+    var present = this.seats[s].filter(function(o) { return self.here(o.user); });
+    gone.forEach(function(o) {
+      var ships = B.ships.filter(function(sh) { return sh.owner === o.user && !sh.dead; });
+      ships.forEach(function(sh) {
+        if (!present.length) { sh.owner = null; return; }
+        var best = present[0], bn = 1e9;
+        present.forEach(function(p) { var n = B.ships.filter(function(x) { return x.owner === p.user && !x.dead; }).length; if (n < bn) { bn = n; best = p; } });
+        sh.owner = best.user; sh.guard = false;
+        self.clients.forEach(function(c) { if (c.who && c.who.user === best.user) self.send(c, JSON.stringify({ t: 'note', msg: o.nick + ' не вернулся — под твоей командой ' + sh.name })); });
+      });
+      self.seats[s].splice(self.seats[s].indexOf(o), 1); changed = true;
+    });
+  }
+  if (changed) { this.syncAi(); this.roster(); }
+};
+
 SpaceRoom.prototype.seatFor = function(c, want) {
-  var now = Date.now(), user = c.who.user, i;
-  // в замерах (RT_DEV) у всех один «dev»: сторону выбирает сам игрок
+  var user = c.who.user, self = this;
+  // в замерах (RT_DEV) «dev» — без места: сторону выбирает сам, ведёт все её корабли
   if (user === 'dev') return want === 1 ? 1 : 0;
-  for (i = 0; i < 2; i++) if (this.seats[i] && this.seats[i].user === user) return i;       // вернулся
-  for (i = 0; i < 2; i++) if (this.seats[i] && this.seats[i].left && now - this.seats[i].left > SEAT_HOLD) this.seats[i] = null;
-  if ((want === 0 || want === 1) && !this.seats[want]) return want;
-  if (!this.seats[c.who.side]) return c.who.side;
-  if (!this.seats[1 - c.who.side]) return 1 - c.who.side;
+  var was = this.seatOf(user); if (was) return was.side;                  // вернулся
+  var room = function(s) { return self.seats[s].filter(function(o) { return !self.expired(o); }).length < SIDE_MAX; };
+  if ((want === 0 || want === 1) && room(want)) return want;
+  if (room(c.who.side)) return c.who.side;
+  if (room(1 - c.who.side)) return 1 - c.who.side;
   return -1;
 };
 
@@ -76,21 +148,33 @@ SpaceRoom.prototype.join = function(c, want) {
   var side = this.seatFor(c, want);
   if (side < 0) {
     c.spectator = true; c.side = 0;
-    c.ws.send(JSON.stringify({ t: 'error', msg: 'В комнате уже двое игроков' }));
+    c.ws.send(JSON.stringify({ t: 'error', msg: 'В бою уже по ' + SIDE_MAX + ' игрока на сторону' }));
     c.ws.close(4005);
     return false;
   }
   c.side = side;
-  if (c.who.user !== 'dev') this.seats[side] = { user: c.who.user, nick: c.who.nick, left: 0 };
   // второе окно того же игрока: старое отключаем
   for (var i = this.clients.length - 1; i >= 0; i--) {
     var o = this.clients[i];
     if (o.who && o.who.user === c.who.user && c.who.user !== 'dev') { o.ws.send(JSON.stringify({ t: 'error', msg: 'Этот бой открыт в другой вкладке' })); o.ws.close(4006); this.clients.splice(i, 1); }
   }
+  var given = [];
+  if (c.who.user !== 'dev') {
+    var was = this.seatOf(c.who.user);
+    if (was) was.seat.left = 0;
+    else { var seat = { user: c.who.user, nick: c.who.nick, left: 0 }; this.seats[side].push(seat); given = this.giveShips(seat, side); }
+  }
   this.clients.push(c);
-  c.viewer = new Net.Viewer(this.B, side);
+  c.viewer = new Net.Viewer(this.B, side, c.who.user);
   this.syncAi();
   this.hello(c);
+  // союзнику передали корабли — хозяину сообщить; не досталось — пусть знает, что смотрит
+  if (!given.length && c.who.user !== 'dev' && !this.B.ships.some(function(sh) { return sh.owner === c.who.user && !sh.dead; }))
+    this.send(c, JSON.stringify({ t: 'note', msg: 'Свободных кораблей на твоей стороне нет — смотришь бой союзника' }));
+  if (given.length) {
+    var names = given.map(function(sh) { return sh.name; }).join(', '), self = this;
+    this.clients.forEach(function(x) { if (x !== c && x.side === side) self.send(x, JSON.stringify({ t: 'note', msg: 'Союзник ' + (c.who.nick || '') + ' в бою: под его командой — ' + names })); });
+  }
   this.roster();
   return true;
 };
@@ -98,9 +182,8 @@ SpaceRoom.prototype.join = function(c, want) {
 SpaceRoom.prototype.leave = function(c) {
   var i = this.clients.indexOf(c);
   if (i >= 0) this.clients.splice(i, 1);
-  var s = this.seats[c.side];
-  var still = this.clients.some(function(o) { return o.who && c.who && o.who.user === c.who.user; });
-  if (s && c.who && s.user === c.who.user && !still) s.left = Date.now();
+  var was = c.who && this.seatOf(c.who.user);
+  if (was && !this.here(c.who.user)) was.seat.left = Date.now();
   this.syncAi();
   this.roster();
 };
@@ -115,14 +198,17 @@ SpaceRoom.prototype.hello = function(c) {
 };
 SpaceRoom.prototype.roster = function() {
   var self = this, now = Date.now();
-  var seats = this.seats.map(function(s, i) {
-    var on = self.clients.some(function(c) { return c.side === i; });
-    return { on: on, nick: s ? s.nick : '', away: !!(s && !on && s.left && now - s.left < SEAT_HOLD) };
+  // по сторонам: кто в бою, кто отошёл; чей корабль — для подписи
+  var seats = [0, 1].map(function(s) {
+    return self.seats[s].map(function(o) { var on = self.here(o.user); return { nick: o.nick, on: on, away: !on && !!o.left && now - o.left < SEAT_HOLD, user: o.user }; });
   });
-  var msg = JSON.stringify({ t: 'roster', seats: seats });
-  this.clients.forEach(function(c) { self.send(c, msg); });
+  var own = this.B.ships.map(function(sh) { var o = sh.owner && self.seatOf(sh.owner); return o ? o.seat.nick || '?' : ''; });
+  this.clients.forEach(function(c) {
+    var me = c.who && c.who.user;
+    var mk = function(list) { return list.map(function(o) { return { nick: o.nick, on: o.on, away: o.away, me: o.user === me }; }); };
+    self.send(c, JSON.stringify({ t: 'roster', seats: [mk(seats[0]), mk(seats[1])], own: own }));
+  });
 };
-
 SpaceRoom.prototype.send = function(c, data) {
   // медленная связь: кадры пропускаем (каждый лёгкий кадр — полный), копоть потом заново
   if (c.ws.bufferedAmount > 1048576) { if (c.viewer) c.viewer.lost(); return; }
@@ -139,6 +225,7 @@ SpaceRoom.prototype.step = function() {
   }
   if (B.over >= 0 && !this.overAt) this.overAt = Date.now();
   this.tickN++; this.battle.tick = this.tickN;
+  if (this.tickN % 50 === 0) this.expire();
   var ev = B.takeEvents();
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
@@ -181,6 +268,7 @@ SpaceRoom.prototype.command = function(c, m) {
     this.newBattle();
     var self = this;
     this.clients.forEach(function(x) { self.hello(x); });
+    this.roster();
   }
 };
 

@@ -19,8 +19,9 @@
               ionhit: 0.12, craftboom: 0.12, shipboom: 0.25 };
   var MAXV = 20;
 
-  var A = { ctx: null, master: null, muff: null, buf: {}, list: null, last: {}, voices: 0, on: true, inside: false, ready: false };
-  try { A.on = localStorage.getItem('sp-sound') !== 'off'; } catch (e) {}
+  // Временно выключено по умолчанию: звуки забракованы, ждут замены. Включить — кнопкой у часов.
+  var A = { ctx: null, master: null, muff: null, buf: {}, list: null, last: {}, voices: 0, on: false, inside: false, ready: false };
+  try { A.on = localStorage.getItem('sp-sound2') === 'on'; } catch (e) {}
 
   function unlock() {
     if (A.ctx) { if (A.ctx.state === 'suspended') A.ctx.resume(); return; }
@@ -76,7 +77,7 @@
 
   function setOn(on) {
     A.on = !!on;
-    try { localStorage.setItem('sp-sound', A.on ? 'on' : 'off'); } catch (e) {}
+    try { localStorage.setItem('sp-sound2', A.on ? 'on' : 'off'); } catch (e) {}
     if (A.master) A.master.gain.setTargetAtTime(A.on ? 0.9 : 0, A.ctx.currentTime, 0.05);
     if (A.on) unlock();
   }

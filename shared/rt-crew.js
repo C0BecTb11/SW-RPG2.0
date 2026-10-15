@@ -134,6 +134,8 @@
   function Crew(ship, opts) {
     opts = opts || {};
     this.ship = ship; this.w = ship.w; this.h = ship.h;
+    this.team = opts.team || 0;         // сторона корабля (для абордажа: свои и чужие на борту)
+    this.board = null;                  // идёт абордаж — объект SWBoard.Board
     this.R = rng(opts.seed || (ship.w * 7919 + ship.h));
     var n = ship.w * ship.h, i;
     // проходимо: пол и двери без предметов
@@ -182,8 +184,8 @@
         var id = this.agents.length, p = this.workSpot(rs, id) || this.spotIn(rs.r);
         if (!p) break;
         var ag = {
-          id: id, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, alive: true,
-          home: rs.n, spot: p, role: roleOf(rs.t),
+          id: id, x: p[0] + 0.5, y: p[1] + 0.5, vx: 0, vy: 0, hp: 100, hpMax: 100, alive: true, team: this.team,
+          home: rs.n, spot: p, role: roleOf(rs.t), grp: GROUP[rs.t] || 'post',
           task: 'post', goalRoom: rs.n, goal: p, at: true, wait: this.R() * 4, stuck: 0, lastD: 1e9, wig: 0,
           job: null, fig: figOf(rs.t), aim: p[2] != null ? p[2] : this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
           face: p[2] != null ? p[2] : null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1
@@ -191,6 +193,22 @@
         this.agents.push(ag);
         this.claimCell(ag, p);
         rs.assigned++;
+      }
+    }
+    // десант в трюме: число бойцов задаёт корабль (старая игра: пехота в трюме), а не
+    // только размер казарм — недостающих ставим в казармы, стеллажи дроидов и арсенал
+    if (opts.troops) {
+      var bar = this.roomList.filter(function(q) { return GROUP[q.t] === 'troops' && q.anchor; }), have = 0;
+      for (i = 0; i < this.agents.length; i++) if (this.agents[i].grp === 'troops') have++;
+      for (var k2 = 0; have < opts.troops && bar.length && k2 < opts.troops * 3; k2++) {
+        var bq = bar[k2 % bar.length], pp = this.spotIn(bq.r); if (!pp) continue;
+        this.agents.push({
+          id: this.agents.length, x: pp[0] + 0.5, y: pp[1] + 0.5, vx: 0, vy: 0, hp: 100, hpMax: 100, alive: true, team: this.team,
+          home: bq.n, spot: pp, role: 'reserve', grp: 'troops', task: 'post', goalRoom: bq.n, goal: pp, at: true, wait: this.R() * 4,
+          stuck: 0, lastD: 1e9, wig: 0, job: null, fig: figOf(bq.t), aim: this.R() * Math.PI * 2, legs: 0, mv: 0, phase: this.R() * 6.28,
+          face: null, sprayAt: -1, fixAt: -1, carry: false, medic: -1, hold: 0, busyT: 3 + this.R() * 8, claimed: -1
+        });
+        bq.assigned++; have++;
       }
     }
     // сетка соседства
@@ -343,6 +361,7 @@
   Crew.prototype.roomEff = function(n) {
     var st = this.rooms[n]; if (!st) return 0;
     if (st.stun > 0 || st.integ < 12) return 0;
+    if (this.board && this.board.heldBy(n) !== this.team) return 0;   // отсек держит абордажная команда
     var people = Math.min(1, st.staffed / st.need);
     var fire = st.fires ? Math.max(0.35, 1 - st.fires / 40) : 1;
     if (KEY[st.t] && st.t !== 'reactor' && st.t !== 'engine' && st.t !== 'shield' && st.t !== 'hyper') return st.integ / 100 * people * fire;
@@ -354,7 +373,8 @@
     for (var i = 0; i < this.roomList.length; i++) if (this.roomList[i].t === t) { s += this.roomEff(this.roomList[i].n); n++; }
     return n ? s / n : 1;
   };
-  Crew.prototype.alive = function() { var n = 0; for (var i = 0; i < this.agents.length; i++) if (this.agents[i].alive) n++; return n; };
+  // Живые свои (абордажники противника на борту — не экипаж)
+  Crew.prototype.alive = function() { var n = 0; for (var i = 0; i < this.agents.length; i++) if (this.agents[i].alive && this.agents[i].team === this.team) n++; return n; };
 
   // ---------------------------------------------------------------- задачи
   Crew.prototype.sendPost = function(a) {
@@ -403,7 +423,7 @@
       else if (kind === 'fix') done = st.integ >= 99.5 || st.fires > 0;
       else if (kind === 'heal') {
         var pt = this.agents[a.job.who];
-        done = !pt || !pt.alive || pt.hp >= 99;
+        done = !pt || !pt.alive || pt.hp >= pt.hpMax - 1;
         // пациент сместился — догнать
         if (!done && !a.at && (Math.abs(pt.x - a.goal[0] - 0.5) > 2 || Math.abs(pt.y - a.goal[1] - 0.5) > 2)) this.goNear(a, pt, 'heal');
         else if (!done && a.at && (Math.abs(pt.x - a.x) > 2 || Math.abs(pt.y - a.y) > 2)) this.goNear(a, pt, 'heal');
@@ -429,7 +449,7 @@
     // 5. Раненые — ближайший свободный медик идёт лечить
     for (i = 0; i < ag.length; i++) {
       a = ag[i];
-      if (!a.alive || a.hp >= 70 || a.medic >= 0 || a.role === 'medic') continue;
+      if (!a.alive || a.team !== this.team || a.hp >= 0.7 * a.hpMax || a.medic >= 0 || a.role === 'medic') continue;
       var md = null, mdD = 1e18;
       for (j = 0; j < ag.length; j++) {
         var m = ag[j]; if (!m.alive || m.role !== 'medic' || m.job) continue;
@@ -622,9 +642,13 @@
     if (this.fireT >= 0.25) { this.stepFire(this.fireT); this.fireT = 0; }
     this.think -= dt;
     if (this.think <= 0) { this.think = 0.5; this.dispatch(); }
-    var ag = this.agents;
-    for (i = 0; i < ag.length; i++) if (ag[i].alive) this.think1(ag[i], dt);
+    var ag = this.agents, B = this.board;
+    for (i = 0; i < ag.length; i++) {
+      if (!ag[i].alive) continue;
+      if (B && B.owns(ag[i])) B.think(ag[i], dt); else this.think1(ag[i], dt);
+    }
     this.collide(dt);
+    if (B) B.tick(dt);
   };
 
   // Решение одного человека на шаг: куда хочет идти
@@ -641,9 +665,15 @@
     }
     if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     if (a.hold > 0) { a.hold -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
+    this.nav(a, dt, (this.alertOn || a.job) ? RUN : WALK);
+  };
+  // Шаг к цели (a.goal в отсеке a.goalRoom) со скоростью sp; вернёт клетку, куда шагает
+  // дальше (−1 — стоит, пришёл или ждёт поле направлений). Нужен и абордажу.
+  Crew.prototype.nav = function(a, dt, sp) {
+    var W = this.w, cx = Math.floor(a.x), cy = Math.floor(a.y), here = cy * W + cx;
     var gx = a.goal[0], gy = a.goal[1];
     var ddx = gx + 0.5 - a.x, ddy = gy + 0.5 - a.y, dist = Math.sqrt(ddx * ddx + ddy * ddy);
-    if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.1 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; return; }
+    if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.1 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; return -1; }
     // где следующий шаг
     var room = this.ship.roomByN[a.goalRoom], f = null, d = 255;
     if (room && this.ship.room[here] === a.goalRoom) f = this.flows.inRoom(room, gx, gy);
@@ -657,20 +687,19 @@
         else { f = this.flows.global(an[0], an[1]); d = f ? flowDir(f, cx, cy) : 255; }
       }
     }
-    if (!f) { a.wait = 0.1; return; }          // поле строится в следующий шаг
-    var tx, ty;
+    if (!f) { a.wait = 0.1; return -1; }       // поле строится в следующий шаг
+    var tx, ty, nextC = -1;
     if (d === 254) { tx = gx + 0.5; ty = gy + 0.5; }
     else if (d === 255) {
       // путь закрыт (огонь не в счёт — закрыто стенами): выбрать новое место
-      a.goal = (room && this.spotIn(room)) || a.goal; a.wait = 0.5; return;
+      a.goal = (room && this.spotIn(room)) || a.goal; a.wait = 0.5; return -1;
     } else {
       var nx = cx + DX[d], ny = cy + DY[d], d2 = flowDir(f, nx, ny);
-      tx = nx + 0.5; ty = ny + 0.5;
+      tx = nx + 0.5; ty = ny + 0.5; nextC = ny * W + nx;
       if (d2 < 8) { tx += DX[d2] * 0.5; ty += DY[d2] * 0.5; }   // плавнее на поворотах
     }
     var dx = tx - a.x, dy = ty - a.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
-    var urgent = this.alertOn || a.job;
-    var sp = urgent ? RUN : WALK;
+    var urgent = sp > WALK;
     // застрял — шаг в сторону
     if (dist < a.lastD - 0.05) { a.lastD = dist; a.stuck = 0; } else a.stuck += dt;
     if (a.stuck > 1.5) { a.wig = 0.6; a.stuck = 0; a.side = this.R() < 0.5 ? 1 : -1; }
@@ -680,6 +709,7 @@
     a.legs = turn(a.legs, ang, 9 * dt); a.aim = turn(a.aim, ang, 7 * dt);
     a.mv += (1 - a.mv) * Math.min(1, dt * 6);
     a.phase = (a.phase + dt * (urgent ? 10 : 7)) % (Math.PI * 2);
+    return nextC;
   };
 
   // На месте: вахта у пультов, тушение, ремонт, лечение, подноска; в мирное время — прогулки
@@ -735,7 +765,7 @@
       if (!pt || !pt.alive) return;
       var ddx = pt.x - a.x, ddy = pt.y - a.y;
       if (ddx * ddx + ddy * ddy < 2.6) {
-        pt.hp = Math.min(100, pt.hp + 9 * dt); pt.hold = 0.4;
+        pt.hp = Math.min(pt.hpMax, pt.hp + 9 * dt); pt.hold = 0.4;
         a.aim = turn(a.aim, Math.atan2(ddy, ddx), 8 * dt);
         a.phase = (a.phase + dt * 3) % 6.28;
       } else this.goNear(a, pt, 'heal');
@@ -790,6 +820,7 @@
   // ---------------------------------------------------------------- тела
   // Движение → раздвинуть людей (правостороннее расхождение) → вытолкнуть из стен.
   Crew.prototype.collide = function(dt) {
+    if (this.nextIn.length < this.agents.length) this.nextIn = new Int32Array(this.agents.length + 64);   // на борт пришли чужие
     var ag = this.agents, W = this.w, head = this.cellHead, next = this.nextIn, used = this.used, i, a;
     for (i = 0; i < ag.length; i++) {
       a = ag[i]; if (!a.alive) continue;
@@ -846,6 +877,8 @@
   // Круг против непроходимых клеток: вытолкнуть наружу
   Crew.prototype.wall = function(a) {
     var W = this.w, H = this.h, walk = this.walk;
+    // запертая дверь — стена для абордажной команды (свои проходят)
+    if (this.board && a.team !== this.team) walk = this.board.walkAtt;
     for (var pass = 0; pass < 2; pass++) {
       var cx = Math.floor(a.x), cy = Math.floor(a.y);
       // центр сам оказался в стене (сильный толчок) — назад на ближайшую свободную клетку
@@ -864,9 +897,10 @@
   };
   Crew.prototype.unstick = function(a) {
     var W = this.w, cx = Math.floor(a.x), cy = Math.floor(a.y), best = null, bd = 1e9;
+    var walk = this.board && a.team !== this.team ? this.board.walkAtt : this.walk;
     for (var r = 1; r <= 4 && !best; r++) {
       for (var y = cy - r; y <= cy + r; y++) for (var x = cx - r; x <= cx + r; x++) {
-        if (x < 0 || y < 0 || x >= W || y >= this.h || !this.walk[y * W + x]) continue;
+        if (x < 0 || y < 0 || x >= W || y >= this.h || !walk[y * W + x]) continue;
         var dx = x + 0.5 - a.x, dy = y + 0.5 - a.y, d = dx * dx + dy * dy;
         if (d < bd) { bd = d; best = [x + 0.5, y + 0.5]; }
       }
@@ -874,5 +908,5 @@
     if (best) { a.x = best[0]; a.y = best[1]; }
   };
 
-  return { Crew: Crew, POST: POST, KEY: KEY, K: K, STEP: STEP, R: R };
+  return { Crew: Crew, POST: POST, KEY: KEY, GROUP: GROUP, K: K, STEP: STEP, R: R, RUN: RUN, WALK: WALK, DX: DX, DY: DY, turn: turn };
 });

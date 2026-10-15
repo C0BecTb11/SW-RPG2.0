@@ -261,6 +261,66 @@ button { font-family: inherit; }
 .sp-btn:disabled { opacity: 0.35; }
 .sp-btn:active { transform: translateY(1px); }
 
+/* ---------- абордаж ---------- */
+.sp-mini {
+  flex: none; padding: 3px 8px; border: 1px solid #2a3644; border-radius: 10px; background: #0d1119;
+  color: #cfd8dc; font-size: 9.5px; cursor: pointer; white-space: nowrap;
+}
+.sp-mini.gold { border-color: rgba(217,169,64,0.65); color: #e8d9a8; background: rgba(217,169,64,0.08); }
+.sp-mini.on { border-color: rgba(255,138,92,0.7); color: #ffb090; }
+.sp-bd-strip, .sp-bd-go {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; padding: 5px 7px;
+  border: 1px solid #1c2530; border-radius: 8px; background: rgba(5,6,10,0.55); font-size: 10px; color: #8fa8c4;
+}
+.sp-bd-strip > span, .sp-bd-go > span:first-child { flex: 1 1 140px; min-width: 0; line-height: 1.35; }
+.sp-bd-strip b, .sp-bd-go b { color: #e8d9a8; font-weight: normal; }
+.sp-bd-strip { border-color: rgba(217,169,64,0.35); }
+.sp-bd-strip.bad { border-color: rgba(255,110,90,0.55); background: rgba(60,10,6,0.35); animation: sp-pulse 1.6s ease-in-out infinite; }
+.sp-bd-strip.bad b { color: #ffb090; }
+@keyframes sp-pulse { 50% { border-color: rgba(255,110,90,0.2); } }
+.sp-bd-go .why { flex: 1 1 100%; font-size: 9.5px; color: #55606c; line-height: 1.35; }
+.sp-bd-go .fly { font-size: 9px; color: #6fb8ff; }
+.sp-bd-count { display: flex; flex-wrap: wrap; gap: 0 5px; margin-top: 3px; font-size: 10px; color: #55606c; }
+.sp-bd-count b { color: #cfe3ff; font-weight: normal; }
+.sp-bd-goal { margin-top: 6px; font-size: 10.5px; color: #8fa8c4; line-height: 1.4; }
+.sp-bd-goal b { color: #e8d9a8; font-weight: normal; }
+.sp-bd-goal .sp-bar { height: 3px; margin-top: 4px; }
+.sp-bar.gold i { background: #d9a940; }
+.foe, .sp-ship-head .r i.foe { color: #ff8a70 !important; }
+.sp-bd-row { display: flex; align-items: center; gap: 4px; margin-top: 6px; overflow-x: auto; scrollbar-width: none; }
+.sp-bd-row::-webkit-scrollbar { display: none; }
+.sp-bd-row .lab { flex: none; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; margin-right: 2px; }
+.sp-bd-row .sp-chip { flex: none; padding: 4px 8px; overflow: visible; }
+.sp-bd-row .sp-chip b { color: #e8d9a8; font-weight: bold; }
+.sp-bd-row .sp-chip em { font-style: normal; color: #55606c; font-size: 9px; }
+.sp-bd-row .sp-chip.dead { opacity: 0.35; }
+.sp-bd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
+.sp-bd-obj {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; padding: 4px 5px 5px;
+  border: 1px solid #1c2530; border-radius: 7px; background: rgba(5,6,10,0.6); color: #cfd8dc; font-size: 10px;
+  text-align: left; cursor: pointer;
+}
+.sp-bd-obj b { font-weight: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sp-bd-obj span { font-size: 8.5px; color: #55606c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sp-bd-obj.held { border-color: rgba(217,169,64,0.7); background: rgba(217,169,64,0.1); }
+.sp-bd-obj.held span { color: #e8d9a8; }
+.sp-bd-obj.fight { border-color: rgba(255,110,90,0.6); }
+.sp-bd-obj.fight span { color: #ff8a70; }
+.sp-bd-obj.taking { border-color: rgba(217,169,64,0.45); border-style: dashed; }
+.sp-bd-obj.taking span { color: #e8d9a8; }
+.sp-bd-obj:active { transform: translateY(1px); }
+.sp-bd-acts .sp-btn { font-size: 10.5px; padding: 7px 2px; }
+.sp-btn.red { border-color: rgba(255,110,90,0.65); color: #ffb090; background: rgba(255,110,90,0.08); }
+.sp-btn.off { opacity: 0.45; }
+.sp-bd-hint { margin-top: 5px; font-size: 9.5px; }
+.sp-bd-fire { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 9.5px; color: #55606c; line-height: 1.35; }
+.sp-bd-fire span { flex: 1; min-width: 0; }
+.sp-bd-fire b { color: #cfd8dc; font-weight: normal; }
+/* смотрим внутрь вражеского корабля: свои пушки и курс тут ни к чему */
+body.boardview #sp-quick, body.boardview #sp-guns, body.boardview #sp-tg, body.boardview #sp-move { display: none !important; }
+body.boardview .sp-bottom { border-left-color: #ff6e5a; }
+body.boardview .sp-btns:not(.sp-bd-acts) { grid-template-columns: repeat(2, 1fr); }
+
 .sp-hint { font-size: 10px; color: #8fa8c4; line-height: 1.4; }
 .sp-hint b { color: #e8d9a8; font-weight: normal; }
 

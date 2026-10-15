@@ -116,7 +116,7 @@
       prep: function(B, x) {
         idle(x.foe); x.foe.ai = false;
         var s = B.sector(x.me, x.foe.x, x.foe.y); x.me.sh[s] = 0; x.me.focusAuto = false; x.me.focus = (s + 2) % 4;
-        x.foe.boardCd = 0; B.board(x.foe.n, x.me.n);
+        x.foe.boardCd = 0; B.board(x.foe.n, x.me.n, false, true);            // сразу в шаттлах — учение про ПВО
         // шаттлы отводятся на 7 км — есть полминуты, чтобы встретить их огнём
         x.ids = B.craft.filter(function(c) { return c.role === 'shuttle'; }).map(function(c) {
           var ang = Math.atan2(c.y - x.me.y, c.x - x.me.x); c.x = x.me.x + Math.cos(ang) * 7000; c.y = x.me.y + Math.sin(ang) * 7000; return c.id;
@@ -205,7 +205,7 @@
         if (!b) { x.line = x.foe.inbound ? 'шаттлы в пути: ' + x.foe.inbound : 'высади десант'; return null; }
         var br = b.rs[b.bridge];
         x.line = 'наших ' + b.summary().att + (br && br.held ? ' · мостик наш ' + Math.floor(b.bridgeT) + '/' + b.holdNeed + ' с' : ' · мостик не взят');
-        return b.over === 0 && !x.foe.inbound && !B.troopsOf(x.me).length ? 'fail' : null;
+        return b.over === 0 && !x.foe.inbound && !B.troopsOf(x.me).length && !(B.musters || []).some(function(m) { return m.n === x.me.n; }) ? 'fail' : null;
       }
     },
     {

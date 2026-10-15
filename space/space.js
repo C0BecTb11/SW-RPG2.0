@@ -233,7 +233,11 @@
     });
     for (i = 0; i < e.boards.length; i++) {
       var be = e.boards[i], bs = G.B.ships[be.n], bt = G.B.ships[be.t];
-      if (!be.dock && bs.side !== G.side && bt.side === G.side) toast('Абордаж! ' + bs.name + ' → ' + bt.name + ': ' + be.count + ' бойцов в шаттлах. Бей по ним ПВО', 'bad');
+      // сборы у шлюза врага не видно — тревога, когда шаттлы стартовали
+      if (!be.dock && !be.muster && !be.cancel && bs.side !== G.side && bt.side === G.side) toast('Абордаж! ' + bs.name + ' → ' + bt.name + ': ' + be.count + ' бойцов в шаттлах. Бей по ним ПВО', 'bad');
+      if (bs.side === G.side && be.launch) toast(bs.name + ': шаттлы стартовали — ' + be.count + ' ' + plural(be.count, 'боец', 'бойца', 'бойцов') + ' летят к «' + bt.name + '». Прикрой их от ПВО', 'gold');
+      if (bs.side === G.side && be.cancel) toast(bs.name + ': абордаж отменён — десант вернулся по местам', 'bad');
+      if (bs.side === G.side && be.left) toast(bs.name + ': ' + be.left + ' ' + plural(be.left, 'боец не успел', 'бойца не успели', 'бойцов не успели') + ' к шлюзу — остались на борту', 'gold');
     }
     for (i = 0; i < e.kills.length; i++) {
       var k = e.kills[i];
@@ -421,7 +425,7 @@
       (sh.inbound ? '<span>·</span>в полёте <b>' + sh.inbound + '</b>' : '') + '</div>';
     var goal, pct;
     if (b.prep > 0) {
-      goal = 'Подготовка к штурму: <b>' + Math.ceil(b.prep) + ' с</b>. Выбери отряд и коснись отсека на схеме — пойдут туда, как вскроют шлюз. Без приказа — к мостику сами';
+      goal = 'Подготовка к штурму: <b>' + Math.ceil(b.prep) + ' с</b>. Выбери отряд и коснись места на схеме — встанет там, как вскроют шлюз. Без приказа — к мостику сами';
       pct = 1 - b.prep / BD.PREP;
     } else if (b.charge) {
       goal = b.charge.armed ? 'Заряд у реактора: взрыв через <b>' + Math.ceil(b.charge.left) + ' с</b>' + (b.charge.defuse > 0 ? ' · <b class="foe">снимают!</b>' : '') : 'Инженер ставит заряд у реактора…';
@@ -439,7 +443,7 @@
       s.sq.map(function(q) {
         var r = sh.plan.roomByN[q.room];
         return '<button class="sp-chip' + (G.bsel[q.id] ? ' on' : '') + (q.n ? '' : ' dead') + '" data-bsq="' + q.id + '"><b>' + q.id + '</b> · ' + q.n +
-          (r && q.n ? ' <em>' + (q.w ? 'ждёт приказа ' + q.w + ' с' : esc(shortRoom(r.name)) + (q.auto ? '' : ' ✓')) + '</em>' : '') + '</button>';
+          (q.n && (r || q.c >= 0) ? ' <em>' + (q.w ? 'ждёт приказа ' + q.w + ' с' : q.c >= 0 && !q.auto ? '⚑ ' + (r ? esc(shortRoom(r.name)) : 'коридор') : esc(shortRoom(r.name)) + (q.auto ? '' : ' ✓')) + '</em>' : '') + '</button>';
       }).join('') + '</div>';
     var grid = '<div class="sp-bd-row sp-bd-objs">' + objectives(sh, b).map(function(o) {
       return '<button class="sp-bd-obj ' + o.state + '" data-bo="' + o.n + '"><b>' + o.name + '</b><span>' + esc(o.sub) + '</span></button>';
@@ -454,7 +458,7 @@
       '<button class="sp-mini' + (hold ? ' gold' : '') + '" data-ba="hold" data-n="' + sh.n + '">' + (hold ? 'Открыть огонь' : 'Прекратить огонь') + '</button></div>';
     var why = plant && plant !== null && !b.charge && b.rs[b.reactor] ? '' : '';
     var hint = '<div class="sp-dim sp-bd-hint">' + (G.vent ? 'Коснись отсека для продувки — удар по всем внутри' :
-      'Коснись отсека на схеме — ' + (none ? 'все отряды' : 'выбранные') + ' пойдут туда') + why + '</div>';
+      'Коснись любого места на схеме — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там и будут держать точку; кнопки целей — весь отсек') + why + '</div>';
     return head + gl + sq + grid + acts + hint;
   }
   // Панель обороны: смотрим внутрь своего корабля, на который высадился враг
@@ -487,7 +491,7 @@
       ds.map(function(q) {
         var r = sh.plan.roomByN[q.room];
         return '<button class="sp-chip' + (G.bsel[q.id] ? ' on' : '') + (q.n ? '' : ' dead') + '" data-bsq="' + q.id + '"><b>' + q.id + '</b> · ' + q.n +
-          (q.n ? ' <em>' + (q.auto ? 'сами' : esc(shortRoom(r ? r.name : '')) + ' ✓') + '</em>' : '') + '</button>';
+          (q.n ? ' <em>' + (q.auto ? 'сами' : q.c >= 0 ? '⚑ ' + (r ? esc(shortRoom(r.name)) : 'коридор') : esc(shortRoom(r ? r.name : '')) + ' ✓') + '</em>' : '') + '</button>';
       }).join('') + '</div>';
     var grid = '<div class="sp-bd-row sp-bd-objs">' + defObjectives(sh, b).map(function(o) {
       return '<button class="sp-bd-obj ' + o.state + '" data-bo="' + o.n + '"><b>' + o.name + '</b><span>' + esc(o.sub) + '</span></button>';
@@ -507,7 +511,7 @@
     var hint = '<div class="sp-dim sp-bd-hint">' + (G.vent ? 'Коснись отсека для продувки — удар по всем внутри, и по своим' :
       G.dmode === 'door' ? 'Коснись двери: запереть или открыть. Запертую обычную дверь враг вскрывает 5 с, броню и шлюз — 10 с' :
       G.dmode === 'weld' ? 'Коснись запертой двери: ремонтник заварит её за ' + BD.WELD + ' с — вскрывать вдвое дольше' :
-      'Коснись отсека — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там. «Сами» — снова решают сами. «Контра» — абордаж в ответ') + '</div>';
+      'Коснись любого места — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там и будут держать (коридор, развилка). «Сами» — снова решают сами. «Контра» — абордаж в ответ') + '</div>';
     return head + gl + sq + grid + acts + hint;
   }
   // Ключевые отсеки глазами защитника: свой, бой, враг берёт, у врага
@@ -544,7 +548,8 @@
       var tgt = G.mode === 'inside' && attView() ? G.view : G.foe;
       var mb = B.ships[G.sel] && B.ships[G.sel].crew.board, own = !!(mb && mb.started && mb.over < 0 && mb.def === G.side);
       var r = B.board(G.sel, tgt, own);
-      if (r.ok) toast('На абордаж: ' + r.party + ' ' + plural(r.party, 'боец', 'бойца', 'бойцов') + ' в ' + r.shuttles + ' ' + plural(r.shuttles, 'шаттле', 'шаттлах', 'шаттлах') + '. Прикрой их от ПВО', 'gold');
+      if (r.ok && r.muster) toast('Десант к шлюзу: ' + r.party + ' ' + plural(r.party, 'боец', 'бойца', 'бойцов') + ' бегут на посадку — шаттлы стартуют, как соберутся', 'gold');
+      else if (r.ok) toast('На абордаж: ' + r.party + ' ' + plural(r.party, 'боец', 'бойца', 'бойцов') + ' в ' + r.shuttles + ' ' + plural(r.shuttles, 'шаттле', 'шаттлах', 'шаттлах') + '. Прикрой их от ПВО', 'gold');
       else toast(r.why, 'bad');
     } else if (k === 'look') {
       setMode('inside', +n);
@@ -627,16 +632,28 @@
     hud();
   }
   // Касание отсека внутри: приказ отрядам / продувка
-  function boardTap(sh, r) {
-    var b = boardOf(sh.n); if (!b || !r) return false;
+  // w — точка касания на плане: отряд встаёт вокруг неё (коридор, развилка, угол зала) и держит её;
+  // без точки (кнопки целей) — идёт в отсек целиком
+  function boardTap(sh, r, w) {
+    var b = boardOf(sh.n); if (!b) return false;
+    var cell = -1;
+    if (w && !G.vent) {
+      var cx = Math.floor(w[0]), cy = Math.floor(w[1]), W = sh.plan.w;
+      if (cx >= 0 && cy >= 0 && cx < W && cy < sh.plan.h) cell = cy * W + cx;
+    }
+    if (!r && cell < 0) return false;
     if (G.vent) {
+      if (!r) return false;
       G.vent = false;
       if (!b.vent(G.side, r.n)) toast(b.canVent(G.side) || 'Не вышло', 'bad');
       hud(); return true;
     }
     if (b.att !== G.side && b.def !== G.side) return false;
-    var ids = selIds(), n = b.order(G.side, ids, r.n);
-    if (n) toast((ids ? 'Отряд' + (ids.length > 1 ? 'ы ' : ' ') + ids.join(', ') : 'Все отряды') + ' → ' + r.name, 'gold');
+    var ids = selIds(), n = cell >= 0 ? b.order(G.side, ids, r ? r.n : 0, cell) : b.order(G.side, ids, r.n);
+    // ткнули в машину или пульт (рядом нет пола) — весь отсек
+    if (!n && cell >= 0 && r) { n = b.order(G.side, ids, r.n); cell = -1; }
+    if (cell >= 0 && n) { G.bmark = { cell: cell, n: sh.n, t: performance.now() }; try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {} }
+    if (n) toast((ids ? 'Отряд' + (ids.length > 1 ? 'ы ' : ' ') + ids.join(', ') : 'Все отряды') + ' → ' + (cell >= 0 ? (r ? r.name + ', держать точку' : 'коридор, держать точку') : r.name), 'gold');
     else toast('Некому идти: отряды выбиты', 'bad');
     hud(); return true;
   }
@@ -806,6 +823,35 @@
         c.font = 'bold 11px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
         c.fillStyle = on ? '#1a1206' : '#e8eef2'; c.fillText(String(q.id), pp[0], pp[1] + 0.5);
       });
+      // точки, которые держат отряды: флажок с номером, к нему — пунктир от отряда
+      list.forEach(function(q) {
+        if (!(q.cell >= 0) || q.auto) return;
+        var W = sh.plan.w, cx = q.cell % W, cy = (q.cell - cx) / W, fp = itoS(cx + 0.5, cy + 0.5), on = G.bsel[q.id];
+        var x = 0, y = 0, n = 0;
+        q.members.forEach(function(id) { var m = ag[id]; if (m && m.alive) { x += m.x; y += m.y; n++; } });
+        if (n) {
+          var cp = itoS(x / n, y / n);
+          if (Math.abs(cp[0] - fp[0]) + Math.abs(cp[1] - fp[1]) > 24) {
+            c.strokeStyle = 'rgba(' + TEAMC[G.side] + ',0.45)'; c.lineWidth = 1.2; c.setLineDash([3, 5]); c.lineDashOffset = -T * 14;
+            c.beginPath(); c.moveTo(cp[0], cp[1]); c.lineTo(fp[0], fp[1]); c.stroke(); c.setLineDash([]);
+          }
+        }
+        var hgt = Math.max(12, s * 2.2);
+        c.strokeStyle = on ? '#f0c86a' : 'rgba(' + TEAMC[G.side] + ',0.95)'; c.lineWidth = 1.6;
+        c.beginPath(); c.moveTo(fp[0], fp[1]); c.lineTo(fp[0], fp[1] - hgt); c.stroke();
+        c.fillStyle = on ? 'rgba(217,169,64,0.95)' : 'rgba(' + TEAMC[G.side] + ',0.85)';
+        c.beginPath(); c.moveTo(fp[0], fp[1] - hgt); c.lineTo(fp[0] + 11, fp[1] - hgt + 4.5); c.lineTo(fp[0], fp[1] - hgt + 9); c.closePath(); c.fill();
+        c.font = 'bold 8px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillStyle = on ? '#1a1206' : '#06090d'; c.fillText(String(q.id), fp[0] + 4, fp[1] - hgt + 4.6);
+        c.fillStyle = 'rgba(' + TEAMC[G.side] + ',0.35)'; c.beginPath(); c.ellipse(fp[0], fp[1], 5, 2.2, 0, 0, TAU); c.fill();
+      });
+    }
+    // отметка касания
+    var bm = G.bmark;
+    if (bm && bm.n === sh.n) {
+      var mk = (performance.now() - bm.t) / 600;
+      if (mk < 1) { var W2 = sh.plan.w, mx = bm.cell % W2, mp = itoS(mx + 0.5, (bm.cell - mx) / W2 + 0.5); c.strokeStyle = 'rgba(217,169,64,' + (1 - mk) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(mp[0], mp[1], 5 + mk * 18, 0, TAU); c.stroke(); }
+      else G.bmark = null;
     }
   }
 
@@ -1781,7 +1827,7 @@
       if (dv && who && who.team === G.side && who.dsq && !G.vent) { G.bsel[who.dsq] = !G.bsel[who.dsq]; hud(); return; }
       // защитник: касание человека экипажа — показать, кто это; отсека — приказ отрядам
       var inspect = dv && who && !who.dsq && !G.vent;
-      if ((bv || dv || G.vent) && !inspect && boardTap(sh0, r || (who && SH.roomAt(sh0.plan, who.x, who.y)))) return;
+      if ((bv || dv || G.vent) && !inspect && boardTap(sh0, r || (who && SH.roomAt(sh0.plan, who.x, who.y)), who ? null : w)) return;
       G.who = who ? who.id : null;
       if (who) r = SH.roomAt(sh0.plan, who.x, who.y) || r;
       G.room = r || null; hud();
@@ -1931,10 +1977,11 @@
 
   // Трюм корабля: десант (живые / сколько было), герои, техника; недобор экипажа
   function holdLine(sh) {
-    var c = sh.crew, alive = 0, all = 0, heroes = [], gA = 0, gN = 0;
-    if (G.net && sh.netTroops) { alive = sh.netTroops[0]; all = sh.netTroops[1]; heroes = sh.netHeroes || []; if (sh.netGuards) { gA = sh.netGuards[0]; gN = sh.netGuards[1]; } }
+    var c = sh.crew, alive = 0, all = 0, heroes = [], gA = 0, gN = 0, mu = 0;
+    if (G.net && sh.netTroops) { alive = sh.netTroops[0]; all = sh.netTroops[1]; heroes = sh.netHeroes || []; mu = sh.netMuster || 0; if (sh.netGuards) { gA = sh.netGuards[0]; gN = sh.netGuards[1]; } }
     else c.agents.forEach(function(a) {
       if (a.team !== sh.side) return;
+      if (a.alive && a.job && a.job.kind === 'muster') mu++;
       if (a.role === 'guard') { gN++; if (a.alive) gA++; return; }
       if (!a.utype) return;
       all++; if (a.alive) alive++;
@@ -1943,6 +1990,7 @@
     var out = '<div class="sp-hold">' +
       (all ? 'десант на борту <b>' + alive + '</b><em> из ' + all + '</em>' : '<span class="sp-dim">десанта в трюме нет — бойцов грузят в игре</span>') +
       (heroes.length ? ' · <b class="hero">★ ' + heroes.map(esc).join(', ') + '</b>' : '') +
+      (mu ? ' · <b class="mu">бегут к шлюзу ' + mu + '</b>' : '') +
       (sh.vehicles && sh.vehicles.length ? ' · техника <b>' + sh.vehicles.length + '</b>' : '') +
       (gN ? ' · охрана <b>' + gA + '</b>' + (gA < gN ? '<em> из ' + gN + '</em>' : '') : '') +
       (c.crewLost ? ' · <span class="foe">недобор экипажа ' + c.crewLost + '</span>' : '') + '</div>';
@@ -2709,5 +2757,5 @@
     if (!m1) { POLY.side = side; polyOpen(true); }
   }
   requestAnimationFrame(frame);
-  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, start: start };
+  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, start: start, itoS: itoS };
 })();

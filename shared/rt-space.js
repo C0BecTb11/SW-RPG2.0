@@ -103,6 +103,7 @@
   // Абордаж: сколько бойцов принимают шлюзы цели (старая игра: малый 20, большой 30, флагман 36)
   function boardCap(sh) { return sh.len >= 1200 ? 36 : sh.len >= 700 ? 30 : 20; }
   var BOARD_GAP = 3000, BOARD_CD = 60, SHUTTLE_MAX = 12;
+  var MUSTER_MAX = 75;      // десант собирается у шлюза не дольше (кто не добежал — остаётся на борту)
 
   function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
   function rng(seed) {
@@ -116,6 +117,7 @@
   function Battle(opts) {
     this.R = rng(opts.seed || 7);
     this.t = 0; this.ships = []; this.craft = []; this.pending = []; this.nextCraft = 1;
+    this.musters = [];       // десант бежит к своему шлюзу на посадку в шаттлы
     this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [], rams: [] };
     this.over = -1;          // сторона-победитель
     this.aiBoard = opts.aiBoard || [false, false];   // стороны, за которые абордаж решает ИИ
@@ -1056,6 +1058,7 @@
       if (!a.alive || a.team !== sh.side || a.grp !== 'troops' || a.role !== 'reserve') continue;
       if (!st || !(st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory')) continue;
       if (a.job && a.job.kind === 'defend' && !(all && !(a.tgt >= 0))) continue;
+      if (a.job && a.job.kind === 'muster') continue;              // уже бежит к шлюзу
       out.push(a);
     }
     return out;
@@ -1074,7 +1077,8 @@
     // в бою на борту уже свои — подкрепление: места в шлюзах за вычетом тех, кто там и в пути
     var inside = 0;
     if (on) { var ag = b.crew.agents; for (var i = 0; i < ag.length; i++) if (ag[i].alive && ag[i].team === a.side) inside++; }
-    var party = Math.min(avail, Math.max(0, cap - inside - b.inbound * SHUTTLE_MAX));
+    var party = Math.min(avail, Math.max(0, cap - inside - this.menTo(b) - (b.mustered || 0)));   // в шаттлах и на сборах у шлюзов
+    for (var mi = 0; mi < this.musters.length; mi++) if (this.musters[mi].n === n) return { ok: false, why: 'десант уже бежит к шлюзу', party: 0, cap: cap };
     if (a.boardCd > 0) return { ok: false, why: 'шаттлы вернутся через ' + Math.ceil(a.boardCd) + ' с', party: party, cap: cap };
     var own = a.crew.board;
     if (avail < minP) return { ok: false, why: own && own.started && own.over < 0 ? 'десант обороняет свой корабль' : 'на борту нет десанта', party: 0, cap: cap };
@@ -1098,14 +1102,143 @@
     }
     return best;
   };
-  // Высадка: бойцы уходят с корабля в шаттлы (по 12), шаттлы летят к шлюзу цели
-  Battle.prototype.board = function(n, t, all) {
+  // Абордаж: десант бежит из казарм к своему шлюзу, ближнему к цели; собрались — шаттлы
+  // (по 12) летят к шлюзу цели. Места в шлюзах цели и откат шаттлов заняты с приказа.
+  // now — сразу в шаттлах, без сборов (учения полигона)
+  Battle.prototype.board = function(n, t, all, now) {
     var can = this.canBoard(n, t, all); if (!can.ok) return can;
     var a = this.ships[n], b = this.ships[t], lock = this.portFor(b, a);
     if (!lock) return { ok: false, why: 'у цели нет шлюзов' };
-    var party = this.takeParty(a, can.party, all), i;
-    // шаттлы стартуют от шлюза атакующего, ближнего к цели
-    var from = this.portFor(a, b), p0 = from ? this.toWorld(a, from.port[0], from.port[1]) : [a.x, a.y];
+    var main = this.departFrom(a, this.troopsOf(a, all), b, can.party);
+    var take = this.pickParty(a, can.party, all, main), i;
+    var ports = now ? [] : this.departPorts(a, take, main);
+    if (!ports.length) return this.shuttlesOut(a, b, lock, null, take.map(function(m) { return this.departOf(a, m); }, this), can.reinforce, 0);
+    var k0 = Math.ceil(take.length / SHUTTLE_MAX);
+    for (i = 0; i < take.length; i++) {
+      var m = take[i], from = this.nearPort(ports, m);
+      this.offDefence(a, m); a.crew.releaseJob(m);
+      // каждый бежит к ближнему своему шлюзу или ангару — оттуда и взлетит его шаттл
+      m.job = { kind: 'muster', room: from.n }; m.guard = 0; m.wait = 0; m.hold = 0;
+      a.crew.go(m, from.n, a.crew.spotIn(from) || a.crew.rooms[from.n].anchor, 'muster');
+      m.face = from.port ? Math.atan2(from.port[1] - (from.y + from.h / 2), from.port[0] - (from.x + from.w / 2)) : null;
+    }
+    b.mustered = (b.mustered || 0) + take.length;       // места в шлюзах цели заняты (враг сборов не видит)
+    a.boardCd = BOARD_CD;
+    var far = 0;
+    for (i = 0; i < take.length; i++) { var fp = this.nearPort(ports, take[i]); far = Math.max(far, Math.abs(take[i].x - fp.cx) + Math.abs(take[i].y - fp.cy)); }
+    this.musters.push({ n: n, t: t, lock: lock.n, men: take.length, out: 0,
+                        max: Math.min(150, Math.max(MUSTER_MAX, far / 4.5 * 1.4 + 10)),     // большой корабль — бежать дольше
+                        ids: take.map(function(m) { return m.id; }), t0: this.t, k0: k0, reinforce: !!can.reinforce });
+    this.ev.boards.push({ n: n, t: t, count: take.length, shuttles: k0, muster: 1, reinforce: !!can.reinforce });
+    return { ok: true, party: take.length, shuttles: k0, muster: true };
+  };
+  // Откуда стартуют шаттлы: шлюз или ангар, ближний к десанту (бежать по кораблю недолго);
+  // из равных — тот, что ближе к цели
+  // Отсеки, откуда взлетают абордажные шаттлы: шлюзы с выходом наружу, ангары, доки
+  Battle.prototype.departRooms = function(a) {
+    var out = [], rooms = a.plan.rooms;
+    for (var i = 0; i < rooms.length; i++) {
+      var r = rooms[i]; if (!((r.t === 'airlock' && r.port) || r.t === 'hangar' || r.t === 'dock')) continue;
+      if (a.crew.rooms[r.n] && a.crew.rooms[r.n].anchor) out.push(r);
+    }
+    return out;
+  };
+  // Сколько бойцов летит к кораблю b в шаттлах
+  Battle.prototype.menTo = function(b) {
+    var n = 0;
+    for (var i = 0; i < this.craft.length; i++) { var c = this.craft[i]; if (c.role === 'shuttle' && !c.dead && !c.back && c.tgt === b.n && c.party) n += c.party.length; }
+    return n;
+  };
+  // Шлюзы отправки этой команды: ближние к бойцам, но не больше, чем шаттлов на всех (+1) —
+  // иначе огромный корабль рассыпал бы десант по десятку шлюзов в шаттлы по двое
+  Battle.prototype.departPorts = function(a, take, main) {
+    var all = this.departRooms(a); if (!all.length || !take.length) return [];
+    var cnt = {}, i, keep = Math.ceil(take.length / SHUTTLE_MAX) + 1;
+    for (i = 0; i < take.length; i++) { var p = this.nearPort(all, take[i]); cnt[p.n] = (cnt[p.n] || 0) + 1; }
+    var list = all.filter(function(r) { return cnt[r.n]; }).sort(function(x, y) { return cnt[y.n] - cnt[x.n]; }).slice(0, keep);
+    if (main && list.indexOf(main) < 0 && list.length < keep) list.push(main);
+    return list.length ? list : [main || all[0]];
+  };
+  Battle.prototype.nearPort = function(ports, m) {
+    var best = ports[0], bd = 1e18;
+    for (var i = 0; i < ports.length; i++) { var dx = ports[i].cx - m.x, dy = ports[i].cy - m.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = ports[i]; } }
+    return best;
+  };
+  // (оценка: сколько бежать ближним count бойцам до этого отсека)
+  Battle.prototype.departFrom = function(a, pool, b, count) {
+    if (!pool.length) return null;
+    var best = null, bd = 1e18, rooms = a.plan.rooms, tl = this.toLocal(a, b.x, b.y), i, k;
+    for (i = 0; i < rooms.length; i++) {
+      var r = rooms[i]; if (!((r.t === 'airlock' && r.port) || r.t === 'hangar' || r.t === 'dock')) continue;
+      if (!a.crew.rooms[r.n] || !a.crew.rooms[r.n].anchor) continue;
+      var ds = [];
+      for (k = 0; k < pool.length; k++) { var dx = pool[k].x - r.cx, dy = pool[k].y - r.cy; ds.push(Math.sqrt(dx * dx + dy * dy)); }
+      ds.sort(function(p, q) { return p - q; });
+      var far = ds[Math.min(ds.length, Math.max(1, count || 1)) - 1];          // последнему бежать дольше всех
+      var ex = r.cx - tl[0], ey = r.cy - tl[1], d = far + Math.sqrt(ex * ex + ey * ey) * 0.05;
+      if (d < bd) { bd = d; best = r; }
+    }
+    return best;
+  };
+  // Сборы у шлюза: все добежали (или вышло время) — посадка; цель пропала — отбой, бойцы по местам
+  Battle.prototype.musterStep = function() {
+    for (var i = this.musters.length - 1; i >= 0; i--) {
+      var mu = this.musters[i], a = this.ships[mu.n], b = this.ships[mu.t];
+      var gone = function() { if (b) b.mustered = Math.max(0, (b.mustered || 0) - mu.men); mu.men = 0; };
+      var self = this;
+      // назад на борт: идёт абордаж своего корабля — в оборону, иначе по местам
+      var back = function(list) {
+        var hb = a && a.crew.board, def = hb && hb.started && hb.over < 0 && hb.def === a.side;
+        for (var q = 0; q < list.length; q++) { a.crew.releaseJob(list[q]); if (def) hb.toDefend(list[q]); else a.crew.sendPost(list[q]); }
+        if (def && list.length) hb.makeDefSquads();
+      };
+      if (!a || a.dead) { gone(); this.musters.splice(i, 1); continue; }
+      var c = a.crew, W = c.w, list = [], ready = [], byRoom = {};
+      for (var k = 0; k < mu.ids.length; k++) {
+        var m = c.agents[mu.ids[k]];
+        if (!m || !m.alive || !m.job || m.job.kind !== 'muster') continue;
+        list.push(m);
+        if (a.plan.room[Math.floor(m.y) * W + Math.floor(m.x)] === m.job.room) { ready.push(m); (byRoom[m.job.room] = byRoom[m.job.room] || []).push(m); }
+      }
+      var bb = b && b.crew.board, foreign = bb && bb.started && bb.over < 0 && bb.att !== a.side;
+      var late = this.t - mu.t0 > (mu.max || MUSTER_MAX);
+      // погибшие на сборах места в шлюзах цели больше не держат
+      if (list.length < mu.men && b) { var lost = mu.men - list.length; mu.men -= lost; b.mustered = Math.max(0, (b.mustered || 0) - lost); }
+      if (!list.length) {
+        // никого: улетели — конец сборов; не улетел никто (сняли в оборону, погибли) — отбой, шаттлы свободны
+        if (!mu.out) { a.boardCd = 0; this.ev.boards.push({ n: mu.n, t: mu.t, cancel: 1, count: 0 }); }
+        gone(); this.musters.splice(i, 1); continue;
+      }
+      var far2 = b && !b.dead ? Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)) - (a.len + b.len) / 2 : 0;
+      if (!b || b.dead || foreign || far2 > BOARD_GAP * 1.5 || (late && !ready.length)) {
+        // отбой: цели нет, ушла далеко или не собрались — по местам (или в оборону)
+        back(list);
+        if (!mu.out) a.boardCd = 0;
+        gone(); this.musters.splice(i, 1);
+        this.ev.boards.push({ n: mu.n, t: mu.t, cancel: 1, count: list.length });
+        continue;
+      }
+      // посадка у каждого шлюза: шаттл заполнился (12) — стартует сразу; последний ждёт
+      // остальных, кто бежит к этому же шлюзу, до срока
+      for (var rn in byRoom) {
+        var here = byRoom[rn], left = list.filter(function(x) { return x.job.room === +rn; }).length;
+        while (here.length && (here.length >= SHUTTLE_MAX || here.length === left || late)) {
+          var grp = here.splice(0, SHUTTLE_MAX), party = [];
+          for (k = 0; k < grp.length; k++) { party.push(this.departOf(a, grp[k])); list.splice(list.indexOf(grp[k]), 1); left--; }
+          var gn = Math.min(mu.men, grp.length); mu.men -= gn; b.mustered = Math.max(0, (b.mustered || 0) - gn);
+          this.shuttlesOut(a, b, b.plan.roomByN[mu.lock], a.plan.roomByN[+rn], party, mu.reinforce, 1);
+          mu.out += party.length;
+        }
+      }
+      if (late && list.length) { back(list); this.ev.boards.push({ n: mu.n, t: mu.t, left: list.length }); }   // не добежали — остаются
+      if (late || !list.length) { gone(); this.musters.splice(i, 1); }
+    }
+  };
+  // Шаттлы с командой стартуют от своего шлюза (from) к шлюзу цели (lock)
+  Battle.prototype.shuttlesOut = function(a, b, lock, from, party, reinforce, mustered) {
+    var i, n = a.n, t = b.n;
+    if (!lock || !party.length) return { ok: false, why: 'некому лететь' };
+    var p0 = from ? (from.port ? this.toWorld(a, from.port[0], from.port[1]) : this.toWorld(a, from.cx, from.cy)) : [a.x, a.y];
     var C = CRAFT.shuttle, k = 0;
     for (i = 0; i < party.length; i += SHUTTLE_MAX) {
       var grp = party.slice(i, i + SHUTTLE_MAX), off = (k++ - 1) * 60;
@@ -1115,31 +1248,42 @@
       b.inbound++;
     }
     a.boardCd = BOARD_CD;
-    this.ev.boards.push({ n: n, t: t, count: party.length, shuttles: k, reinforce: !!can.reinforce });
+    this.ev.boards.push({ n: n, t: t, count: party.length, shuttles: k, reinforce: !!reinforce, launch: mustered ? 1 : 0 });
     return { ok: true, party: party.length, shuttles: k };
   };
   // Снять с корабля команду абордажа: бойцы и 1–2 инженера (вскрывать двери, ставить заряд)
-  Battle.prototype.takeParty = function(a, count, all) {
+  // Кто идёт на абордаж: бойцы и 1–2 инженера (вскрывать двери, ставить заряд)
+  // near — отсек отправки: из равных берутся те, кто к нему ближе (бежать недолго)
+  Battle.prototype.pickParty = function(a, count, all, near) {
     // инженеры — купленные бойцы-инженеры трюма (экипаж корабля на абордаж не идёт)
-    var all0 = this.troopsOf(a, all), engs = all0.filter(function(x) { return x.eng; }), troops = all0.filter(function(x) { return !x.eng; }), party = [], i;
+    var all0 = this.troopsOf(a, all), engs = all0.filter(function(x) { return x.eng; }), troops = all0.filter(function(x) { return !x.eng; });
+    var dist = function(m) { if (!near) return 0; var dx = m.x - near.cx, dy = m.y - near.cy; return dx * dx + dy * dy; };
     // герои — первыми (малой группой идут только с героем); инженер — в группе от четырёх
-    troops.sort(function(p, q) { return (q.hero ? 1 : 0) - (p.hero ? 1 : 0); });
+    troops.sort(function(p, q) { return ((q.hero ? 1 : 0) - (p.hero ? 1 : 0)) || (dist(p) - dist(q)); });
+    engs.sort(function(p, q) { return dist(p) - dist(q); });
     var nEng = count >= 4 ? Math.min(engs.length, count >= 8 ? 2 : 1) : 0;
-    var take = troops.slice(0, count - nEng).concat(engs.slice(0, nEng));
-    for (i = 0; i < take.length; i++) {
-      var m = take[i];
-      if (m.job && m.job.kind === 'defend') {
-        // снят с обороны своего корабля: из отряда защитников вон
-        var ob = a.crew.board, oq = ob && m.dsq && ob.dsq[m.dsq - 1];
-        if (oq) { var oi = oq.members.indexOf(m.id); if (oi >= 0) oq.members.splice(oi, 1); }
-        m.job = null; m.guard = 0; m.dsq = 0;
-      }
-      a.crew.releaseJob(m); a.crew.claimCell(m, null);
-      m.alive = false; m.gone = true;                       // ушёл на шаттл
-      var st = a.crew.rooms[m.home]; if (st) st.assigned--;
-      party.push({ fig: m.fig, wpn: m.wpn || this.wpnFor(a, m), eng: !!m.eng, src: m.id, hp: m.hp, hpMax: m.hpMax, dmgK: m.dmgK || 1,
-                   utype: m.utype || '', uname: m.uname || '', uid: m.uid || '', hero: !!m.hero, medicU: !!m.medicU });
-    }
+    return troops.slice(0, count - nEng).concat(engs.slice(0, nEng));
+  };
+  // Снят с обороны своего корабля: из отряда защитников вон
+  Battle.prototype.offDefence = function(a, m) {
+    if (!(m.job && m.job.kind === 'defend')) return;
+    var ob = a.crew.board, oq = ob && m.dsq && ob.dsq[m.dsq - 1];
+    if (oq) { var oi = oq.members.indexOf(m.id); if (oi >= 0) oq.members.splice(oi, 1); }
+    m.job = null; m.guard = 0; m.dsq = 0; m.post = null;
+  };
+  // Боец сел в шаттл: с корабля его нет, в отряде абордажа — его запись
+  Battle.prototype.departOf = function(a, m) {
+    this.offDefence(a, m);
+    a.crew.releaseJob(m); a.crew.claimCell(m, null);
+    m.alive = false; m.gone = true;                       // ушёл на шаттл
+    var st = a.crew.rooms[m.home]; if (st) st.assigned--;
+    return { fig: m.fig, wpn: m.wpn || this.wpnFor(a, m), eng: !!m.eng, src: m.id, hp: m.hp, hpMax: m.hpMax, dmgK: m.dmgK || 1,
+             utype: m.utype || '', uname: m.uname || '', uid: m.uid || '', hero: !!m.hero, medicU: !!m.medicU };
+  };
+  // Снять с корабля команду абордажа сразу (полигон: высадка без сборов)
+  Battle.prototype.takeParty = function(a, count, all) {
+    var take = this.pickParty(a, count, all), party = [];
+    for (var i = 0; i < take.length; i++) party.push(this.departOf(a, take[i]));
     return party;
   };
   // Высадка без полёта (полигон и замеры): команда сразу в шлюзе цели
@@ -1211,6 +1355,7 @@
   // Итоги абордажей и решения ИИ
   Battle.prototype.boardStep = function(dt) {
     var i, sh;
+    this.musterStep();
     for (i = 0; i < this.ships.length; i++) {
       sh = this.ships[i];
       if (sh.boardCd > 0) sh.boardCd -= dt;

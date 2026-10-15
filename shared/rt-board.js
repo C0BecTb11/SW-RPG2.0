@@ -254,6 +254,7 @@
   };
   Board.prototype.toDefend = function(a) {
     var c = this.c;
+    a.post = null;
     c.releaseJob(a); c.claimCell(a, null);
     a.job = { kind: 'defend', room: a.home };
     if (!a.wpn) { a.wpn = this.wpnOf(a); a.hpMax = WPN[a.wpn].hp; a.hp = a.hpMax * Math.min(1, a.hp / 100); }
@@ -270,26 +271,72 @@
     return this.c.ship.faction === 'cis' ? (a.id % 4 === 3 ? 'b2' : 'b1') : (a.id % 5 === 4 ? 'heavy' : 'rifle');
   };
   // Приказ отряду: занять отсек (auto — приказ ИИ, игрок его перекрывает)
-  Board.prototype.orderSquad = function(sq, roomN, auto) {
-    var r = this.ship.roomByN[roomN]; if (!r) return false;
-    sq.room = roomN; sq.auto = !!auto;
+  // cell — точка на плане (номер клетки): отряд встаёт вокруг неё и держит её (коридор, развилка…);
+  // без точки — идёт в отсек целиком
+  Board.prototype.orderSquad = function(sq, roomN, auto, cell) {
     var c = this.c;
+    if (cell != null && cell >= 0) {
+      var live = [];
+      for (var k = 0; k < sq.members.length; k++) { var m = c.agents[sq.members[k]]; if (m && m.alive) live.push(m); }
+      var spots = this.spotsNear(cell, live.length); if (!spots.length) return false;
+      sq.room = this.ship.room[spots[0][1] * this.W + spots[0][0]] || 0; sq.auto = false; sq.cell = cell;
+      for (k = 0; k < live.length; k++) { live[k].post = spots[k % spots.length]; this.goCell(live[k], live[k].post); }
+      return true;
+    }
+    var r = this.ship.roomByN[roomN]; if (!r) return false;
+    sq.room = roomN; sq.auto = !!auto; sq.cell = -1;
     for (var i = 0; i < sq.members.length; i++) {
       var a = c.agents[sq.members[i]]; if (!a || !a.alive) continue;
       var p = c.spotIn(r); if (!p) continue;
+      a.post = null;
       a.goalRoom = roomN; a.goal = p; a.at = false; a.stuck = 0; a.lastD = 1e9;
     }
     return true;
   };
-  Board.prototype.order = function(team, sqIds, roomN) {
-    if (!this.ship.roomByN[roomN] || this.over >= 0) return 0;
-    if (team === this.def) return this.orderDef(sqIds, roomN);
+  // Клетки пола вокруг точки (по ходу, не сквозь стены и двери) — места для отряда
+  Board.prototype.spotsNear = function(cell, n) {
+    var W = this.W, H = this.ship.h, walk = this.c.walk, out = [], seen = {}, q = [];
+    if (!(cell >= 0 && cell < W * H)) return out;
+    if (!walk[cell] || this.doorAt[cell] >= 0) {
+      // ткнули в стену или мебель — ближайший пол в 3 клетках
+      // (ближний пол своего же отсека — не по ту сторону стены)
+      var cx = cell % W, cy = (cell - cx) / W, best = -1, bd = 1e9, rm = this.ship.room[cell];
+      for (var dy = -6; dy <= 6; dy++) for (var dx = -6; dx <= 6; dx++) {
+        var x = cx + dx, y = cy + dy, k = y * W + x;
+        if (x < 0 || y < 0 || x >= W || y >= H || !walk[k] || this.doorAt[k] >= 0) continue;
+        var dd = dx * dx + dy * dy + (this.ship.room[k] === rm ? 0 : 50);
+        if (dd < bd) { bd = dd; best = k; }
+      }
+      if (best < 0) return out;
+      cell = best;
+    }
+    q.push(cell); seen[cell] = 1;
+    for (var h = 0; h < q.length && out.length < Math.max(1, n); h++) {
+      var c0 = q[h], x0 = c0 % W, y0 = (c0 - x0) / W;
+      out.push([x0, y0]);
+      for (var d = 0; d < 4; d++) {
+        var nx = x0 + (d === 0 ? 1 : d === 1 ? -1 : 0), ny = y0 + (d === 2 ? 1 : d === 3 ? -1 : 0), nk = ny * W + nx;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[nk] || !walk[nk] || this.doorAt[nk] >= 0) continue;
+        seen[nk] = 1; q.push(nk);
+      }
+    }
+    return out;
+  };
+  Board.prototype.goCell = function(a, p) {
+    var k = p[1] * this.W + p[0];
+    a.goalRoom = this.ship.room[k] || 0; a.goal = [p[0], p[1]]; a.at = false; a.stuck = 0; a.lastD = 1e9; a.goT = this.t;
+  };
+  Board.prototype.order = function(team, sqIds, roomN, cell) {
+    if (this.over >= 0) return 0;
+    if (cell != null && cell >= 0) { if (!(cell < this.W * this.ship.h)) return 0; roomN = this.ship.room[cell] || 0; }
+    else if (!this.ship.roomByN[roomN]) return 0;
+    if (team === this.def) return this.orderDef(sqIds, roomN, cell);
     if (team !== this.att) return 0;
     var n = 0;
     for (var i = 0; i < this.squads.length; i++) {
       var sq = this.squads[i];
       if (sqIds && sqIds.indexOf(sq.id) < 0) continue;
-      if (this.alive(sq) && this.orderSquad(sq, roomN, false)) { sq.wait = 0; n++; }
+      if (this.alive(sq) && this.orderSquad(sq, roomN, false, cell)) { sq.wait = 0; n++; }
     }
     return n;
   };
@@ -313,16 +360,21 @@
   };
   // Боец вернулся с шаттла или встал в оборону позже — в отряд
   Board.prototype.addDefender = function(a) { this.toDefend(a); a.dsq = 0; this.makeDefSquads(); };
-  Board.prototype.orderDef = function(ids, roomN) {
-    var n = 0;
+  Board.prototype.orderDef = function(ids, roomN, cell) {
+    var n = 0, pt = cell != null && cell >= 0;
     for (var i = 0; i < this.dsq.length; i++) {
       var sq = this.dsq[i];
       if (ids && ids.indexOf(sq.id) < 0) continue;
       if (!this.alive(sq)) continue;
-      sq.room = roomN; sq.auto = false; n++;
-      for (var j = 0; j < sq.members.length; j++) {
-        var a = this.c.agents[sq.members[j]]; if (!a || !a.alive) continue;
-        a.guard = 0; a.goT = -99; this.goRoom(a, roomN, 0);
+      var live = [];
+      for (var j = 0; j < sq.members.length; j++) { var a = this.c.agents[sq.members[j]]; if (a && a.alive) live.push(a); }
+      var spots = pt ? this.spotsNear(cell, live.length) : null;
+      if (pt && !spots.length) continue;
+      sq.room = pt ? this.ship.room[spots[0][1] * this.W + spots[0][0]] || 0 : roomN; sq.auto = false; sq.cell = pt ? cell : -1; n++;
+      for (j = 0; j < live.length; j++) {
+        a = live[j]; a.guard = 0; a.goT = -99;
+        if (pt) { a.post = spots[j % spots.length]; this.goCell(a, a.post); }
+        else { a.post = null; this.goRoom(a, roomN, 0); }
       }
     }
     return n;
@@ -335,6 +387,8 @@
       if (ids && ids.indexOf(sq.id) < 0) continue;
       if (!this.alive(sq)) continue;
       n++;
+      sq.cell = -1;
+      for (var pm = 0; pm < sq.members.length; pm++) { var pa = this.c.agents[sq.members[pm]]; if (pa) pa.post = null; }
       if (team === this.att) { if (this.bridge) this.orderSquad(sq, this.bridge, true); else sq.auto = true; }
       else { sq.auto = true; sq.room = 0; }
     }
@@ -483,7 +537,7 @@
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
       // в отсеке остались враги вне выстрела — сблизиться (иначе стоят по углам большого зала)
       a.push = (a.push || 0) - dt;
-      if (a.push <= 0) { a.push = 1 + this.R() * 0.5; this.closeIn(a); }
+      if (a.push <= 0 && !a.post) { a.push = 1 + this.R() * 0.5; this.closeIn(a); }    // на точке — держит её, не сходит
       return;
     }
     this.step(a, dt, (tg ? 1.4 : 2.6) * w.spd);
@@ -798,6 +852,7 @@
       if (!a.alive || a.team !== this.def || !a.job || a.job.kind !== 'defend') continue;
       // отряд с приказом игрока — держит свой отсек
       var dq = a.dsq && this.dsq[a.dsq - 1];
+      if (dq && !dq.auto && dq.cell >= 0 && a.post) { a.guard = 0; continue; }            // держит точку
       if (dq && !dq.auto && dq.room) { a.guard = 0; this.goRoom(a, dq.room, 6); continue; }
       // охрана ключевых отсеков
       var g = a.guard;
@@ -906,6 +961,7 @@
   };
   // Конец абордажа: защитники — на свои посты, тревога снимается
   Board.prototype.end = function() {
+    for (var pi = 0; pi < this.c.agents.length; pi++) this.c.agents[pi].post = null;   // точки отрядов — только на этот бой
     var c = this.c;
     for (var k in this.rs) { this.rs[k].held = false; this.rs[k].hold = 0; this.rs[k].back = 0; }
     this.charge = null;
@@ -927,9 +983,9 @@
       else if (a.job && a.job.kind === 'defend') out.def++;
       else out.crew++;
     }
-    for (i = 0; i < this.squads.length; i++) { var oq = this.squads[i]; out.sq.push({ id: oq.id, n: this.alive(oq), room: oq.room, auto: oq.auto, w: oq.wait > 0 && !oq.auto && oq.room === oq.land ? Math.ceil(oq.wait) : 0 }); }
+    for (i = 0; i < this.squads.length; i++) { var oq = this.squads[i]; out.sq.push({ id: oq.id, n: this.alive(oq), room: oq.room, auto: oq.auto, c: oq.cell >= 0 ? oq.cell : -1, w: oq.wait > 0 && !oq.auto && oq.room === oq.land ? Math.ceil(oq.wait) : 0 }); }
     out.dsq = [];
-    for (i = 0; i < this.dsq.length; i++) out.dsq.push({ id: this.dsq[i].id, n: this.alive(this.dsq[i]), room: this.dsq[i].room, auto: this.dsq[i].auto });
+    for (i = 0; i < this.dsq.length; i++) out.dsq.push({ id: this.dsq[i].id, n: this.alive(this.dsq[i]), room: this.dsq[i].room, auto: this.dsq[i].auto, c: this.dsq[i].cell >= 0 ? this.dsq[i].cell : -1 });
     return out;
   };
 

@@ -519,6 +519,7 @@ body.inside .sp-taskrow .sp-task-body em { display: none; }
 .sp-hold b { color: #e8d9a8; font-weight: normal; }
 .sp-hold em { font-style: normal; color: #55606c; }
 .sp-hold .hero { color: #9fd8ff; }
+.sp-hold .mu { color: #f0c86a; animation: sp-blink 1.4s ease-in-out infinite; }
 body.cisside .sp-hold .hero { color: #ff9a88; }
 .sp-atk { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 10px; color: #8fa8c4; line-height: 1.4; min-height: 18px; }
 .sp-atk > span { color: #55606c; letter-spacing: 1px; }

@@ -885,6 +885,15 @@
       if (mk < 1) { var mp = toS(G.mark.x, G.mark.y); c.strokeStyle = 'rgba(217,169,64,' + (1 - mk) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(mp[0], mp[1], 6 + mk * 22, 0, TAU); c.stroke(); }
       else G.mark = null;
     }
+    // цель выбранного корабля — красный прицел, медленно вращается
+    var meA = G.sel >= 0 && B.ships[G.sel], ftA = meA && !meA.dead && meA.foeT != null ? B.ships[meA.foeT] : null, fpA = ftA && !ftA.dead ? shownPos(ftA) : null;
+    if (fpA) {
+      var cp = toS(fpA.x, fpA.y), rr = Math.max(16, ftA.len * 0.62 * CAM.s), rot = T * 0.6, lost = !seen(ftA);
+      c.save(); c.translate(cp[0], cp[1]); c.rotate(rot);
+      c.strokeStyle = lost ? 'rgba(255,110,90,0.4)' : 'rgba(255,110,90,0.85)'; c.lineWidth = 1.5;
+      for (var qa = 0; qa < 4; qa++) { c.beginPath(); c.arc(0, 0, rr, qa * Math.PI / 2 + 0.25, qa * Math.PI / 2 + Math.PI / 2 - 0.25); c.stroke(); c.beginPath(); c.moveTo(rr - 5, 0); c.lineTo(rr + 6, 0); c.stroke(); c.rotate(Math.PI / 2); }
+      c.restore();
+    }
     // точка хода
     if (G.sel >= 0) {
       var me = B.ships[G.sel];
@@ -1776,7 +1785,8 @@
     }
     if (hit) {
       if (hit.side === G.side) { selectShip(hit.n); }
-      else { G.foe = hit.n; buildTargets(); hud(); toast('Цель: ' + hit.name, 'gold'); }
+      else if (G.aim) { G.foe = hit.n; buildTargets(); hud(); toast('Цель: ' + hit.name + ' — коснись отсека', 'gold'); }   // выбор отсека — только смена корабля
+      else attackTap(hit);
       return;
     }
     // касание пустого космоса — курс своему кораблю
@@ -1788,6 +1798,17 @@
       if (!G.taught) { G.taught = true; toast('Курс задан. Удержи палец — развернуться носом к точке', 'gold'); }
       hud();
     }
+  }
+  // Касание врага — приказ выбранному кораблю атаковать его (снять — ✕ в панели корабля)
+  function attackTap(foe) {
+    var B = G.B, me = B.ships[G.sel];
+    G.foe = foe.n; buildTargets();
+    if (!me || me.dead || me.side !== G.side) { hud(); toast('Цель: ' + foe.name, 'gold'); return; }
+    var n = B.attack(G.sel, foe.n);
+    toast(me.name + ' атакует: ' + foe.name + (n ? ' · ' + n + ' ' + plural(n, 'орудие', 'орудия', 'орудий') : ''), 'gold');
+    if (!G.taughtAtk) { G.taughtAtk = true; setTimeout(function() { toast('Пушки «сама» бьют цель, когда достают; «Курс: сам» ведёт к ней. снять цель — ✕ в панели', 'gold'); }, 1400); }
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {}
+    hud();
   }
   function faceAt(px, py) {
     var B = G.B, me = B && B.ships[G.sel]; if (!me || me.dead || G.aim) return;
@@ -1830,9 +1851,9 @@
     hud();
   }
   function plural(n, a, b, c) { var m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 10 || h >= 20) ? b : c; }
-  function tgtLabel(t) {
+  function tgtLabel(t, own) {
     var B = G.B, s = t.ship != null ? B.ships[t.ship] : null;
-    if (t.k === 'auto') return 'сама';
+    if (t.k === 'auto') { var ft = own && own.foeT != null ? B.ships[own.foeT] : null; return ft && !ft.dead ? 'сама · ' + ft.name : 'сама'; }
     if (t.k === 'fighters') return 'истребители';
     if (t.k === 'shuttles') return 'шаттлы абордажа';
     if (!s) return '—';
@@ -1907,6 +1928,14 @@
       (c.crewLost ? ' · <span class="foe">недобор экипажа ' + c.crewLost + '</span>' : '') + '</div>';
     return out;
   }
+  // Цель корабля: кого атакует (или «сам выбирает»), снять — крестик
+  function atkLine(sh) {
+    if (sh.dead) return '';
+    var ft = sh.foeT != null ? G.B.ships[sh.foeT] : null;
+    if (!ft || ft.dead) return '<div class="sp-atk"><span>цель</span><em>сам выбирает ближайшего · коснись врага — атаковать</em></div>';
+    return '<div class="sp-atk on"><span>цель</span><b>' + esc(ft.name) + '</b>' + (seen(ft) ? '' : '<em> · нет контакта, идёт к засечке</em>') +
+      '<button class="sp-atk-x" data-atk-off="1" title="Снять цель">✕</button></div>';
+  }
   // горящих клеток: в бою по сети снаружи видна только выборка, число — с сервера
   function burnN(s) { return s.netBurn != null && G.net ? s.netBurn : s.crew.burning.length; }
   function hud() {
@@ -1938,7 +1967,7 @@
     var e = sh.eff;
     var head = '<div class="sp-ship-head"><b>' + esc(sh.name) + '</b><span class="sp-tag">' + Math.max(0, Math.round(sh.hull / sh.hullMax * 100)) + '%</span>' +
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
-      '<span class="r">экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>' + holdLine(sh);
+      '<span class="r">экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>' + holdLine(sh) + atkLine(sh);
     var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Ген', e.shield) + sysCell('Мост', e.bridge) + '</div>';
     // щиты по секторам: касание — усилить сектор (повторное — вернуть экипажу)
@@ -1981,7 +2010,7 @@
     sh.guns.forEach(function(g, i) {
       var row = document.querySelector('.sp-gun[data-gun="' + i + '"]'); if (!row) return;
       row.classList.toggle('on', !!G.gsel[i]); if (G.gsel[i]) any = true;
-      $('sp-g-t' + i).textContent = tgtLabel(g.tgt);
+      $('sp-g-t' + i).textContent = tgtLabel(g.tgt, sh);
       var st = $('sp-g-s' + i), room = g.room && sh.crew.rooms[g.room], txt, cls;
       if (sh.dead) { txt = '—'; cls = 'idle'; }
       else if (g.out) { txt = room && room.stun > 0 ? 'ионный сбой' : room && room.staffed === 0 ? 'нет расчёта' : 'разбита'; cls = 'bad'; }
@@ -2087,6 +2116,11 @@
           // камера — к цели
           var vv = view(); ICAM.x = rr.cx; ICAM.y = rr.cy - (vv.cy - CAM.vh / 2) / ICAM.s;
         }
+        return;
+      }
+      if (e.target.closest('[data-atk-off]')) {
+        e.preventDefault(); var ms = G.B.ships[G.sel];
+        if (ms && !ms.dead) { G.B.attack(G.sel, null); toast(ms.name + ': цель снята — бьёт ближайшего', 'gold'); hud(); }
         return;
       }
       var b = e.target.closest('[data-shf]'); if (!b) return;
@@ -2637,5 +2671,5 @@
     if (!m1) { POLY.side = side; polyOpen(true); }
   }
   requestAnimationFrame(frame);
-  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw };
+  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, start: start };
 })();

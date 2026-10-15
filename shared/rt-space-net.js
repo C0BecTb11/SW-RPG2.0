@@ -116,7 +116,7 @@
               crit: r1(sh.crit), dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
               burn: sh.crew.burning.length, ct: r2(sh.crew.t) };
     if (own) {
-      o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
+      o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.at = sh.foeT != null ? sh.foeT : -1; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
       o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
       // трюм: десант на борту / всего, герои, техника, недобор экипажа
       var tA = 0, tN = 0, hn = [];
@@ -375,6 +375,7 @@
         if (m.x === 'hold') B.order(m.n, 'hold'); else if (m.x == null) B.order(m.n, null);
         else B.order(m.n, +m.x, +m.y, !!m.face);
         return true;
+      case 'attack': if (!mine) return false; if (m.to == null || m.to < 0) { B.attack(m.n, null); return true; } return B.attack(m.n, m.to | 0) >= 0 && sh.foeT === (m.to | 0);
       case 'focus': if (!mine) return false; if (m.auto) { sh.focusAuto = true; return true; } B.setFocus(m.n, m.s | 0); return true;
       case 'board': if (!mine || !B.ships[m.to | 0]) return false; return B.board(m.n, m.to | 0, !!m.all);
       case 'hold': if (!mine) return false; B.setHold(m.n, m.to | 0, !!m.on); return true;
@@ -415,6 +416,14 @@
       send({ t: 'cmd', k: 'order', n: n, x: x === undefined ? null : x, y: y, face: !!face });
       var s = B.ships[n]; if (!s) return; lock(s);
       if (x === 'hold') { s.ai = false; s.order = null; } else if (x == null) { s.ai = true; s.order = null; } else s.order = { x: x, y: y, face: !!face };
+    };
+    // атака: на экране сразу — цель корабля и пушки, что на неё переходят (как сделает сервер)
+    var attack0 = B.attack;
+    B.attack = function(n, to) {
+      var sh = B.ships[n]; if (!sh || sh.dead) return 0;
+      send({ t: 'cmd', k: 'attack', n: n, to: to == null ? -1 : to });
+      var r = attack0.call(B, n, to); lock(sh); sh.guns.forEach(lock);
+      return r;
     };
     B.setFocus = function(n, s) { send({ t: 'cmd', k: 'focus', n: n, s: s }); var sh = B.ships[n]; if (sh) { sh.focus = s; sh.focusAuto = false; lock(sh); } };
     B.autoShields = function(n) { send({ t: 'cmd', k: 'focus', n: n, auto: 1 }); var sh = B.ships[n]; if (sh) { sh.focusAuto = true; lock(sh); } };
@@ -499,7 +508,7 @@
     }
     if (sh.side === this.side) {
       sh.boardCd = o.cd;
-      if (mine) { sh.ai = !!o.ai; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
+      if (mine) { sh.ai = !!o.ai; sh.foeT = o.at >= 0 ? o.at : null; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
       sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
       sh.netTroops = o.tr || null; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
       if (o.veh != null && (!sh.vehicles || sh.vehicles.length !== o.veh)) { sh.vehicles = []; for (var vv = 0; vv < o.veh; vv++) sh.vehicles.push('?'); }

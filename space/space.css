@@ -515,6 +515,12 @@ body.inside .sp-taskrow .sp-task-body em { display: none; }
 .sp-hold em { font-style: normal; color: #55606c; }
 .sp-hold .hero { color: #9fd8ff; }
 body.cisside .sp-hold .hero { color: #ff9a88; }
+.sp-atk { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 10px; color: #8fa8c4; line-height: 1.4; min-height: 18px; }
+.sp-atk > span { color: #55606c; letter-spacing: 1px; }
+.sp-atk em { font-style: normal; color: #55606c; }
+.sp-atk.on b { color: #ff8a70; font-weight: normal; letter-spacing: 0.5px; }
+.sp-atk-x { margin-left: auto; width: 22px; height: 18px; padding: 0; border: 1px solid rgba(255,110,90,0.35); border-radius: 6px; background: rgba(255,110,90,0.08); color: #ff8a70; font: inherit; font-size: 10px; cursor: pointer; }
+.sp-atk-x:active { background: rgba(255,110,90,0.2); }
 .sp-a { display: block; text-align: center; text-decoration: none; }
 .sp-poly-sum .sp-dim { font-size: 9.5px; }
 .sp-fl {

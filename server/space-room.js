@@ -56,7 +56,7 @@ SpaceRoom.prototype.syncAi = function() {
     var here = this.clients.some(function(c) { return c.side === s && !c.spectator; });
     this.B.aiBoard[s] = !here;
     // стороны нет — её корабли ведёт ИИ (свой курс, «стоять» и щиты игрока снимаются)
-    if (!here) this.B.ships.forEach(function(sh) { if (sh.side === s && !sh.dead) { sh.ai = true; sh.order = null; sh.focusAuto = true; } });
+    if (!here) this.B.ships.forEach(function(sh) { if (sh.side === s && !sh.dead) { sh.ai = true; sh.order = null; sh.focusAuto = true; sh.foeT = null; } });
   }
 };
 

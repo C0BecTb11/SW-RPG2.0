@@ -101,6 +101,7 @@
     for (i = 0; i < e.booms.length; i++) { var b = e.booms[i]; if (b.ship == null || vis(b.ship) || b.big) ev.booms.push(b); }
     for (i = 0; i < e.shields.length; i++) if (vis(e.shields[i].ship)) ev.shields.push(e.shields[i]);
     for (i = 0; i < e.kills.length; i++) ev.kills.push(e.kills[i]);
+    for (i = 0; i < (e.rams || []).length; i++) { var rm = e.rams[i], r1s = B.ships[rm.a], r2s = B.ships[rm.b]; if ((r1s && r1s.side === side) || (r2s && r2s.side === side)) (ev.rams = ev.rams || []).push(rm); }
     for (i = 0; i < e.boards.length; i++) { var bb = e.boards[i], s1 = B.ships[bb.n], s2 = B.ships[bb.t]; if ((s1 && s1.side === side) || (s2 && s2.side === side)) ev.boards.push(bb); }
     if (ev.boards.length > 50) ev.boards.splice(0, ev.boards.length - 50);
     if (ev.kills.length > 100) ev.kills.splice(0, ev.kills.length - 100);
@@ -192,7 +193,7 @@
       shots: ev.shots.map(function(s) { return [r0(s.x0), r0(s.y0), r0(s.x1), r0(s.y1), r2(s.t0), r2(s.dur), s.side, s.t, s.miss ? 1 : 0]; }),
       booms: ev.booms.map(function(b) { return [r0(b.x), r0(b.y), r0(b.r), r2(b.t0), b.ship == null ? -1 : b.ship, (b.big ? 1 : 0) | (b.ion ? 2 : 0) | (b.craft ? 4 : 0)]; }),
       shields: ev.shields.map(function(s) { return [s.ship, s.s, r0(s.x), r0(s.y), r2(s.t0), s.down ? 1 : 0]; }),
-      kills: ev.kills, boards: ev.boards
+      kills: ev.kills, boards: ev.boards, rams: ev.rams || []
     };
     this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
     // можно ли абордаж: по выбранной цели или по кораблю, куда смотрим изнутри
@@ -431,7 +432,7 @@
     };
     B.sensRange = function(sh) { return sh.netSens || sh.sens; };
     B.step = function() {};
-    B.takeEvents = function() { var q = self.queue; self.queue = { shots: [], booms: [], shields: [], kills: [], boards: [] }; return q; };
+    B.takeEvents = function() { var q = self.queue; self.queue = { shots: [], booms: [], shields: [], kills: [], boards: [], rams: [] }; return q; };
   }
   Mirror.prototype.onText = function(m) {
     if (m.t === 's') this.light(m);
@@ -464,6 +465,8 @@
       if (x.ship != null) { var s = B.ships[x.ship]; if (s) { s.dead = true; s.why = x.why; if (x.by != null) s.captured = x.by; s.deadAt = m.T; } }
     });
     e.boards.forEach(function(x) { Q.boards.push(x); });
+    (e.rams || []).forEach(function(x) { (Q.rams = Q.rams || []).push(x); });
+    if (Q.rams && Q.rams.length > 12) Q.rams.splice(0, Q.rams.length - 12);
     // вкладка в фоне: кадры идут, отрисовки нет — не копить старые эффекты
     if (Q.shots.length > 400) Q.shots.splice(0, Q.shots.length - 400);
     if (Q.booms.length > 150) Q.booms.splice(0, Q.booms.length - 150);

@@ -223,6 +223,14 @@
       if (e.shields[i].down && sh && sh.side === G.side && (DOWN[sk] == null || G.B.t - DOWN[sk] > 25) && ((DOWN[sk] = G.B.t), true)) toast(sh.name + ': упал щит — ' + ['нос', 'правый борт', 'корма', 'левый борт'][e.shields[i].s], 'bad');
     }
     boardMsgs();
+    // таран: свой корабль ударился о чужой корпус
+    (e.rams || []).forEach(function(r) {
+      var a = G.B.ships[r.a], b = G.B.ships[r.b]; if (!a || !b) return;
+      var mine = a.side === G.side ? a : b.side === G.side ? b : null; if (!mine) return;
+      var other = mine === a ? b : a;
+      sfx('shipboom', mine.x, mine.y, mine.n);
+      toast('Столкновение: ' + mine.name + ' и ' + other.name + ' (' + r.v + ' м/с)', 'bad');
+    });
     for (i = 0; i < e.boards.length; i++) {
       var be = e.boards[i], bs = G.B.ships[be.n], bt = G.B.ships[be.t];
       if (!be.dock && bs.side !== G.side && bt.side === G.side) toast('Абордаж! ' + bs.name + ' → ' + bt.name + ': ' + be.count + ' бойцов в шаттлах. Бей по ним ПВО', 'bad');
@@ -242,7 +250,7 @@
         var s = G.B.ships[k.ship];
         // остов: корабль раскалывается на куски своей же картинки
         if (window.SPWreck && G.imgs[s.cls]) { try { G.wrecks.push(window.SPWreck.make(s, G.imgs[s.cls], s.plan, k.why, T0())); s.wreck = true; } catch (er) {} }
-        toast(s.name + ' уничтожен' + (k.why === 'reactor' ? ' — взрыв реактора' : ''), s.side === G.side ? 'bad' : 'gold');
+        toast(s.name + ' уничтожен' + (k.why === 'reactor' ? ' — взрыв реактора' : k.why === 'ram' ? ' — столкновение' : ''), s.side === G.side ? 'bad' : 'gold');
         if (k.ship === G.foe) { G.aim = false; G.foe = -1; }
         if (k.ship === G.sel) {
           // свой погиб — управление переходит к живому кораблю флота
@@ -869,6 +877,8 @@
     drawShields(c, T);
     drawBooms(c);
     drawFog(c, T);
+    // отладка: круги корпусов для столкновений (window.__sp.G.dbgCol = true)
+    if (G.dbgCol && B.circles) B.ships.forEach(function(sh) { if (sh.dead) return; B.circles(sh).forEach(function(q) { var p = toS(q[0], q[1]); c.strokeStyle = 'rgba(95,217,104,0.7)'; c.lineWidth = 1; c.beginPath(); c.arc(p[0], p[1], q[2] * CAM.s, 0, TAU); c.stroke(); }); });
     // отметка касания
     if (G.mark) {
       var mk = (performance.now() - G.mark.t) / 600;
@@ -2158,7 +2168,7 @@
     $('sp-end-title').textContent = B.over === 2 ? 'Взаимное уничтожение' : win ? 'Победа' : 'Поражение';
     var t = B.t | 0;
     $('sp-end-text').innerHTML = 'Бой шёл ' + Math.floor(t / 60) + ' мин ' + (t % 60) + ' с.<br>' +
-      'Уничтожено: ' + (killed.length ? killed.map(function(s) { return esc(s.name) + (s.why === 'reactor' ? ' (реактор)' : s.why === 'captured' ? ' (захвачен — трофей)' : ''); }).join(', ') : 'никого') + '.<br>' +
+      'Уничтожено: ' + (killed.length ? killed.map(function(s) { return esc(s.name) + (s.why === 'reactor' ? ' (реактор)' : s.why === 'ram' ? ' (столкновение)' : s.why === 'captured' ? ' (захвачен — трофей)' : ''); }).join(', ') : 'никого') + '.<br>' +
       'Потери: ' + (lost ? lost + ' ' + plural(lost, 'корабль', 'корабля', 'кораблей') : 'нет') + '.';
     $('sp-end-again').textContent = G.task ? 'Задачу заново' : G.net ? 'Реванш' : 'Ещё бой';
     $('sp-end').hidden = false;

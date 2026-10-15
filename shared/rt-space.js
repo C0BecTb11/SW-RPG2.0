@@ -209,12 +209,12 @@
   };
 
   // ---------------------------------------------------------------- приказы игрока
-  // tgt: {k:'auto'} | {k:'fighters'} | {k:'hull', ship} | {k:'sys', ship, sys} | {k:'room', ship, room}
+  // tgt: {k:'auto'} | {k:'fighters'} | {k:'shuttles'} | {k:'hull', ship} | {k:'sys', ship, sys} | {k:'room', ship, room}
   Battle.prototype.setTarget = function(shipN, guns, tgt) {
     var sh = this.ships[shipN]; if (!sh || sh.dead || !tgt) return 0;
     // проверка приказа: годится и для сервера, где он придёт от игрока
     var k = tgt.k, foe = this.ships[tgt.ship];
-    if (k !== 'auto' && k !== 'fighters') {
+    if (k !== 'auto' && k !== 'fighters' && k !== 'shuttles') {
       if (!foe || foe.dead || foe.side === sh.side) return 0;
       // имена — только свои ключи (с сервера может прийти «constructor» и т. п.)
       if (k === 'sys' && !(typeof tgt.sys === 'string' && Object.prototype.hasOwnProperty.call(SYS_BY, tgt.sys))) return 0;
@@ -500,6 +500,12 @@
       return this.autoAim(sh, g, foe);
     }
     if (k === 'fighters') { var c1 = this.craftFor(sh, g, T.range); return c1 ? { craft: c1 } : null; }
+    // ПВО по шаттлам: сперва абордажные шаттлы; их нет — как «сама»
+    if (k === 'shuttles') {
+      var c2 = this.craftFor(sh, g, T.range, true); if (c2) return { craft: c2 };
+      if (g.t === 'pd') { var c3 = this.craftFor(sh, g, T.range); if (c3) return { craft: c3 }; }
+      var f2 = this.foeInArc(sh, g, null); return f2 ? this.autoAim(sh, g, f2) : null;
+    }
     var tgtShip = this.ships[t.ship];
     if (!tgtShip || tgtShip.dead || tgtShip.side === sh.side) { g.tgt = { k: 'auto' }; return null; }
     if (!this.sees(sh.side, tgtShip)) return null;      // цель потеряна в тумане — пушка ждёт
@@ -556,10 +562,10 @@
     }
     return best;
   };
-  Battle.prototype.craftFor = function(sh, g, range) {
+  Battle.prototype.craftFor = function(sh, g, range, onlyShuttles) {
     var best = null, bd = range * range;
     for (var i = 0; i < this.craft.length; i++) {
-      var c = this.craft[i]; if (c.dead || c.side === sh.side || !this.visC[sh.side][c.id]) continue;
+      var c = this.craft[i]; if (c.dead || c.side === sh.side || !this.visC[sh.side][c.id] || (onlyShuttles && c.role !== 'shuttle')) continue;
       var dx = c.x - g.x, dy = c.y - g.y, d = dx * dx + dy * dy;
       if (d > bd || !this.inArc(sh, g, c.x, c.y, null)) continue;
       // бомбардировщики, что идут на нас, — первыми
@@ -809,25 +815,28 @@
     var bd = o.crew.board;
     return !!(bd && bd.started && bd.over < 0 && bd.att === side);
   };
-  // Свободные бойцы десанта на корабле (не в обороне своего корабля)
-  Battle.prototype.troopsOf = function(sh) {
+  // Свободные бойцы десанта на корабле. all — и защитники своего корабля, что сейчас
+  // не в перестрелке (контрабордаж: игрок сам снимает их с обороны)
+  Battle.prototype.troopsOf = function(sh, all) {
     var out = [], ag = sh.crew.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i];
       var st = sh.crew.rooms[a.home];
       // десант — те, кто в казармах (встал на пост погибшего расчётчика — нужен на посту)
-      if (a.alive && a.team === sh.side && a.grp === 'troops' && a.role === 'reserve' && !(a.job && a.job.kind === 'defend') &&
-          st && (st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory')) out.push(a);
+      if (!a.alive || a.team !== sh.side || a.grp !== 'troops' || a.role !== 'reserve') continue;
+      if (!st || !(st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory')) continue;
+      if (a.job && a.job.kind === 'defend' && !(all && !(a.tgt >= 0))) continue;
+      out.push(a);
     }
     return out;
   };
   // Можно ли идти на абордаж: { ok, why, party, cap, reinforce }
-  Battle.prototype.canBoard = function(n, t) {
+  Battle.prototype.canBoard = function(n, t, all) {
     var a = this.ships[n], b = this.ships[t];
     if (!a || !b || a.dead || b.dead) return { ok: false, why: 'цели нет', party: 0 };
     if (a.side === b.side) return { ok: false, why: 'это свой корабль', party: 0 };
     if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью', party: 0 };
-    var avail = this.troopsOf(a).length, cap = boardCap(b);
+    var avail = this.troopsOf(a, all).length, cap = boardCap(b);
     var bd = b.crew.board, on = !!(bd && bd.over < 0 && bd.att === a.side && bd.started);
     if (bd && bd.over < 0 && bd.started && bd.att !== a.side) return { ok: false, why: 'на борту цели уже идёт чужой абордаж', party: 0 };
     // в бою на борту уже свои — подкрепление: места в шлюзах за вычетом тех, кто там и в пути
@@ -858,23 +867,11 @@
     return best;
   };
   // Высадка: бойцы уходят с корабля в шаттлы (по 12), шаттлы летят к шлюзу цели
-  Battle.prototype.board = function(n, t) {
-    var can = this.canBoard(n, t); if (!can.ok) return can;
+  Battle.prototype.board = function(n, t, all) {
+    var can = this.canBoard(n, t, all); if (!can.ok) return can;
     var a = this.ships[n], b = this.ships[t], lock = this.portFor(b, a);
     if (!lock) return { ok: false, why: 'у цели нет шлюзов' };
-    var troops = this.troopsOf(a), party = [], i;
-    // два инженера: вскрывать двери вдвое быстрее и ставить заряд у реактора
-    var engs = [], ag = a.crew.agents;
-    for (i = 0; i < ag.length && engs.length < 2; i++) if (ag[i].alive && ag[i].team === a.side && ag[i].grp === 'eng' && !ag[i].job) engs.push(ag[i]);
-    var nEng = Math.min(engs.length, can.party >= 8 ? 2 : 1);
-    var take = troops.slice(0, can.party - nEng).concat(engs.slice(0, nEng));
-    for (i = 0; i < take.length; i++) {
-      var m = take[i], eng = m.grp === 'eng';
-      a.crew.releaseJob(m); a.crew.claimCell(m, null);
-      m.alive = false; m.gone = true;                       // ушёл на шаттл
-      var st = a.crew.rooms[m.home]; if (st) st.assigned--;
-      party.push({ fig: m.fig, wpn: eng ? 'tool' : this.wpnFor(a, m), eng: eng, src: m.id });
-    }
+    var party = this.takeParty(a, can.party, all), i;
     // шаттлы стартуют от шлюза атакующего, ближнего к цели
     var from = this.portFor(a, b), p0 = from ? this.toWorld(a, from.port[0], from.port[1]) : [a.x, a.y];
     var C = CRAFT.shuttle, k = 0;
@@ -888,6 +885,42 @@
     a.boardCd = BOARD_CD;
     this.ev.boards.push({ n: n, t: t, count: party.length, shuttles: k, reinforce: !!can.reinforce });
     return { ok: true, party: party.length, shuttles: k };
+  };
+  // Снять с корабля команду абордажа: бойцы и 1–2 инженера (вскрывать двери, ставить заряд)
+  Battle.prototype.takeParty = function(a, count, all) {
+    var troops = this.troopsOf(a, all), party = [], i;
+    var engs = [], ag = a.crew.agents;
+    for (i = 0; i < ag.length && engs.length < 2; i++) if (ag[i].alive && ag[i].team === a.side && ag[i].grp === 'eng' && !ag[i].job) engs.push(ag[i]);
+    var nEng = Math.min(engs.length, count >= 8 ? 2 : 1);
+    var take = troops.slice(0, count - nEng).concat(engs.slice(0, nEng));
+    for (i = 0; i < take.length; i++) {
+      var m = take[i], eng = m.grp === 'eng';
+      if (m.job && m.job.kind === 'defend') {
+        // снят с обороны своего корабля: из отряда защитников вон
+        var ob = a.crew.board, oq = ob && m.dsq && ob.dsq[m.dsq - 1];
+        if (oq) { var oi = oq.members.indexOf(m.id); if (oi >= 0) oq.members.splice(oi, 1); }
+        m.job = null; m.guard = 0; m.dsq = 0;
+      }
+      a.crew.releaseJob(m); a.crew.claimCell(m, null);
+      m.alive = false; m.gone = true;                       // ушёл на шаттл
+      var st = a.crew.rooms[m.home]; if (st) st.assigned--;
+      party.push({ fig: m.fig, wpn: eng ? 'tool' : this.wpnFor(a, m), eng: eng, src: m.id });
+    }
+    return party;
+  };
+  // Высадка без полёта (полигон и замеры): команда сразу в шлюзе цели
+  Battle.prototype.forceBoard = function(n, t, count) {
+    var a = this.ships[n], b = this.ships[t];
+    if (!a || !b || a.dead || b.dead || a.side === b.side) return false;
+    var lock = this.portFor(b, a); if (!lock) return false;
+    var bd = b.crew.board;
+    if (bd && bd.started && bd.over < 0 && bd.att !== a.side) return false;
+    var party = this.takeParty(a, Math.min(count || 30, boardCap(b)), true);
+    if (!party.length) return false;
+    b.inbound++;
+    this.dock({ side: a.side, home: n, party: party, lock: lock.n }, b);
+    this.ev.boards.push({ n: n, t: t, count: party.length, shuttles: 0 });
+    return true;
   };
   Battle.prototype.wpnFor = function(sh, m) {
     var id = sh.figIds && sh.figIds[m.fig];
@@ -932,14 +965,14 @@
   };
   Battle.prototype.shuttleHome = function(c, home) {
     c.dead = true; c.docked = true; c.deadAt = this.t;
-    var ag = home.crew.agents;
+    var ag = home.crew.agents, hb = home.crew.board, fight = !!(hb && hb.started && hb.over < 0), back = 0;
     for (var i = 0; i < c.party.length; i++) {
       var m = ag[c.party[i].src]; if (!m || !m.gone) continue;
-      m.alive = true; m.gone = false; m.job = null; var st = home.crew.rooms[m.home]; if (st) st.assigned++;
-      var hb = home.crew.board;
-      if (hb && hb.started && hb.over < 0) hb.toDefend(m);   // свой корабль под абордажем — сразу в оборону
+      m.alive = true; m.gone = false; m.job = null; m.dsq = 0; var st = home.crew.rooms[m.home]; if (st) st.assigned++;
+      if (fight) { hb.toDefend(m); back++; }              // свой корабль под абордажем — сразу в оборону
       else home.crew.sendPost(m);
     }
+    if (back) hb.makeDefSquads();                         // вернувшиеся — одним новым отрядом
   };
   // Итоги абордажей и решения ИИ
   Battle.prototype.boardStep = function(dt) {

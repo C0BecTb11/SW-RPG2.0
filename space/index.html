@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
 <title>Космический бой 2.0</title>
-<link rel="stylesheet" href="space.css?v=5">
+<link rel="stylesheet" href="space.css?v=6">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
@@ -75,15 +75,25 @@
   </div>
 </div>
 
+<div class="sp-load" id="sp-load" hidden>
+  <div class="sp-load-card">
+    <div class="sp-kicker">Внутри корабля</div>
+    <b id="sp-load-name"></b>
+    <div class="sp-load-bar"><i id="sp-load-i"></i></div>
+    <span id="sp-load-t">Готовлю отсеки…</span>
+  </div>
+</div>
+
 <div class="sp-toast" id="sp-toast"></div>
 
 <script src="../shared/rt-core.js?v=5"></script>
 <script src="../shared/rt-figures.js?v=6"></script>
 <script src="../shared/rt-ship.js?v=2"></script>
 <script src="../shared/rt-crew.js?v=5"></script>
-<script src="../shared/rt-space.js?v=6"></script>
+<script src="../shared/rt-space.js?v=7"></script>
 <script src="../ships/ship-art.js?v=4"></script>
 <script src="space-sfx.js?v=2"></script>
-<script src="space.js?v=7"></script>
+<script src="space-wreck.js?v=1"></script>
+<script src="space.js?v=8"></script>
 </body>
 </html>

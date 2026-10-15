@@ -104,7 +104,7 @@
   function Battle(opts) {
     this.R = rng(opts.seed || 7);
     this.t = 0; this.ships = []; this.craft = []; this.pending = []; this.nextCraft = 1;
-    this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
+    this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [], rams: [] };
     this.over = -1;          // сторона-победитель
     this.aiBoard = opts.aiBoard || [false, false];   // стороны, за которые абордаж решает ИИ
     this.boardT = 3;
@@ -267,6 +267,7 @@
       this.place(sh);
       this.launch(sh, dt);
     }
+    this.collide(dt);
     this.senseT -= dt;
     if (this.senseT <= 0) { this.senseT = 0.5; this.sense(); }
     this.boardStep(dt);
@@ -377,7 +378,12 @@
         if (Math.abs(wrap(want - sh.hd)) < 0.02) sh.order = null;
       }
       else if (d < 120) { sh.order = null; }
-      else { want = Math.atan2(dy, dx); wantV = Math.min(vmax, d / 20); }
+      else {
+        want = Math.atan2(dy, dx); wantV = Math.min(vmax, d / 20);
+        // точка занята чужим корпусом (или туда же идёт свой): упёрся и 12 с не продвинулся — приказ снят
+        if (sh.order.bd == null || d < sh.order.bd - 40) { sh.order.bd = d; sh.order.bt = this.t; }
+        else if (this.t - sh.order.bt > 12 && this.t - (sh.touchT || -99) < 2) { sh.order = null; want = null; wantV = 0; }
+      }
     } else if (sh.ai) {
       var foe = this.nearestFoe(sh);
       if (foe) {
@@ -390,6 +396,11 @@
           want = brg + o; wantV = vmax * (fd < range * 0.5 ? 0.6 : 0.3);
         }
       }
+    }
+    // не лезть в чужой корпус: обойти (разворот на месте — face — не трогаем)
+    if (want !== null && !(sh.order && sh.order.face)) {
+      var av = this.avoid(sh, want, wantV);
+      if (av) { want = av.want; wantV = av.wantV; }
     }
     if (want !== null) {
       sh.hd = turnTo(sh.hd, want, tr * dt);
@@ -678,6 +689,130 @@
       if (this.R() < T.fire * Math.min(2, dmg / 12)) c.ignite(lx, ly, 30 + this.R() * 40);
       c.blast(lx, ly, 2 + dmg / 12, 50 + dmg * 3 * T.hull);
     }
+  };
+  // ---------------------------------------------------------------- столкновения
+  // Корпус корабля — цепочка кругов по силуэту плана (вдоль длины): длинный
+  // корабль — длинная цепочка, у носа круги уже. Малые корабли и шаттлы
+  // пролетают над и под корпусами — их это не касается.
+  function hullCircles(plan) {
+    if (plan._cols) return plan._cols;
+    var W = plan.w, H = plan.h, M = plan.cellM, len = H * M;
+    // полоса — около 90 м длины корпуса: клин Венатора и диск Лукрехалка ложатся плотно
+    var y, x, K = Math.max(4, Math.min(18, Math.round(len / 90))), out = [];
+    for (var k = 0; k < K; k++) {
+      var y0 = Math.floor(k * H / K), y1 = Math.floor((k + 1) * H / K), mn = 1e9, mx = -1e9;
+      for (y = y0; y < y1; y++) for (x = 0; x < W; x++) if (plan.kind[y * W + x]) { if (x < mn) mn = x; if (x > mx) mx = x; }
+      if (mx < mn) continue;
+      // широкая полоса (борт шире полосы) — делим поперёк, чтобы круги не торчали за нос и корму;
+      // пустые куски (середина «бублика» Лукрехалка) пропускаем
+      var n = Math.max(1, Math.ceil((mx - mn + 1) / Math.max(1, y1 - y0)));
+      for (var c = 0; c < n; c++) {
+        var x0 = mn + Math.floor(c * (mx - mn + 1) / n), x1 = mn + Math.floor((c + 1) * (mx - mn + 1) / n);
+        var a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9;
+        for (y = y0; y < y1; y++) for (x = x0; x < x1; x++) if (plan.kind[y * W + x]) { if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; if (y > b1) b1 = y; }
+        if (a1 < a0) continue;
+        var hw = (a1 - a0 + 1) / 2 * M, hh = (b1 - b0 + 1) / 2 * M;
+        // uf — вперёд от центра корабля, ux — к правому борту; радиус покрывает кусок
+        out.push({ uf: -((b0 + b1 + 1) / 2 - H / 2) * M, ux: ((a0 + a1 + 1) / 2 - W / 2) * M, r: Math.max(hw, hh) * 1.02 });
+      }
+    }
+    plan._cols = out;
+    // радиус охвата всей цепочки — для быстрого отсева дальних пар
+    plan._colR = 0;
+    for (k = 0; k < out.length; k++) plan._colR = Math.max(plan._colR, Math.sqrt(out[k].uf * out[k].uf + out[k].ux * out[k].ux) + out[k].r);
+    return out;
+  }
+  Battle.prototype.circles = function(sh) {
+    var cs = hullCircles(sh.plan), c = Math.cos(sh.hd), s = Math.sin(sh.hd), out = [];
+    for (var i = 0; i < cs.length; i++) out.push([sh.x + c * cs[i].uf - s * cs[i].ux, sh.y + s * cs[i].uf + c * cs[i].ux, cs[i].r]);
+    return out;
+  };
+  // Касание корпусов: развести (тяжёлый сдвигается меньше), погасить ход в сторону
+  // удара; на скорости — удар: корпус, отсек у места удара, пожар и раненые
+  var RAM_V = 10, RAM_K = 4;
+  Battle.prototype.collide = function(dt) {
+    var S = this.ships, i, j;
+    for (i = 0; i < S.length; i++) {
+      var a = S[i]; if (a.dead) continue;
+      for (j = i + 1; j < S.length; j++) {
+        var b = S[j]; if (b.dead) continue;
+        hullCircles(a.plan); hullCircles(b.plan);
+        var dx = b.x - a.x, dy = b.y - a.y, reach = a.plan._colR + b.plan._colR + 10;
+        if (dx * dx + dy * dy > reach * reach) continue;
+        // до трёх проходов: малый корабль между двумя кругами большого выталкивается целиком
+        for (var it = 0; it < 3 && !a.dead && !b.dead; it++) if (!this.collidePair(a, b, dt, it === 0)) break;
+        if (a.dead) break;
+      }
+    }
+  };
+  Battle.prototype.collidePair = function(a, b, dt, first) {
+    var ca = this.circles(a), cb = this.circles(b), best = null, sx = 0, sy = 0;
+    for (var p = 0; p < ca.length; p++) for (var q = 0; q < cb.length; q++) {
+      var ex = ca[p][0] - cb[q][0], ey = ca[p][1] - cb[q][1], rr = ca[p][2] + cb[q][2], d2 = ex * ex + ey * ey;
+      if (d2 >= rr * rr) continue;
+      var d = Math.sqrt(d2) || 0.01, depth = rr - d;
+      sx += ex / d * depth; sy += ey / d * depth;
+      if (!best || depth > best.depth) best = { depth: depth, nx: ex / d, ny: ey / d, x: (ca[p][0] * cb[q][2] + cb[q][0] * ca[p][2]) / rr, y: (ca[p][1] * cb[q][2] + cb[q][1] * ca[p][2]) / rr };
+    }
+    if (!best) return false;
+    // выталкивать по сумме всех касаний (внутри «диска» из кругов одна пара толкала бы в соседний круг)
+    var sl = Math.sqrt(sx * sx + sy * sy);
+    if (sl > 0.01) { best.nx = sx / sl; best.ny = sy / sl; }
+    // n — от b к a; массы — по корпусу класса
+    a.touchT = b.touchT = this.t;
+    var ma = a.hullMax, mb = b.hullMax, ka = mb / (ma + mb), kb = ma / (ma + mb);
+    a.x += best.nx * best.depth * ka; a.y += best.ny * best.depth * ka;
+    b.x -= best.nx * best.depth * kb; b.y -= best.ny * best.depth * kb;
+    // скорость сближения по линии удара
+    var va = -(Math.cos(a.hd) * best.nx + Math.sin(a.hd) * best.ny) * a.v, vb = (Math.cos(b.hd) * best.nx + Math.sin(b.hd) * best.ny) * b.v;
+    var close = va + vb;
+    if (va > 0) a.v *= Math.max(0, 1 - va / Math.max(1, Math.abs(a.v)) * 0.9);
+    if (vb > 0) b.v *= Math.max(0, 1 - vb / Math.max(1, Math.abs(b.v)) * 0.9);
+    this.place(a); this.place(b);
+    var key = a.n < b.n ? a.n + ':' + b.n : b.n + ':' + a.n;
+    this.ramT = this.ramT || {};
+    // удар — по скорости сверх «притирания» и по доле чужой массы (малый о большой — больно малому)
+    if (first && close > RAM_V && this.t - (this.ramT[key] || -99) > 4) {
+      this.ramT[key] = this.t;
+      this.ram(a, (close - RAM_V) * RAM_K * 2 * ka, best.x, best.y);
+      this.ram(b, (close - RAM_V) * RAM_K * 2 * kb, best.x, best.y);
+      this.ev.booms.push({ x: best.x, y: best.y, r: 40 + close * 3, t0: this.t });           // удар видно обеим сторонам
+      this.ev.rams = this.ev.rams || [];
+      this.ev.rams.push({ a: a.n, b: b.n, v: Math.round(close) });
+    }
+    return true;
+  };
+  // Удар корпусом о корпус: щит сектора не держит (это не болт), бьёт по броне
+  Battle.prototype.ram = function(sh, dmg, wx, wy) {
+    if (sh.dead || dmg <= 0) return;
+    var l = this.toLocal(sh, wx, wy), p = sh.plan;
+    var lx = Math.max(1, Math.min(p.w - 2, l[0])), ly = Math.max(1, Math.min(p.h - 2, l[1]));
+    sh.hull -= dmg;
+    // по отсеку — как тяжёлый залп, не больше: пробоина у места удара, а не полкорабля
+    this.hitRoom(sh, lx, ly, Math.min(40, dmg * 0.6), GUNS.heavy, 1);
+    if (sh.hull <= 0) this.kill(sh, 'ram');
+  };
+  // Обход: впереди по курсу чужой корпус — отвернуть и сбавить ход (ИИ и курс игрока)
+  Battle.prototype.avoid = function(sh, want, wantV) {
+    var best = null, bd = 1e18, ord = sh.order;
+    for (var i = 0; i < this.ships.length; i++) {
+      var o = this.ships[i]; if (o === sh || o.dead) continue;
+      // игрок сам повёл корабль на врага (точка на его корпусе или рядом) — это таран, не обходим
+      if (ord && o.side !== sh.side) { hullCircles(o.plan); var tx = ord.x - o.x, ty = ord.y - o.y; if (tx * tx + ty * ty < (o.plan._colR + 300) * (o.plan._colR + 300)) continue; }
+      var dx = o.x - sh.x, dy = o.y - sh.y, d = Math.sqrt(dx * dx + dy * dy), clear = (sh.len + o.len) / 2 + 250 + Math.abs(sh.v) * 10;
+      if (d > clear) continue;
+      var off = wrap(Math.atan2(dy, dx) - want);
+      if (Math.abs(off) > 1.1) continue;                     // не по курсу
+      // насколько пройдём мимо: боковой зазор до центра другого корабля
+      var side = Math.abs(Math.sin(off)) * d, need = (Math.max(sh.wid, o.wid) + Math.min(sh.len, o.len) * 0.5) / 2 + 150;
+      if (side > need) continue;
+      if (d < bd) { bd = d; best = { off: off, d: d, clear: clear }; }
+    }
+    if (!best) return null;
+    sh.touchT = Math.max(sh.touchT || -99, this.t - 1.5);           // обходит — считается «упёрся» (для приказа)
+    var k = 1 - best.d / best.clear;
+    // отвернуть в ту сторону, где он «уже» сбоку; чем ближе — тем круче и медленнее
+    return { want: want - (best.off >= 0 ? 1 : -1) * (0.5 + 0.7 * k), wantV: wantV * Math.max(0.15, 1 - k * 1.2) };
   };
   Battle.prototype.kill = function(sh, why) {
     if (sh.dead) return;
@@ -1030,7 +1165,7 @@
 
   // События кадра для отрисовки (забрать и очистить)
   Battle.prototype.takeEvents = function() {
-    var e = this.ev; this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
+    var e = this.ev; this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [], rams: [] };
     return e;
   };
 

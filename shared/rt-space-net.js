@@ -25,7 +25,7 @@
   var AG = 16;
   var LOCK = 900;                                           // мс: свой приказ важнее кадров, что уже летят                                              // байт на человека в кадре экипажа
   var BIN = { AGENTS: 11, FIRE: 12, AGENTS_D: 13 };
-  var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board', 'weld'];
+  var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board', 'weld', 'muster'];
   var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
   var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper', 'guard'];
   var ROLE_N = {}; for (var ri = 0; ri < ROLES.length; ri++) ROLE_N[ROLES[ri]] = ri;
@@ -103,7 +103,8 @@
     for (i = 0; i < e.shields.length; i++) if (vis(e.shields[i].ship)) ev.shields.push(e.shields[i]);
     for (i = 0; i < e.kills.length; i++) ev.kills.push(e.kills[i]);
     for (i = 0; i < (e.rams || []).length; i++) { var rm = e.rams[i], r1s = B.ships[rm.a], r2s = B.ships[rm.b]; if ((r1s && r1s.side === side) || (r2s && r2s.side === side)) (ev.rams = ev.rams || []).push(rm); }
-    for (i = 0; i < e.boards.length; i++) { var bb = e.boards[i], s1 = B.ships[bb.n], s2 = B.ships[bb.t]; if ((s1 && s1.side === side) || (s2 && s2.side === side)) ev.boards.push(bb); }
+    // сборы десанта у своего шлюза и отбой — только своим; цели — когда шаттлы стартовали
+    for (i = 0; i < e.boards.length; i++) { var bb = e.boards[i], s1 = B.ships[bb.n], s2 = B.ships[bb.t]; if ((s1 && s1.side === side) || (s2 && s2.side === side && !bb.muster && !bb.cancel)) ev.boards.push(bb); }
     if (ev.boards.length > 50) ev.boards.splice(0, ev.boards.length - 50);
     if (ev.kills.length > 100) ev.kills.splice(0, ev.kills.length - 100);
     if (ev.shots.length > 300) ev.shots.splice(0, ev.shots.length - 300);
@@ -128,7 +129,7 @@
       var tA = 0, tN = 0, hn = [];
       for (i = 0; i < sh.crew.agents.length; i++) { var ta = sh.crew.agents[i]; if (ta.team !== sh.side || !ta.utype) continue; tN++; if (ta.alive) { tA++; if (ta.hero && ta.uname) hn.push(ta.uname); } }
       o.tr = [tA, tN]; o.hn = hn;
-      var gA = 0, gN = 0; for (i = 0; i < sh.crew.agents.length; i++) { var ga = sh.crew.agents[i]; if (ga.team === sh.side && ga.role === 'guard') { gN++; if (ga.alive) gA++; } } o.gu = [gA, gN]; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
+      var gA = 0, gN = 0, mu = 0; for (i = 0; i < sh.crew.agents.length; i++) { var ga = sh.crew.agents[i]; if (ga.team === sh.side && ga.role === 'guard') { gN++; if (ga.alive) gA++; } if (ga.alive && ga.job && ga.job.kind === 'muster') mu++; } o.gu = [gA, gN]; o.mu = mu; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
       o.g = [];
       for (i = 0; i < sh.guns.length; i++) {
         g = sh.guns[i];
@@ -395,7 +396,7 @@
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;
     if (!bd || !bd.started || bd.over >= 0) return false;
     switch (m.k) {
-      case 'border': return bd.order(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null, m.room | 0);
+      case 'border': return bd.order(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null, m.room | 0, m.cell != null ? m.cell | 0 : -1);
       case 'plant': return bd.plant(side);
       case 'vent': return bd.vent(side, m.room | 0);
       case 'alarm': if (bd.def !== side) return false; return bd.setAlarm(!!m.on);
@@ -449,7 +450,7 @@
       var c = B.canBoard(n, t); if (!c.ok) return c;
       send({ t: 'cmd', k: 'board', n: n, to: t, all: !!all });
       self.can = (self.can || []).filter(function(x) { return !(x.n === n && x.t === t); });   // до ответа — не жать дважды
-      return { ok: true, party: c.party, shuttles: Math.ceil(c.party / 12) };
+      return { ok: true, party: c.party, shuttles: Math.ceil(c.party / 12), muster: true };
     };
     B.sensRange = function(sh) { return sh.netSens || sh.sens; };
     B.step = function() {};
@@ -524,7 +525,7 @@
       sh.ctl = o.ow !== 2;
       if (mine) { sh.ai = !!o.ai; sh.guard = !!o.gd; sh.foeT = o.at >= 0 ? o.at : null; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
       sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
-      sh.netTroops = o.tr || null; sh.netGuards = o.gu || null; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
+      sh.netTroops = o.tr || null; sh.netGuards = o.gu || null; sh.netMuster = o.mu || 0; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
       if (o.veh != null && (!sh.vehicles || sh.vehicles.length !== o.veh)) { sh.vehicles = []; for (var vv = 0; vv < o.veh; vv++) sh.vehicles.push('?'); }
       for (var i = 0; i < o.g.length && i < sh.guns.length; i++) {
         var g = sh.guns[i], a = o.g[i];
@@ -572,9 +573,11 @@
       bd.tick = function() {}; bd.think = function() {}; bd.owns = function() { return false; };
       // оборона: приказы отрядам, двери, сварка — на сервер; проверки — по присланному
       var listFor = function(team) { return team === bd.def ? (bd.netSum && bd.netSum.dsq || []) : (bd.netSum && bd.netSum.sq || []); };
-      bd.order = function(team, ids, room) {
-        self.send({ t: 'cmd', k: 'border', to: n, sq: ids, room: room }); var c = 0;
-        listFor(team).forEach(function(q) { if (q.n && (!ids || ids.indexOf(q.id) >= 0)) { q.room = room; q.auto = false; c++; } });
+      bd.order = function(team, ids, room, cell) {
+        var pt = cell != null && cell >= 0;
+        if (pt) room = bd.ship.room[cell] || 0;
+        self.send({ t: 'cmd', k: 'border', to: n, sq: ids, room: room, cell: pt ? cell : undefined }); var c = 0;
+        listFor(team).forEach(function(q) { if (q.n && (!ids || ids.indexOf(q.id) >= 0)) { q.room = room; q.auto = false; q.cell = pt ? cell : -1; c++; } });
         return c;
       };
       bd.setAuto = function(team, ids) {
@@ -596,7 +599,7 @@
     }
     // отряды: члены по номерам (для центра отряда и меток)
     var keep = function(list, src) {
-      return src.map(function(q) { var old = null; for (var i = 0; i < (list || []).length; i++) if (list[i].id === q.id) old = list[i]; return { id: q.id, members: old ? old.members : [], room: q.room, auto: q.auto, wait: q.w || 0, land: q.w ? q.room : -1 }; });
+      return src.map(function(q) { var old = null; for (var i = 0; i < (list || []).length; i++) if (list[i].id === q.id) old = list[i]; return { id: q.id, members: old ? old.members : [], room: q.room, auto: q.auto, cell: q.c != null ? q.c : -1, wait: q.w || 0, land: q.w ? q.room : -1 }; });
     };
     if (o.su && o.su.sq) bd.squads = keep(bd.squads, o.su.sq);
     if (o.su && o.su.dsq) bd.dsq = keep(bd.dsq, o.su.dsq);

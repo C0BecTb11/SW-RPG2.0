@@ -30,6 +30,7 @@
   var STEP = 0.05;                 // шаг расчёта, с (20 в секунду)
   var R = 0.3;                     // радиус тела, клетки
   var WALK = 1.25, RUN = 3;        // клеток в секунду (2,5 и 6 м/с)
+  var MUSTER_RUN = 4.5;            // десант бегом к шлюзу на посадку (9 м/с, по тревоге, налегке)
 
   // Сколько людей на посту каждого типа отсека
   var STUN_IMM = 6;          // секунд «перезапуска» после ионного сбоя: новый сбой не берётся
@@ -728,7 +729,7 @@
     }
     if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     if (a.hold > 0) { a.hold -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
-    this.nav(a, dt, (this.alertOn || a.job) ? RUN : WALK);
+    this.nav(a, dt, a.job && a.job.kind === 'muster' ? MUSTER_RUN : (this.alertOn || a.job) ? RUN : WALK);
   };
   // Шаг к цели (a.goal в отсеке a.goalRoom) со скоростью sp; вернёт клетку, куда шагает
   // дальше (−1 — стоит, пришёл или ждёт поле направлений). Нужен и абордажу.
@@ -778,6 +779,8 @@
   // На месте: вахта у пультов, тушение, ремонт, лечение, подноска; в мирное время — прогулки
   Crew.prototype.work = function(a, dt) {
     var j = a.job, W = this.w;
+    // десант у шлюза: ждёт посадки в шаттл, оружие наготове
+    if (j && j.kind === 'muster') { a.phase = (a.phase + dt * 1.5) % 6.28; if (a.face != null) a.aim = turn(a.aim, a.face, 3 * dt); return; }
     if (j && j.kind === 'fire') {
       var cx = Math.floor(a.x), cy = Math.floor(a.y), any = false;
       // струя бьёт до 7 клеток (14 м): огонь на машинах достают из прохода

@@ -144,6 +144,10 @@ button { font-family: inherit; }
 .sp-unit.cis { border-left: 2px solid #d94a4a; }
 .sp-unit.on { border-color: rgba(217,169,64,0.75); }
 .sp-unit.dead { opacity: 0.4; }
+/* враг вне датчиков: полоски застыли на последнем, что видели */
+.sp-unit.lost { border-style: dashed; }
+.sp-unit.lost .sp-bar { opacity: 0.3; }
+.sp-unit.lost em { color: #ff8a70; font-style: normal; font-size: 9px; letter-spacing: 0.5px; }
 .sp-unit-name { display: flex; justify-content: space-between; gap: 4px; white-space: nowrap; }
 .sp-unit-name em { font-style: normal; color: #ff8a5c; }
 .sp-bar { height: 2px; margin-top: 2px; background: #141a22; border-radius: 2px; overflow: hidden; }
@@ -299,6 +303,32 @@ button { font-family: inherit; }
 }
 .sp-end-card h2 { margin: 2px 0 8px; font-size: 16px; color: #e8d9a8; letter-spacing: 1px; font-weight: normal; }
 .sp-end-card p { margin: 0 0 12px; font-size: 11px; color: #8fa8c4; line-height: 1.5; }
+
+/* ---------- загрузка вида изнутри ---------- */
+.sp-load {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3,4,7,0.9);
+  transition: opacity 0.25s ease;
+}
+.sp-load[hidden] { display: none; }
+.sp-load.out { opacity: 0; pointer-events: none; }
+.sp-load-card {
+  width: min(260px, 76vw);
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, rgba(13,17,25,0.97) 0%, rgba(8,11,17,0.97) 100%);
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d9a940;
+  border-radius: 10px;
+}
+.sp-load-card b { display: block; margin: 4px 0 10px; font-size: 15px; font-weight: normal; color: #e8d9a8; letter-spacing: 0.5px; }
+.sp-load-bar { height: 3px; background: #1c2530; border-radius: 2px; overflow: hidden; }
+.sp-load-bar i { display: block; height: 100%; width: 0; background: #d9a940; transition: width 0.1s linear; }
+.sp-load-card span { display: block; margin-top: 8px; font-size: 10px; color: #8fa8c4; letter-spacing: 0.5px; }
 
 /* ---------- всплывашка ---------- */
 .sp-toast {

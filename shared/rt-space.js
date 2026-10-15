@@ -97,6 +97,9 @@
     this.t = 0; this.ships = []; this.craft = []; this.pending = []; this.nextCraft = 1;
     this.ev = { shots: [], booms: [], shields: [], kills: [] };
     this.over = -1;          // сторона-победитель
+    // туман войны: что видит каждая сторона (fog: false — видно всё)
+    this.fog = opts.fog !== false;
+    this.vis = [{}, {}]; this.visC = [{}, {}]; this.last = [{}, {}]; this.senseT = 0;
     var list = opts.ships || [];
     for (var i = 0; i < list.length; i++) this.addShip(list[i]);
   }
@@ -113,6 +116,8 @@
       // восстановление и перекачка слабее, иначе их пушки не продавливают щит вовсе
       shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
+      // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
+      sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
       crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true }),
       guns: [], eff: {}, hangar: (C.craft || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
     };
@@ -156,6 +161,8 @@
     for (g = 0; g < sh.guns.length; g++) if (sh.guns[g].t !== 'pd') sh.guns[g].k = k;
     this.ships.push(sh);
     this.place(sh);
+    // разведка перед боем: где противник стоял на старте, обе стороны знают
+    this.last[1 - sh.side][sh.n] = { x: sh.x, y: sh.y, hd: sh.hd, t: this.t };
     return sh;
   };
 
@@ -236,6 +243,8 @@
       this.place(sh);
       this.launch(sh, dt);
     }
+    this.senseT -= dt;
+    if (this.senseT <= 0) { this.senseT = 0.5; this.sense(); }
     for (i = 0; i < this.ships.length; i++) if (!this.ships[i].dead) this.fireGuns(this.ships[i], dt);
     this.flyCraft(dt);
     // попадания долетают
@@ -392,14 +401,61 @@
     r.sort(function(a, b) { return a - b; });
     return r[Math.floor((r.length - 1) / 2)];
   }
+  // Ближайший видимый враг; если никого не видно — «призрак» на месте последней
+  // засечки ({x, y, ghost}), чтобы ИИ шёл туда, где врага видели
   Battle.prototype.nearestFoe = function(sh) {
-    var best = null, bd = 1e18;
+    var best = null, bd = 1e18, ghost = null, gd = 1e18;
     for (var i = 0; i < this.ships.length; i++) {
       var o = this.ships[i]; if (o.dead || o.side === sh.side) continue;
-      var dx = o.x - sh.x, dy = o.y - sh.y, d = dx * dx + dy * dy;
-      if (d < bd) { bd = d; best = o; }
+      if (this.sees(sh.side, o)) {
+        var dx = o.x - sh.x, dy = o.y - sh.y, d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = o; }
+      } else {
+        var L = this.last[sh.side][o.n]; if (!L) continue;
+        var gx = L.x - sh.x, gy = L.y - sh.y, g2 = gx * gx + gy * gy;
+        if (g2 < gd) { gd = g2; ghost = { x: L.x, y: L.y, ghost: true, n: o.n }; }
+      }
     }
-    return best;
+    return best || ghost;
+  };
+
+  // ---------------------------------------------------------------- туман войны
+  // Видит ли сторона side корабль o
+  Battle.prototype.sees = function(side, o) { return !this.fog || o.side === side || !!this.vis[side][o.n]; };
+  // Дальность датчиков: связь и тактический центр разбиты — видно ближе (до 55%)
+  Battle.prototype.sensRange = function(sh) {
+    var c = sh.crew, sum = 0, n = 0;
+    for (var i = 0; i < sh.plan.rooms.length; i++) {
+      var r = sh.plan.rooms[i]; if (r.t !== 'comms' && r.t !== 'cic') continue;
+      sum += c.roomEff(r.n); n++;
+    }
+    return sh.sens * (n ? 0.55 + 0.45 * Math.min(1, sum / n) : 1);
+  };
+  var CRAFT_SENS = 3500, NEAR = 1500, FLASH = 3, FLASH_R = 15000;
+  Battle.prototype.sense = function() {
+    var S = this.ships, C = this.craft, side, i, j;
+    for (side = 0; side < 2; side++) {
+      var vis = {}, visC = {}, eyes = [];
+      for (i = 0; i < S.length; i++) if (!S[i].dead && S[i].side === side) eyes.push([S[i].x, S[i].y, this.sensRange(S[i])]);
+      for (i = 0; i < C.length; i++) if (!C[i].dead && C[i].side === side) eyes.push([C[i].x, C[i].y, CRAFT_SENS]);
+      for (i = 0; i < S.length; i++) {
+        var o = S[i]; if (o.dead || o.side === side) continue;
+        var seen = false, flash = this.t - o.flash < FLASH;
+        for (j = 0; j < eyes.length && !seen; j++) {
+          var dx = o.x - eyes[j][0], dy = o.y - eyes[j][1], d2 = dx * dx + dy * dy, r = eyes[j][2] + o.len * 0.5;
+          if (d2 < r * r || d2 < NEAR * NEAR || (flash && d2 < FLASH_R * FLASH_R)) seen = true;
+        }
+        if (seen) { vis[o.n] = 1; this.last[side][o.n] = { x: o.x, y: o.y, hd: o.hd, t: this.t }; }
+      }
+      for (i = 0; i < C.length; i++) {
+        var c = C[i]; if (c.dead || c.side === side) continue;
+        for (j = 0; j < eyes.length; j++) {
+          var ex = c.x - eyes[j][0], ey = c.y - eyes[j][1];
+          if (ex * ex + ey * ey < eyes[j][2] * eyes[j][2]) { visC[c.id] = 1; break; }
+        }
+      }
+      this.vis[side] = vis; this.visC[side] = visC;
+    }
   };
 
   // ---------------------------------------------------------------- стрельба
@@ -413,6 +469,7 @@
       g.aimAt = aim;
       if (!aim || g.cd > 0) continue;
       g.cd = g.T.reload * (0.9 + this.R() * 0.2);
+      if (g.t !== 'pd') sh.flash = this.t;            // вспышка главного калибра видна издалека
       if (g.room) sh.crew.gunFired(g.room);
       if (aim.craft) this.shootCraft(sh, g, aim.craft);
       else this.shootShip(sh, g, aim);
@@ -430,6 +487,7 @@
     if (k === 'fighters') { var c1 = this.craftFor(sh, g, T.range); return c1 ? { craft: c1 } : null; }
     var tgtShip = this.ships[t.ship];
     if (!tgtShip || tgtShip.dead || tgtShip.side === sh.side) { g.tgt = { k: 'auto' }; return null; }
+    if (!this.sees(sh.side, tgtShip)) return null;      // цель потеряна в тумане — пушка ждёт
     if (!this.inArc(sh, g, tgtShip.x, tgtShip.y, tgtShip)) return null;
     if (k === 'hull') return { ship: tgtShip, room: 0 };
     if (k === 'room') return tgtShip.plan.roomByN[t.room] ? { ship: tgtShip, room: t.room } : { ship: tgtShip, room: 0 };
@@ -469,7 +527,7 @@
   Battle.prototype.foeInArc = function(sh, g) {
     var best = null, bd = 1e18;
     for (var i = 0; i < this.ships.length; i++) {
-      var o = this.ships[i]; if (o.dead || o.side === sh.side) continue;
+      var o = this.ships[i]; if (o.dead || o.side === sh.side || !this.sees(sh.side, o)) continue;
       if (!this.inArc(sh, g, o.x, o.y, o)) continue;
       var dx = o.x - g.x, dy = o.y - g.y, d = dx * dx + dy * dy;
       if (d < bd) { bd = d; best = o; }
@@ -479,7 +537,7 @@
   Battle.prototype.craftFor = function(sh, g, range) {
     var best = null, bd = range * range;
     for (var i = 0; i < this.craft.length; i++) {
-      var c = this.craft[i]; if (c.dead || c.side === sh.side) continue;
+      var c = this.craft[i]; if (c.dead || c.side === sh.side || !this.visC[sh.side][c.id]) continue;
       var dx = c.x - g.x, dy = c.y - g.y, d = dx * dx + dy * dy;
       if (d > bd || !this.inArc(sh, g, c.x, c.y, null)) continue;
       // бомбардировщики, что идут на нас, — первыми
@@ -648,13 +706,17 @@
         if (!ship || ship.dead) {
           var h = this.ships[c.home] || c, best = null, bd = 1e18;
           for (var s = 0; s < this.ships.length; s++) {
-            var o = this.ships[s]; if (o.dead || o.side === c.side) continue;
+            var o = this.ships[s]; if (o.dead || o.side === c.side || !this.sees(c.side, o)) continue;
             var ddx = o.x - c.x, ddy = o.y - c.y, dd = ddx * ddx + ddy * ddy;
             if (dd < bd) { bd = dd; best = o; }
           }
           ship = best; c.tgt = best ? best.n : null; c.mode = 'go';
           c.room = best ? this.sysRoom(best, R() < 0.5 ? 'engine' : 'guns', { x: c.x, y: c.y }) : 0;
-          if (!best) { gx = h.x; gy = h.y; }
+          if (!best) {
+            // никого не видно — к последней засечке врага, иначе к своему кораблю
+            var gh = this.ships[c.home] ? this.nearestFoe(this.ships[c.home]) : null;
+            if (gh) { gx = gh.x; gy = gh.y; } else { gx = h.x; gy = h.y; }
+          }
         }
         if (ship) {
           var rm = ship.plan.roomByN[c.room], pt = rm ? this.toWorld(ship, rm.cx, rm.cy) : [ship.x, ship.y];
@@ -692,7 +754,7 @@
   Battle.prototype.nearCraft = function(c, range) {
     var best = null, bd = range * range;
     for (var i = 0; i < this.craft.length; i++) {
-      var o = this.craft[i]; if (o.dead || o.side === c.side) continue;
+      var o = this.craft[i]; if (o.dead || o.side === c.side || !this.visC[c.side][o.id]) continue;
       var dx = o.x - c.x, dy = o.y - c.y, d = dx * dx + dy * dy;
       if (o.role === 'bomber') d *= 0.6;
       if (d < bd) { bd = d; best = o; }

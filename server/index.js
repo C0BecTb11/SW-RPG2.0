@@ -103,7 +103,7 @@ var ROOMS = new Map();
 var PROTO = { p500: 1, p2000: 1 };
 var SPACE_MAX = 8;          // космический бой с экипажами тяжёлый: до 8 комнат на сервер
 
-function getRoom(name) {
+function getRoom(name, cfg) {
   var sp = Space.parse(name);
   // космическая комната — по коду: бой задаёт тот, кто её создал
   if (sp) name = sp.key;
@@ -112,7 +112,7 @@ function getRoom(name) {
   if (sp) {
     var n = 0; ROOMS.forEach(function(x) { if (x.kind === 'space') n++; });
     if (n >= SPACE_MAX) return null;
-    r = new Space.SpaceRoom(name, sp.code, sp.scen);
+    r = new Space.SpaceRoom(name, sp.code, sp.scen, cfg ? Space.cfgClean(cfg) : null);
     r.dev = CFG.dev;
     r.ms = []; r.emptySince = Date.now(); r.created = Date.now();
     ROOMS.set(name, r);
@@ -232,7 +232,7 @@ server.on('upgrade', function(req, sock, head) {
         if (!ws.open) return;
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
-        var r = getRoom(String(m.room || 'p500').slice(0, 40));
+        var r = getRoom(String(m.room || 'p500').slice(0, 40), m.cfg);
         if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : 'нет такого боя' })); ws.close(4004); return; }
         if (r.kind === 'space') {
           c.side = -1;

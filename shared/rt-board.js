@@ -40,6 +40,8 @@
                   rep_engineer: 'tool', cis_engineer: 'tool' };
   var TURRET = { hp: 150, range: 11, acc: 0.7, dmg: 25, rof: 0.4 };
   var CAPTURE = 6, RETAKE = 6, BREACH = 10, PLANT = 6, FUSE = 90, DEFUSE = 8, VENT_CD = 300, VENT_DMG = 40;
+  // оборона: обычную дверь вскрывают вдвое быстрее брони; заваренную — вдвое дольше; заварка 6 с
+  var WELD = 6, DSQ_MAX = 10;
   var SCAN = 0.4, ASSAULT = 1.35;
   // Отсеки по роли: что даёт захват
   var KEYROOM = { bridge: 1, cic: 1, reactor: 1, shield: 1, comms: 1, power: 1, engine: 1, hyper: 1, hangar: 1,
@@ -99,7 +101,7 @@
       for (j = 0; j < cells.length; j++) this.doorAt[cells[j]] = di;
       var cx = 0, cy = 0; for (j = 0; j < cells.length; j++) { cx += cells[j] % W; cy += Math.floor(cells[j] / W); }
       this.doors.push({ i: di, id: d.id, k: this.doorKind(d, cells), cells: cells, x: cx / cells.length + 0.5, y: cy / cells.length + 0.5, v: d.v,
-                        state: 'open', breach: 0, by: -1, rooms: d.rooms || [] });
+                        state: 'open', breach: 0, by: -1, weld: 0, welder: -1, weldP: 0, rooms: d.rooms || [] });
     }
     // противоабордажные турели
     this.turrets = [];
@@ -123,6 +125,7 @@
     this.ventCd = [0, 0];
     this.alarm = false; this.alarmCd = 0;
     this.squads = [];            // отряды атакующих (по шаттлам): { id, members[], room, auto }
+    this.dsq = [];               // отряды защитников (по казармам): { id, members[], room, auto }
     this.visT = 0; this.vis = new Uint8Array(0);     // кого из защитников видят атакующие
     this.defT = 0;
     this.started = false;
@@ -159,7 +162,7 @@
     return false;
   };
   // Этот боец — под управлением абордажа (атакующий или защитник в бою)
-  Board.prototype.owns = function(a) { return a.team !== this.def || (a.job && a.job.kind === 'defend'); };
+  Board.prototype.owns = function(a) { return a.team !== this.def || (a.job && (a.job.kind === 'defend' || a.job.kind === 'weld')); };
 
   // ---------------------------------------------------------------- двери
   Board.prototype.occupied = function(d) {
@@ -173,6 +176,7 @@
   Board.prototype.setDoor = function(d, state) {
     if (d.state === state) return;
     d.state = state;
+    if (state !== 'locked') { d.weld = 0; d.weldP = 0; }
     var lock = state === 'locked';
     for (var j = 0; j < d.cells.length; j++) this.walkAtt[d.cells[j]] = lock ? 0 : this.c.walk[d.cells[j]];
     this.ev.doors.push({ t: this.c.t, i: d.i, state: state });
@@ -188,6 +192,7 @@
       if (d.state === 'broken') continue;
       if (d.k !== 'blast' && d.k !== 'lock') continue;
       if (on && this.occupied(d)) continue;             // в проёме стоит чужой — дверь не закрыть
+      if (!on && d.weld) continue;                      // заваренная остаётся запертой
       this.setDoor(d, on ? 'locked' : 'open');
     }
     if (on) { this.alarmCd = 300; this.c.alert(true); }
@@ -208,6 +213,7 @@
         var a = c.agents[i];
         if (a.alive && a.team === this.def && this.isTrooper(a)) this.toDefend(a);
       }
+      this.makeDefSquads();
     }
     var sq = { id: this.squads.length + 1, members: [], room: this.bridge || roomN, auto: true };
     for (i = 0; i < party.length; i++) {
@@ -242,7 +248,8 @@
   };
   // Новый абордаж того же корабля (прошлый отбит): двери, турели, насосы — как есть
   Board.prototype.reopen = function() {
-    this.over = -1; this.why = ''; this.started = false; this.bridgeT = 0; this.charge = null; this.squads = [];
+    this.over = -1; this.why = ''; this.started = false; this.bridgeT = 0; this.charge = null; this.squads = []; this.dsq = [];
+    for (var i = 0; i < this.c.agents.length; i++) this.c.agents[i].dsq = 0;
   };
   Board.prototype.wpnOf = function(a) {
     var id = this.figIds && this.figIds[a.fig];
@@ -262,7 +269,9 @@
     return true;
   };
   Board.prototype.order = function(team, sqIds, roomN) {
-    if (team !== this.att || !this.ship.roomByN[roomN]) return 0;
+    if (!this.ship.roomByN[roomN] || this.over >= 0) return 0;
+    if (team === this.def) return this.orderDef(sqIds, roomN);
+    if (team !== this.att) return 0;
     var n = 0;
     for (var i = 0; i < this.squads.length; i++) {
       var sq = this.squads[i];
@@ -271,6 +280,149 @@
     }
     return n;
   };
+  // ---------------------------------------------------------------- оборона под рукой игрока
+  // Отряды защитников: бойцы казарм по 10, по своей казарме. Без приказа — ИИ
+  // (часть держит мостик и реактор, остальные идут на врага); с приказом — держат отсек.
+  Board.prototype.makeDefSquads = function() {
+    var c = this.c, list = [], i, sq = null;
+    for (i = 0; i < c.agents.length; i++) {
+      var a = c.agents[i];
+      if (a.alive && a.team === this.def && a.job && a.job.kind === 'defend' && !a.dsq) list.push(a);
+    }
+    list.sort(function(p, q) { return (p.home - q.home) || (p.id - q.id); });
+    for (i = 0; i < list.length; i++) {
+      if (!sq || sq.members.length >= DSQ_MAX || (sq.home !== list[i].home && sq.members.length >= 6)) {
+        sq = { id: this.dsq.length + 1, members: [], room: 0, auto: true, home: list[i].home };
+        this.dsq.push(sq);
+      }
+      sq.members.push(list[i].id); list[i].dsq = sq.id;
+    }
+  };
+  // Боец вернулся с шаттла или встал в оборону позже — в отряд
+  Board.prototype.addDefender = function(a) { this.toDefend(a); a.dsq = 0; this.makeDefSquads(); };
+  Board.prototype.orderDef = function(ids, roomN) {
+    var n = 0;
+    for (var i = 0; i < this.dsq.length; i++) {
+      var sq = this.dsq[i];
+      if (ids && ids.indexOf(sq.id) < 0) continue;
+      if (!this.alive(sq)) continue;
+      sq.room = roomN; sq.auto = false; n++;
+      for (var j = 0; j < sq.members.length; j++) {
+        var a = this.c.agents[sq.members[j]]; if (!a || !a.alive) continue;
+        a.guard = 0; a.goT = -99; this.goRoom(a, roomN, 0);
+      }
+    }
+    return n;
+  };
+  // Вернуть отряды ИИ (атакующие — на мостик, защитники — охрана и охота)
+  Board.prototype.setAuto = function(team, ids) {
+    var list = team === this.def ? this.dsq : team === this.att ? this.squads : [], n = 0;
+    for (var i = 0; i < list.length; i++) {
+      var sq = list[i];
+      if (ids && ids.indexOf(sq.id) < 0) continue;
+      if (!this.alive(sq)) continue;
+      n++;
+      if (team === this.att) { if (this.bridge) this.orderSquad(sq, this.bridge, true); else sq.auto = true; }
+      else { sq.auto = true; sq.room = 0; }
+    }
+    return n;
+  };
+  // Двери: защитник запирает и открывает любую целую дверь (не с врагом в проёме)
+  Board.prototype.canDoor = function(team, i) {
+    var d = this.doors[i];
+    if (!d) return 'нет двери';
+    if (team !== this.def) return 'дверями управляют защитники';
+    if (this.over >= 0) return 'абордаж окончен';
+    if (d.state === 'broken') return 'дверь выбита';
+    if (d.state === 'open' && this.occupied(d)) return 'в проёме враг';
+    return '';
+  };
+  Board.prototype.door = function(team, i) {
+    if (this.canDoor(team, i) !== '') return false;
+    var d = this.doors[i];
+    // вскрытие не обнуляется: запереть заново не значит починить замок
+    if (d.state === 'locked') this.setDoor(d, 'open');
+    else this.setDoor(d, 'locked');
+    return true;
+  };
+  // Сколько вскрывать: обычная дверь 5 с, броня и шлюз 10 с; заварена — вдвое дольше
+  Board.prototype.breachNeed = function(d) { return BREACH * (d.k === 'door' ? 0.5 : 1) * (d.weld ? 2 : 1); };
+  // Заварка: ближайший ремонтник корабля идёт к запертой двери и варит 6 с
+  Board.prototype.canWeld = function(team, i) {
+    var d = this.doors[i];
+    if (!d) return 'нет двери';
+    if (team !== this.def) return 'варят защитники';
+    if (this.over >= 0) return 'абордаж окончен';
+    if (d.state !== 'locked') return 'сначала запереть';
+    if (d.weld) return 'уже заварена';
+    var w = d.welder >= 0 ? this.c.agents[d.welder] : null;
+    if (w && w.alive && w.job && w.job.kind === 'weld') return 'уже варят';
+    if (!this.welderFor(d)) return 'нет свободного ремонтника';
+    return '';
+  };
+  Board.prototype.welderFor = function(d) {
+    var c = this.c, best = null, bd = 1e18;
+    for (var i = 0; i < c.agents.length; i++) {
+      var a = c.agents[i];
+      if (!a.alive || a.team !== this.def || a.role !== 'fixer' || (a.job && (a.job.kind === 'weld' || a.job.kind === 'defend'))) continue;
+      var dx = a.x - d.x, dy = a.y - d.y, dd = dx * dx + dy * dy;
+      if (dd < bd) { bd = dd; best = a; }
+    }
+    return best;
+  };
+  Board.prototype.weld = function(team, i) {
+    if (this.canWeld(team, i) !== '') return false;
+    var d = this.doors[i], a = this.welderFor(d), c = this.c;
+    c.releaseJob(a); c.claimCell(a, null);
+    var p = this.doorSide(d, a);
+    a.job = { kind: 'weld', door: i, room: this.ship.room[p[1] * this.W + p[0]] || 0 };
+    a.goalRoom = a.job.room; a.goal = p; a.at = false; a.stuck = 0; a.lastD = 1e9; a.task = 'weld';
+    a.weldT = 0; a.tgt = -1; a.wait = 0; a.face = null;
+    d.welder = a.id; d.weldP = 0;
+    this.msg('Ремонтник идёт заваривать дверь', this.def, 'gold');
+    return true;
+  };
+  // Клетка у двери (не в проёме) — ближняя к человеку
+  Board.prototype.doorSide = function(d, a) {
+    var W = this.W, best = null, bd = 1e18, walk = this.c.walk;
+    for (var j = 0; j < d.cells.length; j++) {
+      for (var o = 0; o < 4; o++) {
+        var x = d.cells[j] % W + (o === 0 ? 1 : o === 1 ? -1 : 0), y = Math.floor(d.cells[j] / W) + (o === 2 ? 1 : o === 3 ? -1 : 0);
+        var k = y * W + x;
+        if (x < 0 || y < 0 || x >= W || y >= this.ship.h || !walk[k] || this.doorAt[k] >= 0) continue;
+        var dx = x + 0.5 - a.x, dy = y + 0.5 - a.y, dd = dx * dx + dy * dy;
+        if (dd < bd) { bd = dd; best = [x, y]; }
+      }
+    }
+    return best || [Math.floor(d.x), Math.floor(d.y)];
+  };
+  Board.prototype.weldThink = function(a, dt) {
+    if (!a.job || a.job.kind !== 'weld') return;
+    var d = this.doors[a.job.door];
+    if (!d || d.state !== 'locked' || d.weld || this.over >= 0) { this.weldEnd(a, d); return; }
+    // до ближайшей клетки проёма (у широкой бронедвери центр далеко)
+    var W = this.W, dist = 1e9, dx = 0, dy = 0;
+    for (var j = 0; j < d.cells.length; j++) {
+      var cx = d.cells[j] % W + 0.5 - a.x, cy = Math.floor(d.cells[j] / W) + 0.5 - a.y, cd = Math.sqrt(cx * cx + cy * cy);
+      if (cd < dist) { dist = cd; dx = cx; dy = cy; }
+    }
+    if (dist > 1.9 && !a.at) { this.step(a, dt, 2.2); return; }
+    a.aim = turn(a.aim, Math.atan2(dy, dx), 6 * dt);
+    a.mv += (0 - a.mv) * Math.min(1, dt * 6);
+    a.fixAt = d.cells[0];
+    a.weldT += dt; d.weldP = a.weldT / WELD;
+    if (a.weldT >= WELD) {
+      d.weld = 1;
+      this.msg('Дверь заварена: вскрывать вдвое дольше', this.def, 'gold');
+      this.weldEnd(a, d);
+    }
+  };
+  Board.prototype.weldEnd = function(a, d) {
+    a.job = null; a.fixAt = -1; a.task = 'post';
+    if (d) { d.welder = -1; d.weldP = 0; }
+    this.c.sendPost(a);
+  };
+
   Board.prototype.alive = function(sq) {
     var n = 0; for (var i = 0; i < sq.members.length; i++) { var a = this.c.agents[sq.members[i]]; if (a && a.alive) n++; }
     return n;
@@ -283,6 +435,7 @@
     if (c.fire[here]) c.hurt(a, c.fire[here] * 0.1 * dt);
     if (!a.alive) return;
     a.dvx = 0; a.dvy = 0;
+    if (a.job && a.job.kind === 'weld') { this.weldThink(a, dt); return; }
     if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     var w = WPN[a.wpn] || WPN.rifle;
     var tg = this.tgtPos(a);
@@ -298,7 +451,7 @@
         d.by = a.id;
         a.aim = turn(a.aim, Math.atan2(d.y - a.y, d.x - a.x), 6 * dt);
         a.mv += (0 - a.mv) * Math.min(1, dt * 6); a.phase = (a.phase + dt * 4) % 6.28;
-        if (d.breach >= BREACH) { this.setDoor(d, 'broken'); this.msg((d.k === 'lock' ? 'Шлюзовая' : 'Бронедверь') + ' вскрыта', this.att, 'gold'); this.ev.booms.push({ t: c.t, x: d.x, y: d.y, r: 2.2 }); }
+        if (d.breach >= this.breachNeed(d)) { this.setDoor(d, 'broken'); d.weld = 0; this.msg((d.k === 'lock' ? 'Шлюзовая' : d.k === 'blast' ? 'Бронедверь' : 'Дверь') + ' вскрыта', this.att, 'gold'); this.ev.booms.push({ t: c.t, x: d.x, y: d.y, r: 2.2 }); }
         return;
       }
     }
@@ -455,6 +608,12 @@
     this.visT -= dt;
     if (this.visT <= 0) { this.visT = 0.5; this.sight(); }
     this.chargeStep(dt);
+    // сварщик погиб или ушёл — дверь снова свободна для заварки
+    for (i = 0; i < this.doors.length; i++) {
+      var dw = this.doors[i]; if (dw.welder < 0) continue;
+      var wa = ag[dw.welder];
+      if (!wa || !wa.alive || !wa.job || wa.job.kind !== 'weld' || wa.job.door !== i) { dw.welder = -1; dw.weldP = 0; }
+    }
     // старые события
     var t = c.t;
     if (this.ev.shots.length > 400) this.ev.shots.splice(0, 200);
@@ -591,6 +750,9 @@
     for (i = 0; i < ag.length; i++) {
       a = ag[i];
       if (!a.alive || a.team !== this.def || !a.job || a.job.kind !== 'defend') continue;
+      // отряд с приказом игрока — держит свой отсек
+      var dq = a.dsq && this.dsq[a.dsq - 1];
+      if (dq && !dq.auto && dq.room) { a.guard = 0; this.goRoom(a, dq.room, 6); continue; }
       // охрана ключевых отсеков
       var g = a.guard;
       if (!g) {
@@ -704,6 +866,8 @@
     for (var i = 0; i < c.agents.length; i++) {
       var a = c.agents[i];
       if (a.alive && a.team === this.def && a.job && a.job.kind === 'defend') { a.job = null; a.guard = 0; a.hunt = false; c.sendPost(a); }
+      else if (a.alive && a.job && a.job.kind === 'weld') this.weldEnd(a, this.doors[a.job.door]);
+      a.dsq = 0;
     }
   };
 
@@ -717,9 +881,11 @@
       else out.crew++;
     }
     for (i = 0; i < this.squads.length; i++) out.sq.push({ id: this.squads[i].id, n: this.alive(this.squads[i]), room: this.squads[i].room, auto: this.squads[i].auto });
+    out.dsq = [];
+    for (i = 0; i < this.dsq.length; i++) out.dsq.push({ id: this.dsq[i].id, n: this.alive(this.dsq[i]), room: this.dsq[i].room, auto: this.dsq[i].auto });
     return out;
   };
 
   return { Board: Board, WPN: WPN, FIG_WPN: FIG_WPN, TURRET: TURRET, ROOM_EFF: ROOM_EFF, KEYROOM: KEYROOM,
-           CAPTURE: CAPTURE, BREACH: BREACH, FUSE: FUSE, PLANT: PLANT };
+           CAPTURE: CAPTURE, BREACH: BREACH, FUSE: FUSE, PLANT: PLANT, WELD: WELD, DEFUSE: DEFUSE, RETAKE: RETAKE };
 });

@@ -24,9 +24,9 @@ function plan(id) {
 
 var SEAT_HOLD = 90e3;       // место ушедшего игрока ждёт его полторы минуты
 
-function SpaceRoom(name, code, scen) {
+function SpaceRoom(name, code, scen, cfg) {
   this.kind = 'space';
-  this.name = name; this.code = code; this.scen = scen;
+  this.name = name; this.code = code; this.scen = scen; this.cfg = cfg || null; this.speed = 1;
   this.clients = [];
   this.seats = [null, null];          // { user, nick, left } — кто играет за сторону
   this.tickN = 0; this.bytes = 0; this.bytesRate = 0; this.rateAt = Date.now();
@@ -34,9 +34,10 @@ function SpaceRoom(name, code, scen) {
 }
 
 SpaceRoom.prototype.newBattle = function() {
-  var sc = Net.SCEN[this.scen];
+  // свой бой создателя комнаты или бой из списка
+  var ships = this.cfg ? Net.layout(this.cfg) : Net.SCEN[this.scen].ships;
   var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [true, true] });
-  sc.ships.forEach(function(s) {
+  ships.forEach(function(s) {
     var p = plan(s[0]);
     B.addShip({ cls: s[0], plan: p, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: FIG.crewFigs(p.faction, ALL), figIds: FIG_IDS });
   });
@@ -105,7 +106,7 @@ SpaceRoom.prototype.leave = function(c) {
 SpaceRoom.prototype.hello = function(c) {
   var B = this.B;
   this.send(c, JSON.stringify({
-    t: 'hello', code: this.code, scen: this.scen, side: c.side, round: this.round, T: B.t, over: B.over,
+    t: 'hello', code: this.code, scen: this.scen, cfg: this.cfg, side: c.side, spd: this.speed, round: this.round, T: B.t, over: B.over,
     ships: B.ships.map(function(s) { return [s.cls, s.side]; })
   }));
 };
@@ -129,13 +130,16 @@ SpaceRoom.prototype.send = function(c, data) {
 
 SpaceRoom.prototype.step = function() {
   var B = this.B, i, j;
-  if (B.over < 0) B.tick(SWSpace.TICK);
-  else if (!this.overAt) this.overAt = Date.now();
+  for (var k = 0; k < this.speed && B.over < 0; k++) {
+    B.tick(SWSpace.TICK);
+    if (k < this.speed - 1) { var e0 = B.takeEvents(); for (i = 0; i < this.clients.length; i++) if (this.clients[i].viewer) this.clients[i].viewer.push(e0); }
+  }
+  if (B.over >= 0 && !this.overAt) this.overAt = Date.now();
   this.tickN++; this.battle.tick = this.tickN;
   var ev = B.takeEvents();
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
-    c.viewer.push(ev);
+    c.viewer.push(ev); c.viewer.spd = this.speed;
     var fr = c.viewer.frames(this.tickN);
     for (j = 0; j < fr.length; j++) this.send(c, fr[j]);
   }
@@ -150,13 +154,27 @@ SpaceRoom.prototype.command = function(c, m) {
   if (m.t === 'dbg' && this.dev) {
     var B = this.B, me = B.ships.filter(function(x) { return x.side === c.side && !x.dead; })[0], foe = B.ships.filter(function(x) { return x.side !== c.side && !x.dead; })[0];
     if (m.k === 'near' && me && foe) { foe.x = me.x + 2600; foe.y = me.y + 300; foe.sh = [0, 0, 0, 0]; B.sense(); }
+    if (m.k === 'fboard' && me && foe) B.forceBoard(me.n, foe.n, 30);
     if (m.k === 'fast') for (var i = 0; i < Math.min(3000, m.n | 0) && B.over < 0; i++) B.tick(SWSpace.TICK);
+    return;
+  }
+  // скорость боя: пауза, ×1, ×2, ×4 — для обоих игроков
+  if (m.t === 'speed') {
+    var v = m.v | 0; if (v !== 0 && v !== 1 && v !== 2 && v !== 4) return;
+    var now = Date.now();
+    if (now - (this.speedAt || 0) < 1500) return;          // не чаще раза в полторы секунды
+    // большой бой (больше двух кораблей) — не быстрее ×2: сервер один на всех
+    if (v === 4 && this.B.ships.length > 2) v = 2;
+    this.speedAt = now; this.speed = v;
+    var who = c.who && c.who.nick ? c.who.nick : (c.side === 0 ? 'Республика' : 'КНС');
+    var msg = JSON.stringify({ t: 'note', msg: (v === 0 ? 'Пауза' : 'Скорость ×' + v) + ' · ' + who });
+    var self = this; this.clients.forEach(function(x) { self.send(x, msg); });
     return;
   }
   if (m.t === 'again') {
     // реванш — только когда бой окончен
     if (this.B.over < 0) return;
-    this.overAt = 0;
+    this.overAt = 0; this.speed = 1;
     this.newBattle();
     var self = this;
     this.clients.forEach(function(x) { self.hello(x); });
@@ -176,4 +194,4 @@ function parse(name) {
   return { code: m[1].toLowerCase(), scen: m[2], key: 'sp:' + m[1].toLowerCase() };
 }
 
-module.exports = { SpaceRoom: SpaceRoom, parse: parse, plan: plan };
+module.exports = { SpaceRoom: SpaceRoom, parse: parse, plan: plan, cfgClean: Net.cfgClean };

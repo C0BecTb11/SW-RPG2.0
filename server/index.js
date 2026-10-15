@@ -17,6 +17,7 @@ var childProcess = require('child_process');
 var os = require('os');
 var wsLite = require('./ws-lite');
 var SWRT = require('../shared/rt-core.js');
+var Space = require('./space-room.js');
 
 var CFG = {
   port: +(process.env.PORT || 8080),
@@ -96,13 +97,28 @@ function verify(token) {
 }
 
 // ---------- комнаты ----------
-// Пока режимы не готовы, комнаты — нагрузочные бои прототипа (p500, p2000).
+// Нагрузочные бои прототипа (p500, p2000) и тестовые космические бои на двоих
+// (sp:код:бой — space-room.js).
 var ROOMS = new Map();
 var PROTO = { p500: 1, p2000: 1 };
+var SPACE_MAX = 8;          // космический бой с экипажами тяжёлый: до 8 комнат на сервер
 
 function getRoom(name) {
+  var sp = Space.parse(name);
+  // космическая комната — по коду: бой задаёт тот, кто её создал
+  if (sp) name = sp.key;
   var r = ROOMS.get(name);
   if (r) return r;
+  if (sp) {
+    var n = 0; ROOMS.forEach(function(x) { if (x.kind === 'space') n++; });
+    if (n >= SPACE_MAX) return null;
+    r = new Space.SpaceRoom(name, sp.code, sp.scen);
+    r.dev = CFG.dev;
+    r.ms = []; r.emptySince = Date.now(); r.created = Date.now();
+    ROOMS.set(name, r);
+    log('info', 'комната создана', { room: name });
+    return r;
+  }
   if (!Object.prototype.hasOwnProperty.call(PROTO, name)) return null;
   var sc = SWRT.makeScenario(name, 1977 + Math.floor(Math.random() * 1000));
   r = new SWRT.Room({ battle: sc.battle, ai: sc.ai, name: name });
@@ -127,7 +143,7 @@ function loop() {
     catch (e) { log('error', 'ошибка в такте', { room: name, err: String(e && e.stack || e).slice(0, 400) }); }
     r.ms.push(SWRT.now() - a);
     if (r.ms.length > 600) r.ms.shift();
-    if (r.battle.tick % 10 === 0) {
+    if (r.kind !== 'space' && r.battle.tick % 10 === 0) {
       var st = r.statFor({ srvMs: Math.round((SWRT.now() - a) * 100) / 100, cpu: CPU.pct, ver: VERSION });
       for (var i = 0; i < r.clients.length; i++) r.send(r.clients[i], st);
     }
@@ -157,13 +173,14 @@ function pct(arr, p) {
 
 function health() {
   var rooms = [];
+  var busy = 0;   // идущие космические бои; прототипы перезапуску не мешают
   ROOMS.forEach(function(r, name) {
+    if (r.kind === 'space') { busy += r.busy(); var inf = r.info(); inf.tickP50 = pct(r.ms, 0.5); inf.tickP95 = pct(r.ms, 0.95); rooms.push(inf); return; }
     var c = r.battle.counts();
     rooms.push({ room: name, clients: r.clients.length, troops: c.total, squads: c.squads[0] + c.squads[1],
                  singles: c.singles, lod: r.battle.lod, tickP50: pct(r.ms, 0.5), tickP95: pct(r.ms, 0.95),
                  bytesPerClient: Math.round(r.bytesRate / Math.max(1, r.clients.length)) });
   });
-  var busy = 0;   // настоящих боёв пока нет; прототипы перезапуску не мешают
   return { ok: true, version: VERSION, uptime: Math.round((Date.now() - STARTED) / 1000), cpu: CPU.pct,
            memMb: Math.round(process.memoryUsage().rss / 1048576), late: late, busy: busy, rooms: rooms };
 }
@@ -195,7 +212,7 @@ server.on('upgrade', function(req, sock, head) {
             send: function(buf) {
               // медленный игрок: не копим очередь — пропускаем такт и потом шлём бой заново
               if (ws.bufferedAmount > 2 * 1048576) { c.resync = true; return; }
-              if (c.resync && c.room) { c.resync = false; ws.send(SWRT.encodeInit(c.room.battle, c.side, c.room.extra)); return; }
+              if (c.resync && c.room && c.room.kind !== 'space') { c.resync = false; ws.send(SWRT.encodeInit(c.room.battle, c.side, c.room.extra)); return; }
               ws.send(buf);
             } };
   CLIENTS.add(c);
@@ -215,9 +232,13 @@ server.on('upgrade', function(req, sock, head) {
         if (!ws.open) return;
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
-        var r = getRoom(String(m.room || 'p500'));
-        if (!r) { ws.send(JSON.stringify({ t: 'error', msg: 'нет такого боя' })); ws.close(4004); return; }
-        c.room = r; r.join(c);
+        var r = getRoom(String(m.room || 'p500').slice(0, 40));
+        if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : 'нет такого боя' })); ws.close(4004); return; }
+        if (r.kind === 'space') {
+          c.side = -1;
+          if (!r.join(c, m.side)) return;
+        } else r.join(c);
+        c.room = r;
         log('info', 'игрок вошёл', { room: r.name, user: who.user, nick: who.nick, side: c.side });
       }, function(e) {
         c.authing = false;

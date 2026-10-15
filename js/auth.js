@@ -37,7 +37,8 @@ function nextUrl() {
   var m = /[?&]next=([^&]*)/.exec(location.search);
   var next = '';
   try { next = m ? decodeURIComponent(m[1]) : ''; } catch (e) { next = ''; }
-  return /^game\/[a-z0-9\-]+\.html([?#][^\s]*)?$/i.test(next) ? next : 'game/galaxy-map.html';
+  // в игру или в бой по сети 2.0 (space/?room=…) — других адресов возврата нет
+  return /^(game\/[a-z0-9\-]+\.html|space\/(index\.html)?)([?#][^\s]*)?$/i.test(next) ? next : 'game/galaxy-map.html';
 }
 
 function showSession(user) {

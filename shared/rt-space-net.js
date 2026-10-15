@@ -1,0 +1,662 @@
+// Сетевой космический бой: сервер считает, телефон рисует.
+//
+// Сервер (Node): у каждого игрока — Viewer. Он собирает события боя с учётом
+// тумана войны (чего сторона не видит — не уходит игроку) и раз в 0,2 с шлёт
+// «лёгкое» состояние: корабли, малые корабли, выстрелы, туман, сводку абордажей.
+// Для корабля, на который игрок смотрит изнутри, — ещё люди (двоичный кадр,
+// 4 раза в секунду), огонь по клеткам, отсеки, двери и турели абордажа.
+//
+// Браузер: Mirror держит обычный SWSpace.Battle (те же планы, отсеки, пушки),
+// но не считает его — только переносит в него присланное и сглаживает движение
+// между кадрами. Отрисовка и панели работают с ним как с локальным боем.
+// Приказы уходят на сервер (Mirror подменяет методы боя на отправку).
+//
+// ES5, без зависимостей.
+
+(function(root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.SWSpaceNet = api;
+})(typeof self !== 'undefined' ? self : this, function() {
+  'use strict';
+
+  var LIGHT_EVERY = 2, AGENTS_EVERY = 2, HEAVY_EVERY = 5;   // в тактах сервера (0,1 с)
+  var DELAY = 0.25;                                         // запаздывание отрисовки, с
+  var AG = 16;
+  var LOCK = 900;                                           // мс: свой приказ важнее кадров, что уже летят                                              // байт на человека в кадре экипажа
+  var BIN = { AGENTS: 11, FIRE: 12, AGENTS_D: 13 };
+  var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board'];
+  var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
+  var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper'];
+  var ROLE_N = {}; for (var ri = 0; ri < ROLES.length; ri++) ROLE_N[ROLES[ri]] = ri;
+  var WPNS = ['', 'rifle', 'heavy', 'b1', 'b2', 'bx', 'tool'];
+  var WPN_N = {}; for (var wi = 0; wi < WPNS.length; wi++) WPN_N[WPNS[wi]] = wi;
+  var DOOR_ST = ['open', 'locked', 'broken'], DOOR_N = { open: 0, locked: 1, broken: 2 };
+
+  // Бои для пробы: [класс, сторона, x, y]; сторона 0 смотрит носом вправо, 1 — влево
+  var SCEN = {
+    vp:  { name: 'Венатор × Провиденс', ships: [['venator', 0, 0, 0], ['providence', 1, 9000, 1400]] },
+    am:  { name: 'Акламатор × Щедрый', ships: [['acclamator', 0, 0, 0], ['munificent', 1, 8500, -1000]] },
+    '2x2': { name: 'Два на два', ships: [['venator', 0, 0, -1300], ['acclamator', 0, -600, 1500], ['providence', 1, 9500, -900], ['munificent', 1, 9000, 1800]] },
+    fl:  { name: 'Мандатор × Покоритель', ships: [['rep_mandator', 0, 0, 0], ['cis_subjugator', 1, 11000, 1500]] },
+    lr:  { name: 'Венатор × Лукрехалк', ships: [['venator', 0, 0, 0], ['cis_lucrehulk', 1, 10500, 1200]] },
+    vk:  { name: 'Победа × Провиденс', ships: [['rep_victory', 0, 0, 0], ['providence', 1, 9000, 1400]] },
+    vr:  { name: 'Валиант × Рекусант', ships: [['rep_valiant', 0, 0, 0], ['cis_recusant', 1, 8500, 1200]] },
+    ad:  { name: 'Аркитенс × Даймонд', ships: [['rep_arquitens', 0, 0, 0], ['cis_diamond', 1, 7500, -900]] },
+    th:  { name: 'Тантив × Хардселл', ships: [['tantive', 0, 0, 0], ['hardcell', 1, 6000, 700]] }
+  };
+
+  function r1(x) { return Math.round(x * 10) / 10; }
+  function r0(x) { return Math.round(x); }
+  function r2(x) { return Math.round(x * 100) / 100; }
+
+  // ================================================================ сервер
+  function Viewer(B, side) {
+    this.B = B; this.side = side;
+    this.sel = -1; this.foe = -1; this.view = -1;
+    this.k = 0;
+    this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
+    this.mark = {};          // что уже отправлено по кораблю: вспышки, выстрелы, сообщения абордажа
+    this.craftKnown = {};    // малые корабли, о которых игрок уже знает (тип, сторона)
+  }
+  // События одного такта (одни на всех) — оставить то, что этой стороне видно
+  Viewer.prototype.push = function(e) {
+    var B = this.B, side = this.side, i, ev = this.ev;
+    var vis = function(n) { var s = B.ships[n]; return !s || s.side === side || s.dead || B.sees(side, s); };
+    for (i = 0; i < e.shots.length; i++) ev.shots.push(e.shots[i]);         // болты видно издалека
+    for (i = 0; i < e.booms.length; i++) { var b = e.booms[i]; if (b.ship == null || vis(b.ship) || b.big) ev.booms.push(b); }
+    for (i = 0; i < e.shields.length; i++) if (vis(e.shields[i].ship)) ev.shields.push(e.shields[i]);
+    for (i = 0; i < e.kills.length; i++) ev.kills.push(e.kills[i]);
+    for (i = 0; i < e.boards.length; i++) { var bb = e.boards[i], s1 = B.ships[bb.n], s2 = B.ships[bb.t]; if ((s1 && s1.side === side) || (s2 && s2.side === side)) ev.boards.push(bb); }
+    if (ev.boards.length > 50) ev.boards.splice(0, ev.boards.length - 50);
+    if (ev.kills.length > 100) ev.kills.splice(0, ev.kills.length - 100);
+    if (ev.shots.length > 300) ev.shots.splice(0, ev.shots.length - 300);
+  };
+  Viewer.prototype.shipLight = function(sh) {
+    var B = this.B, own = sh.side === this.side, i, g;
+    if (!own && !sh.dead && !B.sees(this.side, sh)) { var hb = this.boardLight(sh); return hb ? { n: sh.n, hid: 1, bd: hb } : { n: sh.n, hid: 1 }; }
+    var o = { n: sh.n, x: r1(sh.x), y: r1(sh.y), hd: Math.round(sh.hd * 1000) / 1000, v: r1(sh.v), hull: r0(sh.hull),
+              sh: [r0(sh.sh[0]), r0(sh.sh[1]), r0(sh.sh[2]), r0(sh.sh[3])], f: sh.focus, fa: sh.focusAuto ? 1 : 0,
+              e: [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0)],
+              crit: r1(sh.crit), dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
+              burn: sh.crew.burning.length, ct: r2(sh.crew.t) };
+    if (own) {
+      o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
+      o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
+      o.g = [];
+      for (i = 0; i < sh.guns.length; i++) {
+        g = sh.guns[i];
+        var a = g.aimAt;
+        o.g.push([a && a.ship ? a.ship.n : -1, a && a.ship ? (a.room || 0) : 0, a && a.craft ? a.craft.id : 0, g.out ? 1 : 0,
+                  r2(Math.max(0, g.cd) / g.T.reload), g.tgt.k, g.tgt.ship != null ? g.tgt.ship : -1, g.tgt.sys || '', g.tgt.room || 0]);
+      }
+    } else {
+      // чужие пушки — только те, что смотрят на наши корабли (видно, куда бьёт враг)
+      o.g = [];
+      for (i = 0; i < sh.guns.length; i++) {
+        g = sh.guns[i]; var aa = g.aimAt;
+        if (aa && aa.ship && aa.ship.side === this.side) o.g.push([i, aa.ship.n, aa.room || 0]);
+      }
+    }
+    // огонь снаружи: выборка клеток (не больше 60)
+    if (sh.crew.burning.length && this.lk % 2 === 0) {
+      var bl = sh.crew.burning, step = Math.max(1, Math.floor(bl.length / 60)), fs = [];
+      for (i = 0; i < bl.length; i += step) fs.push(bl[i], r0(sh.crew.fire[bl[i]]));
+      o.fs = fs;
+    } else if (!sh.crew.burning.length) o.fs = [];
+    o.bd = this.boardLight(sh);
+    return o;
+  };
+  // абордаж: сводка для полосы в панели (и когда корабль ушёл из датчиков)
+  Viewer.prototype.boardLight = function(sh) {
+    var bd = sh.crew.board;
+    if (bd && bd.started && (bd.att === this.side || bd.def === this.side)) {
+      var su = bd.summary();
+      return { over: bd.over, att: bd.att, def: bd.def, alarm: bd.alarm ? 1 : 0, alarmCd: r0(bd.alarmCd), bt: r1(bd.bridgeT), hn: bd.holdNeed,
+               ch: bd.charge ? { a: bd.charge.armed ? 1 : 0, l: r1(bd.charge.left), p: r1(bd.charge.plant), d: r1(bd.charge.defuse) } : null,
+               su: { att: su.att, def: su.def, crew: su.crew, sq: su.sq }, held: this.heldList(bd), seq: bd.seq || 0,
+               br: bd.bridge && bd.rs[bd.bridge] ? [bd.rs[bd.bridge].held ? 1 : 0, r1(bd.rs[bd.bridge].hold), bd.rs[bd.bridge].cnt[0], bd.rs[bd.bridge].cnt[1]] : null,
+               pw: bd.canPlant(), vw: bd.canVent(this.side), t: r1(bd.t), msgs: this.newMsgs(sh, bd) };
+    }
+    return null;
+  };
+  // Кадр не дошёл (медленная связь): всё разностное — заново полным
+  Viewer.prototype.lost = function() { this.scFor = -1; this.agPrev = null; this.rmPrev = null; this.craftKnown = {}; };
+  Viewer.prototype.heldList = function(bd) { var out = []; for (var k in bd.rs) if (bd.rs[k].held) out.push(+k); return out; };
+  Viewer.prototype.newMsgs = function(sh, bd) {
+    var m = this.mk(sh.n), out = [];
+    if (m.bdObj !== bd) { m.bdObj = bd; m.bmsg = 0; }
+    for (var i = 0; i < bd.ev.msgs.length; i++) { var x = bd.ev.msgs[i]; if (x.seq > m.bmsg) { out.push(x); m.bmsg = x.seq; } }
+    return out;
+  };
+  Viewer.prototype.mk = function(n) { return this.mark[n] || (this.mark[n] = { scorch: 0, blasts: -1, guns: -1, bshot: -1, bboom: -1, bvent: -1, bmsg: 0, scObj: null }); };
+
+  // Лёгкий кадр (5 раз в секунду)
+  Viewer.prototype.light = function() {
+    var B = this.B, side = this.side, i, out = { t: 's', T: r2(B.t), over: B.over, ships: [], craft: [] };
+    this.lk = (this.lk || 0) + 1;
+    for (i = 0; i < B.ships.length; i++) out.ships.push(this.shipLight(B.ships[i]));
+    for (i = 0; i < B.craft.length; i++) {
+      var c = B.craft[i]; if (c.dead) continue;
+      if (c.side !== side && !B.visC[side][c.id]) continue;
+      var row = [c.id, r0(c.x), r0(c.y), Math.round(c.hd * 100) / 100, r0(c.hp)];
+      // что за машина — один раз
+      if (!this.craftKnown[c.id]) { this.craftKnown[c.id] = 1; row.push(c.type, c.side, c.role, c.faction || '', c.img || '', c.len, r0(c.max)); }
+      out.craft.push(row);
+    }
+    out.vis = B.vis[side]; out.visC = null;
+    var last = {}, L = B.last[side];
+    for (var k in L) last[k] = [r0(L[k].x), r0(L[k].y), Math.round(L[k].hd * 100) / 100, r1(L[k].t)];
+    out.last = last;
+    // события
+    var ev = this.ev;
+    out.ev = {
+      shots: ev.shots.map(function(s) { return [r0(s.x0), r0(s.y0), r0(s.x1), r0(s.y1), r2(s.t0), r2(s.dur), s.side, s.t, s.miss ? 1 : 0]; }),
+      booms: ev.booms.map(function(b) { return [r0(b.x), r0(b.y), r0(b.r), r2(b.t0), b.ship == null ? -1 : b.ship, (b.big ? 1 : 0) | (b.ion ? 2 : 0) | (b.craft ? 4 : 0)]; }),
+      shields: ev.shields.map(function(s) { return [s.ship, s.s, r0(s.x), r0(s.y), r2(s.t0), s.down ? 1 : 0]; }),
+      kills: ev.kills, boards: ev.boards
+    };
+    this.ev = { shots: [], booms: [], shields: [], kills: [], boards: [] };
+    // можно ли абордаж: по выбранной цели или по кораблю, куда смотрим изнутри
+    var tgt = this.view >= 0 && B.ships[this.view] && B.ships[this.view].side !== side ? this.view : this.foe;
+    if (this.sel >= 0 && B.ships[this.sel] && B.ships[this.sel].side === side && tgt >= 0 && B.ships[tgt]) {
+      var cb = B.canBoard(this.sel, tgt); out.can = { n: this.sel, t: tgt, ok: cb.ok, why: cb.why || '', party: cb.party || 0, reinforce: !!cb.reinforce, cap: cb.cap || 0 };
+    }
+    return out;
+  };
+
+  // Корабль изнутри: отсеки, копоть, вспышки, абордаж.
+  // mode: 'full' — смотрим внутрь; 'lite' — только отсеки (панель своего корабля);
+  // 'foe' — целость отсеков цели (схема прицела)
+  Viewer.prototype.heavy = function(n, mode) {
+    var B = this.B, sh = B.ships[n]; if (!sh) return null;
+    var own = sh.side === this.side, bd = sh.crew.board, involved = bd && bd.started && (bd.att === this.side || bd.def === this.side);
+    var c = sh.crew, m = this.mk(n), i, st, out = { t: 'h', n: n, ct: r2(c.t), rooms: [] };
+    if (mode === 'foe') {
+      if (own || !B.sees(this.side, sh)) return null;
+      out.lite = 2;
+      for (i = 0; i < c.roomList.length; i++) { st = c.roomList[i]; if (st.integ < 99.5) out.rooms.push([st.n, r0(st.integ)]); }
+      return out;
+    }
+    if (!own && !involved) return null;                       // чужой корабль без нашего абордажа — внутрь не смотрим
+    out.alert = c.alertOn ? 1 : 0;
+    // внутри — только отсеки, что изменились с прошлого кадра
+    var rp = mode === 'full' ? (this.rmPrev && this.rmPrev.n === n ? this.rmPrev.m : null) : null, rm = {};
+    for (i = 0; i < c.roomList.length; i++) {
+      st = c.roomList[i];
+      var row = [st.n, r0(st.integ), r1(st.stun), st.fires, own ? st.staffed : 0, st.need, own ? st.assigned : 0], key = row.join(',');
+      rm[st.n] = key;
+      if (!rp || rp[st.n] !== key) out.rooms.push(row);
+    }
+    if (mode === 'full') this.rmPrev = { n: n, m: rm };
+    if (mode === 'lite') { out.lite = 1; return out; }
+    // копоть: с первого кадра внутри — вся, дальше — новая (массив подрезается с начала)
+    var sc = c.scorch, from = 0;
+    if (this.scFor === n && m.scLast) { from = sc.lastIndexOf(m.scLast) + 1; if (from === 0) out.scAll = 1; }
+    else out.scAll = 1;
+    this.scFor = n;
+    out.scorch = sc.slice(out.scAll ? 0 : from).map(function(q) { return [r1(q.x), r1(q.y), r1(q.r), r2(q.a)]; });
+    m.scLast = sc.length ? sc[sc.length - 1] : null;
+    out.blasts = c.ev.blasts.filter(function(b) { return b.t > m.blasts; }).map(function(b) { return [r1(b.x), r1(b.y), r1(b.r), r2(b.t)]; });
+    if (c.ev.blasts.length) m.blasts = Math.max(m.blasts, c.ev.blasts[c.ev.blasts.length - 1].t);
+    out.guns = c.ev.guns.filter(function(g) { return g.t > m.guns; }).map(function(g) { return [g.n, r2(g.t)]; });
+    if (c.ev.guns.length) m.guns = Math.max(m.guns, c.ev.guns[c.ev.guns.length - 1].t);
+    if (involved) out.bd = this.boardHeavy(sh, bd, m);
+    return out;
+  };
+  Viewer.prototype.boardHeavy = function(sh, bd, m) {
+    var i, o = {};
+    o.doors = []; for (i = 0; i < bd.doors.length; i++) { var d = bd.doors[i]; o.doors.push(DOOR_N[d.state] * 64 + Math.min(63, Math.round(d.breach / 10 * 63))); }
+    o.tur = bd.turrets.map(function(t) { return [r0(t.hp), r2(t.aim), t.tgt >= 0 ? 1 : 0, t.dead ? 1 : 0, r2(t.fireAt)]; });
+    // атакующие не знают, сколько защитников в отсеке, пока сами туда не вошли
+    var blind = bd.att === this.side && !bd.heldType('cic');
+    o.rs = []; for (var k in bd.rs) { var s = bd.rs[k], c0 = s.cnt[0], c1 = s.cnt[1];
+      if (blind && !s.cnt[bd.att]) { if (bd.def === 0) c0 = 0; else c1 = 0; }
+      if (s.held || s.hold > 0 || s.back > 0 || c0 || c1) o.rs.push([s.n, s.held ? 1 : 0, r1(s.hold), c0, c1, r1(s.back)]); }
+    o.vent = bd.ventCd.slice();
+    if (m.bdObj2 !== bd) { m.bdObj2 = bd; m.bshot = -1; m.bboom = -1; m.bvent = -1; }
+    o.shots = bd.ev.shots.filter(function(s) { return s.t > m.bshot; }).map(function(s) { return [r1(s.x0), r1(s.y0), r1(s.x1), r1(s.y1), r2(s.t), s.team, s.hit ? 1 : 0, s.w]; });
+    if (bd.ev.shots.length) m.bshot = Math.max(m.bshot, bd.ev.shots[bd.ev.shots.length - 1].t);
+    o.booms = bd.ev.booms.filter(function(b) { return b.t > m.bboom; }).map(function(b) { return [r1(b.x), r1(b.y), r1(b.r), r2(b.t)]; });
+    if (bd.ev.booms.length) m.bboom = Math.max(m.bboom, bd.ev.booms[bd.ev.booms.length - 1].t);
+    o.vents = bd.ev.vents.filter(function(v) { return v.t > m.bvent; }).map(function(v) { return [v.n, r2(v.t)]; });
+    if (bd.ev.vents.length) m.bvent = Math.max(m.bvent, bd.ev.vents[bd.ev.vents.length - 1].t);
+    return o;
+  };
+  // Люди корабля — двоичный кадр. Абордажной команде — только те, кого её бойцы видят.
+  // Полный кадр — при входе и раз в 5 с; между ними — только изменившиеся (карта битов + записи):
+  // кто стоит на посту, тот не стоит трафика.
+  Viewer.prototype.agentsBin = function(n, tick) {
+    var B = this.B, sh = B.ships[n], c = sh.crew, ag = c.agents, bd = c.board, W = sh.plan.w;
+    var fog = bd && bd.started && bd.att === this.side && sh.side !== this.side ? bd.vis : null;
+    var N = ag.length, cur = new Uint8Array(N * AG), v = new DataView(cur.buffer), o = 0;
+    for (var i = 0; i < N; i++) {
+      var a = ag[i], hidden = fog && a.team !== this.side && a.alive && !fog[i];
+      var fl = (a.alive ? 1 : 0) | (a.at ? 2 : 0) | (a.carry ? 4 : 0) | (a.gone ? 8 : 0) | (hidden ? 16 : 0) | (a.breach >= 0 ? 32 : 0) | (a.face != null ? 64 : 0) | (a.team ? 128 : 0);
+      if (hidden) { v.setUint8(o + 6, fl); v.setUint8(o + 15, 0); o += AG; continue; }   // кого не видно — без места и дел
+      // место — до 1/16 клетки, взгляд — 64 направления: мелкая дрожь стоящих не идёт в сеть
+      v.setUint16(o, Math.max(0, Math.min(65535, Math.round(a.x * 16) * 4)), true); v.setUint16(o + 2, Math.max(0, Math.min(65535, Math.round(a.y * 16) * 4)), true);
+      v.setUint8(o + 4, (Math.round((((a.aim % 6.2832) + 6.2832) % 6.2832) / 6.2832 * 64) & 63) * 4);
+      v.setUint8(o + 5, Math.round(Math.max(0, Math.min(1, a.hp / (a.hpMax || 100))) * 255));
+      v.setUint8(o + 6, fl);
+      v.setUint8(o + 7, (a.job ? JOB_N[a.job.kind] || 0 : 0) | ((ROLE_N[a.role] || 0) << 4));
+      v.setUint8(o + 8, a.fig || 0);
+      v.setUint8(o + 9, (WPN_N[a.wpn] || 0) | (a.sq ? Math.min(15, a.sq) << 4 : 0));
+      // куда смотрит работа: огонь под струёй, машина под сваркой, пациент — смещением от себя
+      var tx = -1;
+      if (a.sprayAt >= 0) tx = a.sprayAt; else if (a.fixAt >= 0) tx = a.fixAt;
+      var dx = 0, dy = 0;
+      if (tx >= 0) { dx = tx % W - Math.floor(a.x); dy = Math.floor(tx / W) - Math.floor(a.y); }
+      else if (a.job && a.job.kind === 'heal' && ag[a.job.who]) { dx = Math.round(ag[a.job.who].x - a.x); dy = Math.round(ag[a.job.who].y - a.y); }
+      v.setInt8(o + 10, Math.max(-127, Math.min(127, dx))); v.setInt8(o + 11, Math.max(-127, Math.min(127, dy)));
+      // где: отсек дела или цели (для подписи «кто это»)
+      var where = a.job && a.job.room ? a.job.room : a.job && (a.job.kind === 'defend' || a.job.kind === 'board') ? a.goalRoom : (a.goalRoom || a.home);
+      v.setUint16(o + 12, where > 0 ? where : 0, true);
+      v.setUint8(o + 14, (a.tgt >= 0 && a.tgt != null ? 1 : 0) | (a.guard ? 2 : 0) | (a.task === 'post' ? 4 : 0) | (a.eng ? 8 : 0));
+      v.setUint8(o + 15, a.sq ? Math.min(255, a.sq) : 0);
+      o += AG;
+    }
+    var prev = this.agPrev && this.agPrev.n === n && tick % 50 !== 0 ? this.agPrev.b : null;
+    this.agPrev = { n: n, b: cur };
+    var head = function(type, len) { var out = new Uint8Array(len), hv = new DataView(out.buffer); hv.setUint8(0, type); hv.setUint8(1, n); hv.setUint16(2, N, true); hv.setFloat32(4, c.t, true); return out; };
+    if (!prev) { var full = head(BIN.AGENTS, 8 + cur.length); full.set(cur, 8); return full.buffer; }
+    var bits = new Uint8Array(Math.ceil(N / 8)), ch = [];
+    for (i = 0; i < N; i++) {
+      var same = i * AG + AG <= prev.length;
+      for (var j = 0; same && j < AG; j++) if (cur[i * AG + j] !== prev[i * AG + j]) same = false;
+      if (!same) { bits[i >> 3] |= 1 << (i & 7); ch.push(i); }
+    }
+    var d = head(BIN.AGENTS_D, 8 + bits.length + ch.length * AG);
+    d.set(bits, 8);
+    for (i = 0, o = 8 + bits.length; i < ch.length; i++, o += AG) d.set(cur.subarray(ch[i] * AG, ch[i] * AG + AG), o);
+    return d.buffer;
+  };
+  Viewer.prototype.fireBin = function(n) {
+    var c = this.B.ships[n].crew, bl = c.burning, buf = new ArrayBuffer(8 + bl.length * 5), v = new DataView(buf);
+    v.setUint8(0, BIN.FIRE); v.setUint8(1, n); v.setUint32(4, bl.length, true);
+    for (var i = 0, o = 8; i < bl.length; i++, o += 5) { v.setUint32(o, bl[i], true); v.setUint8(o + 4, Math.round(c.fire[bl[i]])); }
+    return buf;
+  };
+  // Что отправить игроку на этом такте сервера: [строки и двоичные кадры]
+  Viewer.prototype.frames = function(tick) {
+    var out = [];
+    this.k++;
+    if (tick % LIGHT_EVERY === 0) out.push(JSON.stringify(this.light()));
+    var v = this.view;
+    if (v >= 0 && this.B.ships[v] && !this.B.ships[v].dead && this.heavyOk(v)) {
+      if (tick % AGENTS_EVERY === 0) {
+        var h = this.heavyOk(v);
+        if (h) { out.push(this.agentsBin(v, tick)); var hv = this.heavy(v, 'full'); if (hv) out.push(JSON.stringify(hv)); }
+      }
+      if (tick % HEAVY_EVERY === 0 && this.heavyOk(v)) out.push(this.fireBin(v));
+    } else { this.scFor = -1; this.agPrev = null; this.rmPrev = null; }
+    if (tick % HEAVY_EVERY === 0) {
+      // свой выбранный корабль: отсеки для панели; цель — целость отсеков для схемы прицела
+      var S = this.B.ships;
+      if (this.sel >= 0 && this.sel !== v && S[this.sel] && S[this.sel].side === this.side) { var hs = this.heavy(this.sel, 'lite'); if (hs) out.push(JSON.stringify(hs)); }
+      if (this.foe >= 0 && this.foe !== v && S[this.foe] && !S[this.foe].dead) { var hf = this.heavy(this.foe, 'foe'); if (hf) out.push(JSON.stringify(hf)); }
+    }
+    return out;
+  };
+  Viewer.prototype.heavyOk = function(n) {
+    var sh = this.B.ships[n]; if (!sh) return false;
+    if (sh.side === this.side) return true;
+    var bd = sh.crew.board; return !!(bd && bd.started && bd.att === this.side);
+  };
+  // Приказ игрока: проверка, что корабль свой, и исполнение
+  Viewer.prototype.command = function(m) {
+    var B = this.B, side = this.side, sh = B.ships[m.n | 0], bd;
+    var mine = sh && sh.side === side && !sh.dead && m.n === (m.n | 0);
+    switch (m.k) {
+      case 'view': this.sel = m.sel | 0; this.foe = m.foe == null ? -1 : m.foe | 0; this.view = m.view == null ? -1 : m.view | 0; return true;
+      case 'target': if (!mine || !Array.isArray(m.guns) || !m.tgt || typeof m.tgt !== 'object') return false;
+        var tk = String(m.tgt.k); if (['auto', 'fighters', 'hull', 'sys', 'room'].indexOf(tk) < 0) return false;
+        return B.setTarget(m.n, m.guns.slice(0, 64), { k: tk, ship: m.tgt.ship | 0, sys: typeof m.tgt.sys === 'string' ? m.tgt.sys : undefined, room: m.tgt.room | 0 });
+      case 'order': if (!mine) return false;
+        if (m.x === 'hold') B.order(m.n, 'hold'); else if (m.x == null) B.order(m.n, null);
+        else B.order(m.n, +m.x, +m.y, !!m.face);
+        return true;
+      case 'focus': if (!mine) return false; if (m.auto) { sh.focusAuto = true; return true; } B.setFocus(m.n, m.s | 0); return true;
+      case 'board': if (!mine || !B.ships[m.to | 0]) return false; return B.board(m.n, m.to | 0);
+      case 'hold': if (!mine) return false; B.setHold(m.n, m.to | 0, !!m.on); return true;
+    }
+    // абордаж: по кораблю-цели, сторона — игрока
+    var t = B.ships[m.to | 0]; bd = t && t.crew.board;
+    if (!bd || !bd.started || bd.over >= 0) return false;
+    switch (m.k) {
+      case 'border': return bd.order(side, Array.isArray(m.sq) ? m.sq.slice(0, 16).map(Number) : null, m.room | 0);
+      case 'plant': return bd.plant(side);
+      case 'vent': return bd.vent(side, m.room | 0);
+      case 'alarm': if (bd.def !== side) return false; return bd.setAlarm(!!m.on);
+    }
+    return false;
+  };
+
+  // ================================================================ браузер
+  // B — локальный SWSpace.Battle с теми же кораблями (не считается); send(obj) — на сервер
+  function Mirror(B, side, send, SWBoard) {
+    this.B = B; this.side = side; this.send = send; this.SWBoard = SWBoard;
+    this.snap = [];            // два последних лёгких кадра: { T, at, ships, craft }
+    this.queue = { shots: [], booms: [], shields: [], kills: [], boards: [] };
+    this.craftMeta = {}; this.agFull = -1; this.agVis = null; this.viewN = -1;
+    var self = this;
+    B.fog = true;
+    // команды — на сервер; на экране — сразу (кадры, что уже в пути, этого не отменят: LOCK)
+    var lock = function(o) { if (o) o.netLock = Date.now() + LOCK; };
+    B.setTarget = function(n, guns, tgt) {
+      var sh = B.ships[n]; if (!sh || sh.dead || !guns || !guns.length) return 0;
+      send({ t: 'cmd', k: 'target', n: n, guns: guns, tgt: tgt });
+      guns.forEach(function(i) { var g = sh.guns[i]; if (g) { g.tgt = { k: tgt.k, ship: tgt.ship, sys: tgt.sys, room: tgt.room }; lock(g); } });
+      return guns.length;
+    };
+    B.order = function(n, x, y, face) {
+      send({ t: 'cmd', k: 'order', n: n, x: x === undefined ? null : x, y: y, face: !!face });
+      var s = B.ships[n]; if (!s) return; lock(s);
+      if (x === 'hold') { s.ai = false; s.order = null; } else if (x == null) { s.ai = true; s.order = null; } else s.order = { x: x, y: y, face: !!face };
+    };
+    B.setFocus = function(n, s) { send({ t: 'cmd', k: 'focus', n: n, s: s }); var sh = B.ships[n]; if (sh) { sh.focus = s; sh.focusAuto = false; lock(sh); } };
+    B.autoShields = function(n) { send({ t: 'cmd', k: 'focus', n: n, auto: 1 }); var sh = B.ships[n]; if (sh) { sh.focusAuto = true; lock(sh); } };
+    B.setHold = function(n, t, on) { send({ t: 'cmd', k: 'hold', n: n, to: t, on: !!on }); var sh = B.ships[n]; if (sh) { sh.hold = sh.hold || {}; sh.hold[t] = !!on; lock(sh); } };
+    B.canBoard = function(n, t) { var c = self.can; return c && c.n === n && c.t === t ? c : { ok: false, why: 'жду сервер…', party: 0 }; };
+    B.board = function(n, t) { var c = B.canBoard(n, t); if (!c.ok) return c; send({ t: 'cmd', k: 'board', n: n, to: t }); return { ok: true, party: c.party, shuttles: Math.ceil(c.party / 12) }; };
+    B.sensRange = function(sh) { return sh.netSens || sh.sens; };
+    B.step = function() {};
+    B.takeEvents = function() { var q = self.queue; self.queue = { shots: [], booms: [], shields: [], kills: [], boards: [] }; return q; };
+  }
+  Mirror.prototype.onText = function(m) {
+    if (m.t === 's') this.light(m);
+    else if (m.t === 'h') this.heavy(m);
+  };
+  Mirror.prototype.onBin = function(buf) {
+    var v = new DataView(buf), type = v.getUint8(0);
+    if (type === BIN.AGENTS || type === BIN.AGENTS_D) this.agents(v, type === BIN.AGENTS_D);
+    else if (type === BIN.FIRE) this.fire(v);
+  };
+  Mirror.prototype.light = function(m) {
+    var B = this.B, now = Date.now(), i, k;
+    m.at = now;
+    this.snap.push(m); if (this.snap.length > 3) this.snap.shift();
+    B.over = m.over;
+    // туман
+    B.vis[this.side] = m.vis || {};
+    var L = {}; for (k in m.last) { var q = m.last[k]; L[k] = { x: q[0], y: q[1], hd: q[2], t: q[3] }; } B.last[this.side] = L;
+    var vc = {}; for (i = 0; i < m.craft.length; i++) vc[m.craft[i][0]] = 1; B.visC[this.side] = vc;
+    // малые корабли — новые кадр за кадром; если предыдущий не успели разобрать, позиции из нового
+    if (this.craftNext) for (i = 0; i < this.craftNext.length; i++) { var q0 = this.craftNext[i]; if (q0.length > 5 && !this.craftMeta[q0[0]]) this.craftMeta[q0[0]] = { type: q0[5], side: q0[6], role: q0[7], faction: q0[8], img: q0[9] || null, len: q0[10], max: q0[11] }; }
+    for (i = 0; i < m.ships.length; i++) this.shipState(m.ships[i]);
+    // события: в очередь отрисовки
+    var Q = this.queue, e = m.ev;
+    e.shots.forEach(function(s) { Q.shots.push({ x0: s[0], y0: s[1], x1: s[2], y1: s[3], t0: s[4], dur: s[5], side: s[6], t: s[7], miss: !!s[8] }); });
+    e.booms.forEach(function(b) { Q.booms.push({ x: b[0], y: b[1], r: b[2], t0: b[3], ship: b[4] < 0 ? null : b[4], big: !!(b[5] & 1), ion: !!(b[5] & 2), craft: !!(b[5] & 4) }); });
+    e.shields.forEach(function(s) { Q.shields.push({ ship: s[0], s: s[1], x: s[2], y: s[3], t0: s[4], down: s[5] }); });
+    e.kills.forEach(function(x) {
+      Q.kills.push(x);
+      if (x.ship != null) { var s = B.ships[x.ship]; if (s) { s.dead = true; s.why = x.why; if (x.by != null) s.captured = x.by; s.deadAt = m.T; } }
+    });
+    e.boards.forEach(function(x) { Q.boards.push(x); });
+    // вкладка в фоне: кадры идут, отрисовки нет — не копить старые эффекты
+    if (Q.shots.length > 400) Q.shots.splice(0, Q.shots.length - 400);
+    if (Q.booms.length > 150) Q.booms.splice(0, Q.booms.length - 150);
+    if (Q.shields.length > 150) Q.shields.splice(0, Q.shields.length - 150);
+    if (Q.kills.length > 60) Q.kills.splice(0, Q.kills.length - 60);
+    if (Q.boards.length > 30) Q.boards.splice(0, Q.boards.length - 30);
+    this.can = m.can || null;
+    this.craftNext = m.craft;
+  };
+  Mirror.prototype.shipState = function(o) {
+    var B = this.B, sh = B.ships[o.n]; if (!sh) return;
+    if (o.hid) {
+      // ушёл из датчиков: его прицелы больше не знаем; абордаж на нём — по сводке
+      sh.netHid = true; for (var hg = 0; hg < sh.guns.length; hg++) sh.guns[hg].aimAt = null;
+      this.boardState(sh, o.bd); return;
+    }
+    var wasHid = sh.netHid; sh.netHid = false;
+    sh.net = sh.net || {};
+    sh.net.prev = sh.net.cur || null; sh.net.cur = { x: o.x, y: o.y, hd: o.hd, at: Date.now() };
+    if (!sh.net.prev || wasHid || o.dead) sh.net.prev = sh.net.cur;     // вынырнул из тумана — без проезда через полкарты
+    var mine = !(sh.netLock > Date.now());
+    sh.v = o.v; sh.hull = o.hull; sh.sh = o.sh;
+    if (mine) { sh.focus = o.f; sh.focusAuto = !!o.fa; }
+    sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5];
+    sh.crit = o.crit; if (o.dead && !sh.dead) { sh.dead = true; sh.deadAt = B.t; } sh.why = o.why || sh.why; if (o.cap != null) sh.captured = o.cap; sh.inbound = o.inb;
+    sh.netBurn = o.burn; if (this.viewN !== sh.n) { sh.netCt = o.ct; sh.netCtAt = Date.now(); }
+    if (o.fs) {
+      // наружный огонь: прислали выборку клеток
+      if (this.viewN !== sh.n) { var c = sh.crew; for (var j = 0; j < c.burning.length; j++) c.fire[c.burning[j]] = 0; c.burning = []; for (j = 0; j < o.fs.length; j += 2) { c.burning.push(o.fs[j]); c.fire[o.fs[j]] = o.fs[j + 1]; } }
+    }
+    if (sh.side === this.side) {
+      sh.boardCd = o.cd;
+      if (mine) { sh.ai = !!o.ai; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
+      sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
+      for (var i = 0; i < o.g.length && i < sh.guns.length; i++) {
+        var g = sh.guns[i], a = o.g[i];
+        g.aimAt = a[0] >= 0 ? { ship: B.ships[a[0]], room: a[1] } : a[2] ? { craft: this.craftById(a[2]) } : null;
+        if (g.aimAt && g.aimAt.craft === null) g.aimAt = null;
+        g.out = !!a[3]; g.cd = a[4] * g.T.reload;
+        if (!(g.netLock > Date.now())) g.tgt = { k: a[5], ship: a[6] >= 0 ? a[6] : undefined, sys: a[7] || undefined, room: a[8] || undefined };
+      }
+      if (!sh.crew.netAlive) { sh.crew.netAlive = true; sh.crew.alive = function() { return sh.netAlive || 0; }; }
+    } else {
+      for (var q = 0; q < sh.guns.length; q++) sh.guns[q].aimAt = null;
+      for (q = 0; q < o.g.length; q++) { var gg = sh.guns[o.g[q][0]]; if (gg) gg.aimAt = { ship: B.ships[o.g[q][1]], room: o.g[q][2] }; }
+    }
+    this.boardState(sh, o.bd);
+  };
+  Mirror.prototype.craftById = function(id) {
+    for (var i = 0; i < this.B.craft.length; i++) if (this.B.craft[i].id === id) return this.B.craft[i];
+    return null;
+  };
+  // Абордаж: объект Board на клиенте (те же двери и турели из плана), состояние — с сервера
+  Mirror.prototype.boardState = function(sh, o) {
+    var bd = sh.crew.board;
+    if (!o) return;
+    // прошлый абордаж кончился, начался новый — новый объект (сообщения и события с нуля)
+    if (bd && bd.over >= 0 && o.over < 0) bd = null;
+    if (!bd) {
+      bd = new this.SWBoard.Board(sh.crew, { flagship: sh.len >= 1200, figIds: sh.figIds, seed: 1 });
+      bd.started = true;
+    }
+    bd.started = true; bd.over = o.over; bd.alarm = !!o.alarm; bd.alarmCd = o.alarmCd; bd.bridgeT = o.bt; bd.holdNeed = o.hn; bd.t = o.t;
+    bd.charge = o.ch ? { armed: !!o.ch.a, left: o.ch.l, plant: o.ch.p, defuse: o.ch.d } : null;
+    var held = {}; o.held.forEach(function(n) { held[n] = 1; });
+    for (var k in bd.rs) bd.rs[k].held = !!held[k];
+    if (o.br && bd.bridge && bd.rs[bd.bridge]) { var b = bd.rs[bd.bridge]; b.held = !!o.br[0]; b.hold = o.br[1]; b.cnt[0] = o.br[2]; b.cnt[1] = o.br[3]; }
+    bd.netSum = o.su; bd.netPlant = o.pw; bd.netVent = o.vw;
+    if (!bd.netPatched) {
+      bd.netPatched = true;
+      var self = this, n = sh.n;
+      bd.summary = function() { return bd.netSum || { att: 0, def: 0, crew: 0, sq: [] }; };
+      bd.canPlant = function() { return bd.netPlant; };
+      bd.canVent = function() { return bd.netVent; };
+      bd.order = function(team, ids, room) { self.send({ t: 'cmd', k: 'border', to: n, sq: ids, room: room }); var c = 0; (bd.netSum && bd.netSum.sq || []).forEach(function(q) { if (q.n && (!ids || ids.indexOf(q.id) >= 0)) { q.room = room; q.auto = false; c++; } }); return c; };
+      bd.plant = function() { self.send({ t: 'cmd', k: 'plant', to: n }); return true; };
+      bd.vent = function(team, room) { self.send({ t: 'cmd', k: 'vent', to: n, room: room }); return true; };
+      bd.setAlarm = function(on) { self.send({ t: 'cmd', k: 'alarm', to: n, on: !!on }); bd.alarm = !!on; return true; };
+      bd.tick = function() {}; bd.think = function() {}; bd.owns = function() { return false; };
+    }
+    // отряды: члены по номерам (для центра отряда и меток)
+    if (o.su && o.su.sq) {
+      bd.squads = o.su.sq.map(function(q) { var old = null; for (var i = 0; i < (bd.squads || []).length; i++) if (bd.squads[i].id === q.id) old = bd.squads[i]; return { id: q.id, members: old ? old.members : [], room: q.room, auto: q.auto }; });
+    }
+    for (var i = 0; i < o.msgs.length; i++) bd.ev.msgs.push(o.msgs[i]);
+    if (o.msgs.length) bd.seq = o.msgs[o.msgs.length - 1].seq;
+    if (bd.ev.msgs.length > 40) bd.ev.msgs.splice(0, 20);
+  };
+  Mirror.prototype.heavy = function(m) {
+    var sh = this.B.ships[m.n]; if (!sh) return;
+    var c = sh.crew, i, st;
+    if (m.lite === 2) {
+      // цель: присланы только повреждённые отсеки
+      for (i = 0; i < c.roomList.length; i++) c.roomList[i].integ = 100;
+      for (i = 0; i < m.rooms.length; i++) { st = c.rooms[m.rooms[i][0]]; if (st) st.integ = m.rooms[i][1]; }
+      return;
+    }
+    c.alertOn = !!m.alert;
+    for (i = 0; i < m.rooms.length; i++) {
+      var r = m.rooms[i]; st = c.rooms[r[0]]; if (!st) continue;
+      st.integ = r[1]; st.stun = r[2]; st.fires = r[3]; st.staffed = r[4]; st.need = r[5]; st.assigned = r[6];
+    }
+    if (m.lite) return;
+    // время экипажа: к нему привязаны вспышки и выстрелы внутри
+    sh.netCt = m.ct; sh.netCtAt = Date.now();
+    if (m.scAll) c.scorch = [];
+    (m.scorch || []).forEach(function(q) { c.scorch.push({ x: q[0], y: q[1], r: q[2], a: q[3] }); });
+    if (c.scorch.length > 200) c.scorch.splice(0, 50);
+    (m.blasts || []).forEach(function(b) { c.ev.blasts.push({ x: b[0], y: b[1], r: b[2], t: b[3] }); });
+    (m.guns || []).forEach(function(g) { c.ev.guns.push({ n: g[0], t: g[1] }); });
+    if (c.ev.blasts.length > 60) c.ev.blasts.splice(0, 30);
+    if (c.ev.guns.length > 60) c.ev.guns.splice(0, 30);
+    var bd = c.board, o = m.bd;
+    if (bd && o) {
+      for (i = 0; i < o.doors.length && i < bd.doors.length; i++) {
+        var d = bd.doors[i], st2 = DOOR_ST[o.doors[i] >> 6];
+        d.state = st2; d.breach = (o.doors[i] & 63) / 63 * 10;
+      }
+      for (i = 0; i < o.tur.length && i < bd.turrets.length; i++) { var t = bd.turrets[i], q = o.tur[i]; t.hp = q[0]; t.aim = q[1]; t.tgt = q[2] ? 1 : -1; t.dead = !!q[3]; t.fireAt = q[4]; }
+      for (var k in bd.rs) { var s0 = bd.rs[k]; s0.hold = 0; s0.back = 0; s0.cnt[0] = 0; s0.cnt[1] = 0; }
+      o.rs.forEach(function(x) { var s = bd.rs[x[0]]; if (!s) return; s.held = !!x[1]; s.hold = x[2]; s.cnt[0] = x[3]; s.cnt[1] = x[4]; s.back = x[5]; });
+      bd.ventCd = o.vent;
+      o.shots.forEach(function(s) { bd.ev.shots.push({ x0: s[0], y0: s[1], x1: s[2], y1: s[3], t: s[4], team: s[5], hit: !!s[6], w: s[7] }); });
+      o.booms.forEach(function(b) { bd.ev.booms.push({ x: b[0], y: b[1], r: b[2], t: b[3] }); });
+      o.vents.forEach(function(v) { bd.ev.vents.push({ n: v[0], t: v[1] }); });
+      var ct = m.ct;
+      while (bd.ev.shots.length && ct - bd.ev.shots[0].t > 1.5) bd.ev.shots.shift();
+      while (bd.ev.booms.length && ct - bd.ev.booms[0].t > 3) bd.ev.booms.shift();
+      while (bd.ev.vents.length && ct - bd.ev.vents[0].t > 4) bd.ev.vents.shift();
+    }
+  };
+  // Люди: новое положение — цель сглаживания; служебные поля — сразу
+  Mirror.prototype.agents = function(v, delta) {
+    var n = v.getUint8(1), N = v.getUint16(2, true), ct = v.getFloat32(4, true), sh = this.B.ships[n]; if (!sh) return;
+    var c = sh.crew, ag = c.agents, now = Date.now(), o = 8, W = sh.plan.w, i;
+    // разностный кадр к кораблю, полного кадра которого ещё не было, — ждём полный
+    if (delta && this.agFull !== n) return;
+    if (!delta) this.agFull = n;
+    sh.netView = true; sh.netCt = ct; sh.netCtAt = now;
+    if (ag.length > N) ag.length = N;
+    var bd = c.board, list = [];
+    if (delta) {
+      var nb = Math.ceil(N / 8), base = 8 + nb, k = 0;
+      for (i = 0; i < N; i++) if (v.getUint8(8 + (i >> 3)) & (1 << (i & 7))) list.push([i, base + (k++) * AG]);
+    } else for (i = 0; i < N; i++) list.push([i, 8 + i * AG]);
+    var vis = this.agVis && this.agVis.length === N && delta ? this.agVis : new Uint8Array(N);
+    if (this.agVis && delta && this.agVis.length !== N) { vis.set(this.agVis.subarray(0, Math.min(N, this.agVis.length))); }
+    this.agVis = vis;
+    for (var li = 0; li < list.length; li++) {
+      i = list[li][0]; o = list[li][1];
+      var a = ag[i];
+      if (!a) a = ag[i] = { id: i, x: 0, y: 0, hp: 100, hpMax: 100, alive: true, aim: 0, legs: 0, mv: 0, phase: (i * 2.39) % 6.28, fig: 0, job: null,
+                            role: 'post', team: 0, face: null, sprayAt: -1, fixAt: -1, breach: -1, tgt: -1, home: 0, goalRoom: 0 };
+      var fl = v.getUint8(o + 6);
+      a.team = fl & 128 ? 1 : 0;
+      if (fl & 16) {
+        // не видно абордажной команде: не рисовать, места не знаем
+        a.gone = true; a.alive = true; a.nx = null; a.job = null; a.sprayAt = -1; a.fixAt = -1; vis[i] = 0;
+        continue;
+      }
+      vis[i] = 1;
+      var x = v.getUint16(o, true) / 64, y = v.getUint16(o + 2, true) / 64, jb = v.getUint8(o + 7);
+      var wasAlive = a.alive && !a.gone;
+      a.alive = !!(fl & 1); a.at = !!(fl & 2); a.carry = !!(fl & 4); a.gone = !!(fl & 8);
+      // первый кадр, телепорт (шаттл, смерть) — сразу на место; иначе — сглаживание
+      if (a.nx == null || !wasAlive || !a.alive || Math.abs(x - a.nx) + Math.abs(y - a.ny) > 6) { a.x = x; a.y = y; a.px = x; a.py = y; }
+      else { a.px = a.x; a.py = a.y; }
+      a.nx = x; a.ny = y; a.nat = now;
+      a.aimT = v.getUint8(o + 4) / 256 * 6.2832;
+      if (a.aim == null || !wasAlive) a.aim = a.aimT;
+      a.hp = v.getUint8(o + 5) / 255 * 100; a.hpMax = 100;
+      a.breach = fl & 32 ? 1 : -1;
+      a.face = fl & 64 ? a.aimT : null;
+      var jk = JOBS[jb & 15]; a.role = ROLES[jb >> 4] || 'post';
+      var wv = v.getUint8(o + 9);
+      a.wpn = WPNS[wv & 15] || undefined; a.sq = v.getUint8(o + 15);
+      a.fig = v.getUint8(o + 8);
+      var dx = v.getInt8(o + 10), dy = v.getInt8(o + 11), where = v.getUint16(o + 12, true), f2 = v.getUint8(o + 14);
+      a.home = where; a.goalRoom = where;
+      a.tgt = f2 & 1 ? 1 : -1; a.guard = f2 & 2 ? 1 : 0; a.task = f2 & 4 ? 'post' : null; a.eng = !!(f2 & 8);
+      a.sprayAt = -1; a.fixAt = -1;
+      if (jk) {
+        a.job = { kind: jk, room: where };
+        var cell = (Math.floor(y) + dy) * W + Math.floor(x) + dx;
+        if (jk === 'fire') a.sprayAt = cell; else if (jk === 'fix') a.fixAt = cell;
+        else if (jk === 'heal') a.job.who = this.nearAgent(ag, x + dx, y + dy, i);
+      } else a.job = null;
+    }
+    // кто в каком отряде — по всем людям (в разностном кадре пришли не все)
+    if (bd) {
+      bd.vis = vis;
+      var sqm = {};
+      for (i = 0; i < ag.length; i++) if (ag[i] && ag[i].sq) (sqm[ag[i].sq] = sqm[ag[i].sq] || []).push(i);
+      if (bd.squads) bd.squads.forEach(function(q) { q.members = sqm[q.id] || []; });
+    }
+  };
+  Mirror.prototype.nearAgent = function(ag, x, y, self) {
+    var best = -1, bd = 4;
+    for (var i = 0; i < ag.length; i++) { if (i === self || !ag[i] || ag[i].nx == null) continue; var dx = ag[i].nx - x, dy = ag[i].ny - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
+    return best;
+  };
+  Mirror.prototype.fire = function(v) {
+    var n = v.getUint8(1), N = v.getUint32(4, true), sh = this.B.ships[n]; if (!sh) return;
+    var c = sh.crew, i;
+    for (i = 0; i < c.burning.length; i++) c.fire[c.burning[i]] = 0;
+    c.burning = [];
+    for (i = 0; i < N; i++) { var cell = v.getUint32(8 + i * 5, true); c.burning.push(cell); c.fire[cell] = v.getUint8(12 + i * 5); }
+  };
+  // Каждый кадр отрисовки: сгладить движение, выставить время
+  Mirror.prototype.update = function() {
+    var B = this.B, now = Date.now(), s = this.snap; if (!s.length) return false;
+    var last = s[s.length - 1];
+    B.t = last.T + (now - last.at) / 1000 - DELAY; B.acc = 0;
+    var k, i;
+    for (i = 0; i < B.ships.length; i++) {
+      var sh = B.ships[i], n = sh.net; if (!n || !n.cur) continue;
+      k = n.prev && n.cur.at > n.prev.at ? Math.min(1.2, (now - n.cur.at) / (n.cur.at - n.prev.at) ) : 1;
+      // между прошлым и новым кадром с запасом в один кадр
+      var a = n.prev, b = n.cur;
+      sh.x = a.x + (b.x - a.x) * k; sh.y = a.y + (b.y - a.y) * k;
+      var dh = b.hd - a.hd; while (dh > Math.PI) dh -= 6.2832; while (dh < -Math.PI) dh += 6.2832;
+      sh.hd = a.hd + dh * k;
+      B.place(sh);
+      if (sh.netCt != null) sh.crew.t = sh.netCt + (now - (sh.netCtAt || last.at)) / 1000 - DELAY;
+      // люди корабля, на который смотрим
+      if (sh.netView) {
+        var ag = sh.crew.agents;
+        for (var j = 0; j < ag.length; j++) {
+          var m = ag[j]; if (!m || m.nx == null) continue;
+          var kk = Math.min(1, (now - m.nat) / 250);
+          var ox = m.x, oy = m.y;
+          m.x = m.px + (m.nx - m.px) * kk; m.y = m.py + (m.ny - m.py) * kk;
+          var sp = Math.sqrt((m.x - ox) * (m.x - ox) + (m.y - oy) * (m.y - oy));
+          m.mv += ((sp > 0.004 ? 1 : 0) - m.mv) * 0.2;
+          if (sp > 0.004) m.legs = Math.atan2(m.y - oy, m.x - ox);
+          var da = (m.aimT || 0) - m.aim; while (da > Math.PI) da -= 6.2832; while (da < -Math.PI) da += 6.2832;
+          m.aim += da * 0.3;
+          m.phase = (m.phase + (m.mv > 0.3 ? 0.17 : 0.05)) % 6.2832;
+        }
+      }
+    }
+    // малые корабли: список целиком из последнего кадра, положение — сглаженно
+    if (this.craftNext) {
+      var list = this.craftNext, old = {}, out = [];
+      for (i = 0; i < B.craft.length; i++) old[B.craft[i].id] = B.craft[i];
+      for (i = 0; i < list.length; i++) {
+        var q = list[i], c = old[q[0]], meta = this.craftMeta[q[0]];
+        if (q.length > 5) meta = this.craftMeta[q[0]] = { type: q[5], side: q[6], role: q[7], faction: q[8], img: q[9] || null, len: q[10], max: q[11] };
+        if (!meta) continue;                               // кадр с описанием потерялся — до полного обновления не рисуем
+        if (!c) c = { id: q[0], x: q[1], y: q[2], hd: q[3] };
+        c.type = meta.type; c.side = meta.side; c.role = meta.role; c.faction = meta.faction; c.img = meta.img; c.len = meta.len; c.max = meta.max;
+        c.tx = q[1]; c.ty = q[2]; c.thd = q[3]; c.hp = q[4]; c.dead = false;
+        out.push(c);
+      }
+      B.craft = out; this.craftNext = null;
+    }
+    for (i = 0; i < B.craft.length; i++) {
+      var cr = B.craft[i]; if (cr.tx == null) continue;
+      cr.x += (cr.tx - cr.x) * 0.25; cr.y += (cr.ty - cr.y) * 0.25;
+      var dd = cr.thd - cr.hd; while (dd > Math.PI) dd -= 6.2832; while (dd < -Math.PI) dd += 6.2832; cr.hd += dd * 0.3;
+    }
+    return true;
+  };
+
+  return { Viewer: Viewer, Mirror: Mirror, BIN: BIN, DELAY: DELAY, SCEN: SCEN };
+});

@@ -348,6 +348,93 @@
     c.restore();
   }
 
+  // ---------------------------------------------------------------- гибель
+  // Дроид разлетается на части (как на пробной палубе), клон падает навзничь.
+  // k — ход анимации 0..1 (1 — лежит, как в атласе тел); seed — раскладка обломков.
+  var WRECK = {
+    b1:       { limb: '#b9a476', torso: '#d6c597', dark: '#6a5a3e', head: '#c9b689', big: false },
+    bx:       { limb: '#4d4841', torso: '#746c61', dark: '#23201c', head: '#8a8277', big: false },
+    b2:       { limb: '#56616d', torso: '#7f8b98', dark: '#2b3138', head: null, big: true },
+    droideng: { limb: '#6f6a60', torso: '#9a9384', dark: '#3a3630', head: '#8a8477', big: false },
+    droidmed: { limb: '#6f6a60', torso: '#a8a294', dark: '#3a3630', head: '#8a8477', big: false }
+  };
+  function isDroid(T) { return !!WRECK[T.draw]; }
+  function srnd(seed) { var s = (seed * 2654435761) >>> 0 || 1; return function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+  function ease(k) { k = Math.max(0, Math.min(1, k)); return 1 - (1 - k) * (1 - k) * (1 - k); }
+  // c сдвинут в точку гибели и масштабирован в клетки поля; ang — куда отбросило
+  function dead(c, T, ang, k, seed) {
+    var W0 = WRECK[T.draw], e = ease(k);
+    c.save(); c.scale(FIG, FIG);
+    if (!W0) {
+      // клон: стоял — падает по направлению удара, тень расползается
+      var sw = Math.min(1, k / 0.6);
+      c.rotate(ang);
+      c.fillStyle = 'rgba(10,8,6,' + (0.45 * sw) + ')';
+      c.beginPath(); c.ellipse(0.02 + 0.1 * e, 0.02, 0.32 * (0.6 + 0.4 * e), 0.22, 0, 0, TAU); c.fill();
+      c.translate(0.12 * e, 0);
+      c.globalAlpha *= 0.6 + 0.4 * (1 - e);
+      var u = { aim: 0.5 * e, legs: -0.4 * e, mv: 0, phase: 0, gun: T.id === 'rep_sniper' ? 'sniper' : T.gun, mark: T.mark };
+      c.scale(1 + (1 - e) * 0.12, 1 + (1 - e) * 0.12);
+      DRAW[T.draw](c, u);
+      c.restore();
+      return;
+    }
+    var R = srnd(seed + 7), big = W0.big;
+    // подпалина под обломками
+    var sg = c.createRadialGradient(0, 0, 0, 0, 0, big ? 0.55 : 0.42);
+    sg.addColorStop(0, 'rgba(12,9,6,' + (0.7 * Math.min(1, k * 3)) + ')'); sg.addColorStop(1, 'rgba(12,9,6,0)');
+    c.fillStyle = sg; dot(c, 0, 0, big ? 0.55 : 0.42);
+    var parts = big ? [['torso', 0.12, 0.3], ['arm', 0.5, 1.4], ['arm', 0.32, 2], ['leg', 0.18, 2.5], ['leg', 0.22, 2.5]]
+                    : [['torso', 0.14, 0.4], ['head', 0.5 + R() * 0.45, 0.7], ['arm', 0.35, 1.6], ['arm', 0.28, 2.2], ['leg', 0.2, 2.6], ['leg', 0.26, 2.6], ['gun', 0.35 + R() * 0.35, 1.8]];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i], a = ang + (R() * 2 - 1) * p[2], dist = p[1], r0 = R() * TAU, spin = (R() * 2 - 1) * (p[0] === 'head' ? 6 : 3);
+      var hop = p[0] === 'head' || p[0] === 'gun' ? Math.sin(Math.PI * Math.min(1, k)) * 0.35 : 0;
+      c.save();
+      c.translate(Math.cos(a) * dist * e, Math.sin(a) * dist * e - hop);
+      c.rotate(r0 + spin * e);
+      c.lineCap = 'round';
+      if (p[0] === 'torso') {
+        var tw = big ? 0.3 : 0.15, th = big ? 0.42 : 0.18;
+        c.fillStyle = W0.torso; rr(c, -tw / 2, -th / 2, tw, th, big ? 0.06 : 0.035); c.fill();
+        c.strokeStyle = W0.dark; c.lineWidth = 0.012; c.stroke();
+        c.fillStyle = 'rgba(255,150,60,' + (0.6 * (1 - Math.min(1, k * 1.2))) + ')'; dot(c, 0, 0, big ? 0.07 : 0.035);
+      } else if (p[0] === 'head') {
+        c.fillStyle = W0.head || W0.torso; c.beginPath(); c.ellipse(0, 0, 0.075, 0.05, 0, 0, TAU); c.fill();
+        c.strokeStyle = W0.dark; c.lineWidth = 0.01; c.stroke();
+      } else if (p[0] === 'arm' || p[0] === 'leg') {
+        var L = big ? (p[0] === 'arm' ? 0.26 : 0.2) : (p[0] === 'arm' ? 0.2 : 0.18);
+        c.strokeStyle = W0.limb; c.lineWidth = big ? 0.085 : 0.042; line(c, -L / 2, 0, L / 2, 0);
+        c.fillStyle = W0.dark; dot(c, L / 2, 0, big ? 0.045 : 0.022);
+      } else {
+        c.strokeStyle = '#2f3237'; c.lineWidth = 0.035; line(c, -0.16, 0, 0.16, 0);
+      }
+      c.restore();
+    }
+    // первые мгновения — ещё целый дроид, тает поверх обломков
+    if (k < 0.22) {
+      c.globalAlpha *= 1 - k / 0.22;
+      shadow(c, T.rad);
+      DRAW[T.draw](c, { aim: ang + Math.PI, legs: ang + Math.PI, mv: 0, phase: 0, gun: T.gun, mark: T.mark });
+    }
+    c.restore();
+  }
+  // Атлас тел: для каждого вида — DEAD_DIRS направлений, обломки разложены как в конце анимации
+  var DEAD_DIRS = 8;
+  function bakeDead(types, cell, cols) {
+    var COLS = cols || 16, cv = document.createElement('canvas');
+    cv.width = COLS * cell; cv.height = Math.ceil(types.length * DEAD_DIRS / COLS) * cell;
+    var c = cv.getContext('2d'), sc = 2.6, k = cell / sc;    // клетка атласа — 2,6 клетки поля: обломки разлетаются
+    for (var t = 0; t < types.length; t++) for (var d = 0; d < DEAD_DIRS; d++) {
+      var idx = t * DEAD_DIRS + d;
+      c.save();
+      c.translate((idx % COLS) * cell + cell / 2, Math.floor(idx / COLS) * cell + cell / 2);
+      c.scale(k, k);
+      dead(c, types[t], d / DEAD_DIRS * TAU, 1, d);
+      c.restore();
+    }
+    return { canvas: cv, cell: cell, dirs: DEAD_DIRS, cols: COLS, scale: sc };
+  }
+
   // Нарисовать бойца прямо на экран, без атласа (запасной путь, если
   // браузер потерял содержимое картинки-атласа). c уже сдвинут в точку бойца
   // и масштабирован в клетки поля.
@@ -377,5 +464,6 @@
           troops: at(['rep_dc15a', 'rep_dc15a', 'rep_heavy']), crew: at(['rep_gunner', 'rep_engineer']) };
   }
 
-  root.SWRTFig = { withCrew: withCrew, crewFigs: crewFigs, bake: bake, corpse: corpse, draw: draw, check: check, DIRS: DIRS, FRAMES: FRAMES, FIG: FIG, TAU: TAU, CREW: CREW };
+  root.SWRTFig = { withCrew: withCrew, crewFigs: crewFigs, bake: bake, corpse: corpse, draw: draw, check: check, DIRS: DIRS, FRAMES: FRAMES, FIG: FIG, TAU: TAU, CREW: CREW,
+                   dead: dead, bakeDead: bakeDead, isDroid: isDroid, DEAD_DIRS: DEAD_DIRS };
 })(typeof self !== 'undefined' ? self : this);

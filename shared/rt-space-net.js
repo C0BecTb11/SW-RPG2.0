@@ -284,7 +284,7 @@
       if (s.held || s.hold > 0 || s.back > 0 || c0 || c1) o.rs.push([s.n, s.held ? 1 : 0, r1(s.hold), c0, c1, r1(s.back)]); }
     o.vent = bd.ventCd.slice();
     if (m.bdObj2 !== bd) { m.bdObj2 = bd; m.bshot = -1; m.bboom = -1; m.bvent = -1; }
-    o.shots = bd.ev.shots.filter(function(s) { return s.t > m.bshot; }).map(function(s) { return [r1(s.x0), r1(s.y0), r1(s.x1), r1(s.y1), r2(s.t), s.team, s.hit ? 1 : 0, s.w]; });
+    o.shots = bd.ev.shots.filter(function(s) { return s.t > m.bshot; }).map(function(s) { return [r1(s.x0), r1(s.y0), r1(s.x1), r1(s.y1), r2(s.t), s.team, s.hit ? 1 : 0, s.w, s.d || 0, s.ti == null ? -1 : s.ti, s.wall ? 1 : 0]; });
     if (bd.ev.shots.length) m.bshot = Math.max(m.bshot, bd.ev.shots[bd.ev.shots.length - 1].t);
     o.booms = bd.ev.booms.filter(function(b) { return b.t > m.bboom; }).map(function(b) { return [r1(b.x), r1(b.y), r1(b.r), r2(b.t)]; });
     if (bd.ev.booms.length) m.bboom = Math.max(m.bboom, bd.ev.booms[bd.ev.booms.length - 1].t);
@@ -321,7 +321,7 @@
       // где: отсек дела или цели (для подписи «кто это»)
       var where = a.job && a.job.room ? a.job.room : a.job && (a.job.kind === 'defend' || a.job.kind === 'board') ? a.goalRoom : (a.goalRoom || a.home);
       v.setUint16(o + 12, where > 0 ? where : 0, true);
-      v.setUint8(o + 14, (a.tgt >= 0 && a.tgt != null ? 1 : 0) | (a.guard ? 2 : 0) | (a.task === 'post' ? 4 : 0) | (a.eng ? 8 : 0));
+      v.setUint8(o + 14, (a.tgt >= 0 && a.tgt != null ? 1 : 0) | (a.guard ? 2 : 0) | (a.task === 'post' ? 4 : 0) | (a.eng ? 8 : 0) | (a.inCov ? 16 : 0) | (a.post ? 32 : 0));
       v.setUint8(o + 15, Math.min(255, a.sq || a.dsq || 0));
       o += AG;
     }
@@ -592,7 +592,7 @@
         if (bd.over >= 0) return 0;
         ids = ids.slice(0, 128);
         self.send({ t: 'cmd', k: 'bunits', to: n, ids: ids, cell: cell });
-        var W = bd.ship.w, k = 0; ids.forEach(function(id) { var a = bd.c.agents[id]; if (a && a.alive && a.team === team) { a.post = [cell % W, Math.floor(cell / W)]; k++; } });
+        var W = bd.ship.w, k = 0; ids.forEach(function(id) { var a = bd.c.agents[id]; if (a && a.alive && a.team === team) { a.post = [cell % W, Math.floor(cell / W)]; a.postAt = Date.now(); k++; } });
         return k;
       };
       bd.focusUnits = function(team, ids, tid) {
@@ -667,7 +667,7 @@
       for (var k in bd.rs) { var s0 = bd.rs[k]; s0.hold = 0; s0.back = 0; s0.cnt[0] = 0; s0.cnt[1] = 0; }
       o.rs.forEach(function(x) { var s = bd.rs[x[0]]; if (!s) return; s.held = !!x[1]; s.hold = x[2]; s.cnt[0] = x[3]; s.cnt[1] = x[4]; s.back = x[5]; });
       bd.ventCd = o.vent;
-      o.shots.forEach(function(s) { bd.ev.shots.push({ x0: s[0], y0: s[1], x1: s[2], y1: s[3], t: s[4], team: s[5], hit: !!s[6], w: s[7] }); });
+      o.shots.forEach(function(s) { bd.ev.shots.push({ x0: s[0], y0: s[1], x1: s[2], y1: s[3], t: s[4], team: s[5], hit: !!s[6], w: s[7], d: s[8] || 0, ti: s[9] == null ? -1 : s[9], wall: !!s[10] }); });
       o.booms.forEach(function(b) { bd.ev.booms.push({ x: b[0], y: b[1], r: b[2], t: b[3] }); });
       o.vents.forEach(function(v) { bd.ev.vents.push({ n: v[0], t: v[1] }); });
       var ct = m.ct;
@@ -725,7 +725,9 @@
       a.fig = v.getUint8(o + 8);
       var dx = v.getInt8(o + 10), dy = v.getInt8(o + 11), where = v.getUint16(o + 12, true), f2 = v.getUint8(o + 14);
       a.home = where; a.goalRoom = where;
-      a.tgt = f2 & 1 ? 1 : -1; a.guard = f2 & 2 ? 1 : 0; a.task = f2 & 4 ? 'post' : null; a.eng = !!(f2 & 8);
+      a.tgt = f2 & 1 ? 1 : -1; a.guard = f2 & 2 ? 1 : 0; a.task = f2 & 4 ? 'post' : null; a.eng = !!(f2 & 8); a.inCov = !!(f2 & 16); a.held = !!(f2 & 32);
+      // точку снял сервер (бой кончился, новый приказ отряду) — снять и на экране; свежий приказ ещё в пути — не трогать
+      if (!(f2 & 32) && a.post && !(a.postAt > now - LOCK)) a.post = null;
       a.sprayAt = -1; a.fixAt = -1;
       if (jk) {
         a.job = { kind: jk, room: where };

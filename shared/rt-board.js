@@ -43,6 +43,19 @@
   var FIG_WPN = { rep_dc15a: 'rifle', rep_heavy: 'heavy', rep_sniper: 'rifle', cis_b1: 'b1', cis_b2: 'b2', cis_bx: 'bx',
                   rep_engineer: 'tool', cis_engineer: 'tool' };
   var TURRET = { hp: 150, range: 11, acc: 0.7, dmg: 25, rof: 0.4 };
+  // Повадки в бою (как на пробной палубе) — только пока бойца ведёт ИИ или в рамках приказа игрока:
+  //  crowd — B1: из коридора и шлюза лезут в отсек к цели, там встают и стреляют;
+  //  push  — B2: давит вперёд с огнём до near клеток;
+  //  cover — BX и клоны: ищут клетку за мебелью в r клетках, откуда видно цель;
+  //  every — как часто решают заново, с. Точка игрока («держать здесь») важнее любых повадок.
+  var STYLE = {
+    b1:    { k: 'crowd', every: 1.4 },
+    b2:    { k: 'push', near: 4.5, every: 1.3 },
+    bx:    { k: 'cover', r: 4, every: 3.5 },
+    rifle: { k: 'cover', r: 3, every: 5 },
+    sniper: { k: 'cover', r: 3, every: 6 }
+  };
+  var MICRO_END = 2;          // столько секунд без боя — бойцы возвращаются к приказу
   // PREP — подготовка после первой стыковки: штурмовики ждут в шлюзе (получают приказы),
   // защитники запирают, заваривают, расставляют отряды; HOLD_SOLO — подкрепление игрока без приказа ждёт столько
   var PREP = 45, HOLD_SOLO = 20;
@@ -254,7 +267,7 @@
   };
   Board.prototype.toDefend = function(a) {
     var c = this.c;
-    a.post = null; a.focus = -1;
+    a.post = null; a.focus = -1; this.microEnd(a, true);
     c.releaseJob(a); c.claimCell(a, null);
     a.job = { kind: 'defend', room: a.home };
     if (!a.wpn) { a.wpn = this.wpnOf(a); a.hpMax = WPN[a.wpn].hp; a.hp = a.hpMax * Math.min(1, a.hp / 100); }
@@ -289,7 +302,9 @@
       var a = c.agents[sq.members[i]]; if (!a || !a.alive) continue;
       if (auto && a.post) continue;                         // ИИ отряда не сдёргивает бойца с точки игрока
       var p = c.spotIn(r); if (!p) continue;
-      a.post = null; if (!auto) a.focus = -1;
+      a.post = null;
+      if (auto) { this.aiGoal(a, roomN, p); continue; }
+      a.focus = -1; this.microEnd(a, true);
       a.goalRoom = roomN; a.goal = p; a.at = false; a.stuck = 0; a.lastD = 1e9;
     }
     return true;
@@ -360,6 +375,7 @@
     return n;
   };
   Board.prototype.goCell = function(a, p) {
+    this.microEnd(a, true);
     var k = p[1] * this.W + p[0];
     a.goalRoom = this.ship.room[k] || 0; a.goal = [p[0], p[1]]; a.at = false; a.stuck = 0; a.lastD = 1e9; a.goT = this.t;
   };
@@ -411,7 +427,7 @@
       for (j = 0; j < live.length; j++) {
         a = live[j]; a.guard = 0; a.goT = -99; a.focus = -1;
         if (pt) { a.post = spots[j % spots.length]; this.goCell(a, a.post); }
-        else { a.post = null; this.goRoom(a, roomN, 0); }
+        else { a.post = null; this.microEnd(a, true); this.goRoom(a, roomN, 0); }
       }
     }
     return n;
@@ -425,7 +441,7 @@
       if (!this.alive(sq)) continue;
       n++;
       sq.cell = -1;
-      for (var pm = 0; pm < sq.members.length; pm++) { var pa = this.c.agents[sq.members[pm]]; if (pa) { pa.post = null; pa.focus = -1; } }
+      for (var pm = 0; pm < sq.members.length; pm++) { var pa = this.c.agents[sq.members[pm]]; if (pa) { pa.post = null; pa.focus = -1; this.microEnd(pa, true); } }
       if (team === this.att) { if (this.bridge) this.orderSquad(sq, this.bridge, true); else sq.auto = true; }
       else { sq.auto = true; sq.room = 0; }
     }
@@ -564,6 +580,16 @@
         return;
       }
     }
+    // «в бою» для повадок — цель в дальности (стреляет), а не только ближе 0,8 дальности: иначе боец на краю выходит из укрытия
+    if (tg && tg.d <= w.range) a.engT = this.t; else a.inCov = false;
+    // точка игрока: бежит туда и под огнём, стреляя на ходу
+    if (a.post && !a.at) { this.moveFire(a, dt, (tg ? 1.4 : 2.6) * w.spd, tg); return; }
+    // повадки в бою: укрытие, натиск, рывок из коридора
+    if (!a.post) {
+      if (engaged && this.micro(a, tg, w, dt)) return;
+      if (a.og && this.t - (a.engT || -99) > MICRO_END) this.microEnd(a);
+      else if (a.og && !a.at) { this.moveFire(a, dt, 1.4 * w.spd, tg); return; }
+    }
     if (engaged) {
       // в бою: стоит и стреляет; цель у края дальности — подтягивается шагом
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
@@ -574,7 +600,7 @@
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
       // в отсеке остались враги вне выстрела — сблизиться (иначе стоят по углам большого зала)
       a.push = (a.push || 0) - dt;
-      if (a.push <= 0 && !a.post) { a.push = 1 + this.R() * 0.5; this.closeIn(a); }    // на точке — держит её, не сходит
+      if (a.push <= 0 && !a.post && !a.og) { a.push = 1 + this.R() * 0.5; this.closeIn(a); }    // на точке — держит её, не сходит
       return;
     }
     this.step(a, dt, (tg ? 1.4 : 2.6) * w.spd);
@@ -596,6 +622,107 @@
     var tx = Math.floor((a.x + best.x) / 2), ty = Math.floor((a.y + best.y) / 2);
     if (!c.walk[ty * W + tx] || sh.room[ty * W + tx] !== n) { tx = Math.floor(best.x); ty = Math.floor(best.y); }
     a.goalRoom = n; a.goal = [tx, ty]; a.at = false; a.stuck = 0; a.lastD = 1e9;
+  };
+  // ---- повадки в бою
+  // Боец под приказом игрока (отряд с приказом или точка) — повадки только в пределах приказа
+  Board.prototype.ordered = function(a) {
+    if (a.post) return true;
+    var q = a.team === this.att ? (a.sq && this.squads[a.sq - 1]) : (a.dsq && this.dsq[a.dsq - 1]);
+    return !!(q && !q.auto);
+  };
+  // Решить, куда сместиться в бою; true — боец в пути к своему месту (ход сделан)
+  Board.prototype.micro = function(a, tg, w, dt) {
+    var st = STYLE[a.wpn];
+    if (st && this.t >= (a.mT || 0)) {
+      a.mT = this.t + st.every * (0.8 + this.R() * 0.4);
+      var cell = -1, sh = this.ship, W = this.W, here = Math.floor(a.y) * W + Math.floor(a.x);
+      // приказ игрока: не уходить из отсека приказа (коридор — так коридор)
+      var keep = this.ordered(a) ? (a.og ? a.og.r : a.goalRoom) : -1;
+      if (st.k === 'push') {
+        if (tg.d > st.near + 0.4) cell = this.towards(a, tg, st.near, keep);
+      } else if (st.k === 'crowd') {
+        var rn = sh.room[here], rr = sh.roomByN[rn];
+        if ((!rn || (rr && rr.t === 'airlock')) && tg.d > 3.5) cell = this.towards(a, tg, 3, keep);
+      } else if (st.k === 'cover') {
+        a.inCov = this.cover(tg.x, tg.y, a.x, a.y) < 1;
+        if (!a.inCov) cell = this.coverCell(a, tg, st.r, w.range, keep);
+      }
+      if (cell >= 0 && cell !== here) this.microGo(a, cell);
+    }
+    if (a.og && !a.at) {
+      // натиск: дошёл до своей дистанции — встаёт (цель могла сама подойти)
+      if (st && st.k === 'push' && tg.d <= st.near) { a.goal = [Math.floor(a.x), Math.floor(a.y)]; a.at = true; return false; }
+      this.moveFire(a, dt, (st && st.k === 'push' ? 1.1 : 1.5) * w.spd, tg);
+      return true;
+    }
+    return false;
+  };
+  // Клетка пола на пути к цели: остановиться в near клетках от неё
+  Board.prototype.towards = function(a, tg, near, keep) {
+    var W = this.W, k = Math.max(0, 1 - near / Math.max(0.01, tg.d));
+    var x = Math.floor(a.x + (tg.x - a.x) * k), y = Math.floor(a.y + (tg.y - a.y) * k);
+    if (x < 0 || y < 0 || x >= W || y >= this.ship.h) return -1;
+    var sp = this.spotsNear(y * W + x, 1); if (!sp.length) return -1;
+    var c = sp[0][1] * W + sp[0][0];
+    if (keep >= 0 && (this.ship.room[c] || 0) !== keep) return -1;
+    if (a.team === this.att && !this.walkAtt[c]) return -1;
+    return c;
+  };
+  // Укрытие: свободная клетка за мебелью (мебель между ней и целью), откуда цель видна и достаётся
+  Board.prototype.coverCell = function(a, tg, R, range, keep) {
+    var c = this.c, W = this.W, H = this.ship.h, walk = a.team === this.att ? this.walkAtt : c.walk;
+    var sx = Math.floor(a.x), sy = Math.floor(a.y), s0 = sy * W + sx, best = -1, bs = 1e9;
+    var q = [s0], dep = [0], seen = {}; seen[s0] = 1;
+    this.claim = this.claim || {};
+    for (var h = 0; h < q.length; h++) {
+      var k = q[h], x = k % W, y = (k - x) / W, d = dep[h];
+      if (d > 0 && (keep < 0 || (this.ship.room[k] || 0) === keep)) {
+        var o = c.cellHead[k], cl = this.claim[k], ca = cl != null && c.agents[cl];
+        var free = (o === -1 || o === a.id) && !(ca && ca !== a && ca.alive && ca.og);
+        if (free) {
+          var px = x + 0.5, py = y + 0.5, dx = tg.x - px, dy = tg.y - py, dd = Math.sqrt(dx * dx + dy * dy);
+          if (dd <= range * 0.95 && dd > 1.5 && this.cover(tg.x, tg.y, px, py) < 1 && this.los(px, py, tg.x, tg.y)) {
+            var sc = d + Math.abs(dd - 6) * 0.4;
+            if (sc < bs) { bs = sc; best = k; }
+          }
+        }
+      }
+      if (d >= R) continue;
+      for (var o4 = 0; o4 < 4; o4++) {
+        var nx = x + (o4 === 0 ? 1 : o4 === 1 ? -1 : 0), ny = y + (o4 === 2 ? 1 : o4 === 3 ? -1 : 0), nk = ny * W + nx;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[nk] || !walk[nk] || this.doorAt[nk] >= 0) continue;
+        seen[nk] = 1; q.push(nk); dep.push(d + 1);
+      }
+    }
+    return best;
+  };
+  // Сместиться на клетку боя; приказ (куда шёл) запоминается и вернётся, когда бой стихнет
+  Board.prototype.microGo = function(a, cell) {
+    if (!a.og) a.og = { g: a.goal, r: a.goalRoom };
+    this.claim = this.claim || {};
+    if (a.mc != null && this.claim[a.mc] === a.id) delete this.claim[a.mc];
+    a.mc = cell; this.claim[cell] = a.id;
+    var x = cell % this.W;
+    a.goal = [x, (cell - x) / this.W]; a.goalRoom = this.ship.room[cell] || 0; a.at = false; a.stuck = 0; a.lastD = 1e9;
+  };
+  // Бой стих (или пришёл новый приказ — keep=false): назад к приказу
+  Board.prototype.microEnd = function(a, drop) {
+    if (a.mc != null && this.claim && this.claim[a.mc] === a.id) delete this.claim[a.mc];
+    a.mc = null; a.inCov = false;
+    var og = a.og; a.og = null;
+    if (!og || drop) return;
+    if (og.g) { a.goal = og.g; a.goalRoom = og.r; a.at = false; a.stuck = 0; a.lastD = 1e9; }
+  };
+  // Новая цель хода от ИИ: если боец сейчас занят в бою — запомнить на потом
+  Board.prototype.aiGoal = function(a, room, p) {
+    if (a.og) { a.og = { g: p, r: room }; return; }
+    a.goalRoom = room; a.goal = p; a.at = false; a.stuck = 0; a.lastD = 1e9;
+  };
+  // Идти и стрелять: ноги — по ходу, ствол — на цель
+  Board.prototype.moveFire = function(a, dt, sp, tg) {
+    var aim0 = a.aim;
+    this.step(a, dt, sp);
+    if (tg) a.aim = turn(aim0, Math.atan2(tg.y - a.y, tg.x - a.x), 7 * dt);
   };
   Board.prototype.step = function(a, dt, sp) {
     var nc = this.c.nav(a, dt, sp);
@@ -715,9 +842,9 @@
       // абордажная команда — штурмовики: стреляют точнее в тесноте коридоров
       var p = w.acc * (a.team === this.att ? ASSAULT : 1) * Math.max(0.3, 1.1 - tg.d / w.range * 0.5) * this.cover(a.x, a.y, tg.x, tg.y) * (moving ? 0.7 : 1);
       var hit = this.R() < p;
-      this.shot(a.x, a.y, tg.x, tg.y, a.team, hit, a.wpn);
+      var dmg = hit ? w.dmg * dmgK[a.team] * (a.dmgK || 1) * (0.8 + this.R() * 0.4) : 0;
+      this.shot(a.x, a.y, tg.x, tg.y, a.team, hit, a.wpn, dmg, a.tgt >= 100000 ? -1 : a.tgt);
       if (hit) {
-        var dmg = w.dmg * dmgK[a.team] * (a.dmgK || 1) * (0.8 + this.R() * 0.4);
         if (a.tgt >= 100000) this.hitTurret(this.turrets[a.tgt - 100000], dmg);
         else { var b = ag[a.tgt]; c.hurt(b, dmg); if (!b.alive) a.tgt = -1; }
         // граната: задевает и тех, кто рядом с целью (своих — тоже)
@@ -755,9 +882,26 @@
     while (this.ev.booms.length && t - this.ev.booms[0].t > 3) this.ev.booms.shift();
     while (this.ev.vents.length && t - this.ev.vents[0].t > 4) this.ev.vents.shift();
   };
-  Board.prototype.shot = function(x0, y0, x1, y1, team, hit, wpn) {
-    var R = this.R, mx = hit ? 0 : (R() - 0.5) * 2.4, my = hit ? 0 : (R() - 0.5) * 2.4;
-    this.ev.shots.push({ t: this.c.t, x0: x0, y0: y0, x1: x1 + mx, y1: y1 + my, team: team, hit: hit, w: wpn });
+  // Выстрел для экрана. Промах летит дальше цели — до стены (там искры и подпалина);
+  // d — урон (цифры над целью), ti — в кого (−1 — турель)
+  Board.prototype.shot = function(x0, y0, x1, y1, team, hit, wpn, d, ti) {
+    var R = this.R, mx = hit ? 0 : (R() - 0.5) * 2.4, my = hit ? 0 : (R() - 0.5) * 2.4, wall = 0;
+    if (!hit) {
+      var ex = x1 + mx, ey = y1 + my, dx = ex - x0, dy = ey - y0, L = Math.sqrt(dx * dx + dy * dy) || 1, W = this.W, H = this.ship.h;
+      dx /= L; dy /= L;
+      // шагом в четверть клетки от стрелка: первая стена или запертая дверь; не дальше 10 клеток за цель
+      // (турель стоит внутри своей глухой машины — пока болт не вышел на открытое место, стены не в счёт)
+      for (var k = 0.5, kmax = L + 10, out = false; k <= kmax; k += 0.25) {
+        var cx = Math.floor(x0 + dx * k), cy = Math.floor(y0 + dy * k);
+        if (cx < 0 || cy < 0 || cx >= W || cy >= H) { k -= 0.25; break; }
+        var ci = cy * W + cx, di = this.doorAt[ci];
+        var shut = !this.clear[ci] || (di >= 0 && this.doors[di].state === 'locked');
+        if (!shut) { out = true; continue; }
+        if (out) { wall = 1; k -= 0.12; break; }
+      }
+      x1 = x0 + dx * Math.min(k, kmax); y1 = y0 + dy * Math.min(k, kmax); mx = 0; my = 0;
+    }
+    this.ev.shots.push({ t: this.c.t, x0: x0, y0: y0, x1: x1 + mx, y1: y1 + my, team: team, hit: hit, w: wpn, d: hit ? Math.round(d || 0) : 0, ti: ti == null ? -1 : ti, wall: wall });
   };
   Board.prototype.armoryK = function(team) {
     // арсенал: +15% тому, кто его держит
@@ -790,9 +934,10 @@
       tu.cd = 1 / TURRET.rof;
       var d = Math.sqrt((b.x - tu.x) * (b.x - tu.x) + (b.y - tu.y) * (b.y - tu.y));
       var hit = this.R() < TURRET.acc * Math.max(0.4, 1.1 - d / TURRET.range * 0.5) * this.cover(tu.x, tu.y, b.x, b.y);
-      this.shot(tu.x, tu.y, b.x, b.y, this.def, hit, 'turret');
+      var tdmg = hit ? TURRET.dmg * (0.85 + this.R() * 0.3) : 0;
+      this.shot(tu.x, tu.y, b.x, b.y, this.def, hit, 'turret', tdmg, tu.tgt);
       tu.fireAt = c.t;
-      if (hit) c.hurt(b, TURRET.dmg * (0.85 + this.R() * 0.3));
+      if (hit) c.hurt(b, tdmg);
     }
   };
   Board.prototype.medStep = function(dt) {
@@ -925,9 +1070,9 @@
   // Идти в отсек (не дёргать, если уже идёт туда же или стоит в нём); every — с повтором раз в N с
   Board.prototype.goRoom = function(a, n, every) {
     var r = this.ship.roomByN[n]; if (!r) return;
-    if (a.goalRoom === n && (a.at || this.t - (a.goT || -99) < every)) return;
+    if (a.og ? a.og.r === n : a.goalRoom === n && (a.at || this.t - (a.goT || -99) < every)) return;
     var p = this.c.spotIn(r); if (!p) return;
-    a.goalRoom = n; a.goal = p; a.at = false; a.stuck = 0; a.lastD = 1e9; a.goT = this.t;
+    a.goT = this.t; this.aiGoal(a, n, p);
   };
   Board.prototype.nearRoom = function(x, y) {
     var sh = this.ship, W = this.W;
@@ -1004,7 +1149,8 @@
   };
   // Конец абордажа: защитники — на свои посты, тревога снимается
   Board.prototype.end = function() {
-    for (var pi = 0; pi < this.c.agents.length; pi++) { this.c.agents[pi].post = null; this.c.agents[pi].focus = -1; }   // точки и цели — только на этот бой
+    for (var pi = 0; pi < this.c.agents.length; pi++) { this.c.agents[pi].post = null; this.c.agents[pi].focus = -1; this.microEnd(this.c.agents[pi], true); }
+    this.claim = {};   // точки и цели — только на этот бой
     var c = this.c;
     for (var k in this.rs) { this.rs[k].held = false; this.rs[k].hold = 0; this.rs[k].back = 0; }
     this.charge = null;

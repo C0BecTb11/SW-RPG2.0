@@ -43,7 +43,7 @@ button { font-family: inherit; }
   gap: 6px;
   align-items: stretch;
 }
-#sp-snd {
+#sp-snd, #sp-gfx-b {
   width: 34px;
   padding: 0;
   display: grid;
@@ -54,6 +54,7 @@ button { font-family: inherit; }
   color: #e8d9a8;
   cursor: pointer;
 }
+#sp-gfx-b svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 #sp-snd svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 #sp-snd .spk { fill: currentColor; stroke: none; }
 #sp-snd .x { display: none; }
@@ -563,3 +564,24 @@ body.cisside .sp-hold .hero { color: #ff9a88; }
 .sp-fl .cg b { color: #e8d9a8; font-weight: normal; }
 .sp-fl .cg i { font-style: normal; color: #55606c; }
 .sp-fl .hero { color: #9fd8ff !important; }
+
+/* ---------- настройки графики ---------- */
+.sp-gfx .sp-end-card { width: min(380px, 94vw); }
+.sp-gfx-about { margin: 6px 0 2px; font-size: 10.5px; line-height: 1.5; color: #8fa8c4; }
+.sp-gfx-about span { color: #55606c; }
+.sp-gfx-tgs { display: grid; gap: 4px; }
+.sp-gfx-tg {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 9px; text-align: left; cursor: pointer;
+  border: 1px solid #2a3644; border-radius: 8px; background: rgba(8,11,17,0.9); color: #8fa8c4; font-size: 10.5px;
+}
+.sp-gfx-tg i { flex: none; position: relative; width: 26px; height: 14px; border-radius: 8px; background: #141a22; border: 1px solid #2a3644; transition: background 0.15s; }
+.sp-gfx-tg i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: #55606c; transition: transform 0.15s, background 0.15s; }
+.sp-gfx-tg.on { border-color: rgba(217,169,64,0.55); }
+.sp-gfx-tg.on i { background: rgba(217,169,64,0.2); border-color: rgba(217,169,64,0.7); }
+.sp-gfx-tg.on i::after { transform: translateX(12px); background: #d9a940; }
+.sp-gfx-tg span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sp-gfx-tg b { font-weight: normal; color: #cfd8dc; }
+.sp-gfx-tg.on b { color: #e8d9a8; }
+.sp-gfx-tg em { font-style: normal; font-size: 9px; color: #55606c; }
+/* узкий телефон: кадры в секунду — в настройках, место — кнопкам */
+@media (max-width: 400px) { #sp-clock .fps { display: none; } #sp-tr { gap: 5px; } }

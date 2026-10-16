@@ -9,6 +9,7 @@
   'use strict';
 
   var S = window.SWRT, F = window.SWRTFig, SH = window.SWShip, SP = window.SWSpace, ART = window.ShipArt;
+  var GFX = window.SPGfx, DECK = window.SPDeck;       // настройки графики; эффекты и вид палубы
   var K = SH.K, TAU = Math.PI * 2, CH = 32;
   var $ = function(id) { return document.getElementById(id); };
 
@@ -111,7 +112,7 @@
 
   // ---------------------------------------------------------------- камера
   function resize() {
-    CAM.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    CAM.dpr = Math.min(window.devicePixelRatio || 1, GFX.Q().dpr);
     CAM.vw = window.innerWidth; CAM.vh = window.innerHeight;
     CV.width = Math.round(CAM.vw * CAM.dpr); CV.height = Math.round(CAM.vh * CAM.dpr);
     CV.style.width = CAM.vw + 'px'; CV.style.height = CAM.vh + 'px';
@@ -158,6 +159,7 @@
   var FR = { last: 0, fps: 60, acc: 0, hud: 0 };
   function frame(t) {
     requestAnimationFrame(frame);
+    if (GFX.get('eco') && FR.last && t - FR.last < 30) return;          // экономия заряда: не чаще 30 к/с
     var dt = FR.last ? Math.min(0.1, (t - FR.last) / 1000) : 0.016;
     FR.fps = FR.fps * 0.95 + (1 / Math.max(0.001, dt)) * 0.05; FR.last = t;
     var B = G.B; if (!B) return;
@@ -359,10 +361,11 @@
   }
   function uStatus(a, sh) {
     var f = a.focus >= 0 && sh.crew.agents[a.focus];
-    if (a.tgt >= 0) return ['fire', 'ведёт огонь' + (a.at ? '' : ' · на ходу')];
-    if (!a.at) return ['move', a.post ? 'перебежка к точке' : 'идёт'];
+    if (a.tgt >= 0) return ['fire', 'ведёт огонь' + (a.inCov ? ' из укрытия' : a.at ? '' : ' · на ходу')];
+    var pt = a.post || a.held;          // по сети точку отряда знает сервер — приходит флагом
+    if (!a.at) return ['move', pt ? 'перебежка к точке' : 'идёт'];
     if (f && f.alive) return ['', 'ждёт цель'];
-    return ['', a.post ? 'держит точку' : 'на месте'];
+    return ['', pt ? 'держит точку' : 'на месте'];
   }
   // Карточка выбранных бойцов: один — кто, оружие, здоровье, что делает; несколько — сколько и чем заняты
   function uCard(sh) {
@@ -490,7 +493,7 @@
     var why = plant && plant !== null && !b.charge && b.rs[b.reactor] ? '' : '';
     var hint = '<div class="sp-dim sp-bd-hint">' + (G.vent ? 'Коснись отсека для продувки — удар по всем внутри' :
       uSel(sh).length ? 'Пол — выбранные бегут туда и держат точку. Враг — огонь по нему. Двойной тап по бойцу — весь его отряд' :
-      'Коснись любого места на схеме — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там; бойца — выбрать его одного; врага — огонь по нему') + why + '</div>';
+      'Коснись любого места на схеме — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там; бойца — выбрать его одного; врага — огонь по нему. Удержи палец и веди — выбрать рамкой') + why + '</div>';
     return head + gl + uCard(sh) + sq + grid + acts + hint;
   }
   // Панель обороны: смотрим внутрь своего корабля, на который высадился враг
@@ -543,7 +546,7 @@
     var hint = '<div class="sp-dim sp-bd-hint">' + (G.vent ? 'Коснись отсека для продувки — удар по всем внутри, и по своим' :
       G.dmode === 'door' ? 'Коснись двери: запереть или открыть. Запертую обычную дверь враг вскрывает 5 с, броню и шлюз — 10 с' :
       G.dmode === 'weld' ? 'Коснись запертой двери: ремонтник заварит её за ' + BD.WELD + ' с — вскрывать вдвое дольше' :
-      (uSel(sh).length ? 'Пол — выбранные бегут туда и держат точку. Враг — огонь по нему. Двойной тап по бойцу — весь его отряд' : 'Коснись любого места — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там и будут держать (коридор, развилка); бойца — выбрать одного; врага — огонь по нему. «Сами» — снова решают сами. «Контра» — абордаж в ответ')) + '</div>';
+      (uSel(sh).length ? 'Пол — выбранные бегут туда и держат точку. Враг — огонь по нему. Двойной тап по бойцу — весь его отряд' : 'Коснись любого места — ' + (none ? 'все отряды' : 'выбранные') + ' встанут там и будут держать (коридор, развилка); бойца — выбрать одного; врага — огонь по нему; удержи и веди — рамка. «Сами» — снова решают сами. «Контра» — абордаж в ответ')) + '</div>';
     return head + gl + uCard(sh) + sq + grid + acts + hint;
   }
   // Ключевые отсеки глазами защитника: свой, бой, враг берёт, у врага
@@ -1387,8 +1390,13 @@
     c.clearRect(0, 0, CAM.vw, CAM.vh);
     if (!sh) return;
     innerFx(sh);
+    if (G.ifly) {
+      ICAM.x += (G.ifly.x - ICAM.x) * 0.22; ICAM.y += (G.ifly.y - ICAM.y) * 0.22;
+      if (Math.abs(G.ifly.x - ICAM.x) + Math.abs(G.ifly.y - ICAM.y) < 0.05) G.ifly = null;
+    }
     // тряска от попаданий рядом
     var sx0 = ICAM.x, sy0 = ICAM.y;
+    if (!GFX.get('shake')) IN.shake = 0;
     if (IN.shake > 0) {
       IN.shake = Math.max(0, IN.shake - 1 / 60);
       var amp = IN.shake * 6 / ICAM.s;
@@ -1400,6 +1408,7 @@
   function drawInside2(c, sh, T) {
     var s = ICAM.s;
     var p = sh.plan;
+    DECK.update(sh);
     // весь корабль на экране — разрез одной картинкой (кусками было бы сотни сборок)
     if (s < 2.6) {
       if (!CLIPS[sh.cls]) CLIPS[sh.cls] = makeClip(p, G.imgs[sh.cls]);
@@ -1475,14 +1484,21 @@
     drawScorch(c, sh);
     drawGunFlash(c, sh, T);
     drawFire(c, sh, T);
+    // подпалины от промахов, створки дверей
+    DECK.drawUnder(c, sh, T);
     // абордаж: отсеки, двери; люди и их дела; выстрелы и турели
     drawBoardUnder(c, sh, T);
     drawCrew(c, sh, T);
     drawBoardOver(c, sh, T);
+    DECK.drawOver(c, sh, T);
     drawBlasts(c, sh);
     drawAlarm(c, sh, T);
     // подписи: имя, целость, огонь
     drawLabels(c, sh);
+    // мини-карта и рамка выделения — поверх всего
+    var v0 = view();
+    DECK.drawMini(c, sh, Math.min((CAM.vw - 20) / p.w, (v0.h - 10) / p.h));
+    DECK.drawBox(c);
   }
   function drawScorch(c, sh) {
     var s = ICAM.s, list = sh.crew.scorch;
@@ -1587,10 +1603,12 @@
   }
   var ALL = F.withCrew(S.TYPES);         // бойцы + экипаж кораблей
   var FIG_IDS = ALL.map(function(t) { return t.id; });
-  var ATLAS = null, ATLAS_TRIES = 0, SIZES = [56, 44, 36];
+  var ATLAS = null, ATLAS_TRIES = 0, SIZES = [1, 0.8, 0.65];      // доля размера из настроек качества: картинка потерялась — помельче
   function atlas() {
     if (!ATLAS || (ATLAS.bad && ATLAS_TRIES < SIZES.length)) {
-      try { ATLAS = F.bake(ALL, SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)], 20); } catch (e) { ATLAS = { bad: true }; }
+      // столбцов столько, чтобы картинка не была выше 4000 px (предел холста на части телефонов)
+      var asz = Math.round(GFX.Q().atlas * SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)]), acols = Math.max(20, Math.ceil(ALL.length * F.DIRS * F.FRAMES / Math.floor(4000 / asz)));
+      try { ATLAS = F.bake(ALL, asz, acols); } catch (e) { ATLAS = { bad: true }; }
       ATLAS_TRIES++;
       ATLAS.ok = !!ATLAS.canvas && F.check(ATLAS); ATLAS.bad = !ATLAS.ok; ATLAS.at = performance.now();
     } else if (ATLAS.ok && performance.now() - ATLAS.at > 3000) {
@@ -1601,20 +1619,25 @@
   }
   // Фигурки крупнее жизни: человек 0,6 м в отсеке на 50 м иначе теряется
   var FIGK = 1.75;
+  // Доля фигурок (остальное — жетоны): по настройке «бойцы на палубе» и масштабу
+  function figK(s) {
+    var v = GFX.get('view');
+    if (v === 'tokens') return 0;
+    if (v === 'figures') return s >= 2.6 ? 1 : 0;
+    var k = Math.max(0, Math.min(1, (s - 4.5) / 2.5)); return k * k * (3 - 2 * k);
+  }
   function drawCrew(c, sh, T) {
-    var s = ICAM.s; if (s < 4) return;
-    var A = atlas(), ag = sh.crew.agents, alpha = Math.min(1, (s - 4) / 3), p, i, m;
+    var s = ICAM.s, fk = figK(s);
+    var A = atlas(), ag = sh.crew.agents, alpha = fk, p, i, m;
     var hw = CAM.vw / 2 / s + 2, hh = CAM.vh / 2 / s + 2, W = sh.plan.w;
     // абордажная команда видит только тех, кто на линии огня её бойцов (или весь корабль — с тактическим центром)
     var bd = boardOf(sh.n), fog = bd && bd.att === G.side ? bd.vis : null;
     var vis = function(m) { return !m.gone && Math.abs(m.x - ICAM.x) <= hw && Math.abs(m.y - ICAM.y) <= hh && (!fog || m.team === G.side || !m.alive || fog[m.id]); };
+    // погибшие — на полу (гибель — анимацией, потом картинкой из набора тел)
+    DECK.drawDead(c, sh, T, vis);
+    if (fk < 1) DECK.drawTokens(c, sh, T, 1 - fk, vis);
+    if (fk <= 0) return;
     c.globalAlpha = alpha;
-    // погибшие — на полу
-    for (i = 0; i < ag.length; i++) {
-      m = ag[i]; if (m.alive || !vis(m)) continue;
-      p = itoS(m.x, m.y);
-      c.save(); c.translate(p[0], p[1]); F.corpse(c, ALL[m.fig], m.aim + 0.6, s * FIGK); c.restore();
-    }
     // дела: под фигурками
     c.save(); c.globalCompositeOperation = 'lighter';
     for (i = 0; i < ag.length; i++) {
@@ -1784,7 +1807,7 @@
   }
 
   function setMode(m, viewN) {
-    G.mode = m; G.vent = false; G.dmode = null; G.bsel = {};
+    G.mode = m; G.vent = false; G.dmode = null; G.bsel = {}; G.ifly = null;
     if (m === 'inside') G.view = viewN != null ? viewN : G.sel;
     var bv = m === 'inside' && G.B.ships[G.view] && G.B.ships[G.view].side !== G.side;
     if (m !== 'inside' && LOAD) { LOAD.q = []; loadStep(); }
@@ -1828,14 +1851,29 @@
         GES = { moved: false };
         // удержание пальца в космосе — развернуть корабль носом к точке
         var g0 = GES, px0 = e.clientX, py0 = e.clientY;
-        clearTimeout(LONG);
+        clearTimeout(LONG); G.ifly = null;
         if (G.mode === 'space') LONG = setTimeout(function() {
           if (GES !== g0 || g0.moved || PTR.size !== 1) return;
           g0.long = true; faceAt(px0, py0);
         }, 450);
+        else if (G.mode === 'inside') {
+          // мини-карта: касание и ведение — камера туда
+          var mp = DECK.miniAt(px0, py0);
+          if (mp) { g0.mini = true; g0.moved = true; flyTo(mp); }
+          else if (boxable()) {
+            // рамка: мышь с Shift — сразу; палец — удержать и вести
+            if (e.pointerType === 'mouse' && (e.shiftKey || e.ctrlKey || e.metaKey)) { g0.box = true; g0.moved = true; DECK.S.box = { x0: px0, y0: py0, x1: px0, y1: py0 }; }
+            // удержал палец — рамка взведена: повёл — рамка, отпустил на месте — обычное касание
+            else LONG = setTimeout(function() {
+              if (GES !== g0 || g0.moved || PTR.size !== 1 || !boxable()) return;
+              g0.boxArm = true;
+              try { if (navigator.vibrate) navigator.vibrate(10); } catch (er) {}
+            }, 380);
+          }
+        }
       }
       else if (PTR.size === 2 && GES) {
-        GES.moved = true;
+        GES.moved = true; GES.box = false; GES.mini = false; DECK.S.box = null; clearTimeout(LONG);
         var ps = Array.from(PTR.values());
         var mid = [(ps[0].x + ps[1].x) / 2, (ps[0].y + ps[1].y) / 2];
         GES.pinch = { d: dist(ps[0], ps[1]), s: G.mode === 'inside' ? ICAM.s : CAM.s, mid: G.mode === 'inside' ? itoW(mid[0], mid[1]) : toW(mid[0], mid[1]) };
@@ -1851,6 +1889,9 @@
         else { CAM.s = clampS(GES.pinch.s * d / Math.max(1, GES.pinch.d)); var w2 = toW(mx, my); CAM.x += GES.pinch.mid[0] - w2[0]; CAM.y += GES.pinch.mid[1] - w2[1]; G.follow = false; }
         return;
       }
+      if (GES.mini) { var mq = DECK.miniAt(e.clientX, e.clientY); if (mq) flyTo(mq, false); return; }
+      if (GES.boxArm && !GES.box && Math.abs(p.x - p.x0) + Math.abs(p.y - p.y0) > 8) { GES.box = true; GES.moved = true; DECK.S.box = { x0: p.x0, y0: p.y0, x1: p.x, y1: p.y }; }
+      if (GES.box) { if (DECK.S.box) { DECK.S.box.x1 = e.clientX; DECK.S.box.y1 = e.clientY; } return; }
       if (Math.abs(p.x - p.x0) + Math.abs(p.y - p.y0) > 8) GES.moved = true;
       if (GES.moved) {
         if (ins) { ICAM.x -= dx / ICAM.s; ICAM.y -= dy / ICAM.s; }
@@ -1860,7 +1901,12 @@
     function up(e) {
       var p = PTR.get(e.pointerId); PTR.delete(e.pointerId);
       if (!GES) return;
-      if (PTR.size === 0) { clearTimeout(LONG); if (p && !GES.moved && !GES.long && e.type === 'pointerup') tap(p.x, p.y); GES = null; }
+      if (PTR.size === 0) {
+        clearTimeout(LONG);
+        if (GES.box) { if (e.type === 'pointerup') boxSelect(); DECK.S.box = null; }
+        else if (p && !GES.moved && !GES.long && e.type === 'pointerup') tap(p.x, p.y);
+        GES = null;
+      }
       else GES.pinch = null;
     }
     CV.addEventListener('pointerup', up); CV.addEventListener('pointercancel', up);
@@ -1878,6 +1924,27 @@
     document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible' && ATLAS) ATLAS.at = 0; });
   }
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
+  // Камера внутри — к точке плана (в середину свободной части экрана); smooth — плавно
+  function flyTo(w, smooth) {
+    var v = view(), y = w[1] - (v.cy - CAM.vh / 2) / ICAM.s;
+    if (smooth === false) { ICAM.x = w[0]; ICAM.y = y; G.ifly = null; } else G.ifly = { x: w[0], y: y };
+  }
+  // Рамкой выделяют своих бойцов там, где ими командуешь (абордаж и оборона)
+  function boxable() { return !!(attView() || defView()) && !G.dmode && !G.vent; }
+  function boxSelect() {
+    var b = DECK.S.box, sh = G.B && G.B.ships[G.view]; if (!b || !sh || !boxable()) return;
+    var x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+    if (x1 - x0 < 10 && y1 - y0 < 10) return;
+    var bv = attView(), ids = [];
+    sh.crew.agents.forEach(function(a) {
+      if (!a.alive || a.gone || a.team !== G.side || !(bv ? a.sq : a.dsq) || ids.length >= 128) return;
+      var q = itoS(a.x, a.y);
+      if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) ids.push(a.id);
+    });
+    G.usel = ids; G.uselN = sh.n; G.bsel = {};
+    toast(ids.length ? 'Выбрано бойцов: ' + ids.length + '. Пол — бегут туда, враг — огонь по нему' : 'В рамке нет твоих бойцов', ids.length ? 'gold' : 'bad');
+    hud();
+  }
   function clampS(s) { return Math.max(0.008, Math.min(1.2, s)); }
   function clampI(s) { return Math.max(1.2, Math.min(48, s)); }
 
@@ -2372,6 +2439,7 @@
         ICAM.s = Math.min((CAM.vw - 20) / p.w, (v.h - 10) / p.h); ICAM.x = p.w / 2; ICAM.y = p.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
       } else fitAll();
     };
+    $('sp-gfx-b').onclick = function() { GFX.open(Math.round(FR.fps)); };
     var snd = $('sp-snd'), SX = window.SPSfx;
     if (SX) {
       snd.classList.toggle('off', !SX.isOn());
@@ -2851,6 +2919,16 @@
   }
 
   // ---------------------------------------------------------------- старт
+  DECK.init({ G: G, CAM: CAM, ICAM: ICAM, itoS: itoS, itoW: itoW, view: view, ALL: ALL, F: F, TEAMC: TEAMC, FIGK: FIGK, gfx: GFX,
+              seenIn: seenIn, boardOf: boardOf, uSel: uSel,
+              clip: function(sh) { if (!CLIPS[sh.cls] && G.imgs[sh.cls]) CLIPS[sh.cls] = makeClip(sh.plan, G.imgs[sh.cls]); return CLIPS[sh.cls] || null; },
+              pal: function(sh) { return ART.PAL[sh.plan.faction] || ART.PAL.republic; } });
+  // смена качества: чёткость холста, набор фигурок и тел, куски палубы — заново
+  GFX.on(function(k) {
+    if (k !== 'q') return;
+    resize(); ATLAS = null; ATLAS_TRIES = 0; DECK.rebake();
+    CHUNKS.clear(); TIER_N = { 4: 0, 8: 0, 16: 0, 32: 0 };
+  });
   resize(); bind(); bindUi();
   var scen = 'vp', side = 0;
   var qs = location.search;

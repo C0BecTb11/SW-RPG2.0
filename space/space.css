@@ -289,6 +289,27 @@ body.spectate #sp-quick, body.spectate #sp-guns, body.spectate #sp-tg, body.spec
 .sp-bd-goal { margin-top: 6px; font-size: 10.5px; color: #8fa8c4; line-height: 1.4; }
 .sp-bd-goal b { color: #e8d9a8; font-weight: normal; }
 .sp-bd-goal .sp-bar { height: 3px; margin-top: 4px; }
+/* выбранные бойцы (как на пробной палубе): карточка над отрядами */
+.sp-ucard { position: relative; margin-top: 6px; padding: 6px 30px 6px 8px; background: #080b11; border: 1px solid #2a3644; border-left: 2px solid #f0c86a; border-radius: 6px; font-size: 10.5px; color: #8fa8c4; }
+.sp-ucard .nm { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.sp-ucard .nm b { color: #e8d9a8; font-weight: normal; }
+.sp-ucard .nm b.hero { color: #9fd8ff; }
+body.cisside .sp-ucard .nm b.hero { color: #ff9a88; }
+.sp-ucard .nm em { font-style: normal; color: #55606c; }
+.sp-ucard .hp { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.sp-ucard .hp span { min-width: 54px; color: #cfd8dc; }
+.sp-ucard .hp i { flex: 1; height: 3px; background: #141a22; border-radius: 2px; overflow: hidden; }
+.sp-ucard .hp i b { display: block; height: 100%; background: #5fd968; transition: width 0.3s; }
+.sp-ucard .hp.low i b { background: #ff8a3a; }
+.sp-ucard .st { margin-top: 3px; color: #8fa8c4; }
+.sp-ucard .st.fire { color: #ff8a70; }
+.sp-ucard .st.move { color: #f0c86a; }
+.sp-ucard .pics { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+.sp-ucard .pics i { width: 18px; height: 3px; background: #141a22; border-radius: 2px; overflow: hidden; }
+.sp-ucard .pics i b { display: block; height: 100%; background: #5fd968; }
+.sp-ucard .pics i b.low { background: #ff8a3a; }
+.sp-ucard-x { position: absolute; top: 5px; right: 5px; width: 22px; height: 20px; padding: 0; border: 1px solid #2a3644; border-radius: 6px; background: #0d1119; color: #8fa8c4; font: inherit; font-size: 10px; cursor: pointer; }
+.sp-ucard-x:active { background: #141a22; }
 .sp-bar.gold i { background: #d9a940; }
 .foe, .sp-ship-head .r i.foe { color: #ff8a70 !important; }
 .sp-bd-row { display: flex; align-items: center; gap: 4px; margin-top: 6px; overflow-x: auto; scrollbar-width: none; }

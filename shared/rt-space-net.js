@@ -403,6 +403,8 @@
       case 'bauto': return bd.setAuto(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null);
       case 'door': return bd.door(side, m.i | 0);
       case 'weld': return bd.weld(side, m.i | 0);
+      case 'bunits': return bd.orderUnits(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.cell | 0);
+      case 'bfocus': return bd.focusUnits(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.tgt | 0);
     }
     return false;
   };
@@ -578,11 +580,32 @@
         if (pt) room = bd.ship.room[cell] || 0;
         self.send({ t: 'cmd', k: 'border', to: n, sq: ids, room: room, cell: pt ? cell : undefined }); var c = 0;
         listFor(team).forEach(function(q) { if (q.n && (!ids || ids.indexOf(q.id) >= 0)) { q.room = room; q.auto = false; q.cell = pt ? cell : -1; c++; } });
+        clearOwn(team, ids);
         return c;
+      };
+      // приказ отряду снимает с его бойцов точки и цели, отданные поштучно (как на сервере)
+      var clearOwn = function(team, ids) {
+        bd.c.agents.forEach(function(a) { var q = team === bd.def ? a.dsq : a.sq; if (a.team === team && (!ids || ids.indexOf(q) >= 0)) { a.post = null; a.focus = -1; } });
+      };
+      // бойцы поштучно: на экране — сразу (точка и цель у себя), решает сервер
+      bd.orderUnits = function(team, ids, cell) {
+        if (bd.over >= 0) return 0;
+        ids = ids.slice(0, 128);
+        self.send({ t: 'cmd', k: 'bunits', to: n, ids: ids, cell: cell });
+        var W = bd.ship.w, k = 0; ids.forEach(function(id) { var a = bd.c.agents[id]; if (a && a.alive && a.team === team) { a.post = [cell % W, Math.floor(cell / W)]; k++; } });
+        return k;
+      };
+      bd.focusUnits = function(team, ids, tid) {
+        if (bd.over >= 0) return 0;
+        ids = ids.slice(0, 128);
+        self.send({ t: 'cmd', k: 'bfocus', to: n, ids: ids, tgt: tid });
+        var k = 0; ids.forEach(function(id) { var a = bd.c.agents[id]; if (a && a.alive && a.team === team) { a.focus = tid; k++; } });
+        return k;
       };
       bd.setAuto = function(team, ids) {
         self.send({ t: 'cmd', k: 'bauto', to: n, sq: ids }); var c = 0;
         listFor(team).forEach(function(q) { if (q.n && (!ids || ids.indexOf(q.id) >= 0)) { q.auto = true; c++; } });
+        clearOwn(team, ids);
         return c;
       };
       bd.door = function(team, i) { if (bd.canDoor(team, i) !== '') return false; self.send({ t: 'cmd', k: 'door', to: n, i: i }); var d = bd.doors[i]; d.state = d.state === 'locked' ? 'open' : 'locked'; return true; };

@@ -254,7 +254,7 @@
   };
   Board.prototype.toDefend = function(a) {
     var c = this.c;
-    a.post = null;
+    a.post = null; a.focus = -1;
     c.releaseJob(a); c.claimCell(a, null);
     a.job = { kind: 'defend', room: a.home };
     if (!a.wpn) { a.wpn = this.wpnOf(a); a.hpMax = WPN[a.wpn].hp; a.hp = a.hpMax * Math.min(1, a.hp / 100); }
@@ -280,15 +280,16 @@
       for (var k = 0; k < sq.members.length; k++) { var m = c.agents[sq.members[k]]; if (m && m.alive) live.push(m); }
       var spots = this.spotsNear(cell, live.length); if (!spots.length) return false;
       sq.room = this.ship.room[spots[0][1] * this.W + spots[0][0]] || 0; sq.auto = false; sq.cell = cell;
-      for (k = 0; k < live.length; k++) { live[k].post = spots[k % spots.length]; this.goCell(live[k], live[k].post); }
+      for (k = 0; k < live.length; k++) { live[k].post = spots[k % spots.length]; live[k].focus = -1; this.goCell(live[k], live[k].post); }
       return true;
     }
     var r = this.ship.roomByN[roomN]; if (!r) return false;
     sq.room = roomN; sq.auto = !!auto; sq.cell = -1;
     for (var i = 0; i < sq.members.length; i++) {
       var a = c.agents[sq.members[i]]; if (!a || !a.alive) continue;
+      if (auto && a.post) continue;                         // ИИ отряда не сдёргивает бойца с точки игрока
       var p = c.spotIn(r); if (!p) continue;
-      a.post = null;
+      a.post = null; if (!auto) a.focus = -1;
       a.goalRoom = roomN; a.goal = p; a.at = false; a.stuck = 0; a.lastD = 1e9;
     }
     return true;
@@ -321,6 +322,42 @@
       }
     }
     return out;
+  };
+  // Свой ли это боец под приказом игрока: штурмовик из отряда или защитник в обороне
+  Board.prototype.mine = function(team, a) {
+    return !!(a && a.alive && !a.gone && a.team === team && (team === this.att ? a.sq : a.job && a.job.kind === 'defend'));
+  };
+  // Приказ отдельным бойцам: каждому своя клетка у точки (ближнему к точке — ближняя), держат её
+  Board.prototype.orderUnits = function(team, ids, cell) {
+    if (this.over >= 0 || !Array.isArray(ids) || !(cell >= 0 && cell < this.W * this.ship.h)) return 0;
+    var c = this.c, list = [], i;
+    for (i = 0; i < ids.length && list.length < 128; i++) { var a = c.agents[ids[i] | 0]; if (this.mine(team, a) && list.indexOf(a) < 0) list.push(a); }
+    if (!list.length) return 0;
+    var spots = this.spotsNear(cell, list.length); if (!spots.length) return 0;
+    var px = cell % this.W + 0.5, py = Math.floor(cell / this.W) + 0.5, n = 0;
+    list.sort(function(p, q) { return (p.x - px) * (p.x - px) + (p.y - py) * (p.y - py) - (q.x - px) * (q.x - px) - (q.y - py) * (q.y - py); });
+    for (i = 0; i < list.length && spots.length; i++) {
+      var u = list[i], bi = 0, bd = 1e9;
+      for (var k = 0; k < spots.length; k++) { var dx = spots[k][0] + 0.5 - u.x, dy = spots[k][1] + 0.5 - u.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; bi = k; } }
+      u.post = spots.splice(bi, 1)[0]; u.guard = 0; u.breach = -1; u.wait = 0;
+      this.goCell(u, u.post); n++;
+    }
+    // штурмовой отряд на подготовке: все его бойцы получили точки — приказ есть, ждать нечего
+    if (team === this.att) for (i = 0; i < this.squads.length; i++) {
+      var sq = this.squads[i]; if (!(sq.wait > 0)) continue;
+      var all = true;
+      for (var m = 0; m < sq.members.length; m++) { var sa = c.agents[sq.members[m]]; if (sa && sa.alive && !sa.post) { all = false; break; } }
+      if (all) sq.wait = 0;
+    }
+    return n;
+  };
+  // Огонь по выбранному врагу: бьют его, когда видят и достают (пока жив)
+  Board.prototype.focusUnits = function(team, ids, tid) {
+    if (this.over >= 0 || !Array.isArray(ids)) return 0;
+    var t = this.c.agents[tid | 0]; if (!t || !t.alive || t.team === team) return 0;
+    var n = 0;
+    for (var i = 0; i < ids.length && i < 128; i++) { var a = this.c.agents[ids[i] | 0]; if (this.mine(team, a)) { a.focus = tid | 0; a.scan = 0; n++; } }
+    return n;
   };
   Board.prototype.goCell = function(a, p) {
     var k = p[1] * this.W + p[0];
@@ -372,7 +409,7 @@
       if (pt && !spots.length) continue;
       sq.room = pt ? this.ship.room[spots[0][1] * this.W + spots[0][0]] || 0 : roomN; sq.auto = false; sq.cell = pt ? cell : -1; n++;
       for (j = 0; j < live.length; j++) {
-        a = live[j]; a.guard = 0; a.goT = -99;
+        a = live[j]; a.guard = 0; a.goT = -99; a.focus = -1;
         if (pt) { a.post = spots[j % spots.length]; this.goCell(a, a.post); }
         else { a.post = null; this.goRoom(a, roomN, 0); }
       }
@@ -388,7 +425,7 @@
       if (!this.alive(sq)) continue;
       n++;
       sq.cell = -1;
-      for (var pm = 0; pm < sq.members.length; pm++) { var pa = this.c.agents[sq.members[pm]]; if (pa) pa.post = null; }
+      for (var pm = 0; pm < sq.members.length; pm++) { var pa = this.c.agents[sq.members[pm]]; if (pa) { pa.post = null; pa.focus = -1; } }
       if (team === this.att) { if (this.bridge) this.orderSquad(sq, this.bridge, true); else sq.auto = true; }
       else { sq.auto = true; sq.room = 0; }
     }
@@ -606,6 +643,12 @@
   // Поиск цели: ближайший враг в радиусе дальности и на линии огня (по сетке экипажа)
   Board.prototype.findTarget = function(a, range) {
     var c = this.c, W = this.W, H = this.ship.h, head = c.cellHead, next = c.nextIn;
+    // приказ игрока «огонь по нему» — первым, если достаёт и видит
+    if (a.focus >= 0) {
+      var fo = c.agents[a.focus];
+      if (!fo || !fo.alive || fo.team === a.team || fo.gone) a.focus = -1;
+      else { var fx = fo.x - a.x, fy = fo.y - a.y; if (fx * fx + fy * fy <= range * range && this.los(a.x, a.y, fo.x, fo.y)) return a.focus; }
+    }
     var ax = Math.floor(a.x), ay = Math.floor(a.y), R = Math.ceil(range), best = -1, bd = 1e9, cand = [];
     for (var y = Math.max(0, ay - R); y <= Math.min(H - 1, ay + R); y++) {
       for (var x = Math.max(0, ax - R); x <= Math.min(W - 1, ax + R); x++) {
@@ -852,7 +895,7 @@
       if (!a.alive || a.team !== this.def || !a.job || a.job.kind !== 'defend') continue;
       // отряд с приказом игрока — держит свой отсек
       var dq = a.dsq && this.dsq[a.dsq - 1];
-      if (dq && !dq.auto && dq.cell >= 0 && a.post) { a.guard = 0; continue; }            // держит точку
+      if (a.post) { a.guard = 0; continue; }                // держит точку (приказ отряду или бойцу)
       if (dq && !dq.auto && dq.room) { a.guard = 0; this.goRoom(a, dq.room, 6); continue; }
       // охрана ключевых отсеков
       var g = a.guard;
@@ -961,7 +1004,7 @@
   };
   // Конец абордажа: защитники — на свои посты, тревога снимается
   Board.prototype.end = function() {
-    for (var pi = 0; pi < this.c.agents.length; pi++) this.c.agents[pi].post = null;   // точки отрядов — только на этот бой
+    for (var pi = 0; pi < this.c.agents.length; pi++) { this.c.agents[pi].post = null; this.c.agents[pi].focus = -1; }   // точки и цели — только на этот бой
     var c = this.c;
     for (var k in this.rs) { this.rs[k].held = false; this.rs[k].hold = 0; this.rs[k].back = 0; }
     this.charge = null;

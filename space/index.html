@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
 <title>Космический бой 2.0</title>
-<link rel="stylesheet" href="space.css?v=15">
+<link rel="stylesheet" href="space.css?v=16">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
@@ -63,27 +63,35 @@
 </div>
 
 <div class="sp-panel sp-bottom" id="sp-bottom">
-  <button class="sp-fold" id="sp-fold">▾ свернуть</button>
-  <div class="sp-body">
-    <div id="sp-ship"></div>
-    <div class="sp-guns-head" id="sp-quick">
-      <span>Орудия</span>
-      <button class="sp-link" data-q="all">все</button>
-      <button class="sp-link" data-q="main">главные</button>
-      <button class="sp-link" data-q="pd">ПВО</button>
-      <button class="sp-link" data-q="none">снять</button>
+  <!-- шторка: подробности по вкладке, выезжает над полосой и не мешает полю боя -->
+  <div class="sp-sheet" id="sp-sheet" hidden>
+    <div class="sp-sheet-h"><span id="sp-sheet-t"></span><button class="sp-sheet-x" id="sp-sheet-x" type="button" aria-label="Свернуть">▾</button></div>
+    <div class="sp-sheet-b" id="sp-sheet-b">
+      <div id="sp-ship"></div>
+      <div id="sp-gunsbox" hidden>
+        <div class="sp-guns-head" id="sp-quick">
+          <span>Отметь пушки — потом цель</span>
+          <button class="sp-link" data-q="all">все</button>
+          <button class="sp-link" data-q="main">главные</button>
+          <button class="sp-link" data-q="pd">ПВО</button>
+          <button class="sp-link" data-q="none">снять</button>
+        </div>
+        <div class="sp-guns" id="sp-guns"></div>
+        <div class="sp-tg" id="sp-tg" hidden>
+          <div class="sp-tg-head" id="sp-tg-head">Цель для выбранных</div>
+          <div class="sp-tg-foe" id="sp-tg-foe"></div>
+          <div class="sp-tg-grid" id="sp-tg-grid"></div>
+        </div>
+      </div>
     </div>
-    <div class="sp-guns" id="sp-guns"></div>
-    <div class="sp-tg" id="sp-tg" hidden>
-      <div class="sp-tg-head" id="sp-tg-head">Цель для выбранных</div>
-      <div class="sp-tg-foe" id="sp-tg-foe"></div>
-      <div class="sp-tg-grid" id="sp-tg-grid"></div>
-    </div>
-    <div class="sp-btns">
-      <button class="sp-btn" id="sp-move">Ход</button>
-      <button class="sp-btn gold" id="sp-inside">Внутри</button>
-      <button class="sp-btn" id="sp-view">Обзор</button>
-    </div>
+  </div>
+  <!-- полоса: самое нужное всегда на виду -->
+  <div id="sp-stat"></div>
+  <div class="sp-dock" id="sp-dock">
+    <span class="sp-tabs" id="sp-tabs"></span>
+    <button class="sp-btn" id="sp-move">Ход</button>
+    <button class="sp-btn gold" id="sp-inside">Внутри</button>
+    <button class="sp-btn" id="sp-view">Обзор</button>
   </div>
 </div>
 
@@ -168,16 +176,16 @@
 <script src="../shared/rt-figures.js?v=7"></script>
 <script src="../shared/rt-ship.js?v=2"></script>
 <script src="../shared/rt-crew.js?v=9"></script>
-<script src="../shared/rt-board.js?v=7"></script>
+<script src="../shared/rt-board.js?v=8"></script>
 <script src="../shared/rt-army.js?v=2"></script>
-<script src="../shared/rt-space.js?v=16"></script>
-<script src="../shared/rt-space-net.js?v=9"></script>
+<script src="../shared/rt-space.js?v=17"></script>
+<script src="../shared/rt-space-net.js?v=10"></script>
 <script src="../ships/ship-art.js?v=4"></script>
 <script src="space-sfx.js?v=2"></script>
 <script src="space-wreck.js?v=1"></script>
-<script src="space-tasks.js?v=3"></script>
+<script src="space-tasks.js?v=4"></script>
 <script src="space-gfx.js?v=1"></script>
 <script src="space-deck.js?v=1"></script>
-<script src="space.js?v=18"></script>
+<script src="space.js?v=19"></script>
 </body>
 </html>

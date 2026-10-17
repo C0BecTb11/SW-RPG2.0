@@ -161,7 +161,7 @@
       var su = bd.summary();
       return { over: bd.over, att: bd.att, def: bd.def, alarm: bd.alarm ? 1 : 0, alarmCd: r0(bd.alarmCd), bt: r1(bd.bridgeT), hn: bd.holdNeed, pr: r1(bd.prep || 0),
                ch: bd.charge ? { a: bd.charge.armed ? 1 : 0, l: r1(bd.charge.left), p: r1(bd.charge.plant), d: r1(bd.charge.defuse) } : null,
-               su: { att: su.att, def: su.def, crew: su.crew, sq: su.sq, dsq: bd.def === this.side ? su.dsq : [] }, held: this.heldList(bd), seq: bd.seq || 0,
+               su: { att: su.att, def: su.def, crew: su.crew, sq: su.sq, dsq: bd.def === this.side ? su.dsq : [], dm: bd.defManual ? 1 : 0 }, held: this.heldList(bd), seq: bd.seq || 0,
                br: bd.bridge && bd.rs[bd.bridge] ? [bd.rs[bd.bridge].held ? 1 : 0, r1(bd.rs[bd.bridge].hold), bd.rs[bd.bridge].cnt[0], bd.rs[bd.bridge].cnt[1]] : null,
                pw: bd.canPlant(), vw: bd.canVent(this.side), t: r1(bd.t), msgs: this.newMsgs(sh, bd) };
     }
@@ -401,6 +401,7 @@
       case 'vent': return bd.vent(side, m.room | 0);
       case 'alarm': if (bd.def !== side) return false; return bd.setAlarm(!!m.on);
       case 'bauto': return bd.setAuto(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null);
+      case 'bassign': return bd.assignDef(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.sq | 0);
       case 'door': return bd.door(side, m.i | 0);
       case 'weld': return bd.weld(side, m.i | 0);
       case 'bunits': return bd.orderUnits(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.cell | 0);
@@ -556,6 +557,7 @@
     if (!bd) {
       bd = new this.SWBoard.Board(sh.crew, { flagship: sh.len >= 1200, figIds: sh.figIds, seed: 1 });
       bd.started = true;
+      bd.defManual = bd.def === this.side;          // свою оборону ведёт игрок: отряды собирает он (как на сервере)
     }
     bd.started = true; bd.over = o.over; bd.alarm = !!o.alarm; bd.alarmCd = o.alarmCd; bd.bridgeT = o.bt; bd.holdNeed = o.hn; bd.t = o.t; bd.prep = o.pr || 0;
     bd.charge = o.ch ? { armed: !!o.ch.a, left: o.ch.l, plant: o.ch.p, defuse: o.ch.d } : null;
@@ -580,6 +582,8 @@
         if (pt) room = bd.ship.room[cell] || 0;
         self.send({ t: 'cmd', k: 'border', to: n, sq: ids, room: room, cell: pt ? cell : undefined }); var c = 0;
         listFor(team).forEach(function(q) { if (q.n && (!ids || ids.indexOf(q.id) >= 0)) { q.room = room; q.auto = false; q.cell = pt ? cell : -1; c++; } });
+        // приказ всем при обороне за игроком идёт и бойцам без отряда (как на сервере)
+        if (!ids && team === bd.def && bd.defManual && bd.c.agents.some(function(a) { return a.alive && !a.gone && a.team === team && !a.dsq && a.job && a.job.kind === 'defend'; })) c++;
         clearOwn(team, ids);
         return c;
       };
@@ -608,6 +612,13 @@
         clearOwn(team, ids);
         return c;
       };
+      // отряд собирает игрок: решает сервер; на экране номер отряда придёт со следующим кадром
+      bd.assignDef = function(team, ids, sqId) {
+        if (bd.over >= 0 || team !== bd.def) return 0;
+        ids = ids.slice(0, 128);
+        self.send({ t: 'cmd', k: 'bassign', to: n, ids: ids, sq: sqId | 0 });
+        return ids.length;
+      };
       bd.door = function(team, i) { if (bd.canDoor(team, i) !== '') return false; self.send({ t: 'cmd', k: 'door', to: n, i: i }); var d = bd.doors[i]; d.state = d.state === 'locked' ? 'open' : 'locked'; return true; };
       bd.weld = function(team, i) { if (bd.canWeld(team, i) !== '') return false; self.send({ t: 'cmd', k: 'weld', to: n, i: i }); bd.doors[i].weldP = 0.01; return true; };
       bd.canWeld = function(team, i) {
@@ -626,6 +637,7 @@
     };
     if (o.su && o.su.sq) bd.squads = keep(bd.squads, o.su.sq);
     if (o.su && o.su.dsq) bd.dsq = keep(bd.dsq, o.su.dsq);
+    if (o.su && o.su.dm != null) bd.defManual = !!o.su.dm;           // кто ведёт оборону — решает сервер
     for (var i = 0; i < o.msgs.length; i++) bd.ev.msgs.push(o.msgs[i]);
     if (o.msgs.length) bd.seq = o.msgs[o.msgs.length - 1].seq;
     if (bd.ev.msgs.length > 40) bd.ev.msgs.splice(0, 20);

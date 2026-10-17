@@ -145,7 +145,10 @@
     this.ventCd = [0, 0];
     this.alarm = false; this.alarmCd = 0;
     this.squads = [];            // отряды атакующих (по шаттлам): { id, members[], room, auto }
-    this.dsq = [];               // отряды защитников (по казармам): { id, members[], room, auto }
+    this.dsq = [];               // отряды защитников: { id, members[], room, auto }
+    // оборона за игроком: отряды собирает он сам («В отряд N»); кто без отряда — держит, где стоит.
+    // За ИИ — отряды по казармам, как раньше. Ставит бой (Battle) по aiBoard стороны защитников.
+    this.defManual = !!opts.defManual;
     this.visT = 0; this.vis = new Uint8Array(0);     // кого из защитников видят атакующие
     this.defT = 0;
     this.started = false;
@@ -272,7 +275,16 @@
     a.job = { kind: 'defend', room: a.home };
     if (!a.wpn) { a.wpn = this.wpnOf(a); a.hpMax = WPN[a.wpn].hp; a.hp = a.hpMax * Math.min(1, a.hp / 100); }
     a.tgt = -1; a.scan = this.R() * SCAN; a.cd = this.R(); a.at = false; a.wait = this.R() * 1.5; a.guard = 0;
+    if (this.defManual) this.holdHere(a);
   };
+  // Держать место, где стоит (оборона за игроком, боец без отряда)
+  Board.prototype.holdHere = function(a) {
+    var W = this.W, x = Math.floor(a.x), y = Math.floor(a.y), k = y * W + x;
+    if (!this.c.walk[k]) return;
+    a.goal = [x, y]; a.goalRoom = this.ship.room[k] || 0; a.at = false; a.stuck = 0; a.lastD = 1e9;
+  };
+  // Боец обороны без отряда при обороне за игроком — сам никуда не идёт
+  Board.prototype.loose = function(a) { return this.defManual && a.team === this.def && !a.dsq; };
   // Новый абордаж того же корабля (прошлый отбит): двери, турели, насосы — как есть
   Board.prototype.reopen = function() {
     this.over = -1; this.why = ''; this.started = false; this.bridgeT = 0; this.charge = null; this.squads = []; this.dsq = [];
@@ -396,7 +408,8 @@
   // ---------------------------------------------------------------- оборона под рукой игрока
   // Отряды защитников: бойцы казарм по 10, по своей казарме. Без приказа — ИИ
   // (часть держит мостик и реактор, остальные идут на врага); с приказом — держат отсек.
-  Board.prototype.makeDefSquads = function() {
+  Board.prototype.makeDefSquads = function(force) {
+    if (this.defManual && !force) return;
     var c = this.c, list = [], i, sq = null;
     for (i = 0; i < c.agents.length; i++) {
       var a = c.agents[i];
@@ -405,7 +418,7 @@
     list.sort(function(p, q) { return (p.home - q.home) || (p.id - q.id); });
     for (i = 0; i < list.length; i++) {
       if (!sq || sq.members.length >= DSQ_MAX || (sq.home !== list[i].home && sq.members.length >= 6)) {
-        sq = { id: this.dsq.length + 1, members: [], room: 0, auto: true, home: list[i].home };
+        sq = { id: this.nextDsq(), members: [], room: 0, auto: true, home: list[i].home };
         this.dsq.push(sq);
       }
       sq.members.push(list[i].id); list[i].dsq = sq.id;
@@ -430,6 +443,20 @@
         else { a.post = null; this.microEnd(a, true); this.goRoom(a, roomN, 0); }
       }
     }
+    // приказ всем — и бойцам без отряда (оборона за игроком): идут и держат там
+    if (!ids && this.defManual) {
+      var loose = [];
+      for (var li = 0; li < this.c.agents.length; li++) { var la = this.c.agents[li]; if (this.mine(this.def, la) && this.loose(la)) loose.push(la); }
+      var lsp = pt && loose.length ? this.spotsNear(cell, loose.length + 12).slice(12) : null;      // мимо мест отрядов
+      if (pt && lsp && !lsp.length) lsp = this.spotsNear(cell, loose.length);
+      if (pt && (!lsp || !lsp.length)) loose = [];                        // туда не пройти — некому
+      for (li = 0; li < loose.length; li++) {
+        var lb = loose[li]; lb.guard = 0; lb.goT = -99; lb.focus = -1;
+        if (pt && lsp.length) { lb.post = lsp[li % lsp.length]; this.goCell(lb, lb.post); }
+        else if (!pt) { lb.post = null; this.microEnd(lb, true); this.goRoom(lb, roomN, 0); }
+      }
+      if (loose.length) n++;
+    }
     return n;
   };
   // Вернуть отряды ИИ (атакующие — на мостик, защитники — охрана и охота)
@@ -445,7 +472,38 @@
       if (team === this.att) { if (this.bridge) this.orderSquad(sq, this.bridge, true); else sq.auto = true; }
       else { sq.auto = true; sq.room = 0; }
     }
+    // «Сами» всем: бойцы без отряда тоже уходят к ИИ — отрядами по казармам
+    if (team === this.def && !ids && this.defManual) {
+      var before = this.dsq.length; this.makeDefSquads(true); n += this.dsq.length - before;
+    }
     return n;
+  };
+  Board.prototype.nextDsq = function() { var m = 0; for (var i = 0; i < this.dsq.length; i++) m = Math.max(m, this.dsq[i].id); return m + 1; };
+  // Игрок собирает отряд: выбранные бойцы обороны — в отряд sqId (0 — новый, -1 — без отряда)
+  Board.prototype.assignDef = function(team, ids, sqId) {
+    if (team !== this.def || this.over >= 0 || !Array.isArray(ids)) return 0;
+    var c = this.c, list = [], i;
+    for (i = 0; i < ids.length && list.length < 128; i++) { var a = c.agents[ids[i] | 0]; if (this.mine(team, a) && list.indexOf(a) < 0) list.push(a); }
+    if (!list.length) return 0;
+    var sq = null;
+    if (sqId > 0) { for (i = 0; i < this.dsq.length; i++) if (this.dsq[i].id === sqId) sq = this.dsq[i]; if (!sq) return 0; }
+    else if (sqId === 0) {
+      if (this.dsq.length >= 12) { var empty = null; for (i = 0; i < this.dsq.length && !empty; i++) if (!this.alive(this.dsq[i])) empty = this.dsq[i]; if (!empty) return 0; sq = empty; sq.members = []; }
+      else { sq = { id: this.nextDsq(), members: [], room: 0, auto: false, cell: -1, home: 0 }; this.dsq.push(sq); }
+      sq.auto = false; sq.room = 0; sq.cell = -1;
+    }
+    for (i = 0; i < list.length; i++) {
+      var u = list[i];
+      if (u.dsq) { var old = null; for (var k = 0; k < this.dsq.length; k++) if (this.dsq[k].id === u.dsq) old = this.dsq[k];
+        if (old) { var j = old.members.indexOf(u.id); if (j >= 0) old.members.splice(j, 1); } }
+      u.dsq = sq ? sq.id : 0; u.guard = 0; this.microEnd(u, true);
+      if (sq) sq.members.push(u.id);
+      // новый отряд без приказа — стоит, где стоит; в отряд с приказом — к нему (кроме точки бойца)
+      // в отряд с точкой — своё место у флажка (не в одну клетку со всеми)
+      if (sq && !sq.auto && (sq.room || sq.cell >= 0) && !u.post) { if (sq.cell >= 0) { var sp = this.spotsNear(sq.cell, sq.members.length); if (sp.length) { u.post = sp[sp.length - 1]; this.goCell(u, u.post); } } else this.goRoom(u, sq.room, 0); }
+      else if (!sq && !u.post && this.defManual) this.holdHere(u);
+    }
+    return list.length;
   };
   // Двери: защитник запирает и открывает любую целую дверь (не с врагом в проёме)
   Board.prototype.canDoor = function(team, i) {
@@ -600,7 +658,7 @@
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
       // в отсеке остались враги вне выстрела — сблизиться (иначе стоят по углам большого зала)
       a.push = (a.push || 0) - dt;
-      if (a.push <= 0 && !a.post && !a.og) { a.push = 1 + this.R() * 0.5; this.closeIn(a); }    // на точке — держит её, не сходит
+      if (a.push <= 0 && !a.post && !a.og && !this.loose(a)) { a.push = 1 + this.R() * 0.5; this.closeIn(a); }    // на точке — держит её, не сходит
       return;
     }
     this.step(a, dt, (tg ? 1.4 : 2.6) * w.spd);
@@ -626,7 +684,7 @@
   // ---- повадки в бою
   // Боец под приказом игрока (отряд с приказом или точка) — повадки только в пределах приказа
   Board.prototype.ordered = function(a) {
-    if (a.post) return true;
+    if (a.post || this.loose(a)) return true;           // без отряда — держит место: повадки только в своём отсеке
     var q = a.team === this.att ? (a.sq && this.squads[a.sq - 1]) : (a.dsq && this.dsq[a.dsq - 1]);
     return !!(q && !q.auto);
   };
@@ -1041,7 +1099,9 @@
       // отряд с приказом игрока — держит свой отсек
       var dq = a.dsq && this.dsq[a.dsq - 1];
       if (a.post) { a.guard = 0; continue; }                // держит точку (приказ отряду или бойцу)
+      if (this.loose(a)) { a.guard = 0; continue; }          // без отряда при обороне за игроком — держит место
       if (dq && !dq.auto && dq.room) { a.guard = 0; this.goRoom(a, dq.room, 6); continue; }
+      if (dq && !dq.auto) { a.guard = 0; continue; }          // отряд игрока без приказа — стоит
       // охрана ключевых отсеков
       var g = a.guard;
       if (!g) {

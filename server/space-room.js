@@ -73,6 +73,8 @@ SpaceRoom.prototype.expired = function(st) { return !!st.left && !this.here(st.u
 // абордаж не начинают; идущий абордаж и оборона — сами); «dev» (замеры) ведёт всю сторону.
 SpaceRoom.prototype.syncAi = function() {
   var B = this.B, self = this;
+  // оборону корабля ведёт игрок, только пока его хозяин в бою; ушёл — ИИ (как и курс)
+  if (!B.defHuman) B.defHuman = function(sh) { return !!(sh.owner && self.here(sh.owner)) && !B.aiBoard[sh.side]; };
   for (var s = 0; s < 2; s++) {
     var dev = this.clients.some(function(c) { return c.side === s && c.who && c.who.user === 'dev'; });
     var seated = this.seats[s].length > 0;

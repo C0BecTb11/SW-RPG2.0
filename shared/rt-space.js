@@ -1334,6 +1334,7 @@
     else if (bd.over >= 0) bd.reopen();
     if (bd.att !== c.side) return;
     bd.inFlight = b.inbound;
+    bd.defManual = this.defHuman ? !!this.defHuman(b) : !this.aiBoard[bd.def];   // оборона за игроком — отряды собирает он
     bd.addParty(c.party, c.lock, !this.aiBoard[c.side]);       // сторона за игроком — отряды ждут его приказов
     this.ev.boards.push({ dock: 1, n: c.home, t: b.n, count: c.party.length });
   };
@@ -1361,6 +1362,14 @@
       if (sh.boardCd > 0) sh.boardCd -= dt;
       var bd = sh.crew.board; if (!bd || sh.dead) continue;
       bd.inFlight = sh.inbound;
+      // игрок ушёл из боя — оборону ведёт ИИ: бойцы без отряда разбиваются на отряды
+      // кто ведёт оборону: игрок у корабля (сервер знает, в бою ли хозяин) или ИИ
+      var man = this.defHuman ? !!this.defHuman(sh) : !this.aiBoard[bd.def];
+      if (bd.defManual !== man) {
+        bd.defManual = man;
+        // ИИ принял оборону: все отряды — к ИИ, свободные — отрядами по казармам
+        if (!man && bd.started && bd.over < 0) { bd.setAuto(bd.def, null); bd.makeDefSquads(); }
+      }
       if (bd.over === 1) this.capture(sh, bd.att);
       else if (bd.over === 2) this.kill(sh, 'reactor');
     }

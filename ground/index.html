@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#05060a">
 <title>Наземный бой 2.0</title>
 <link rel="stylesheet" href="../space/space.css?v=16">
-<link rel="stylesheet" href="ground.css?v=1">
+<link rel="stylesheet" href="ground.css?v=2">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
@@ -29,9 +29,11 @@
     <span class="sp-spacer"></span>
     <span class="sp-side" id="sp-side">Республика</span>
   </div>
-  <div class="sp-row sp-scen" id="sp-scen">
-    <button class="sp-chip net" data-poly="1">◎ Полигон</button>
-    <span class="gd-planets" id="gd-planets"></span>
+  <div class="sp-row gd-task">
+    <i class="gd-globe" id="gd-globe"></i><b id="gd-planet">—</b>
+    <span class="gd-goal" id="gd-goal"></span>
+    <span class="sp-spacer"></span>
+    <button class="sp-chip net" id="gd-poly-b" type="button">◎ Другой бой</button>
   </div>
   <div class="sp-row gd-cap" id="gd-cap"></div>
 </div>
@@ -44,8 +46,8 @@
   <div id="sp-stat"></div>
   <div class="sp-dock" id="sp-dock">
     <span class="sp-tabs" id="sp-tabs"></span>
-    <button class="sp-btn" id="gd-all" type="button">Все</button>
-    <button class="sp-btn" id="sp-view" type="button">Обзор</button>
+    <button class="sp-btn" id="gd-all" type="button">Все свои</button>
+    <button class="sp-btn" id="sp-view" type="button">Вся карта</button>
   </div>
 </div>
 
@@ -63,14 +65,18 @@
 
 <div class="sp-end sp-poly" id="sp-poly" hidden>
   <div class="sp-end-card">
-    <div class="sp-kicker">Полигон · этап «наземка»</div>
-    <h2>Свой бой</h2>
+    <div class="sp-kicker">Полигон наземного боя</div>
+    <h2>Новый бой</h2>
+    <p class="gd-poly-about">Пробный бой против ИИ. Штурм высаживается у нижнего края карты и должен занять площадь в центре города; оборона держит её. Выбери условия и жми «В бой».</p>
     <div class="sp-poly-lab">Планета</div><div class="sp-poly-chips" id="gd-poly-planet"></div>
     <div class="sp-poly-lab">Ты играешь за</div><div class="sp-poly-chips" id="gd-poly-side"></div>
-    <div class="sp-poly-lab">Твоя роль</div><div class="sp-poly-chips" id="gd-poly-role"></div>
-    <div class="sp-poly-lab">Силы</div><div class="sp-poly-chips" id="gd-poly-size"></div>
+    <div class="sp-poly-lab">Твоя задача</div><div class="sp-poly-chips" id="gd-poly-role"></div>
+    <p class="gd-poly-hint" id="gd-poly-role-h"></p>
+    <div class="sp-poly-lab">Размер армий</div><div class="sp-poly-chips" id="gd-poly-size"></div>
+    <p class="gd-poly-hint" id="gd-poly-size-h"></p>
     <div class="sp-poly-lab">Противник</div><div class="sp-poly-chips" id="gd-poly-foe"></div>
-    <div class="sp-poly-lab">Захват площади</div><div class="sp-poly-chips" id="gd-poly-cap"></div>
+    <p class="gd-poly-hint" id="gd-poly-foe-h"></p>
+    <div class="sp-poly-lab">Сколько держать площадь для захвата</div><div class="sp-poly-chips" id="gd-poly-cap"></div>
     <div class="sp-btns" style="grid-template-columns:1fr"><button class="sp-btn gold" id="gd-poly-go" type="button">В бой</button></div>
   </div>
 </div>
@@ -83,11 +89,11 @@
 <script src="../shared/rt-army.js?v=3"></script>
 <script src="../shared/rt-planets.js?v=2"></script>
 <script src="../shared/rt-units.js?v=1"></script>
-<script src="../shared/rt-ground.js?v=1"></script>
-<script src="../shared/rt-vehicles.js?v=2"></script>
+<script src="../shared/rt-ground.js?v=2"></script>
+<script src="../shared/rt-vehicles.js?v=3"></script>
 <script src="../shared/rt-heroes.js?v=1"></script>
-<script src="terrain.js?v=2"></script>
+<script src="terrain.js?v=3"></script>
 <script src="../space/space-gfx.js?v=1"></script>
-<script src="ground.js?v=1"></script>
+<script src="ground.js?v=2"></script>
 </body>
 </html>

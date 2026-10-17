@@ -15,13 +15,14 @@
   var P = window.SWPlanets, U = window.SWUnits, GR = window.SWGround, F = window.SWRTFig, S = window.SWRT, V = window.SWVehicles, H = window.SWHeroes, Army = window.SWArmy, GFX = window.SPGfx;
   var N = P.N, SQ = GR.SQUARE;
   var TEAMC = { 0: '111,184,255', 1: '255,110,90', 2: '230,200,90' };
-  var FIGK = 1.75;
+  // Масштаб: клетка ≈ 2,5 м. Пехотинец ≈ 0,8 клетки, техника — по своим размерам (AT-TE 4,5 клетки).
+  var FIGK = 0.85, HK = FIGK * F.FIG;
   var cv = $('sp-canvas'), ctx = cv.getContext('2d');
 
   var G = { B: null, ter: null, side: 0, speed: 1, lastSpd: 1, ended: false, usel: [], sheet: '', arm: null, t: 0, dpr: 1, vw: 0, vh: 0, planet: 'naboo',
             poly: { planet: 'naboo', side: 0, role: 'att', size: 'mid', foe: 'ai', cap: 120 }, layers: { zones: true }, msgSeq: 0, lastTap: null, fps: 0, fpsN: 0, fpsT: 0 };
   var CAM = { x: 72, y: 100, s: 16 };
-  var LODS = [2, 4, 8, 16], CH = 16, FOG = null, FOG_T = -1;
+  var TIERS = [[8, 16], [16, 8], [32, 4], [64, 2]], FOG = null, FOG_T = -1;   // [точек на клетку, клеток в куске]: чем ближе, тем мельче куски
   var ALL = F.withCrew(S.TYPES), FIG_IDX = {}; ALL.forEach(function(t, i) { FIG_IDX[t.id] = i; });
   var ATLAS = null, VAT = null, DEAD = null, ATLAS_PX = 0;
 
@@ -31,7 +32,6 @@
   var PLANETS = [];
   fetchJson('../shared/planets/index.json').then(function(list) {
     PLANETS = list;
-    $('gd-planets').innerHTML = list.map(function(p) { return '<button class="sp-chip" data-planet="' + p.id + '"><i style="background-image:url(../assets/planets/' + p.id + '.png)"></i>' + p.name + '</button>'; }).join('');
     $('gd-poly-planet').innerHTML = list.map(function(p) { return '<button class="sp-chip" data-pp="' + p.id + '" type="button">' + p.name + '</button>'; }).join('');
     var q = /[?&]p=([a-z]+)/.exec(location.search);
     start(q && list.some(function(p) { return p.id === q[1]; }) ? q[1] : 'naboo');
@@ -73,6 +73,8 @@
     B.addStruct('turret', def, tw[0] + 6, tw[1] + tw[3] + 2); B.addStruct('turret', def, tw[0] + tw[2] - 7, tw[1] + tw[3] + 2);
     B.addStruct('trench', def, tw[0] + 12, tw[1] + tw[3] + 1); B.addStruct('trench', def, tw[0] + 13, tw[1] + tw[3] + 1); B.addStruct('bunker', def, tw[0] + 16, tw[1] + tw[3] + 3);
     B.addStruct('radar', def, tw[0] + 2, tw[1] + 2);
+    // гарнизон с самого начала стоит на постах перед площадью (своих потом можно переставить)
+    B.deployDefense(def);
     // сторона игрока — без автоприказов; своя оборона по умолчанию держит площадь
     G.side = po.side;
     document.body.classList.toggle('cisside', G.side === 1);
@@ -82,18 +84,20 @@
   function start(planet) {
     loading(true, 'Готовлю планету…');
     G.planet = planet; G.poly.planet = planet;
-    Array.prototype.forEach.call($('gd-planets').children, function(b) { b.classList.toggle('on', b.getAttribute('data-planet') === planet); });
+    var pi = null; PLANETS.forEach(function(p) { if (p.id === planet) pi = p; });
+    $('gd-planet').textContent = pi ? pi.name : planet; $('gd-globe').style.backgroundImage = 'url(../assets/planets/' + planet + '.png)';
     fetchJson('../shared/planets/' + planet + '.json').then(function(js) {
       setTimeout(function() {
-        G.ter = window.GTerrain.create(js);
+        G.ter = window.GTerrain.create(js); G.ter.cacheMax = 220; workersStart(js);
         G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
         G.ter.render(G.base.getContext('2d'), 0, 0, N, N, 4);
         G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; FOG_T = -1; G.t = 0;
         $('sp-end').hidden = true;
         try { history.replaceState(null, '', '?p=' + planet); } catch (e) {}
         var tw = G.B.town; CAM.x = tw[0] + tw[2] / 2; CAM.y = G.side === G.B.att ? N - 20 : tw[1] + tw[3] + 2; CAM.s = Math.max(6, Math.min(G.vw, G.vh) / 40);
+        var att = G.B.att === G.side; $('gd-goal').textContent = att ? 'Штурм: занять площадь города' : 'Оборона: удержать площадь города'; $('gd-goal').className = 'gd-goal' + (att ? ' att' : '');
         loading(false); hud();
-        toast(G.B.att === G.side ? 'Штурм: взять площадь города' : 'Оборона: удержать площадь города', 'gold');
+        toast(att ? 'Штурм: ваш десант внизу карты. Займите площадь в центре города' : 'Оборона: ваш гарнизон у города. Не пустите врага на площадь', 'gold');
       }, 30);
     }).catch(function(e) { loading(false); toast('Планета не загрузилась: ' + e.message, 'bad'); });
   }
@@ -107,7 +111,7 @@
       ATLAS = F.bake(ALL, px, 10); ATLAS.ok = F.check(ATLAS); if (!ATLAS.ok) ATLAS.bad = true;
       DEAD = F.bakeDead(ALL, px * 2, 16);
       var ids = Object.keys(V.TYPES);
-      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15) * 1.0)); VAT.ids = ids; VAT.idx = {}; ids.forEach(function(id, i) { VAT.idx[id] = i; });
+      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15)), 176);
       ATLAS_PX = px;
     } catch (e) { ATLAS = { bad: true }; }
     return ATLAS;
@@ -143,12 +147,8 @@
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.fillStyle = '#05060a'; c.fillRect(0, 0, G.vw, G.vh);
     c.imageSmoothingEnabled = true;
-    var need = s * dpr, lod = LODS[LODS.length - 1];
-    for (var i = 0; i < LODS.length; i++) if (LODS[i] >= need * 0.9) { lod = LODS[i]; break; }
     var a0 = toW(0, 0), b0 = toW(G.vw, G.vh), vis = [Math.max(0, Math.floor(a0[0])), Math.max(0, Math.floor(a0[1])), Math.min(N, Math.ceil(b0[0])), Math.min(N, Math.ceil(b0[1]))];
-    // подложка: только видимая часть карты
-    var vp = toS(vis[0], vis[1]);
-    if (vis[2] > vis[0] && vis[3] > vis[1]) c.drawImage(G.base, vis[0] * 4, vis[1] * 4, (vis[2] - vis[0]) * 4, (vis[3] - vis[1]) * 4, vp[0], vp[1], (vis[2] - vis[0]) * s, (vis[3] - vis[1]) * s);
+    drawGround(c, s, dpr, vis);
     if (G.layers.zones) drawZones(c, s);
     drawStructs(c, s, vis);
     drawDead(c, s, vis);
@@ -160,6 +160,58 @@
     drawLabels(c, s);
     if (G.box) { c.strokeStyle = 'rgba(240,200,106,0.9)'; c.lineWidth = 1.5; c.strokeRect(Math.min(G.box[0], G.box[2]), Math.min(G.box[1], G.box[3]), Math.abs(G.box[2] - G.box[0]), Math.abs(G.box[3] - G.box[1])); }
     drawMini(c);
+  }
+  // Куски местности считают фоновые потоки (где есть Worker и OffscreenCanvas); иначе — в кадре
+  var TW = { ws: [], pending: {}, n: 0, gen: 0, i: 0 };
+  function workersStart(js) {
+    TW.ws.forEach(function(w) { w.terminate(); }); TW.ws = []; TW.pending = {}; TW.n = 0; TW.gen++;
+    if (!window.Worker || !window.OffscreenCanvas) return;
+    try {
+      var cnt = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
+      for (var i = 0; i < cnt; i++) {
+        var w = new Worker('terrain-worker.js?v=1');
+        w.onmessage = function(e) {
+          var m = e.data; if (m.k !== 'chunk') return;
+          delete TW.pending[m.key]; TW.n--;
+          if (m.gen !== TW.gen || !G.ter) { m.bmp.close(); return; }
+          m.bmp.used = Date.now(); G.ter.cache[m.key] = m.bmp;
+          var keys = Object.keys(G.ter.cache), MAX = G.ter.cacheMax || 48;
+          if (keys.length > MAX) { var cc = G.ter.cache; keys.sort(function(a, b) { return cc[a].used - cc[b].used; }).slice(0, keys.length - MAX).forEach(function(k) { if (cc[k].close) cc[k].close(); delete cc[k]; }); }
+        };
+        w.onerror = function() { TW.ws.forEach(function(x) { x.terminate(); }); TW.ws = []; TW.pending = {}; TW.n = 0; };
+        w.postMessage({ k: 'map', json: js, gen: TW.gen });
+        TW.ws.push(w);
+      }
+    } catch (e) { TW.ws = []; }
+  }
+  // Земля: грубая подложка (4 точки на клетку) всегда, поверх — куски местности нужной
+  // плотности из кэша; недостающие заказываются потокам (или рисуются по одному в кадре), от середины экрана.
+  function drawGround(c, s, dpr, vis) {
+    if (vis[2] <= vis[0] || vis[3] <= vis[1]) return;
+    var vp = toS(vis[0], vis[1]);
+    c.drawImage(G.base, vis[0] * 4, vis[1] * 4, (vis[2] - vis[0]) * 4, (vis[3] - vis[1]) * 4, vp[0], vp[1], (vis[2] - vis[0]) * s, (vis[3] - vis[1]) * s);
+    var need = s * dpr; if (need <= 5) return;
+    var tier = TIERS[TIERS.length - 1];
+    for (var i = 0; i < TIERS.length; i++) if (TIERS[i][0] >= need * 0.9) { tier = TIERS[i]; break; }
+    var ppc = tier[0], CH = tier[1], T = G.ter, list = [];
+    var mx = (vis[0] + vis[2]) / 2, my = (vis[1] + vis[3]) / 2;
+    for (var cy = Math.floor(vis[1] / CH); cy * CH < vis[3]; cy++) for (var cx = Math.floor(vis[0] / CH); cx * CH < vis[2]; cx++) {
+      var dx = cx * CH + CH / 2 - mx, dy = cy * CH + CH / 2 - my; list.push([dx * dx + dy * dy, cx, cy]);
+    }
+    list.sort(function(a, b) { return a[0] - b[0]; });
+    var t0 = performance.now(), budget = G.fps && G.fps < 40 ? 6 : 12, px = CH * ppc, w = CH * s + 0.6;
+    for (i = 0; i < list.length; i++) {
+      var k = list[i], key = ppc + ':' + k[1] + ':' + k[2], ch = T.cache[key];
+      if (!ch) {
+        if (TW.ws.length) {
+          if (!TW.pending[key] && TW.n < TW.ws.length * 3) { TW.pending[key] = 1; TW.n++; TW.ws[TW.i++ % TW.ws.length].postMessage({ k: 'chunk', key: key, cx: k[1], cy: k[2], ppc: ppc, CH: CH, gen: TW.gen }); }
+          continue;
+        }
+        if (performance.now() - t0 > budget) continue; ch = T.chunk(k[1], k[2], ppc, CH);
+      } else ch.used = Date.now();
+      var p = toS(k[1] * CH, k[2] * CH);
+      c.drawImage(ch, 0, 0, px, px, p[0], p[1], w, w);
+    }
   }
   function label(c, text, x, y, col, size) {
     c.font = 'bold ' + size + 'px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -204,7 +256,7 @@
       c.save(); c.globalAlpha = al;
       if (a.T.vehicle || a.hero) {
         // техника: тёмный остов на месте
-        if (a.T.vehicle) drawVehicle(c, a, s, p, 0.4, true); else { c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK); c.globalAlpha = al * 0.7; H.draw(c, { aim: a.aim, mv: 0, phase: 0, act: 'idle', look: H.look(a.team === 0 ? 'republic' : 'cis', a.hero.portrait), blade: 'rgba(0,0,0,0)' }); c.restore(); }
+        if (a.T.vehicle) drawVehicle(c, a, s, p, 0.4, true); else { c.save(); c.translate(p[0], p[1]); c.scale(s * HK, s * HK); c.globalAlpha = al * 0.7; H.draw(c, { aim: a.aim, mv: 0, phase: 0, act: 'idle', look: H.look(a.team === 0 ? 'republic' : 'cis', a.hero.portrait), blade: 'rgba(0,0,0,0)' }); c.restore(); }
       } else {
         var fi = figOf(a), T = ALL[fi];
         if (DEAD && age > 0.5) { var size = s * DEAD.scale * FIGK, dd = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * DEAD.dirs) % DEAD.dirs, kk = fi * DEAD.dirs + dd; c.drawImage(DEAD.canvas, (kk % DEAD.cols) * DEAD.cell, Math.floor(kk / DEAD.cols) * DEAD.cell, DEAD.cell, DEAD.cell, p[0] - size / 2, p[1] - size / 2, size, size); }
@@ -217,12 +269,16 @@
   function drawVehicle(c, a, s, p, alpha, wreck) {
     var id = a.tid, vt = V.TYPES[id]; if (!vt) return;
     c.save(); if (alpha != null) c.globalAlpha = alpha;
-    if (VAT) {
-      var per = VAT.dirs * VAT.frames, dir = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * VAT.dirs) % VAT.dirs, fr = !wreck && a.mv > 0.3 ? 1 + Math.floor(a.phase / (TAU / (VAT.frames - 1))) % (VAT.frames - 1) : 0;
-      var kk = VAT.idx[id] * per + dir * VAT.frames + fr, size = VAT.span * s, half = size / 2;
-      c.drawImage(VAT.canvas, (kk % VAT.cols) * VAT.cell, Math.floor(kk / VAT.cols) * VAT.cell, VAT.cell, VAT.cell, p[0] - half, p[1] - half, size, size);
-      if (vt.turret && !wreck) { c.translate(p[0], p[1]); c.scale(s, s); V.draw(c, id, { ang: a.aim, turret: a.turretA, part: 'turret', hp: a.hp / a.hpMax }); }
-    } else { c.translate(p[0], p[1]); c.scale(s, s); V.draw(c, id, { ang: a.aim, mv: wreck ? 0 : a.mv, phase: a.phase, turret: a.turretA, hp: wreck ? 0 : a.hp / a.hpMax }); }
+    var E = VAT && VAT.by[id];
+    if (E && s * G.dpr <= E.ppc * 1.7) {
+      var dir = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * VAT.dirs) % VAT.dirs, fr = E.frames > 1 && !wreck && a.mv > 0.3 ? 1 + Math.floor(a.phase / (TAU / (VAT.frames - 1))) % (VAT.frames - 1) : 0;
+      var kk = dir * E.frames + fr, size = E.span * s, half = size / 2;
+      c.drawImage(E.canvas, (kk % E.cols) * E.px, Math.floor(kk / E.cols) * E.px, E.px, E.px, p[0] - half, p[1] - half, size, size);
+      if (vt.turret && !wreck) {
+        var td = Math.round(((a.turretA % TAU) + TAU) % TAU / TAU * V.TDIRS) % V.TDIRS;
+        c.drawImage(E.tur, (td % E.cols) * E.px, Math.floor(td / E.cols) * E.px, E.px, E.px, p[0] - half, p[1] - half, size, size);
+      }
+    } else { c.translate(p[0], p[1]); c.scale(s, s); V.draw(c, id, { ang: a.aim, mv: wreck ? 0 : a.mv, phase: a.phase, turret: a.turretA, hp: wreck ? 0 : a.hp / a.hpMax }); }   // вблизи — живьём, чтобы не мылить
     c.restore();
     if (wreck) {
       // остов: копоть поверх
@@ -230,6 +286,17 @@
       c.beginPath(); c.ellipse(p[0], p[1], s * vt.span * 0.42, s * vt.span * 0.3, a.aim, 0, TAU); c.fill(); c.restore();
     }
   }
+  // Кружок стороны под бойцом — картинкой: заливка дуги на каждом бойце дорога на больших размерах
+  var DISC = {};
+  function disc(team) {
+    if (DISC[team]) return DISC[team];
+    var cv = document.createElement('canvas'); cv.width = cv.height = 64; var c = cv.getContext('2d');
+    var g = c.createRadialGradient(32, 32, 10, 32, 32, 32); g.addColorStop(0, 'rgba(' + TEAMC[team] + ',1)'); g.addColorStop(0.75, 'rgba(' + TEAMC[team] + ',0.9)'); g.addColorStop(1, 'rgba(' + TEAMC[team] + ',0)');
+    c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+    return (DISC[team] = cv);
+  }
+  // Радиус бойца на экране в клетках: техника — по виду сверху, пехота и герои — по фигурке
+  function vrad(m) { if (m.T.vehicle) { var vt = V.TYPES[m.tid]; return vt ? vt.span * 0.4 : 1; } return 0.42 * HK; }
   function drawUnits(c, s, vis, t) {
     var B = G.B, ag = B.agents, A = atlas(), side = G.side, sel = {};
     G.usel.forEach(function(id) { sel[id] = 1; });
@@ -239,17 +306,17 @@
     for (i = 0; i < order.length; i++) {
       var m = order[i], p = toS(m.x, m.y), mine = B.ctl(m) === side;
       // кольцо стороны и выделение
-      var rr = m.size === 2 ? s * 1.2 : s * 0.45 * FIGK;
+      var rr = vrad(m) * s;
       if (sel[m.id]) { c.strokeStyle = 'rgba(240,200,106,0.95)'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], rr + 3, 0, TAU); c.stroke(); }
-      else { c.fillStyle = 'rgba(' + TEAMC[B.ctl(m)] + ',0.28)'; c.beginPath(); c.arc(p[0], p[1] + rr * 0.55, rr * 0.75, 0, TAU); c.fill(); }
-      if (m.air) { var sh = toS(m.x + 0.9, m.y + 1.1); c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(sh[0], sh[1], s * 1.1, s * 0.8, 0, 0, TAU); c.fill(); }
+      else { var dr = rr * 0.8; c.globalAlpha = m.T.vehicle ? 0.18 : 0.3; c.drawImage(disc(B.ctl(m)), p[0] - dr, p[1] + rr * 0.55 - dr, dr * 2, dr * 2); c.globalAlpha = 1; }
+      if (m.air) { var sp = vrad(m) * 2.5, sh = toS(m.x + sp * 0.35, m.y + sp * 0.45); c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(sh[0], sh[1], s * sp * 0.45, s * sp * 0.3, m.aim, 0, TAU); c.fill(); }
       if (m.T.vehicle) drawVehicle(c, m, s, p, null, false);
       else if (m.hero) {
-        c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK);
+        c.save(); c.translate(p[0], p[1]); c.scale(s * HK, s * HK);
         var hr = m.hero;
         H.draw(c, { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase, act: hr.actT > 0 ? hr.act : (m.mv > 0.3 ? 'run' : 'idle'), k: hr.k, look: heroLook(m) });
         c.restore();
-      } else if (A.ok) {
+      } else if (A.ok && s * G.dpr * A.scale * FIGK <= A.cell * 1.7) {
         var size = s * A.scale * FIGK, half = size / 2, per = A.dirs * A.frames;
         var dir = Math.round(((m.aim % TAU) + TAU) % TAU / TAU * A.dirs) % A.dirs, fr = m.mv > 0.3 ? 1 + Math.floor(m.phase / (TAU / 4)) % 4 : 0;
         var kk = figOf(m) * per + dir * A.frames + fr;
@@ -265,7 +332,7 @@
         c.fillStyle = 'rgba(5,6,10,0.7)'; c.fillRect(p[0] - w / 2, p[1] - rr - 5, w, 3);
         c.fillStyle = hpk < 0.35 ? '#ff8a3a' : mine ? '#5fd968' : '#ff6a5a'; c.fillRect(p[0] - w / 2, p[1] - rr - 5, w * hpk, 3);
       }
-      if (m.hero && s > 5) label(c, m.name || (m.team === 0 ? 'Джедай' : 'Ситх'), p[0], p[1] + rr + 9, mine ? '#9fd8ff' : '#ff9a88', 10);
+      if (m.hero && s > 7) label(c, m.name || (m.team === 0 ? 'Джедай' : 'Ситх'), p[0], p[1] + rr + 9, mine ? '#9fd8ff' : '#ff9a88', 10);
     }
   }
   function heroLook(m) { if (!m._look) m._look = H.look(m.team === 0 ? 'republic' : 'cis', m.hero.portrait); return m._look; }
@@ -336,8 +403,14 @@
     if (FOG_T !== B.fogN || !FOG) {
       FOG_T = B.fogN;
       if (!FOG) { FOG = document.createElement('canvas'); FOG.width = FOG.height = N; }
-      var fc = FOG.getContext('2d'), img = fc.createImageData(N, N), d = img.data, sn = B.seen[G.side];
-      for (var i = 0; i < N * N; i++) { var v = sn[i], p = i * 4; d[p] = 5; d[p + 1] = 6; d[p + 2] = 10; d[p + 3] = v === 2 ? 0 : v === 1 ? 110 : 215; }
+      // плотность тумана по клетке, сглаженная по 3×3, чтобы край не был ступенчатым
+      var fc = FOG.getContext('2d'), img = fc.createImageData(N, N), d = img.data, sn = B.seen[G.side], al = G.fogA || (G.fogA = new Uint8Array(N * N));
+      for (var i = 0; i < N * N; i++) { var v = sn[i]; al[i] = v === 2 ? 0 : v === 1 ? 110 : 215; }
+      for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
+        var sum = 0, n = 0;
+        for (var yy = Math.max(0, y - 1); yy <= Math.min(N - 1, y + 1); yy++) for (var xx = Math.max(0, x - 1); xx <= Math.min(N - 1, x + 1); xx++) { sum += al[yy * N + xx]; n++; }
+        var p = (y * N + x) * 4; d[p] = 5; d[p + 1] = 6; d[p + 2] = 10; d[p + 3] = Math.round(sum / n);
+      }
       fc.putImageData(img, 0, 0);
     }
     var a0 = toW(0, 0), b0 = toW(G.vw, G.vh), x0 = Math.max(0, Math.floor(a0[0])), y0 = Math.max(0, Math.floor(a0[1])), x1 = Math.min(N, Math.ceil(b0[0])), y1 = Math.min(N, Math.ceil(b0[1]));
@@ -382,10 +455,13 @@
     el.innerHTML = '<span>Площадь: <b>' + stName + '</b> · наших ' + cp.cnt[G.side] + ', врагов ' + cp.cnt[1 - G.side] + '</span><i><b style="width:' + (cp.prog / B.capNeed * 100).toFixed(1) + '%"></b></i><span><b>' + Math.round(cp.prog / B.capNeed * 100) + '%</b></span>';
     var sel = selected(), alive = B.alive(G.side), foe = B.alive(1 - G.side);
     var stat = '<span>Своих <b>' + alive + '</b> · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
-    if (sel.length) stat += '<span class="sp-dim"> · выбрано <b>' + sel.length + '</b>' + (G.arm ? ' · <b>цель для «' + GR.ABIL_NAME[G.arm.ab] + '»</b>' : '') + '</span>';
-    $('sp-stat').innerHTML = '<div class="sp-bd-strip' + (cp.status === 'capturing' && !mineAtt ? ' bad' : '') + '">' + stat + '</div>';
+    // подсказка по шагу: что сейчас сделает касание
+    var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника' : 'врага')
+      : sel.length ? 'Выбрано <b>' + sel.length + '</b> · касание земли — идти, врага — атаковать'
+      : 'Коснись своего бойца, чтобы выбрать · долгое нажатие — рамка';
+    $('sp-stat').innerHTML = '<div class="sp-bd-strip' + (cp.status === 'capturing' && !mineAtt ? ' bad' : '') + '">' + stat + '<span class="gd-tip">' + tip + '</span></div>';
     dockTabs([['units', 'Войска', B.teams[G.side].squads.length ? '<em class="dot"></em>' : ''], ['act', 'Приказы']]);
-    $('gd-all').classList.toggle('on', G.usel.length > 0);
+    $('gd-all').classList.toggle('on', G.usel.length > 0); $('gd-all').textContent = G.usel.length ? 'Снять' : 'Все свои';
     if (G.sheet === 'units') $('sp-ship').innerHTML = unitsPanel(B, sel);
     else if (G.sheet === 'act') $('sp-ship').innerHTML = actPanel(B, sel);
     sheetShow();
@@ -423,7 +499,7 @@
     html += '<div class="sp-bd-row"><span class="lab">В отряд</span>';
     B.teams[G.side].squads.forEach(function(q) { html += '<button class="sp-chip' + (n ? '' : ' dead') + '" data-as="' + q.id + '"><b>' + q.id + '</b></button>'; });
     html += '<button class="sp-chip' + (n ? '' : ' dead') + '" data-as="0">+ новый</button><button class="sp-chip' + (n ? '' : ' dead') + '" data-as="-1">без отряда</button></div>';
-    html += '<p class="gd-hint"><b>Ход</b> — касание земли. <b>Атака</b> — касание врага. <b>Держать</b> — стоят и стреляют, не сходя с места. <b>Сами</b> — бойцов ведёт ИИ: штурм идёт к площади, оборона держит её.</p>';
+    html += '<p class="gd-hint"><b>Ход</b> — касание земли. <b>Атака</b> — касание врага. <b>Держать здесь</b> — стоят и стреляют, не сходя с места. <b>Стоп</b> — отменить приказ. <b>Сами</b> — выбранных ведёт ИИ, пока ты не отдашь им свой приказ.</p>';
     return html;
   }
   function dockTabs(list) {
@@ -451,7 +527,7 @@
   var PTR = {}, GES = null, pressT = 0;
   function agentAt(px, py) {
     var B = G.B, w = toW(px, py), best = -1, bd = 1e9;
-    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; var r = a.size === 2 ? 1.3 : 0.7, dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < r * r && d < bd) { bd = d; best = i; } }
+    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; var r = vrad(a) + 0.25, dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < r * r && d < bd) { bd = d; best = i; } }
     return best;
   }
   function tap(px, py) {
@@ -526,7 +602,7 @@
       if (t.hasAttribute('data-tab')) { var k = t.getAttribute('data-tab'); G.sheet = G.sheet === k ? '' : k; hud(); return; }
       if (t.hasAttribute('data-ba')) {
         var ba = t.getAttribute('data-ba');
-        if (ba === 'hold') B.orderHold(G.side, G.usel); else if (ba === 'stop') B.orderStop(G.side, G.usel); else if (ba === 'auto') { B.setAuto(G.side, G.usel, true); B.teams[G.side].auto = true; toast('Выбранных ведёт ИИ', 'gold'); }
+        if (ba === 'hold') B.orderHold(G.side, G.usel); else if (ba === 'stop') B.orderStop(G.side, G.usel); else if (ba === 'auto') { B.setAuto(G.side, G.usel, true); toast('Выбранных ведёт ИИ: любой ваш приказ вернёт их', 'gold'); }
         hud(); return;
       }
       if (t.hasAttribute('data-as')) { var r = B.assign(G.side, G.usel, +t.getAttribute('data-as')); if (r === false) toast('Отрядов уже ' + 12, 'bad'); hud(); return; }
@@ -541,11 +617,7 @@
         hud(); return;
       }
     });
-    $('sp-scen').addEventListener('click', function(e) {
-      var b = e.target.closest('[data-planet],[data-poly]'); if (!b) return;
-      if (b.hasAttribute('data-poly')) { polyOpen(); return; }
-      start(b.getAttribute('data-planet'));
-    });
+    $('gd-poly-b').onclick = polyOpen;
     $('sp-end-look').onclick = function() { $('sp-end').hidden = true; };
     $('sp-end-again').onclick = function() { $('sp-end').hidden = true; start(G.planet); };
     window.addEventListener('resize', resize);
@@ -562,6 +634,9 @@
     chips('gd-poly-size', [['small', 'Малые'], ['mid', 'Средние'], ['big', 'Большие']], po.size);
     chips('gd-poly-foe', [['ai', 'Воюет (ИИ)'], ['idle', 'Стоит мишенью']], po.foe);
     chips('gd-poly-cap', [[120, '2 мин'], [600, '10 мин'], [21600, '6 ч как в игре']], po.cap);
+    $('gd-poly-role-h').textContent = po.role === 'att' ? 'Твой десант высаживается у нижнего края. Нужно дойти до площади в центре города и удержать её.' : 'Твой гарнизон стоит у города. Враг идёт снизу; не дай ему удержать площадь.';
+    $('gd-poly-size-h').textContent = { small: 'Около 15 бойцов с каждой стороны — чтобы освоить управление.', mid: 'Около 60 с каждой стороны, с техникой, героем и артиллерией.', big: 'Около 130 с каждой стороны — проверка на нагрузку.' }[po.size];
+    $('gd-poly-foe-h').textContent = po.foe === 'ai' ? 'Другую сторону ведёт ИИ: штурм идёт колоннами, оборона держит рубеж перед площадью.' : 'Враг стоит на месте и только отстреливается — удобно проверять приказы и способности.';
     $('sp-poly').hidden = false;
   }
   $('sp-poly').addEventListener('click', function(e) {
@@ -572,6 +647,6 @@
   });
 
   resize(); bind(); requestAnimationFrame(frame);
-  G.CAM = CAM; G.focusOn = function(id) { var a = G.B.agents[id]; if (a) { CAM.x = a.x; CAM.y = a.y; } };
+  G.CAM = CAM; G.TW = TW; G.focusOn = function(id) { var a = G.B.agents[id]; if (a) { CAM.x = a.x; CAM.y = a.y; } };
   window.GD = G;
 })();

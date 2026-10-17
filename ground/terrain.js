@@ -1163,9 +1163,10 @@
     c.used = Date.now();
     this.cache[key] = c;
     var keys = Object.keys(this.cache);
-    if (keys.length > 48) {
+    var MAX = this.cacheMax || 48;
+    if (keys.length > MAX) {
       var self = this;
-      keys.sort(function(a, b) { return self.cache[a].used - self.cache[b].used; }).slice(0, keys.length - 48).forEach(function(k) { delete self.cache[k]; });
+      keys.sort(function(a, b) { return self.cache[a].used - self.cache[b].used; }).slice(0, keys.length - MAX).forEach(function(k) { delete self.cache[k]; });
     }
     return c;
   };

@@ -702,9 +702,9 @@
   // Набор картинок: у каждой машины свой холст (курс × кадр; кадр 0 — стоит, 1..FRAMES-1 — шаг;
   // у машин без шага — только кадр 0). cell — желаемых точек на клетку поля; у крупных
   // машин плотность ниже, чтобы картинка не превышала maxPx точек по стороне.
-  var DIRS = 16, FRAMES = 8, TDIRS = 32;
+  var DIRS = 16, FRAMES = 6, TDIRS = 32;
   function bake(ids, cell, maxPx) {
-    maxPx = maxPx || 160;
+    maxPx = maxPx || 112;
     var out = { dirs: DIRS, frames: FRAMES, by: {}, ids: ids, cell: cell };
     ids.forEach(function(id) {
       var T = TYPES[id], frames = T.walk ? FRAMES : 1, ppc = Math.min(cell, maxPx / (T.span + 0.3)), px = Math.ceil(ppc * (T.span + 0.3)), cols = 8;
@@ -736,5 +736,15 @@
     return out;
   }
 
-  root.SWVehicles = { TYPES: TYPES, draw: draw, bake: bake, DIRS: DIRS, FRAMES: FRAMES, TDIRS: TDIRS };
+  // Листы на месте? (телефон может сбросить холсты при нехватке памяти — тогда рисуем живьём и перепекаем)
+  function check(A) {
+    try {
+      for (var i = 0; i < A.ids.length; i++) {
+        var E = A.by[A.ids[i]], d = E.canvas.getContext('2d').getImageData(Math.floor(E.px / 2), Math.floor(E.px / 2), 1, 1).data;
+        if (d[3] === 0) return false;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+  root.SWVehicles = { TYPES: TYPES, draw: draw, bake: bake, check: check, DIRS: DIRS, FRAMES: FRAMES, TDIRS: TDIRS };
 })(typeof self !== 'undefined' ? self : this);

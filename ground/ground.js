@@ -111,7 +111,7 @@
       ATLAS = F.bake(ALL, px, 10); ATLAS.ok = F.check(ATLAS); if (!ATLAS.ok) ATLAS.bad = true;
       DEAD = F.bakeDead(ALL, px * 2, 16);
       var ids = Object.keys(V.TYPES);
-      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15)), 176);
+      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15)), Math.max(72, Math.min(128, px * 2))); if (!V.check(VAT)) VAT = null;
       ATLAS_PX = px;
     } catch (e) { ATLAS = { bad: true }; }
     return ATLAS;
@@ -140,6 +140,8 @@
       if (B.over >= 0 && !G.ended) endBattle();
     }
     G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; hud(); }
+    // раз в 5 с: листы картинок на месте? (браузер телефона может их сбросить — тогда перепечь)
+    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && !F.check(ATLAS)) || (VAT && !V.check(VAT))) { ATLAS = null; VAT = null; } }
     requestAnimationFrame(frame);
   }
   function draw() {
@@ -251,7 +253,7 @@
     var B = G.B, ag = B.agents, A = atlas();
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (a.alive || a.gone) continue;
-      if (a.x < vis[0] - 2 || a.x > vis[2] + 2 || a.y < vis[1] - 2 || a.y > vis[3] + 2) continue;
+      if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue;
       var p = toS(a.x, a.y), age = B.t - a.diedAt, al = Math.max(0, Math.min(1, 1 - (age - 25) / 15));
       c.save(); c.globalAlpha = al;
       if (a.T.vehicle || a.hero) {
@@ -301,15 +303,15 @@
     var B = G.B, ag = B.agents, A = atlas(), side = G.side, sel = {};
     G.usel.forEach(function(id) { sel[id] = 1; });
     var order = [];
-    for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive) continue; if (a.x < vis[0] - 2 || a.x > vis[2] + 2 || a.y < vis[1] - 2 || a.y > vis[3] + 2) continue; if (a.team !== side && !B.canSee(side, a)) continue; order.push(a); }
-    order.sort(function(a, b) { return (a.air ? 1 : 0) - (b.air ? 1 : 0) || a.y - b.y; });
+    for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive) continue; if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue; if (a.team !== side && !B.canSee(side, a)) continue; order.push(a); }
+    order.sort(function(a, b) { return (a.air || a.fly ? 1 : 0) - (b.air || b.fly ? 1 : 0) || a.y - b.y; });
     for (i = 0; i < order.length; i++) {
       var m = order[i], p = toS(m.x, m.y), mine = B.ctl(m) === side;
       // кольцо стороны и выделение
       var rr = vrad(m) * s;
       if (sel[m.id]) { c.strokeStyle = 'rgba(240,200,106,0.95)'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], rr + 3, 0, TAU); c.stroke(); }
       else { var dr = rr * 0.8; c.globalAlpha = m.T.vehicle ? 0.18 : 0.3; c.drawImage(disc(B.ctl(m)), p[0] - dr, p[1] + rr * 0.55 - dr, dr * 2, dr * 2); c.globalAlpha = 1; }
-      if (m.air) { var sp = vrad(m) * 2.5, sh = toS(m.x + sp * 0.35, m.y + sp * 0.45); c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(sh[0], sh[1], s * sp * 0.45, s * sp * 0.3, m.aim, 0, TAU); c.fill(); }
+      if (m.air || m.fly) { var sp = vrad(m) * 2.5, sh = toS(m.x + sp * 0.35, m.y + sp * 0.45); c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(sh[0], sh[1], s * sp * 0.45, s * sp * 0.3, m.aim, 0, TAU); c.fill(); }
       if (m.T.vehicle) drawVehicle(c, m, s, p, null, false);
       else if (m.hero) {
         c.save(); c.translate(p[0], p[1]); c.scale(s * HK, s * HK);

@@ -12,7 +12,7 @@
 
   var $ = function(id) { return document.getElementById(id); };
   var TAU = Math.PI * 2;
-  var P = window.SWPlanets, U = window.SWUnits, GR = window.SWGround, F = window.SWRTFig, S = window.SWRT, V = window.SWVehicles, H = window.SWHeroes, Army = window.SWArmy, GFX = window.SPGfx;
+  var P = window.SWPlanets, U = window.SWUnits, GR = window.SWGround, F = window.SWRTFig, S = window.SWRT, V = window.SWVehicles, H = window.SWHeroes, Army = window.SWArmy, GFX = window.SPGfx, TOWN = window.SWTown;
   var N = P.N, SQ = GR.SQUARE;
   var TEAMC = { 0: '111,184,255', 1: '255,110,90', 2: '230,200,90' };
   // Масштаб: клетка ≈ 2,5 м. Пехотинец ≈ 0,8 клетки, техника — по своим размерам (AT-TE 4,5 клетки).
@@ -20,7 +20,9 @@
   var cv = $('sp-canvas'), ctx = cv.getContext('2d');
 
   var G = { B: null, ter: null, side: 0, speed: 1, lastSpd: 1, ended: false, usel: [], sheet: '', arm: null, t: 0, dpr: 1, vw: 0, vh: 0, planet: 'naboo',
-            poly: { planet: 'naboo', side: 0, role: 'att', size: 'mid', foe: 'ai', cap: 120 }, layers: { zones: true }, msgSeq: 0, lastTap: null, fps: 0, fpsN: 0, fpsT: 0 };
+            poly: { planet: 'naboo', side: 0, role: 'att', size: 'mid', foe: 'ai', cap: 120, lvl: 3 }, layers: { zones: true }, msgSeq: 0, lastTap: null, fps: 0, fpsN: 0, fpsT: 0 };
+  // кварталы полигона по уровню: как в игре — по одному на слот
+  var POLY_DISTRICTS = [{ slot: 1, id: 'market' }, { slot: 2, id: 'garrison' }, { slot: 3, id: 'hospital' }, { slot: 4, id: 'comms' }];
   var CAM = { x: 72, y: 100, s: 16 };
   var TIERS = [[8, 16], [16, 8], [32, 4], [64, 2]], FOG = null, FOG_T = -1;   // [точек на клетку, клеток в куске]: чем ближе, тем мельче куски
   var ALL = F.withCrew(S.TYPES), FIG_IDX = {}; ALL.forEach(function(t, i) { FIG_IDX[t.id] = i; });
@@ -65,7 +67,7 @@
   }
   function makeBattle(js) {
     var po = G.poly, att = po.role === 'att' ? po.side : 1 - po.side;
-    var B = new GR.Ground(js, { seed: (Date.now() % 100000) | 0, auto0: po.side !== 0, auto1: po.side !== 1, att: att, captureSeconds: po.cap });
+    var B = new GR.Ground(js, { seed: (Date.now() % 100000) | 0, auto0: po.side !== 0, auto1: po.side !== 1, att: att, captureSeconds: po.cap, settle: { level: po.lvl, districts: POLY_DISTRICTS.slice(0, po.lvl) }, militiaAuto: true });
     if (po.foe === 'idle') B.teams[1 - po.side].auto = false;
     var R = GR.rng((Date.now() % 7919) | 0), def = 1 - att, tw = B.town;
     placeArmy(B, att, ARMY[att][po.size], [20, N - 12, 104, 10], R, -Math.PI / 2);
@@ -88,10 +90,11 @@
     $('gd-planet').textContent = pi ? pi.name : planet; $('gd-globe').style.backgroundImage = 'url(../assets/planets/' + planet + '.png)';
     fetchJson('../shared/planets/' + planet + '.json').then(function(js) {
       setTimeout(function() {
-        G.ter = window.GTerrain.create(js); G.ter.cacheMax = 220; workersStart(js);
+        G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; FOG_T = -1; G.t = 0;
+        // местность — с наложенным городом (стены, кварталы), как в движке
+        G.ter = window.GTerrain.create(G.B.mapJson); G.ter.cacheMax = 220; workersStart(G.B.mapJson);
         G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
         G.ter.render(G.base.getContext('2d'), 0, 0, N, N, 4);
-        G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; FOG_T = -1; G.t = 0;
         $('sp-end').hidden = true;
         try { history.replaceState(null, '', '?p=' + planet); } catch (e) {}
         var tw = G.B.town; CAM.x = tw[0] + tw[2] / 2; CAM.y = G.side === G.B.att ? N - 20 : tw[1] + tw[3] + 2; CAM.s = Math.max(6, Math.min(G.vw, G.vh) / 40);
@@ -171,7 +174,7 @@
     try {
       var cnt = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
       for (var i = 0; i < cnt; i++) {
-        var w = new Worker('terrain-worker.js?v=1');
+        var w = new Worker('terrain-worker.js?v=2');
         w.onmessage = function(e) {
           var m = e.data; if (m.k !== 'chunk') return;
           delete TW.pending[m.key]; TW.n--;
@@ -241,13 +244,50 @@
     for (var i = 0; i < B.structs.length; i++) {
       var st = B.structs[i]; if (st.x + st.w < vis[0] || st.x > vis[2] || st.y + st.h < vis[1] || st.y > vis[3]) continue;
       var seen = B.seen[G.side][st.y * N + st.x]; if (!seen && st.team !== G.side) continue;
-      var p = toS(st.x, st.y), im = simg(st.kind, st.team);
-      c.save(); if (st.dead) c.globalAlpha = 0.45;
-      if (im.complete && im.naturalWidth) c.drawImage(im, p[0], p[1], st.w * s, st.h * s);
-      else { c.fillStyle = 'rgba(' + TEAMC[st.team] + ',0.5)'; c.fillRect(p[0], p[1], st.w * s, st.h * s); }
-      c.restore();
+      var p = toS(st.x, st.y);
+      if (st.kind === 'gate') { drawGate(c, st, s, p); }
+      else if (st.kind === 'tower') { drawTower(c, st, s, p); }
+      else {
+        var im = simg(st.kind, st.team);
+        c.save(); if (st.dead) c.globalAlpha = 0.45;
+        if (im.complete && im.naturalWidth) c.drawImage(im, p[0], p[1], st.w * s, st.h * s);
+        else { c.fillStyle = 'rgba(' + TEAMC[st.team] + ',0.5)'; c.fillRect(p[0], p[1], st.w * s, st.h * s); }
+        c.restore();
+      }
       if (!st.dead && st.hp < st.hpMax) { c.fillStyle = '#141a22'; c.fillRect(p[0], p[1] - 4, st.w * s, 3); c.fillStyle = '#5fd968'; c.fillRect(p[0], p[1] - 4, st.w * s * st.hp / st.hpMax, 3); }
     }
+  }
+  // Ворота: две створки в цвете стены, у своих — приоткрыты; выбитые — обломки
+  function drawGate(c, st, s, p) {
+    var lk = G.B.settle.look, col = lk.wall === 'wood' ? '#6a4c2e' : lk.wall === 'metal' ? '#5c6268' : lk.wall === 'hive' ? '#8a5c3e' : lk.wall === 'crystal' || lk.wall === 'ice' ? '#7aa6cc' : '#8a8070';
+    var hor = st.w > st.h, L = (hor ? st.w : st.h) * s, th = Math.max(3, s * 0.5), open = st.team === G.side ? 0.35 : 0;
+    c.save(); c.translate(p[0] + st.w * s / 2, p[1] + st.h * s / 2); if (!hor) c.rotate(Math.PI / 2);
+    if (st.dead) {
+      c.fillStyle = 'rgba(30,24,20,0.7)'; for (var i = 0; i < 5; i++) { var rx = (i / 5 - 0.4) * L, ry = (((i * 7) % 3) - 1) * s * 0.4; c.fillRect(rx, ry - th * 0.3, s * 0.5, th * 0.6); }
+      c.restore(); return;
+    }
+    c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(-L / 2 + 2, -th / 2 + 3, L, th);
+    c.fillStyle = col;
+    var half = L / 2 * (1 - open);
+    c.fillRect(-L / 2, -th / 2, half, th); c.fillRect(L / 2 - half, -th / 2, half, th);
+    c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 1; c.strokeRect(-L / 2, -th / 2, half, th); c.strokeRect(L / 2 - half, -th / 2, half, th);
+    c.fillStyle = 'rgba(255,214,130,0.9)'; c.fillRect(-L / 2 + half - 2, -1, 2, 2); c.fillRect(L / 2 - half, -1, 2, 2);
+    c.restore();
+    if (st.hp < st.hpMax) { c.fillStyle = '#141a22'; c.fillRect(p[0], p[1] - 5, st.w * s, 3); c.fillStyle = st.team === G.side ? '#5fd968' : '#ff6a5a'; c.fillRect(p[0], p[1] - 5, st.w * s * st.hp / st.hpMax, 3); }
+  }
+  // Башня: орудие на бастионе (сам бастион — в местности)
+  function drawTower(c, st, s, p) {
+    var cx = p[0] + st.w * s / 2, cy = p[1] + st.h * s / 2, r = s * 0.55;
+    c.save(); c.translate(cx, cy);
+    if (st.dead) { c.fillStyle = 'rgba(20,16,14,0.75)'; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill(); c.restore(); return; }
+    c.rotate(st.aim || Math.PI / 2);
+    c.fillStyle = 'rgba(0,0,0,0.4)'; c.beginPath(); c.arc(3, 4, r, 0, TAU); c.fill();
+    c.fillStyle = '#3a4248'; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+    c.fillStyle = '#5a646c'; c.beginPath(); c.arc(0, 0, r * 0.65, 0, TAU); c.fill();
+    c.fillStyle = '#2a3238'; c.fillRect(0, -r * 0.16, r * 1.9, r * 0.32); c.fillRect(0, -r * 0.42, r * 0.9, r * 0.2); c.fillRect(0, r * 0.22, r * 0.9, r * 0.2);
+    c.fillStyle = 'rgba(' + TEAMC[st.team] + ',0.9)'; c.beginPath(); c.arc(0, 0, r * 0.2, 0, TAU); c.fill();
+    c.restore();
+    if (st.hp < st.hpMax) { c.fillStyle = '#141a22'; c.fillRect(p[0], p[1] - 5, st.w * s, 3); c.fillStyle = st.team === G.side ? '#5fd968' : '#ff6a5a'; c.fillRect(p[0], p[1] - 5, st.w * s * st.hp / st.hpMax, 3); }
   }
   function drawDead(c, s, vis) {
     var B = G.B, ag = B.agents, A = atlas();
@@ -422,6 +462,11 @@
   }
   function drawLabels(c, s) {
     var B = G.B;
+    // районы: название и кто держит (видны при среднем приближении)
+    if (s >= 5) B.districts.forEach(function(d) {
+      var r = d.rect, p = toS(r[0] + r[2] / 2, r[1] + r[3] / 2), mine = d.by === G.side;
+      label(c, d.name.toUpperCase(), p[0], p[1], mine ? 'rgba(159,216,255,0.85)' : 'rgba(255,154,136,0.85)', Math.max(8, Math.min(11, s * 0.9)));
+    });
     // номера отрядов над центром
     B.teams[G.side].squads.forEach(function(q) {
       var n = 0, x = 0, y = 0;
@@ -455,6 +500,8 @@
     var stName = { capturing: mineAtt ? 'захватываем' : 'враг захватывает', reverting: mineAtt ? 'враг отбивает' : 'отбиваем', contested: 'спор на площади', stalled: mineAtt ? 'на площади никого' : 'площадь наша' }[cp.status];
     el.className = 'sp-row gd-cap' + ((cp.status === 'capturing' && !mineAtt) || (cp.status === 'reverting' && mineAtt) ? ' bad' : '');
     el.innerHTML = '<span>Площадь: <b>' + stName + '</b> · наших ' + cp.cnt[G.side] + ', врагов ' + cp.cnt[1 - G.side] + '</span><i><b style="width:' + (cp.prog / B.capNeed * 100).toFixed(1) + '%"></b></i><span><b>' + Math.round(cp.prog / B.capNeed * 100) + '%</b></span>';
+    var dl = $('gd-dist'), dh = B.settle.name + (B.districts.length ? ' · ' + B.districts.map(function(d) { return '<i class="' + (d.by === G.side ? 'my' : 'foe') + '"></i>' + d.name; }).join(' ') : '');
+    if (dl.innerHTML !== dh) dl.innerHTML = dh;
     var sel = selected(), alive = B.alive(G.side), foe = B.alive(1 - G.side);
     var stat = '<span>Своих <b>' + alive + '</b> · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
     // подсказка по шагу: что сейчас сделает касание
@@ -553,7 +600,8 @@
     if (a && sel.length) { var n = B.orderAttack(G.side, G.usel, hit); if (n) toast('Атаковать: ' + (a.name || a.T.name), 'gold'); return; }
     if (sel.length && cx >= 0 && cy >= 0 && cx < N && cy < N) { var m = B.orderMove(G.side, G.usel, cx, cy); if (!m) toast('Туда не пройти', 'bad'); return; }
     if (a) { toast((a.name || a.T.name) + ' · ' + Math.round(a.hp) + ' / ' + a.hpMax); return; }
-    // ничего: пояснение клетки
+    // ничего: район или пояснение клетки
+    for (var di = 0; di < B.districts.length; di++) { var dd = B.districts[di], dr = dd.rect; if (cx >= dr[0] && cx < dr[0] + dr[2] && cy >= dr[1] && cy < dr[1] + dr[3]) { toast(dd.name + ' — ' + (dd.by === G.side ? 'держим мы' : 'держит враг') + '. ' + dd.effect, dd.by === G.side ? 'gold' : 'bad'); return; } }
     var code = P.code(B.map, cx, cy); toast(P.NAME[code] + (B.seen[G.side][cy * N + cx] < 2 ? ' · не видно' : ''));
   }
   function boxSelect(b) {
@@ -636,6 +684,8 @@
     chips('gd-poly-size', [['small', 'Малые'], ['mid', 'Средние'], ['big', 'Большие']], po.size);
     chips('gd-poly-foe', [['ai', 'Воюет (ИИ)'], ['idle', 'Стоит мишенью']], po.foe);
     chips('gd-poly-cap', [[120, '2 мин'], [600, '10 мин'], [21600, '6 ч как в игре']], po.cap);
+    chips('gd-poly-lvl', [[1, '1 Посёлок'], [2, '2 Городок'], [3, '3 Город'], [4, '4 Столица']], po.lvl);
+    $('gd-poly-lvl-h').textContent = { 1: 'Дворы и один квартал, без стены. Ополчение: 1.', 2: 'Частокол, ворота с юга и севера, два квартала. Ополчение: 2 (+2 с казармами).', 3: 'Стена, четыре ворот, две башни к полосе вторжения, три квартала. Ополчение: 3 (+2).', 4: 'Полная стена, четыре башни, четыре квартала. Ополчение: 4 (+2).' }[po.lvl] + ' Кварталы: ' + POLY_DISTRICTS.slice(0, po.lvl).map(function(d) { return TOWN.DISTRICTS[d.id].name.toLowerCase(); }).join(', ') + '.';
     $('gd-poly-role-h').textContent = po.role === 'att' ? 'Твой десант высаживается у нижнего края. Нужно дойти до площади в центре города и удержать её.' : 'Твой гарнизон стоит у города. Враг идёт снизу; не дай ему удержать площадь.';
     $('gd-poly-size-h').textContent = { small: 'Около 15 бойцов с каждой стороны — чтобы освоить управление.', mid: 'Около 60 с каждой стороны, с техникой, героем и артиллерией.', big: 'Около 130 с каждой стороны — проверка на нагрузку.' }[po.size];
     $('gd-poly-foe-h').textContent = po.foe === 'ai' ? 'Другую сторону ведёт ИИ: штурм идёт колоннами, оборона держит рубеж перед площадью.' : 'Враг стоит на месте и только отстреливается — удобно проверять приказы и способности.';
@@ -644,7 +694,7 @@
   $('sp-poly').addEventListener('click', function(e) {
     var b = e.target.closest('.sp-chip'); var po = G.poly;
     if (b && b.hasAttribute('data-pp')) { po.planet = b.getAttribute('data-pp'); polyOpen(); return; }
-    if (b && b.hasAttribute('data-v')) { var box = b.parentNode.id, v = b.getAttribute('data-v'); if (box === 'gd-poly-side') po.side = +v; else if (box === 'gd-poly-role') po.role = v; else if (box === 'gd-poly-size') po.size = v; else if (box === 'gd-poly-foe') po.foe = v; else if (box === 'gd-poly-cap') po.cap = +v; polyOpen(); return; }
+    if (b && b.hasAttribute('data-v')) { var box = b.parentNode.id, v = b.getAttribute('data-v'); if (box === 'gd-poly-side') po.side = +v; else if (box === 'gd-poly-role') po.role = v; else if (box === 'gd-poly-size') po.size = v; else if (box === 'gd-poly-foe') po.foe = v; else if (box === 'gd-poly-cap') po.cap = +v; else if (box === 'gd-poly-lvl') po.lvl = +v; polyOpen(); return; }
     if (e.target.id === 'gd-poly-go' || e.target === $('sp-poly')) { $('sp-poly').hidden = true; if (e.target.id === 'gd-poly-go') start(po.planet); }
   });
 

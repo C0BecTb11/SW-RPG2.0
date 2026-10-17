@@ -18,11 +18,12 @@
 (function(root, factory) {
   var api = factory(
     typeof require === 'function' ? require('./rt-planets.js') : root.SWPlanets,
-    typeof require === 'function' ? require('./rt-units.js') : root.SWUnits
+    typeof require === 'function' ? require('./rt-units.js') : root.SWUnits,
+    typeof require === 'function' ? require('./rt-town.js') : root.SWTown
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.SWGround = api;
-})(typeof self !== 'undefined' ? self : this, function(P, U) {
+})(typeof self !== 'undefined' ? self : this, function(P, U, TOWN) {
   'use strict';
 
   var TAU = Math.PI * 2;
@@ -140,7 +141,10 @@
   function Ground(mapJson, opts) {
     opts = opts || {};
     var self = this;
-    this.map = P.load(mapJson);
+    // поселение: город накладывается на карту (стены, ворота, кварталы) по уровню и районам из игры
+    var ap = TOWN.apply(mapJson, opts.settle || { level: 1, districts: [] });
+    this.mapJson = ap.map; this.settle = ap.town;
+    this.map = P.load(ap.map);
     this.id = mapJson.id; this.town = mapJson.town || P.GEO.town; this.zones = mapJson.zones || { deploy: [], slots: [] };
     this.R = rng(opts.seed || 7);
     this.t = 0; this.acc = 0; this.over = -1; this.why = '';
@@ -150,6 +154,7 @@
     this.teams = [{ auto: !!opts.auto0, squads: [] }, { auto: opts.auto1 == null ? true : !!opts.auto1, squads: [] }, { auto: true, squads: [] }];
     this.att = opts.att == null ? 0 : opts.att; this.def = 1 - this.att;      // кто штурмует планету
     this.capNeed = opts.captureSeconds || 21600;
+    this.militiaAuto = !!opts.militiaAuto;
     this.cap = { prog: 0, rate: 0, status: 'stalled', cnt: [0, 0] };
     this.structs = [];
     this.weather = P.WEATHER[this.id] ? P.WEATHER[this.id][1] : 0;
@@ -173,6 +178,12 @@
     this.flows = new Flows(this); this.claim = {};
     this.sx = this.town[0] + (this.town[2] >> 1) - (SQUARE >> 1); this.sy = this.town[1] + (this.town[3] >> 1) - (SQUARE >> 1);
     this.nextId = 0;
+    // ворота и башни города — хозяина планеты; районы — кто держит (сначала хозяин)
+    var st = this.settle, def = this.def;
+    st.gates.forEach(function(g) { g.s = self.addStruct('gate', def, g.x, g.y, { w: g.w, h: g.h, hp: 600 + 300 * st.level }); });
+    st.towers.forEach(function(tw) { tw.s = self.addStruct('tower', def, tw.x, tw.y); });
+    this.districts = st.districts.map(function(d) { return { id: d.id, name: d.name, effect: d.effect, rect: d.rect, spawn: d.spawn, by: def, cnt: [0, 0] }; });
+    this.militiaT = -1;
   }
 
   // ---- бойцы
@@ -188,7 +199,7 @@
       stuck: 0, lastD: 1e9, wig: 0, side: 1, wait: 0, engT: -99, turretA: extra.aim || 0, inside: -1,
       uid: extra.uid || null, name: extra.name || '', owner: extra.owner || null, dmgK: extra.dmgK || 1,
       stun: 0, fear: 0, choke: -1, mind: null, barrier: 0, revealT: -99,
-      hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false
+      hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false, npc: !!extra.npc, rofK: 1
     };
     a.rad = VRAD[tid] != null ? VRAD[tid] : (Ty.size === 2 ? 1.0 : R);
     if (Ty.hero) {
@@ -204,7 +215,7 @@
   };
   Ground.prototype.addStruct = function(kind, team, x, y, extra) {
     var S = U.ST[kind]; if (!S) return null;
-    var s = { i: this.structs.length, kind: kind, team: team, x: x, y: y, w: S[1], h: S[1], hp: (extra && extra.hp) || S[2], hpMax: S[2], cover: S[3], inMul: S[4], radius: S[5], dmg: S[6], acc: S[7], enter: S[8], infOnly: S[9], cd: 0, tgt: -1, dead: false, name: S[0], uid: extra && extra.uid };
+    var s = { i: this.structs.length, kind: kind, team: team, x: x, y: y, w: (extra && extra.w) || S[1], h: (extra && extra.h) || S[1], hp: (extra && extra.hp) || S[2], hpMax: (extra && extra.hp) || S[2], cover: S[3], inMul: S[4], radius: S[5], dmg: S[6], acc: S[7], enter: S[8], infOnly: S[9], cd: 0, tgt: -1, dead: false, name: S[0], uid: extra && extra.uid };
     for (var j = 0; j < s.h; j++) for (var i = 0; i < s.w; i++) { var c = (y + j) * N + x + i; if (c >= 0 && c < N * N) this.structAt[c] = s.i; }
     this.structs.push(s);
     return s;
@@ -343,6 +354,8 @@
       if ((a.air || a.fly)) r += 2;
       this.reveal(a.team, a.x, a.y, r, a.x, a.y);
     }
+    // узел связи: кто держит — видит всё в 24 клетках от центра города
+    for (i = 0; i < this.districts.length; i++) { var dd = this.districts[i]; if (dd.id === 'comms' && dd.by >= 0 && dd.by <= 1) this.reveal(dd.by, this.sx + SQUARE / 2, this.sy + SQUARE / 2, 8 * RANGE_K); }
     for (i = 0; i < this.structs.length; i++) { var st = this.structs[i]; if (st.dead || st.team > 1) continue; if (st.kind === 'radar' || st.kind === 'turret') this.reveal(st.team, st.x + st.w / 2, st.y + st.h / 2, (st.radius || 3) * RANGE_K); }
     // полоса вторжения всегда видна хозяину планеты
     var sd = this.seen[this.def];
@@ -440,7 +453,7 @@
       var sdx = st.x + st.w / 2 - a.x, sdy = st.y + st.h / 2 - a.y, sd = sdx * sdx + sdy * sdy;
       if (sd > a.range * a.range) continue;
       if (this.seen[team][st.y * N + st.x] < 1) continue;
-      cand.push(sd * (st.kind === 'turret' ? 1.2 : 2.5), 100000 + i);
+      cand.push(sd * (st.kind === 'turret' || st.kind === 'tower' ? 1.2 : st.kind === 'gate' ? 1.5 : 2.5), 100000 + i);
     }
     // ближайшие (по весу) — проверка видимости и линии огня
     var tries = 0;
@@ -477,6 +490,8 @@
         var nx = cx + DX[d], ny = cy + DY[d], d2 = f.dir[ny * N + nx];
         tx = nx + off; ty = ny + off;
         if (d2 < 8) { tx += DX[d2] * 0.5; ty += DY[d2] * 0.5; }
+        // путь упёрся в чужие ворота — ломать их
+        var gi = this.gateAt(nx, ny, a); if (gi >= 0 && a.T.dmg > 0) { a.tgt = 100000 + gi; a.scan = 1; }
       }
     }
     var dx = tx - a.x, dy = ty - a.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -500,6 +515,10 @@
     if (!(a.tgt >= 0 || a.focus >= 0) || a.T.vehicle) a.aim = turn(a.aim, ang, TURN * dt);
     a.mv += (1 - a.mv) * Math.min(1, dt * 6);
     a.phase = (a.phase + dt * (a.T.vehicle ? 5 : 7) * (sp / Math.max(0.5, a.T.speed))) % TAU;
+  };
+  Ground.prototype.gateAt = function(x, y, a) {
+    var si = this.structAt[y * N + x]; if (si < 0) return -1;
+    var st = this.structs[si]; return st.kind === 'gate' && !st.dead && st.team !== this.ctl(a) && !(a.air || a.fly) ? si : -1;
   };
   Ground.prototype.think = function(a, dt) {
     a.dvx = 0; a.dvy = 0;
@@ -682,7 +701,8 @@
           // техника с техникой — теснее (могут частично наезжать); застрявшая в пробке — на 2 с «призрак»
           if (a.size === 2 && b.size === 2) { D *= a.ghostT > this.t || b.ghostT > this.t ? 0.4 : 0.8; }
           var dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
-          if (d2 >= D * D || d2 < 1e-6) continue;
+          if (d2 >= D * D) continue;
+          if (d2 < 1e-6) { var ja = ((i * 7919 + j * 104729) % 360) * Math.PI / 180; dx = Math.cos(ja) * 0.01; dy = Math.sin(ja) * 0.01; d2 = 1e-4; }   // точно друг на друге — развести
           var d = Math.sqrt(d2), push = (D - d) * 0.5, nx = dx / d, ny = dy / d;
           var ma = a.at ? 0.25 : 1, mb = b.at ? 0.25 : 1, wa = a.size === 2 ? 0.2 : 1, wb = b.size === 2 ? 0.2 : 1;
           var s = ma * wa + mb * wb || 1;
@@ -731,7 +751,7 @@
   Ground.prototype.hurtStruct = function(s, d) {
     if (s.dead) return;
     s.hp -= d;
-    if (s.hp <= 0) { s.hp = 0; s.dead = true; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.name + ' уничтожен' + (s.name.slice(-1) === 'а' ? 'а' : ''), s.team, 'bad'); }
+    if (s.hp <= 0) { s.hp = 0; s.dead = true; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.kind === 'gate' ? 'Ворота выбиты' : s.name + ' уничтожен' + (s.name.slice(-1) === 'а' ? 'а' : s.name.slice(-1) === 'я' ? 'а' : ''), s.team, 'bad'); }
   };
   Ground.prototype.shot = function(a, tg, hit, d, ti) {
     var x1 = tg.x, y1 = tg.y, mx = 0, my = 0;
@@ -753,7 +773,7 @@
       if (a.T.artillery) { this.artillery(a, tg); continue; }
       var aimA = a.T.vehicle && a.size === 2 ? a.turretA : a.aim;
       if (Math.abs(((Math.atan2(tg.y - a.y, tg.x - a.x) - aimA + 9.42) % 6.283) - 3.14) > 0.5) continue;
-      a.cd = a.T.rof * (0.85 + this.R() * 0.3);
+      a.cd = a.T.rof * (0.85 + this.R() * 0.3) * (a.rofK || 1);
       var moving = Math.abs(a.vx) + Math.abs(a.vy) > 0.4, hit, dmg;
       if (tg.s) {
         hit = this.R() < Math.max(0.05, a.T.acc / 100) * (moving ? 0.7 : 1);
@@ -813,9 +833,9 @@
   // Полевые турели: сами стреляют по видимым врагам в радиусе
   Ground.prototype.structsStep = function(dt) {
     for (var i = 0; i < this.structs.length; i++) {
-      var s = this.structs[i]; if (s.dead || s.kind !== 'turret') continue;
+      var s = this.structs[i]; if (s.dead || (s.kind !== 'turret' && s.kind !== 'tower')) continue;
       s.cd -= dt; if (s.cd > 0) continue;
-      var cx = s.x + 0.5, cy = s.y + 0.5, r = s.radius * RANGE_K, best = null, bd = r * r;
+      var cx = s.x + s.w / 2, cy = s.y + s.h / 2, r = s.radius * RANGE_K, best = null, bd = r * r;
       for (var j = 0; j < this.agents.length; j++) { var b = this.agents[j]; if (!b.alive || this.ctl(b) === s.team || (b.team === 2 && s.team === 2)) continue; var dx = b.x - cx, dy = b.y - cy, d = dx * dx + dy * dy; if (d < bd && this.canSee(s.team, b) && this.los(cx, cy, b.x, b.y)) { bd = d; best = b; } }
       if (!best) { s.cd = 0.5; continue; }
       s.cd = U.ROF.turret;
@@ -949,12 +969,16 @@
   Ground.prototype.defPosts = function(team) {
     if (this._posts && this._posts.team === team) return this._posts;
     var sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, f = this.threatDir(), m = this.map, R = rng(31);
-    var foot = [], veh = [], near = [], pf = this.pass.foot1, pt = this.pass.track2, ph = this.pass.hover2;
+    var foot = [], veh = [], near = [], pf = this.pass.foot1, pt = this.pass.track2, ph = this.pass.hover2, wr = this.settle.wall;
+    var fx1 = Math.round(f[0]), fy1 = Math.round(f[1]);
     for (var y = 2; y < N - 2; y++) for (var x = 2; x < N - 2; x++) {
       var c = y * N + x, dx = x + 0.5 - sqx, dy = y + 0.5 - sqy, d = Math.max(Math.abs(dx), Math.abs(dy)), dl = Math.sqrt(dx * dx + dy * dy) || 1, dot = (dx * f[0] + dy * f[1]) / dl;
+      // за стеной — только внутри неё; пост у стены со стороны врага ценится (парапет — укрытие)
+      if (wr && !(x > wr[0] && x < wr[0] + wr[2] - 1 && y > wr[1] && y < wr[1] + wr[3] - 1)) continue;
       var si = this.structAt[c], st = si >= 0 ? this.structs[si] : null;
-      if (st && (!st.enter || st.team !== team)) continue;
-      if (pf[c] && d >= DEF_NEAR && d <= DEF_FAR && dot > -0.15) foot.push([this.coverC[c] * 3 + m.e[c] * 1.2 + (st ? 4 : 0) + dot * 1.5 - d * 0.08 + R() * 0.3, x, y]);
+      if (st && (!st.enter || st.team !== team || st.kind === 'gate')) continue;
+      var front = m.t[(y + fy1) * N + x + fx1] === T.COVER ? 2.5 : 0;
+      if (pf[c] && d >= DEF_NEAR && d <= DEF_FAR && dot > -0.15) foot.push([this.coverC[c] * 3 + m.e[c] * 1.2 + (st ? 4 : 0) + front + dot * 1.5 - d * 0.08 + R() * 0.3, x, y]);
       if (!st && (pt[c] || ph[c]) && d >= DEF_NEAR - 2 && d <= DEF_FAR - 6 && dot > -0.3) veh.push([m.e[c] * 0.8 + dot * 1.2 - d * 0.1 + R() * 0.3, x, y, pt[c], ph[c]]);
       if (!st && pf[c] && d >= 2 && d <= DEF_NEAR + 2) near.push([-d + R() * 0.5, x, y]);
     }
@@ -984,7 +1008,7 @@
     var posts = this.defPosts(team), ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (!a.alive || a.team !== team || a.T.artillery) continue;
-      var list = a.T.cls === 'aa' || a.air || a.fly || a.T.medic || a.T.builder ? posts.near : a.T.vehicle ? posts.veh : posts.foot;
+      var list = a.size === 2 ? posts.veh : (a.T.cls === 'aa' || a.air || a.fly || a.T.medic || a.T.builder ? posts.near : posts.foot);
       var p = this.freePost(list, a) || this.freePost(posts.foot, a); if (!p) continue;
       p.by = a.id; a.dpost = p; var off = a.size === 2 ? 1 : 0.5;
       a.x = p.x + off; a.y = p.y + off; a.goal = [p.x, p.y]; a.at = true; a.hold = true; a.post = false;
@@ -1023,7 +1047,7 @@
     var ag = this.agents, sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, self = this;
     for (var tm = 0; tm < 2; tm++) {
       var teamAuto = this.teams[tm].auto, ids = [];
-      for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive || this.ctl(a) !== tm || (a.T.artillery && tm !== this.att)) continue; if (!teamAuto && !a.auto) continue; if (a.mind && a.mind.until > this.t) continue; ids.push(i); }
+      for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive || this.ctl(a) !== tm || (a.T.artillery && tm !== this.att)) continue; if (!teamAuto && !a.auto && !a.npc) continue; if (a.mind && a.mind.until > this.t) continue; ids.push(i); }
       if (!ids.length) continue;
       if (tm === this.att) this.aiAttack(tm, ids); else this.aiDefend(tm, ids);
     }
@@ -1064,7 +1088,7 @@
     for (var i = 0; i < ids.length; i++) {
       var a = ag[ids[i]];
       if (!a.dpost) {
-        var list = a.T.cls === 'aa' || a.air || a.fly || a.T.medic || a.T.builder ? posts.near : a.T.vehicle ? posts.veh : posts.foot;
+        var list = a.size === 2 ? posts.veh : (a.T.cls === 'aa' || a.air || a.fly || a.T.medic || a.T.builder ? posts.near : posts.foot);
         var p = this.freePost(list, a) || this.freePost(posts.foot, a);
         if (!p) continue;
         p.by = a.id; a.dpost = p; a.hold = false; a.sortie = false; a.post = false; a.focus = -1;
@@ -1085,7 +1109,52 @@
     }
   };
   // ---- захват площади: как capture_tick в игре, перевес даёт +1/с, равенство — спор
+  // ---- районы города: кто держит (больше бойцов внутри; при равенстве — прежний), их действие
+  Ground.prototype.districtsStep = function(dt) {
+    var ag = this.agents, ds = this.districts, i, j;
+    for (j = 0; j < ds.length; j++) { ds[j].cnt[0] = 0; ds[j].cnt[1] = 0; }
+    for (i = 0; i < ag.length; i++) {
+      var a = ag[i]; a.rofK = 1; if (!a.alive || a.team > 1 || a.air || a.fly) continue;
+      for (j = 0; j < ds.length; j++) { var r = ds[j].rect; if (a.x >= r[0] && a.x < r[0] + r[2] && a.y >= r[1] && a.y < r[1] + r[3]) { ds[j].cnt[this.ctl(a)]++; a.inD = j; break; } }
+      if (j === ds.length) a.inD = -1;
+    }
+    for (j = 0; j < ds.length; j++) {
+      var d = ds[j], was = d.by;
+      if (d.cnt[0] > d.cnt[1]) d.by = 0; else if (d.cnt[1] > d.cnt[0]) d.by = 1;
+      if (d.by !== was) { this.msg(d.name + ': ' + (d.by === this.def ? 'отбит' : 'занят врагом'), this.def, d.by === this.def ? 'gold' : 'bad'); this.msg(d.name + ': ' + (d.by === this.att ? 'взят' : 'потерян'), this.att, d.by === this.att ? 'gold' : 'bad'); }
+    }
+    for (i = 0; i < ag.length; i++) {
+      var b = ag[i]; if (!b.alive || b.inD == null || b.inD < 0) continue;
+      var dd = ds[b.inD]; if (dd.by !== this.ctl(b)) continue;
+      if (dd.id === 'hospital' && b.T.cls === 'infantry' && b.hp < b.hpMax) b.hp = Math.min(b.hpMax, b.hp + b.hpMax * 0.01 * dt);
+      else if (dd.id === 'workshops' && b.T.vehicle && b.hp < b.hpMax) b.hp = Math.min(b.hpMax, b.hp + b.hpMax * 0.01 * dt);
+      else if (dd.id === 'warehouses') b.rofK = 0.75;
+    }
+  };
+  // Ополчение: n ополченцев хозяина выходят с плаца казарм (или на край площади); казармы у врага — не выходят
+  Ground.prototype.raiseMilitia = function(n, opts) {
+    var team = this.def, gar = null;
+    for (var j = 0; j < this.districts.length; j++) if (this.districts[j].id === 'garrison') gar = this.districts[j];
+    if (gar && gar.by !== team) return 0;
+    var at = gar ? gar.spawn : [this.sx + SQUARE / 2, this.sy + SQUARE], tid = team === 0 ? 'rep_militia' : 'cis_militia', taken = {}, made = 0;
+    for (var i = 0; i < n; i++) {
+      var probe = { size: 1, move: 'foot', team: team, air: false, fly: false, T: U.type(tid) }, spot = this.spotNear(probe, at[0], at[1], taken);
+      if (!spot) break;
+      taken[spot[1] * N + spot[0]] = 1;
+      var a = this.add(tid, team, spot[0] + 0.5, spot[1] + 0.5, { aim: Math.atan2(this.threatDir()[1], this.threatDir()[0]), npc: true, uid: opts && opts.uids ? opts.uids[i] : null });
+      a.auto = true; made++;
+    }
+    if (made) { this.msg('Ополчение вышло на защиту: ' + made, team, 'gold'); this.msg('Из города вышло ополчение: ' + made, 1 - team, 'bad'); }
+    return made;
+  };
   Ground.prototype.capture = function(dt) {
+    this.districtsStep(dt);
+    // полигон: враг у стен — жители берутся за оружие (в игре — raise_militia по своим правилам)
+    if (this.militiaAuto && this.militiaT < 0) {
+      var tw = this.town, near = false, ag0 = this.agents;
+      for (var q = 0; q < ag0.length && !near; q++) { var e0 = ag0[q]; if (e0.alive && this.ctl(e0) === this.att && e0.x >= tw[0] - 6 && e0.x < tw[0] + tw[2] + 6 && e0.y >= tw[1] - 6 && e0.y < tw[1] + tw[3] + 6) near = true; }
+      if (near) { this.militiaT = this.t; var gar = this.districts.some(function(d) { return d.id === 'garrison'; }); this.raiseMilitia(TOWN.MILITIA_BASE[this.settle.level] + (gar ? 2 : 0)); }
+    }
     var cnt = [0, 0], ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (!a.alive || a.air || a.T.vehicle || a.team > 1) continue;
@@ -1136,7 +1205,7 @@
   };
   Ground.prototype.alive = function(team) { var n = 0; for (var i = 0; i < this.agents.length; i++) { var a = this.agents[i]; if (a.alive && this.ctl(a) === team) n++; } return n; };
   Ground.prototype.summary = function() {
-    var self = this, s = { t: this.t, over: this.over, why: this.why, alive: [this.alive(0), this.alive(1)], cap: this.cap, sq: [[], []] };
+    var self = this, s = { t: this.t, over: this.over, why: this.why, alive: [this.alive(0), this.alive(1)], cap: this.cap, sq: [[], []], districts: this.districts.map(function(d) { return { id: d.id, name: d.name, by: d.by, cnt: d.cnt.slice() }; }) };
     for (var tm = 0; tm < 2; tm++) s.sq[tm] = this.teams[tm].squads.map(function(q) { var n = 0; q.members.forEach(function(id) { if (self.agents[id].alive) n++; }); return { id: q.id, n: n }; });
     return s;
   };

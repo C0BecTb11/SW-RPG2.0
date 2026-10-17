@@ -102,6 +102,7 @@
     return b64enc(out);
   }
   function unpack(s, n) {
+    if (s && typeof s !== 'string') { if (s.length !== n) throw new Error('слой карты не той длины'); return new Uint8Array(s); }   // уже распакован (город наложен)
     var b = b64dec(s), out = new Uint8Array(n), o = 0;
     for (var i = 0; i + 1 < b.length; i += 2) { for (var k = 0; k < b[i] && o < n; k++) out[o++] = b[i + 1]; }
     if (o !== n) throw new Error('карта повреждена: ' + o + ' из ' + n);

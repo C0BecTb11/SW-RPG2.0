@@ -89,7 +89,10 @@
     camo:      ['Маскировочная сеть', 1, 80, 0, 1, 1, 0, 0, true, true],
     radar:     ['Радар', 2, 50, 0, 1, 10, 0, 0, false, false],
     extractor: ['Добытчик', 2, 250, 0, 1, 0, 0, 0, false, false],
-    cantina:   ['Кантина', 3, 600, 0, 1, 0, 0, 0, false, false]
+    cantina:   ['Кантина', 3, 600, 0, 1, 0, 0, 0, false, false],
+    // город (shared/rt-town): ворота — свои проходят, чужие ломают; башня — турель на бастионе 2×2
+    gate:      ['Ворота', 1, 1200, 0, 1, 0, 0, 0, true, false],
+    tower:     ['Башня', 2, 500, 0, 1, 7, 40, 78, false, false]
   };
   function structKind(typeId) { return (typeId || '').replace(/^(rep|cis)_/, '').replace(/^mine_.*/, 'extractor'); }
 

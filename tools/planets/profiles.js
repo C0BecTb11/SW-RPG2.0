@@ -25,7 +25,6 @@ module.exports = {
       mats: { 1: ['scree'], 2: ['meadow', 'grove'], 3: ['boulder', 'tree', 'fence'], 4: ['rock'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 7 });
       // две горные гряды с предгорьями (высота 1) и перевалами
       [[[4, 62], [44, 128]], [[140, 58], [100, 126]]].forEach(r => {
         const pts = g.meander(r[0], r[1], 10, 10);
@@ -51,6 +50,8 @@ module.exports = {
       }
       g.scatter(70, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.noiseFill(7, 0.7, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); }, 2, (x, y) => g.e[y * N + x] === 1);
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 7 });
     }
   },
 
@@ -64,7 +65,6 @@ module.exports = {
       mats: { 1: ['rubble'], 2: ['crater', 'trench'], 3: ['tankwreck', 'ruin', 'boulder'], 4: ['rock', 'wreck'], 11: ['hedgehog'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 4 });
       // серые плато
       for (let i = 0; i < 4; i++) g.plateau(g.pick([g.irnd(10, 40), g.irnd(100, 134)]), g.irnd(56, 126), g.irnd(7, 12), 1, 3, 0.35);
       // воронки былых боёв: внутри — укрытие для пехоты, по краю — завалы
@@ -89,6 +89,8 @@ module.exports = {
       });
       // окопы
       for (let i = 0; i < 6; i++) g.stroke(g.walk(g.irnd(10, 134), g.irnd(94, 130), 4, 3, 0.6), 1, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 1); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 4 });
     }
   },
 
@@ -102,7 +104,6 @@ module.exports = {
       mats: { 1: ['scree'], 2: ['moss'], 3: ['balustrade', 'boulder'], 4: ['rock', 'outcrop'], 6: ['chasm'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 8, sideW: 3 });
       // пропасти: две через всю карту южнее города и две у боков
       [98, 119].forEach((y0, i) => {
         const pts = g.meander([-2, y0 + g.irnd(-3, 3)], [N + 2, y0 + g.irnd(-3, 3)], 6, 12);
@@ -112,16 +113,11 @@ module.exports = {
       g.stroke(g.meander([122, 46], [128, 92], 5, 10), 5, (x, y) => g.paint(x, y, T.VOID, 0));
       // каменные плато между пропастями
       for (let i = 0; i < 4; i++) g.plateau(g.pick([g.irnd(30, 48), g.irnd(96, 116)]), g.irnd(104, 114), g.irnd(4, 6), 1, 2, 0.25);
-      // балюстрады по краю пропастей — укрытие
-      for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
-        const k = y * N + x;
-        if (g.t[k] !== T.OPEN || g.res[k]) continue;
-        const nearVoid = g.t[k + N] === T.VOID || g.t[k - N] === T.VOID;
-        if (nearVoid && (x * 7 + y * 3) % 11 < 4) g.paint(x, y, T.COVER, 0);
-      }
       g.place(18, 300, field, (x, y) => [g.diskCells(x, y, g.rnd(1.2, 2.4)), { k: 'outcrop', x: x, y: y }], T.BLOCK, 1, 1);
       g.scatter(55, T.COVER, 1, { gap: 1, cluster: [1, 2], where: field });
       g.noiseFill(8, 0.62, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 8, sideW: 3 });
     }
   },
 
@@ -135,7 +131,6 @@ module.exports = {
       mats: { 1: ['shards'], 2: ['crystalbed'], 3: ['crystal', 'crystalsmall'], 4: ['crystalridge', 'crystalspire'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 6 });
       // кристаллические гряды
       for (let i = 0; i < 5; i++) {
         const pts = g.walk(g.pick([g.irnd(6, 40), g.irnd(104, 138)]), g.irnd(56, 128), 5, 5, 0.5);
@@ -150,6 +145,8 @@ module.exports = {
       g.scatter(70, T.COVER, 1, { gap: 1, where: field });
       g.noiseFill(7, 0.62, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); });
       g.noiseFill(11, 0.66, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 6 });
     }
   },
 
@@ -163,14 +160,13 @@ module.exports = {
       mats: { 1: ['gravel', 'rail'], 2: ['weeds'], 3: ['container', 'chainfence', 'crate'], 4: ['rock', 'warehouse'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 3 });
       // залив с востока и пирсы
       const shore = g.noise(10, 3);
       for (let y = 56; y < 132; y++) for (let x = 100; x < N; x++) {
         const edge = 116 - Math.sin((y - 56) / 76 * Math.PI) * 14 + (shore(x, y) - 0.5) * 10;
         if (x > edge) g.paint(x, y, T.WATER, 0);
       }
-      for (let k = 0; k < 4; k++) { const y0 = 66 + k * 16; g.rect(100, y0, 30, 3, (x, y) => { if (g.t[y * N + x] === T.WATER) g.paint(x, y, T.BRIDGE, 0); }); }
+      for (let k = 0; k < 4; k++) { const y0 = 66 + k * 16; g.rect(100, y0, 30, 3, (x, y) => { if (g.t[y * N + x] === T.WATER) g.paint(x, y, T.OPEN, 1); }); }
       // склады — рядами
       for (let gy = 94; gy < 132; gy += 12) for (let gx = 6; gx < 100; gx += 16) {
         if (g.R() < 0.25) continue;
@@ -196,6 +192,8 @@ module.exports = {
       [[[0, 92], [100, 92]], [[0, 134], [100, 134]]].forEach(r => g.stroke(r, 1, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 1); }));
       g.noiseFill(8, 0.68, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 0); });
       g.noiseFill(6, 0.64, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 3 });
     }
   },
 
@@ -247,7 +245,6 @@ module.exports = {
       mats: { 1: ['gravel'], 2: ['ore'], 3: ['conveyor', 'oretruck', 'boulder'], 4: ['rock', 'spoil'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 5 });
       // карьеры террасами: верх 2, ступень 1, дно 0
       [[28, 108, 17], [114, 104, 16], [20, 66, 10], [124, 66, 10]].forEach(p => {
         const lv1 = [], lv0 = [];
@@ -269,6 +266,8 @@ module.exports = {
       g.scatter(30, T.COVER, 1, { gap: 2, where: field });
       g.scatter(60, T.COVER, 2, { gap: 1, cluster: [1, 2], where: field });
       g.noiseFill(7, 0.62, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 5 });
     }
   },
 
@@ -282,7 +281,6 @@ module.exports = {
       mats: { 1: ['dunes', 'scree'], 2: ['scrub'], 3: ['boulder', 'rockfin'], 4: ['mesa', 'hive'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 9 });
       // столовые горы — каньоны между ними
       g.noiseFill(14, 0.6, (x, y) => g.paint(x, y, T.BLOCK, 0), 4, field);
       // уступы у подножий
@@ -297,6 +295,8 @@ module.exports = {
       g.scatter(70, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.scatter(30, T.COVER, 1, { gap: 2, cluster: [2, 3], line: [1, 1], where: field });
       g.noiseFill(6, 0.7, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 9 });
     }
   },
 
@@ -310,7 +310,6 @@ module.exports = {
       mats: { 1: ['ash'], 2: ['crater'], 3: ['debris', 'boulder'], 4: ['rock', 'hull'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 6 });
       // остовы кораблей — крупные обломки корпусов
       g.place(8, 600, field, (x, y) => {
         const a = g.R() * Math.PI, w = g.rnd(10, 17), h = g.rnd(3.5, 6), pts = g.rotRect(x, y, w, h, a);
@@ -327,6 +326,8 @@ module.exports = {
       g.noiseFill(8, 0.5, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); });
       g.scatter(60, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.scatter(50, T.COVER, 1, { gap: 1, where: field });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 6 });
     }
   },
 
@@ -383,7 +384,6 @@ module.exports = {
       mats: { 1: ['sand', 'roots'], 2: ['undergrowth', 'fern'], 3: ['log', 'stump', 'boulder'], 4: ['wroshyr', 'rock'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 8 });
       // озеро на юго-востоке с песчаным берегом
       const lake = g.blob(116, 112, 520, (x, y) => g.paint(x, y, T.WATER, 0));
       lake.forEach(c => g.disk(c[0], c[1], 2.2, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); }));
@@ -401,6 +401,8 @@ module.exports = {
       g.scatter(40, T.COVER, 1, { gap: 1, where: field });
       g.scatter(30, T.COVER, 2, { gap: 1, cluster: [1, 2], where: field });
       g.noiseFill(6, 0.72, (x, y) => { if (g.t[y * N + x] === T.LIGHT) g.paint(x, y, T.ROUGH, 1); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 8 });
     }
   },
 
@@ -461,7 +463,6 @@ module.exports = {
       mats: { 1: ['snowdrift'], 2: ['frost'], 3: ['icecrystal', 'boulder'], 4: ['icecrag', 'icespire'], 6: ['crevasse'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 7 });
       // разломы во льду — длинные трещины
       for (let i = 0; i < 7; i++) {
         const pts = g.walk(g.irnd(4, 140), g.irnd(54, 132), 9, 5, 0.45);
@@ -475,6 +476,8 @@ module.exports = {
       g.scatter(70, T.COVER, 0, { gap: 1, cluster: [2, 4], where: field });
       g.scatter(40, T.COVER, 1, { gap: 1, where: field });
       g.noiseFill(7, 0.7, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 7 });
     }
   },
 
@@ -488,7 +491,6 @@ module.exports = {
       mats: { 1: ['ash'], 2: ['cinder'], 3: ['obsidian', 'pipe'], 4: ['basaltspire', 'rock'], 6: ['lava'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 4, sideW: 3 });
       // лава всюду, где нет базальтовых островов
       const nz = g.noise(16, 4);
       for (let y = 48; y < N; y++) for (let x = 0; x < N; x++) if (nz(x, y) < 0.47) g.paint(x, y, T.VOID, 0);
@@ -506,6 +508,8 @@ module.exports = {
         const k = y * N + x;
         if (g.t[k] === T.OPEN && !g.res[k] && (g.t[k + 1] === T.VOID || g.t[k - 1] === T.VOID || g.t[k + N] === T.VOID || g.t[k - N] === T.VOID) && g.R() < 0.35) g.paint(x, y, T.LIGHT, 1);
       }
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 4, sideW: 3 });
     }
   },
 
@@ -519,7 +523,6 @@ module.exports = {
       mats: { 1: ['scree'], 2: ['heath'], 3: ['boulder', 'stele'], 4: ['rock', 'pillar'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 6 });
       // фьорды с запада и востока
       [[0, 70], [0, 112], [N - 1, 62], [N - 1, 104], [N - 1, 128]].forEach(p => {
         const dir = p[0] === 0 ? 0 : Math.PI, pts = g.walk(p[0], p[1], g.irnd(5, 8), 4.5, 0.35, dir);
@@ -534,6 +537,8 @@ module.exports = {
       g.scatter(60, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.scatter(16, T.COVER, 1, { gap: 2, where: field });
       g.noiseFill(9, 0.66, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 6 });
     }
   },
 
@@ -547,7 +552,6 @@ module.exports = {
       mats: { 1: ['mud'], 2: ['swamp', 'grove'], 3: ['column', 'tree', 'boulder'], 4: ['rock', 'ruinwall'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 9 });
       // пологие холмы (много склонов)
       for (let i = 0; i < 6; i++) g.plateau(g.irnd(8, 136), g.irnd(56, 130), g.irnd(6, 10), 1, 6, 0.4);
       // озёра, ручьи, болота вокруг
@@ -567,6 +571,8 @@ module.exports = {
       g.noiseFill(9, 0.64, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.LIGHT, 1); });
       g.scatter(50, T.COVER, 1, { gap: 1, where: field });
       g.scatter(40, T.COVER, 2, { gap: 1, cluster: [1, 2], where: field });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 9 });
     }
   },
 
@@ -609,7 +615,6 @@ module.exports = {
       mats: { 1: ['dust'], 2: ['scrub'], 3: ['boulder', 'rockfin'], 4: ['mesa'], 0: ['ground', 'tunnel'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 7 });
       // мезы — плато в два яруса
       for (let i = 0; i < 6; i++) {
         const cx = g.pick([g.irnd(10, 42), g.irnd(100, 134), g.irnd(40, 104)]), cy = g.irnd(96, 128), r = g.irnd(8, 13);
@@ -630,6 +635,8 @@ module.exports = {
       g.scatter(60, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.scatter(20, T.COVER, 1, { gap: 2, cluster: [2, 3], line: [1, 0], where: field });
       g.noiseFill(7, 0.72, (x, y) => { if (g.t[y * N + x] === T.OPEN && g.m[y * N + x] === 0) g.paint(x, y, T.LIGHT, 0); });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 7 });
     }
   },
 
@@ -643,7 +650,6 @@ module.exports = {
       mats: { 1: ['moss'], 2: ['glowflora', 'thorns'], 3: ['boulder', 'pod'], 4: ['rock', 'shroom'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 7 });
       // скалистые гряды
       for (let i = 0; i < 7; i++) {
         const pts = g.walk(g.irnd(4, 140), g.irnd(54, 132), 7, 5, 0.4);
@@ -657,6 +663,8 @@ module.exports = {
       g.noiseFill(7, 0.58, (x, y) => { if (g.t[y * N + x] === T.OPEN) g.paint(x, y, T.ROUGH, 0); });
       g.scatter(60, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.scatter(40, T.COVER, 1, { gap: 1, where: field });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 7 });
     }
   },
 
@@ -670,7 +678,6 @@ module.exports = {
       mats: { 1: ['gravel'], 2: ['scrub'], 3: ['boulder', 'rockfin'], 4: ['rock'], 6: ['sinkhole'] }
     },
     build(g, T) {
-      g.mainRoads({ amp: 9 });
       // провалы
       g.place(9, 900, field, (x, y) => {
         const r = g.rnd(5, 12); return [g.diskCells(x, y, r), { k: 'sinkhole', x: x, y: y, r: r }];
@@ -681,6 +688,8 @@ module.exports = {
       g.noiseFill(12, 0.69, (x, y) => g.paint(x, y, T.BLOCK, 0), 3, field);
       g.scatter(70, T.COVER, 0, { gap: 1, cluster: [1, 3], where: field });
       g.scatter(20, T.COVER, 1, { gap: 2, where: field });
+      // дороги — по готовой местности: в обход скал, коротко через воду и пропасти
+      g.mainRoads({ amp: 9 });
     }
   }
 };

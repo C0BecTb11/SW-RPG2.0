@@ -142,16 +142,20 @@
     if (!(ra && a < b) && !(rb && b < a)) return false;
     return x0 === x1 || y0 === y1;
   }
-  // Поместится ли машина size×size, левый верхний угол (x, y): все клетки годны и на одной высоте
-  // (или склон с соседней), как и требует ход машины по карте
+  // Поместится ли машина size×size, левый верхний угол (x, y): все клетки годны, и машина
+  // стоит ровно — или наполовину на склоне (нижние клетки — склон, верхние — на 1 выше)
   function canBox(map, x, y, size, mv) {
-    var e0 = -1;
-    for (var j = 0; j < size; j++) for (var i = 0; i < size; i++) {
+    var lo = 99, hi = -1, i, j;
+    for (j = 0; j < size; j++) for (i = 0; i < size; i++) {
       if (!canStand(map, x + i, y + j, mv)) return false;
-      if (MOVE_I[mv] !== 3) {
-        var e = map.e[(y + j) * map.w + x + i];
-        if (e0 < 0) e0 = e; else if (e !== e0 && map.t[(y + j) * map.w + x + i] !== T.RAMP) return false;
-      }
+      var e = map.e[(y + j) * map.w + x + i];
+      if (e < lo) lo = e; if (e > hi) hi = e;
+    }
+    if (MOVE_I[mv] === 3 || hi === lo) return true;
+    if (hi - lo > 1) return false;
+    for (j = 0; j < size; j++) for (i = 0; i < size; i++) {
+      var k = (y + j) * map.w + x + i;
+      if (map.e[k] === lo && map.t[k] !== T.RAMP) return false;
     }
     return true;
   }

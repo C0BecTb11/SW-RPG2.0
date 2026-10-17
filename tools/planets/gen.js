@@ -10,6 +10,7 @@
 // ровными и свободными, а из полосы вторжения можно было дойти и доехать до
 // города и до зон. Готовые карты — shared/planets/<id>.json; их кладут в
 // репозиторий и больше не пересоздают без нужды (иначе планета изменится).
+// После правок — прогон войск: node tools/planets/walk.js
 'use strict';
 
 const fs = require('fs');
@@ -49,6 +50,24 @@ function valueNoise(seed) {
   };
 }
 
+// Очередь с приоритетом для поиска пути
+class Heap {
+  constructor() { this.a = []; }
+  get size() { return this.a.length; }
+  push(c, v) {
+    const a = this.a; a.push([c, v]); let i = a.length - 1;
+    while (i > 0) { const p = (i - 1) >> 1; if (a[p][0] <= a[i][0]) break; [a[p], a[i]] = [a[i], a[p]]; i = p; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last; let i = 0;
+      for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < a.length && a[l][0] < a[m][0]) m = l; if (r < a.length && a[r][0] < a[m][0]) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m; }
+    }
+    return top;
+  }
+}
+
 // ---------------------------------------------------------------- построитель
 // res: 0 — свободно; 1 — заповедно (зоны, участки, полоса, город): только ровная земля;
 // 2 — проход (дорога): без преград, вода и пропасть становятся мостом;
@@ -60,7 +79,7 @@ class Gen {
     this.seed = hashStr('sw-ground/' + id + '/' + (prof.seedSalt || 0));
     this.R = mulberry32(this.seed);
     this.t = new Uint8Array(N * N); this.e = new Uint8Array(N * N); this.m = new Uint8Array(N * N);
-    this.res = new Uint8Array(N * N);
+    this.res = new Uint8Array(N * N); this.objMask = new Uint8Array(N * N); this.set3 = new Uint8Array(N * N);
     this.objs = []; this.paths = []; this.salt = 1;
     this.base = prof.base || 0;
     this.e.fill(this.base);
@@ -89,6 +108,7 @@ class Gen {
     for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) {
       if (!this.inb(i, j)) continue;
       const k = j * N + i;
+      if (kind === 3) this.set3[k] = 1;
       if (kind === 1 || this.res[k] === 0 || (kind === 2 && this.res[k] === 3)) this.res[k] = kind;
     }
   }
@@ -106,8 +126,8 @@ class Gen {
     this.reserveBox(0, 0, N, 1, 3);
   }
   // Проход: ломаная с лёгким изгибом, ширина w; отмечается как res=2 и запоминается для дорог
-  corridor(pts, w, kind) {
-    if (this.prof.ortho) {
+  corridor(pts, w, kind, routed) {
+    if (this.prof.ortho && !routed) {
       // только прямые участки (платформы, кварталы): ломаная → ступени по осям
       pts = [pts[0], pts[pts.length - 1]];
       const q = [pts[0]];
@@ -121,7 +141,55 @@ class Gen {
     }
     const r = (w - 1) / 2;
     out.forEach(p => this.reserveBox(Math.round(p[0] - r), Math.round(p[1] - r), w, w, 2));
-    this.paths.push({ k: kind || 'road', w: w, pts: pts.map(p => [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2]) });
+    const keep = routed ? pts.filter((p, i) => i % 3 === 0 || i === pts.length - 1) : pts;
+    this.paths.push({ k: kind || 'road', w: w, pts: keep.map(p => [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2]) });
+  }
+  // Дорога в обход заповедного (участков, зон, города): поиск пути по клеткам.
+  // Повороты дороже — дорога прямее; шум — лёгкие изгибы; у заповедного — с отступом.
+  route(a, b, opts) {
+    opts = opts || {};
+    const ortho = !!this.prof.ortho, D = ortho ? 4 : 8, turn = opts.turn != null ? opts.turn : ortho ? 8 : 1.2, wig = opts.wig != null ? opts.wig : 0.8;
+    const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+    const nzf = this.noise(9, 2);
+    const ax = Math.round(a[0]), ay = Math.round(a[1]), bx = Math.round(b[0]), by = Math.round(b[1]);
+    const near = (x, y, px, py) => Math.abs(x - px) <= 3 && Math.abs(y - py) <= 3;
+    const cellCost = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const k = y * N + x;
+      if (near(x, y, ax, ay) || near(x, y, bx, by)) { cellCost[k] = 0; continue; }
+      if (this.res[k] === 1 || this.objMask[k]) { cellCost[k] = Infinity; continue; }
+      let c = nzf(x, y) * wig * 2;
+      // местность: дорога обходит скалы, коротко пересекает воду и пропасти
+      const tc = this.t[k];
+      if (tc === T.WATER) c += this.prof.ford ? 3 : 7;
+      else if (tc === T.VOID) c += 8;
+      else if (tc === T.BLOCK) c += 9;
+      else if (tc === T.COVER || tc === T.TRAP) c += 1.5;
+      for (let d = 0; d < 4; d++) { const nx = x + [1, -1, 0, 0][d], ny = y + [0, 0, 1, -1][d]; if (this.inb(nx, ny) && this.e[ny * N + nx] !== this.e[k]) { c += 2; break; } }
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (this.inb(x + i, y + j) && this.res[(y + j) * N + x + i] === 1) c += 3;
+      cellCost[k] = c;
+    }
+    const S = N * N * D, cost = new Float64Array(S).fill(Infinity), prev = new Int32Array(S).fill(-1), h = new Heap();
+    for (let d = 0; d < D; d++) { const st = (ay * N + ax) * D + d; cost[st] = 0; h.push(0, st); }
+    let goal = -1;
+    while (h.size) {
+      const [c, st] = h.pop();
+      if (c > cost[st]) continue;
+      const k = (st / D) | 0, d = st % D, x = k % N, y = (k / N) | 0;
+      if (x === bx && y === by) { goal = st; break; }
+      for (let e = 0; e < D; e++) {
+        const nx = x + DX[e], ny = y + DY[e];
+        if (!this.inb(nx, ny)) continue;
+        const nk = ny * N + nx, cc = cellCost[nk];
+        if (cc === Infinity) continue;
+        const nc = c + (e >= 4 ? 1.414 : 1) + (e !== d ? turn : 0) + cc, ns = nk * D + e;
+        if (nc < cost[ns]) { cost[ns] = nc; prev[ns] = st; h.push(nc, ns); }
+      }
+    }
+    if (goal < 0) return this.meander(a, b, 0);
+    const pts = [];
+    for (let st = goal; st >= 0; st = prev[st]) { const k = (st / D) | 0; pts.push([k % N, (k / N) | 0]); }
+    return pts.reverse();
   }
   // Извилистая линия между точками (для дорог и рек): промежуточные точки сдвигаются шумом
   meander(a, b, amp, step) {
@@ -137,20 +205,21 @@ class Gen {
   // Главные дороги: от полосы вторжения к южным воротам города, от северных ворот — к зонам
   mainRoads(opts) {
     opts = opts || {};
-    const tw = this.town, cx = tw[0] + tw[2] / 2 - 0.5, w = opts.w || 3, amp = opts.amp != null ? opts.amp : 6;
+    const tw = this.town, cx = Math.round(tw[0] + tw[2] / 2 - 0.5), w = opts.w || 3, amp = opts.amp != null ? opts.amp : 6;
+    const wig = amp * 0.14;
     const sx = opts.stripX != null ? opts.stripX : cx;
-    this.corridor(this.meander([sx, N - 3], [cx, tw[1] + tw[3] + 1], amp), w, 'main');
+    this.corridor(this.route([sx, N - 3], [cx, tw[1] + tw[3] + 1], { wig: wig }), w, 'main', true);
     this.z.deploy.forEach(d => {
       const zx = d[0] + d[2] / 2 - 0.5, zy = d[1] + d[2] + 1;
-      this.corridor(this.meander([cx, tw[1] - 2], [zx, zy], amp * 0.7), w, 'main');
+      this.corridor(this.route([cx, tw[1] - 2], [zx, zy], { wig: wig }), w, 'main', true);
     });
     if (opts.sides !== false) {
       // боковые: от западных и восточных ворот к краям, потом вниз к полосе (обходы)
-      const cy = tw[1] + tw[3] / 2 - 0.5;
-      [[tw[0] - 2, this.irnd(14, 26)], [tw[0] + tw[2] + 1, this.irnd(118, 130)]].forEach(s => {
-        const gx = s[0], ex = s[1];
-        this.corridor(this.meander([gx, cy], [ex, cy + this.irnd(-8, 8)], amp * 0.6).concat(
-          this.meander([ex, cy + 10], [ex + this.irnd(-6, 6), N - 3], amp)), opts.sideW || 2, 'side');
+      const cy = Math.round(tw[1] + tw[3] / 2 - 0.5);
+      [[tw[0] - 2, this.irnd(14, 26)], [tw[0] + tw[2] + 1, this.irnd(118, 130)]].forEach(sd => {
+        const gx = sd[0], ex = sd[1], my = cy + this.irnd(-8, 8);
+        const p1 = this.route([gx, cy], [ex, my], { wig: wig }), p2 = this.route([ex, my], [ex + this.irnd(-6, 6), N - 3], { wig: wig });
+        this.corridor(p1.concat(p2.slice(1)), opts.sideW || 2, 'side', true);
       });
     }
   }
@@ -162,7 +231,7 @@ class Gen {
     if (!force && r) {
       if (r === 1) return false;
       if (code === T.BLOCK || code === T.VOID || code === T.WATER || code === T.TRAP) {
-        if (r === 3) return false;
+        if (r === 3 || this.set3[k]) return false;
         if (code === T.BLOCK || code === T.TRAP) return false;
         code = code === T.WATER && this.prof.ford ? T.FORD : T.BRIDGE; mat = 0;
       }
@@ -324,7 +393,7 @@ class Gen {
     if (!cells.length || !this.areaFree(cells, pad, codes)) return false;
     const e0 = this.e[cells[0][1] * N + cells[0][0]];
     for (const p of cells) if (this.e[p[1] * N + p[0]] !== e0) return false;
-    cells.forEach(p => this.paint(p[0], p[1], code, mat));
+    cells.forEach(p => { this.paint(p[0], p[1], code, mat); if (code === T.BLOCK) this.objMask[p[1] * N + p[0]] = 1; });
     if (o) this.objs.push(o);
     return true;
   }
@@ -374,13 +443,14 @@ class Gen {
       if (r === 1) { this.t[k] = T.OPEN; this.m[k] = 0; this.e[k] = this.base; }
       else if (r === 3) {
         this.e[k] = this.base;
-        if (this.t[k] === T.BLOCK || this.t[k] === T.WATER || this.t[k] === T.VOID || this.t[k] === T.TRAP || this.t[k] === T.BRIDGE || this.t[k] === T.RAMP) { this.t[k] = T.OPEN; this.m[k] = 0; }
+        if (this.t[k] === T.BLOCK || this.t[k] === T.WATER || this.t[k] === T.VOID || this.t[k] === T.TRAP || this.t[k] === T.BRIDGE) { this.t[k] = T.OPEN; this.m[k] = 0; }
       } else if (r === 2) {
         const c = this.t[k];
         if (c === T.BLOCK || c === T.COVER || c === T.TRAP) { this.t[k] = T.OPEN; this.m[k] = 0; }
+        else if ((c === T.WATER || c === T.VOID || c === T.BRIDGE) && this.set3[k]) { this.t[k] = T.OPEN; this.m[k] = 0; this.e[k] = this.base; }
         else if (c === T.WATER) { this.t[k] = this.prof.ford ? T.FORD : T.BRIDGE; this.m[k] = 0; }
         else if (c === T.VOID) { this.t[k] = T.BRIDGE; this.m[k] = 0; }
-        if (this.t[k] === T.OPEN && this.prof.road !== false) { this.t[k] = T.ROAD; this.m[k] = 0; }
+        if ((this.t[k] === T.OPEN || this.t[k] === T.ROUGH || this.t[k] === T.LIGHT) && this.prof.road !== false) { this.t[k] = T.ROAD; this.m[k] = 0; }
       }
     }
     // проходы через перепад высот — склоны на нижней клетке
@@ -428,7 +498,7 @@ class Gen {
   }
   // Поиск пути с учётом преград: из множества стартов к цели; цена — сколько придётся «прорубить»
   carve(starts, goal, mv, width) {
-    const cost = new Float32Array(N * N).fill(1e9), prev = new Int32Array(N * N).fill(-1);
+    const cost = new Float64Array(N * N).fill(1e9), prev = new Int32Array(N * N).fill(-1);
     const heap = [];
     const push = (k, c) => { heap.push([c, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
@@ -603,6 +673,121 @@ class Gen {
     }
     this.filled = filled;
   }
+  // Связные куски одного типа (4 соседа)
+  comps(test) {
+    const seen = new Uint8Array(N * N), out = [];
+    for (let k = 0; k < N * N; k++) {
+      if (seen[k] || !test(k)) continue;
+      const q = [k]; seen[k] = 1;
+      for (let i = 0; i < q.length; i++) {
+        const c = q[i], x = c % N, y = (c / N) | 0;
+        for (let d = 0; d < 4; d++) {
+          const nx = x + [1, -1, 0, 0][d], ny = y + [0, 0, 1, -1][d];
+          if (!this.inb(nx, ny)) continue;
+          const nk = ny * N + nx;
+          if (!seen[nk] && test(nk)) { seen[nk] = 1; q.push(nk); }
+        }
+      }
+      out.push(q);
+    }
+    return out;
+  }
+  // Мосты: каждый — прямой настил шириной 3 от берега до берега. Обрывки и мосты в никуда
+  // убираются (под ними снова вода или пропасть); кривые мосты, проложенные поиском пути, выпрямляются.
+  fixBridges() {
+    this.objs = this.objs.filter(o => o.k !== 'bridge');
+    const land = k => { const c = this.t[k]; return c !== T.BRIDGE && c !== T.WATER && c !== T.VOID && P.canStand(this, k % N, (k / N) | 0, 'foot'); };
+    const comps = this.comps(k => this.t[k] === T.BRIDGE);
+    let rebuilt = 0, removed = 0, kept = 0;
+    comps.forEach(cells => {
+      // что под мостом и где берега
+      let voids = 0, waters = 0;
+      const shore = new Map();
+      cells.forEach(c => {
+        const x = c % N, y = (c / N) | 0;
+        for (let d = 0; d < 4; d++) {
+          const nx = x + [1, -1, 0, 0][d], ny = y + [0, 0, 1, -1][d];
+          if (!this.inb(nx, ny)) continue;
+          const nk = ny * N + nx, t = this.t[nk];
+          if (t === T.VOID) voids++; else if (t === T.WATER) waters++;
+          else if (land(nk)) shore.set(nk, 1);
+        }
+      });
+      const under = voids >= waters ? T.VOID : T.WATER;
+      cells.forEach(c => { this.t[c] = voids + waters ? under : T.OPEN; this.m[c] = 0; });
+      if (!voids && !waters) { removed++; return; }
+      // берега — кучки клеток суши, касающиеся моста (соседние клетки — одна кучка).
+      // Одна кучка — мост в никуда: убрать. Две — выпрямить. Больше — развилка: оставить как есть.
+      const pts = [...shore.keys()], grp = new Map();
+      let G = 0;
+      pts.forEach(s0 => {
+        if (grp.has(s0)) return;
+        G++; const st = [s0]; grp.set(s0, G);
+        while (st.length) {
+          const c = st.pop(), x = c % N, y = (c / N) | 0;
+          for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const nk = (y + j) * N + x + i; if (shore.has(nk) && !grp.has(nk)) { grp.set(nk, G); st.push(nk); } }
+        }
+      });
+      if (G < 2) { removed++; return; }
+      if (G > 2 || this.prof.ortho) {
+        cells.forEach(c => { this.t[c] = T.BRIDGE; this.m[c] = 0; });
+        kept++; return;
+      }
+      const bySize = {};
+      grp.forEach(g => bySize[g] = (bySize[g] || 0) + 1);
+      const order = Object.keys(bySize).sort((a, b) => bySize[b] - bySize[a]).map(Number);
+      const A = pts.filter(k => grp.get(k) === order[0]), B = pts.filter(k => grp.get(k) === order[1]);
+      // ближайшая пара берегов на одной высоте (если есть)
+      let best = null, bd = 1e9;
+      A.forEach(a => B.forEach(b => {
+        const d = Math.hypot(a % N - b % N, ((a / N) | 0) - ((b / N) | 0)) + (this.e[a] !== this.e[b] ? 50 : 0);
+        if (d < bd) { bd = d; best = [a, b]; }
+      }));
+      const ax = best[0] % N + 0.5, ay = ((best[0] / N) | 0) + 0.5, bx = best[1] % N + 0.5, by = ((best[1] / N) | 0) + 0.5, h0 = this.e[best[0]];
+      const L = Math.hypot(bx - ax, by - ay), nx = -(by - ay) / L, ny = (bx - ax) / L;
+      for (let k = 0; k <= L * 3; k++) {
+        const f = k / (L * 3), px = ax + (bx - ax) * f, py = ay + (by - ay) * f;
+        for (let w = -1.2; w <= 1.2; w += 0.4) {
+          const x = Math.floor(px + nx * w), y = Math.floor(py + ny * w);
+          if (!this.inb(x, y)) continue;
+          const kk = y * N + x;
+          if (this.t[kk] === T.WATER || this.t[kk] === T.VOID) { this.t[kk] = T.BRIDGE; this.m[kk] = 0; this.e[kk] = h0; }
+        }
+      }
+      this.objs.push({ k: 'bridge', a: [ax, ay], b: [bx, by], w: 3, u: under === T.VOID ? 'void' : 'water' });
+      rebuilt++;
+    });
+    return { rebuilt, removed, kept };
+  }
+  // Лишние обрывки: лужи и ямки, одиночные скалы, куски дорог, склоны в никуда
+  tidy() {
+    let n = 0;
+    this.comps(k => this.t[k] === T.WATER || this.t[k] === T.VOID).forEach(c => {
+      if (c.length >= 6) return;
+      if (c.some(k => k % N === 0 || k % N === N - 1 || k < N || k >= N * (N - 1))) return;
+      c.forEach(k => { this.t[k] = T.OPEN; this.m[k] = 0; n++; });
+    });
+    this.comps(k => this.t[k] === T.BLOCK && !this.objMask[k]).forEach(c => {
+      if (c.length > 2) return;
+      const cov = this.prof.look && this.prof.look.mats && this.prof.look.mats[3];
+      c.forEach(k => { this.t[k] = cov ? T.COVER : T.OPEN; this.m[k] = 0; n++; });
+    });
+    this.comps(k => this.t[k] === T.ROAD).forEach(c => {
+      if (c.length >= 10) return;
+      c.forEach(k => { this.t[k] = T.OPEN; this.m[k] = 0; n++; });
+    });
+    for (let k = 0; k < N * N; k++) {
+      if (this.t[k] !== T.RAMP) continue;
+      const x = k % N, y = (k / N) | 0;
+      let up = false;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + [1, -1, 0, 0][d], ny = y + [0, 0, 1, -1][d];
+        if (this.inb(nx, ny) && this.e[ny * N + nx] === this.e[k] + 1 && P.canStand(this, nx, ny, 'foot')) up = true;
+      }
+      if (!up) { this.t[k] = this.res[k] === 2 && this.prof.road !== false ? T.ROAD : T.OPEN; this.m[k] = 0; n++; }
+    }
+    return n;
+  }
   // ---------------------------------------------------------------- проверки
   check() {
     const err = [], tw = this.town;
@@ -616,7 +801,11 @@ class Gen {
     }
     let walk = 0, reach = 0;
     for (let k = 0; k < N * N; k++) { if (P.canStand(this, k % N, (k / N) | 0, 'foot')) { walk++; if (foot[k]) reach++; } }
-    if (reach < walk) err.push('недостижимых клеток: ' + (walk - reach));
+    if (reach < walk) {
+      let ex = '';
+      for (let k = 0; k < N * N && ex.length < 60; k++) if (P.canStand(this, k % N, (k / N) | 0, 'foot') && !foot[k]) ex += ' ' + (k % N) + ',' + ((k / N) | 0) + ':' + this.t[k] + '/' + this.e[k];
+      err.push('недостижимых клеток: ' + (walk - reach) + ' (' + ex + ')');
+    }
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       for (let d = 0; d < 2; d++) {
         const nx = x + 1 - d, ny = y + d;
@@ -634,8 +823,15 @@ class Gen {
     this.prof.build(this, T);
     this.enforce();
     this.cliffs();
-    this.cut = this.connect();
-    this.enforce();
+    this.cut = 0; this.tidied = 0;
+    // доводка по кругу: связность → ровные места → мосты → обрывки; пока проверка не чиста
+    for (let round = 0; round < 6; round++) {
+      this.cut += this.connect();
+      this.enforce();
+      this.br = this.fixBridges();
+      this.tidied += this.tidy();
+      if (!this.check().err.length) break;
+    }
     return this;
   }
   json() {
@@ -662,7 +858,7 @@ function run(ids) {
     const pct = c => Math.round((res.stat[c] || 0) / (N * N) * 1000) / 10;
     console.log((res.err.length ? '✗ ' : '✓ ') + id.padEnd(14) + (txt.length / 1024).toFixed(1).padStart(5) + ' КБ  проход ' +
       (res.walk / (N * N) * 100).toFixed(0) + '%  скалы ' + pct(T.BLOCK) + '%  вода ' + pct(T.WATER) + '%  пропасть ' + pct(T.VOID) +
-      '%  укрытия ' + pct(T.COVER) + '%  заросли ' + pct(T.LIGHT) + '%  прорублено ' + g.cut + '  залито ' + g.filled + '  объектов ' + g.objs.length +
+      '%  укрытия ' + pct(T.COVER) + '%  заросли ' + pct(T.LIGHT) + '%  мостов ' + g.br.rebuilt + ' (убрано ' + g.br.removed + ')  обрывков ' + g.tidied + '  залито ' + g.filled + '  объектов ' + g.objs.length +
       (res.err.length ? '\n    ' + res.err.slice(0, 6).join('\n    ') : ''));
     if (res.err.length) bad++;
   });

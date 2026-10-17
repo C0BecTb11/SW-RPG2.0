@@ -204,6 +204,17 @@
     var self2 = this;
     ['R', 'L', 'L1', 'R1', 'D', 'B', 'W', 'V', 'F', 'EL', 'ER', 'S', 'AO', 'WD', 'VD', 'GL'].forEach(function(f) { if (self2[f]) self2[f] = up2(self2[f], N); });
     this.groundFn = GROUND[this.ground] || GROUND.soil;
+    // прямые мосты рисуются целиком (настил от берега до берега), их клетки — не по одной
+    var BM = new Uint8Array(n);
+    map.objs.forEach(function(o) {
+      if (o.k !== 'bridge') return;
+      var dx = o.b[0] - o.a[0], dy = o.b[1] - o.a[1], L = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / L, uy = dy / L;
+      for (var q = -0.5; q <= L + 0.5; q += 0.25) for (var w = -o.w / 2; w <= o.w / 2; w += 0.25) {
+        var x = Math.floor(o.a[0] + ux * q - uy * w), y = Math.floor(o.a[1] + uy * q + ux * w);
+        if (x >= 0 && y >= 0 && x < N && y < N && t[y * N + x] === TT.BRIDGE) BM[y * N + x] = 1;
+      }
+    });
+    this.BM = BM;
     this.cache = {};
   }
   function up2(F, N) {
@@ -829,6 +840,47 @@
     }
   }
 
+  // Прямой мост: настил от берега до берега, доски поперёк, перила со столбиками, тень вниз
+  function deck(ctx, T, o) {
+    var st = T.look.bridge || 'plank';
+    var pal = { arch: [168, 182, 176], stone: [206, 198, 180], pier: [92, 88, 84], walkway: [196, 204, 208], metal: [74, 70, 68], rope: [140, 108, 70], plank: [134, 102, 66] };
+    var c = pal[st] || pal.plank;
+    var dx = o.b[0] - o.a[0], dy = o.b[1] - o.a[1], L = Math.sqrt(dx * dx + dy * dy) || 1, ang = Math.atan2(dy, dx), hw = o.w / 2 - 0.05;
+    ctx.save();
+    ctx.translate(o.a[0], o.a[1]); ctx.rotate(ang);
+    var x0 = -0.75, x1 = L + 0.75;
+    // тень: над пропастью — далеко и слабее, над водой — рядом
+    ctx.save(); ctx.rotate(-ang);
+    var sx = o.u === 'void' ? 0.9 : 0.35, sy = o.u === 'void' ? 1.1 : 0.45;
+    ctx.translate(sx, sy); ctx.rotate(ang);
+    ctx.fillStyle = o.u === 'void' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.38)';
+    ctx.fillRect(x0 + 0.6, -hw, x1 - x0 - 1.2, hw * 2);
+    ctx.restore();
+    // опоры (над водой, длинный мост)
+    if (o.u !== 'void' && L > 6) {
+      ctx.fillStyle = css(c, 0.45);
+      for (var p = 3; p < L - 1; p += 4) { ctx.fillRect(p - 0.2, -hw - 0.15, 0.4, 0.3); ctx.fillRect(p - 0.2, hw - 0.15, 0.4, 0.3); }
+    }
+    // настил
+    var g = ctx.createLinearGradient(0, -hw, 0, hw);
+    g.addColorStop(0, css(c, 1.18)); g.addColorStop(0.5, css(c, 1)); g.addColorStop(1, css(c, 0.8));
+    ctx.fillStyle = g; ctx.fillRect(x0, -hw, x1 - x0, hw * 2);
+    ctx.strokeStyle = css(c, 0.62, 0.75); ctx.lineWidth = 0.03;
+    var step = st === 'walkway' || st === 'metal' ? 0.5 : st === 'stone' || st === 'arch' ? 0.7 : 0.28;
+    for (var q = x0 + step; q < x1; q += step) { ctx.beginPath(); ctx.moveTo(q, -hw); ctx.lineTo(q, hw); ctx.stroke(); }
+    if (st === 'walkway' || st === 'metal') { ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x1, 0); ctx.stroke(); }
+    // перила
+    var rc = st === 'metal' ? [230, 180, 40] : st === 'walkway' ? [225, 232, 236] : mixc(c, [40, 30, 20], 0.35);
+    ctx.fillStyle = css(rc, 1); ctx.fillRect(x0, -hw, x1 - x0, 0.1); ctx.fillRect(x0, hw - 0.1, x1 - x0, 0.1);
+    ctx.fillStyle = css(rc, 0.75);
+    for (var r = x0 + 0.3; r < x1; r += 1) { ctx.fillRect(r - 0.07, -hw - 0.04, 0.14, 0.18); ctx.fillRect(r - 0.07, hw - 0.14, 0.14, 0.18); }
+    if (st === 'arch' || st === 'stone') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.05;
+      ctx.beginPath(); ctx.moveTo(x0, -hw + 0.12); ctx.lineTo(x1, -hw + 0.12); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // Крупные предметы из objs
   var OBJ = {
     tower: function(ctx, T, o) {
@@ -1067,7 +1119,12 @@
     // воронки — под всем
     this.map.objs.forEach(function(o) { if (o.k === 'crater' && o.x + o.r + 2 > x0 && o.x - o.r - 2 < x0 + wc && o.y + o.r + 2 > y0 && o.y - o.r - 2 < y0 + hc) OBJ.crater(ctx, self, o); });
     // мосты
-    for (var y = ya; y < yb; y++) for (var x = xa; x < xb; x++) if (t[y * N + x] === TT.BRIDGE) bridge(ctx, this, x, y);
+    for (var y = ya; y < yb; y++) for (var x = xa; x < xb; x++) if (t[y * N + x] === TT.BRIDGE && !this.BM[y * N + x]) bridge(ctx, this, x, y);
+    this.map.objs.forEach(function(o) {
+      if (o.k !== 'bridge') return;
+      var bx0 = Math.min(o.a[0], o.b[0]) - 3, bx1 = Math.max(o.a[0], o.b[0]) + 3, by0 = Math.min(o.a[1], o.b[1]) - 3, by1 = Math.max(o.a[1], o.b[1]) + 3;
+      if (bx1 > x0 && bx0 < x0 + wc && by1 > y0 && by0 < y0 + hc) deck(ctx, self, o);
+    });
     // укрытия и заграждения
     for (y = ya; y < yb; y++) for (x = xa; x < xb; x++) {
       var k = y * N + x, c = t[k];

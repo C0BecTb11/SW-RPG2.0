@@ -663,22 +663,27 @@
 
   // ---------------------------------------------------------------- набор
   // size — клеток по стороне; h — высота (для тени); walk — есть ли анимация шага/качения
+  // k — во сколько раз рисунок крупнее своих «чертёжных» единиц: масштаб к пехотинцу
+  // (клетка ≈ 2,5 м; боец ≈ 0,8 клетки): AT-TE 13 м, AAT 10 м, LAAT 17 м, MTT и турботанк
+  // в игре ограничены шестью клетками, чтобы влезать на дороги и мосты.
   var TYPES = {
-    rep_atte:      { name: 'AT-TE',               draw: atte,    size: 2, walk: true,  turret: true, span: 2.5 },
-    rep_atrt:      { name: 'AT-RT',               draw: atrt,    size: 1, walk: true,  span: 1.3 },
-    rep_barc:      { name: 'Спидер BARC',         draw: barc,    size: 1, walk: false, span: 1.3 },
-    rep_laat:      { name: 'Канонерка LAAT',      draw: laat,    size: 2, walk: false, span: 2.5 },
-    rep_turbo:     { name: 'Турботанк HAVw A6',   draw: turbo,   size: 2, walk: true,  turret: true, span: 2.6 },
-    rep_aa:        { name: 'Зенитный танк TX-130', draw: tx130,  size: 2, walk: false, turret: true, span: 2.4 },
-    rep_artillery: { name: 'Артиллерия SPHA',     draw: sphaRep, size: 2, walk: true,  turret: true, span: 2.6 },
-    cis_aat:       { name: 'Танк AAT',            draw: aat,     size: 2, walk: false, turret: true, span: 2.5 },
-    cis_mtt:       { name: 'Транспорт MTT',       draw: mtt,     size: 2, walk: false, span: 2.6 },
-    cis_stap:      { name: 'Спидер STAP',         draw: stap,    size: 1, walk: false, span: 1.3 },
-    cis_hmp:       { name: 'Канонерка HMP',       draw: hmp,     size: 2, walk: false, span: 2.5 },
-    cis_spider:    { name: 'Паук-дроид ПВО',      draw: spider,  size: 2, walk: true,  turret: true, span: 2.4 },
-    cis_missile:   { name: 'Ракетный шагоход',    draw: missile, size: 2, walk: true,  span: 2.0 },
-    cis_artillery: { name: 'Артиллерия КНС',      draw: artCis,  size: 2, walk: true,  turret: true, span: 2.6 }
+    rep_atte:      { name: 'AT-TE',               draw: atte,    size: 2, walk: true,  turret: true, span: 2.5, k: 1.8 },
+    rep_atrt:      { name: 'AT-RT',               draw: atrt,    size: 1, walk: true,  span: 1.3, k: 1.3 },
+    rep_barc:      { name: 'Спидер BARC',         draw: barc,    size: 1, walk: false, span: 1.3, k: 1.4 },
+    rep_laat:      { name: 'Канонерка LAAT',      draw: laat,    size: 2, walk: false, span: 2.5, k: 2.0 },
+    rep_turbo:     { name: 'Турботанк HAVw A6',   draw: turbo,   size: 2, walk: true,  turret: true, span: 2.6, k: 2.3 },
+    rep_aa:        { name: 'Зенитный танк TX-130', draw: tx130,  size: 2, walk: false, turret: true, span: 2.4, k: 1.35 },
+    rep_artillery: { name: 'Артиллерия SPHA',     draw: sphaRep, size: 2, walk: true,  turret: true, span: 2.6, k: 2.1 },
+    cis_aat:       { name: 'Танк AAT',            draw: aat,     size: 2, walk: false, turret: true, span: 2.5, k: 1.45 },
+    cis_mtt:       { name: 'Транспорт MTT',       draw: mtt,     size: 2, walk: false, span: 2.6, k: 2.3 },
+    cis_stap:      { name: 'Спидер STAP',         draw: stap,    size: 1, walk: false, span: 1.3, k: 1.15 },
+    cis_hmp:       { name: 'Канонерка HMP',       draw: hmp,     size: 2, walk: false, span: 2.5, k: 1.8 },
+    cis_spider:    { name: 'Паук-дроид ПВО',      draw: spider,  size: 2, walk: true,  turret: true, span: 2.4, k: 1.35 },
+    cis_missile:   { name: 'Ракетный шагоход',    draw: missile, size: 2, walk: true,  span: 2.0, k: 1.6 },
+    cis_artillery: { name: 'Артиллерия КНС',      draw: artCis,  size: 2, walk: true,  turret: true, span: 2.6, k: 1.55 }
   };
+  // span — чертёжный размах; в клетках поля машина занимает span × k
+  Object.keys(TYPES).forEach(function(id) { var T = TYPES[id]; T.span0 = T.span; T.span = +(T.span * T.k).toFixed(2); });
 
   // Нарисовать машину: контекст уже в клетках поля, центр машины — (0, 0).
   // u.part: 'body' — только корпус (для набора картинок), 'turret' — только башня (рисуется
@@ -686,7 +691,7 @@
   function draw(c, id, u) {
     var T = TYPES[id]; if (!T) return false;
     if (u.part === 'turret' && !T.turret) return true;
-    c.save(); c.rotate(u.ang || 0); c.lineCap = 'round'; c.lineJoin = 'round';
+    c.save(); c.rotate(u.ang || 0); c.scale(T.k, T.k); c.lineCap = 'round'; c.lineJoin = 'round';
     T.draw(c, u);
     c.restore();
     return true;
@@ -694,28 +699,42 @@
   function body(u) { return u.part !== 'turret'; }
   function top(u) { return u.part !== 'body'; }
 
-  // Набор картинок: курс × кадр (0 — стоит, 1..FRAMES-1 — шаг). cell — пикселей на клетку поля.
-  var DIRS = 16, FRAMES = 8;
-  function bake(ids, cell) {
-    var per = DIRS * FRAMES, cols = 10;
-    var cells = ids.map(function(id) { return TYPES[id].span; });
-    var maxSpan = Math.max.apply(null, cells), px = Math.ceil(cell * maxSpan);
-    var cv = document.createElement('canvas');
-    cv.width = cols * px; cv.height = Math.ceil(ids.length * per / cols) * px;
-    var c = cv.getContext('2d');
-    for (var t = 0; t < ids.length; t++) {
-      var T = TYPES[ids[t]];
-      for (var d = 0; d < DIRS; d++) for (var f = 0; f < FRAMES; f++) {
-        var idx = t * per + d * FRAMES + f;
+  // Набор картинок: у каждой машины свой холст (курс × кадр; кадр 0 — стоит, 1..FRAMES-1 — шаг;
+  // у машин без шага — только кадр 0). cell — желаемых точек на клетку поля; у крупных
+  // машин плотность ниже, чтобы картинка не превышала maxPx точек по стороне.
+  var DIRS = 16, FRAMES = 8, TDIRS = 32;
+  function bake(ids, cell, maxPx) {
+    maxPx = maxPx || 160;
+    var out = { dirs: DIRS, frames: FRAMES, by: {}, ids: ids, cell: cell };
+    ids.forEach(function(id) {
+      var T = TYPES[id], frames = T.walk ? FRAMES : 1, ppc = Math.min(cell, maxPx / (T.span + 0.3)), px = Math.ceil(ppc * (T.span + 0.3)), cols = 8;
+      var cv = document.createElement('canvas');
+      cv.width = cols * px; cv.height = Math.ceil(DIRS * frames / cols) * px;
+      var c = cv.getContext('2d');
+      for (var d = 0; d < DIRS; d++) for (var f = 0; f < frames; f++) {
+        var idx = d * frames + f;
         c.save();
         c.translate((idx % cols) * px + px / 2, Math.floor(idx / cols) * px + px / 2);
-        c.scale(cell, cell);
-        draw(c, ids[t], { ang: d / DIRS * TAU, mv: f === 0 ? 0 : 1, phase: f === 0 ? 0 : (f - 1) * (TAU / (FRAMES - 1)), part: 'body' });
+        c.scale(ppc, ppc);
+        draw(c, id, { ang: d / DIRS * TAU, mv: f === 0 ? 0 : 1, phase: f === 0 ? 0 : (f - 1) * (TAU / (FRAMES - 1)), part: 'body' });
         c.restore();
       }
-    }
-    return { canvas: cv, cell: px, dirs: DIRS, frames: FRAMES, cols: cols, span: maxSpan };
+      var ent = { canvas: cv, px: px, ppc: ppc, cols: cols, frames: frames, span: px / ppc };
+      if (T.turret) {
+        // башня — отдельным листом по TDIRS курсам (угол башни абсолютный)
+        var tv = document.createElement('canvas'); tv.width = cols * px; tv.height = Math.ceil(TDIRS / cols) * px;
+        var tc = tv.getContext('2d');
+        for (var k = 0; k < TDIRS; k++) {
+          tc.save(); tc.translate((k % cols) * px + px / 2, Math.floor(k / cols) * px + px / 2); tc.scale(ppc, ppc);
+          draw(tc, id, { ang: 0, turret: k / TDIRS * TAU, part: 'turret' });
+          tc.restore();
+        }
+        ent.tur = tv;
+      }
+      out.by[id] = ent;
+    });
+    return out;
   }
 
-  root.SWVehicles = { TYPES: TYPES, draw: draw, bake: bake, DIRS: DIRS, FRAMES: FRAMES };
+  root.SWVehicles = { TYPES: TYPES, draw: draw, bake: bake, DIRS: DIRS, FRAMES: FRAMES, TDIRS: TDIRS };
 })(typeof self !== 'undefined' ? self : this);

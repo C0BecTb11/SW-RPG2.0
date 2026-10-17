@@ -1,7 +1,15 @@
 /* Наземный бой 2.0 — поверх space.css: то же оформление, свои мелочи. */
-.gd-planets { display: inline-flex; gap: 5px; }
-.gd-planets .sp-chip { display: inline-flex; align-items: center; gap: 5px; padding-left: 5px; }
-.gd-planets .sp-chip i { width: 13px; height: 13px; border-radius: 50%; background: #1c2530 center / 200% 100% no-repeat; box-shadow: inset -3px -2px 4px rgba(0,0,0,0.6); flex: none; }
+.gd-task { gap: 7px; align-items: center; font-size: 11.5px; }
+.gd-task b { color: #e8d9a8; font-weight: normal; white-space: nowrap; }
+.gd-globe { width: 15px; height: 15px; border-radius: 50%; background: #1c2530 center / 200% 100% no-repeat; box-shadow: inset -4px -3px 5px rgba(0,0,0,0.6); flex: none; }
+.gd-goal { color: #8fa8c4; font-size: 10.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-goal.att { color: #ffb090; }
+.gd-task .sp-chip { flex: none; padding: 4px 9px; }
+.gd-poly-about { margin: 6px 0 2px; font-size: 11px; line-height: 1.4; color: #8fa8c4; }
+.gd-poly-hint { margin: 4px 0 0; font-size: 10px; line-height: 1.35; color: #55606c; }
+.gd-poly-hint:empty { display: none; }
+#sp-stat .gd-tip { color: #8fa8c4; }
+#sp-stat .gd-tip b { color: #e8d9a8; font-weight: normal; }
 .gd-cap { font-size: 10.5px; color: #8fa8c4; gap: 8px; }
 .gd-cap b { color: #e8d9a8; font-weight: normal; }
 .gd-cap i { flex: 1; height: 3px; background: #141a22; border-radius: 2px; overflow: hidden; }

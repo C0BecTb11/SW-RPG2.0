@@ -52,6 +52,7 @@ function setup(planet, opts) {
   // пара полевых построек у защитников
   g.addStruct('turret', def, tw[0] + 6, tw[1] + tw[3] + 2); g.addStruct('turret', def, tw[0] + tw[2] - 7, tw[1] + tw[3] + 2);
   g.addStruct('trench', def, tw[0] + 12, tw[1] + tw[3] + 1); g.addStruct('bunker', def, tw[0] + 16, tw[1] + tw[3] + 3);
+  g.deployDefense(def);          // гарнизон сразу на постах, как в полигоне
   return { g, nA, nD };
 }
 

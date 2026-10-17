@@ -1,0 +1,160 @@
+/* Карты планет (наземка 2.0) — просмотр. Язык игры: тёмные панели,
+   моноширинный шрифт, золото — выбор. Как в space/space.css. */
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #05060a;
+  background-image: url('../assets/ui/galaxy-bg-tile.png');
+  font-family: 'Courier New', monospace;
+  color: #cfd8dc;
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+button { font-family: inherit; }
+
+#gp-canvas, #gp-fx { position: fixed; inset: 0; display: block; touch-action: none; }
+#gp-fx { pointer-events: none; }
+#gp-canvas { cursor: grab; }
+#gp-canvas.drag { cursor: grabbing; }
+
+#gp-back {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 12px;
+  z-index: 1000;
+  background: rgba(5,6,10,0.75);
+  border: 1px solid rgba(28,37,48,0.9);
+  color: #cfd8dc;
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  text-decoration: none;
+}
+#gp-tr {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+}
+#gp-tr button {
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(5,6,10,0.75);
+  border: 1px solid rgba(28,37,48,0.9);
+  border-radius: 20px;
+  color: #e8d9a8;
+  font-size: 16px;
+  cursor: pointer;
+}
+#gp-tr svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- панели ---------- */
+.gp-panel {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  z-index: 900;
+  max-width: 460px;
+  margin: 0 auto;
+  background: linear-gradient(180deg, rgba(13,17,25,0.94) 0%, rgba(8,11,17,0.94) 100%);
+  border: 1px solid #1c2530;
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.5);
+}
+.gp-top {
+  top: calc(54px + env(safe-area-inset-top, 0px));
+  padding: 9px 12px 10px;
+  border-left: 3px solid #d9a940;
+}
+.gp-bottom {
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 10px 9px;
+}
+.gp-row { display: flex; align-items: center; gap: 8px; }
+.gp-row + .gp-row { margin-top: 6px; }
+.gp-spacer { flex: 1; }
+.gp-kicker { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #d9a940; }
+.gp-dim { color: #55606c; font-size: 10.5px; }
+.gp-link { background: none; border: 0; padding: 0; color: #8fa8c4; font-size: 10.5px; text-decoration: underline dotted; cursor: pointer; }
+.gp-link.on { color: #e8d9a8; }
+
+.gp-title b { color: #e8d9a8; font-size: 15px; letter-spacing: 0.5px; }
+.gp-globe {
+  width: 22px; height: 22px; flex: 0 0 22px;
+  border-radius: 50%;
+  background: #1c2530 center / 200% 100% no-repeat;
+  box-shadow: inset -5px -4px 8px rgba(0,0,0,0.65), 0 0 0 1px rgba(217,169,64,0.35);
+}
+.gp-weather { font-size: 10px; color: #8fa8c4; border: 1px solid #2a3644; border-radius: 10px; padding: 2px 7px; }
+.gp-weather:empty { display: none; }
+.gp-about { margin: 7px 0 0; font-size: 11px; line-height: 1.45; color: #a9b6c2; }
+
+/* планеты: одна строка с прокруткой, край затухает */
+.gp-planets {
+  display: flex; gap: 5px; overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+          mask-image: linear-gradient(90deg, #000 88%, transparent);
+  padding-right: 24px; margin-top: 8px;
+}
+.gp-planets::-webkit-scrollbar { display: none; }
+.gp-chip {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px 4px 5px;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  background: rgba(8,11,17,0.9);
+  color: #8fa8c4;
+  font-size: 10.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+.gp-chip i { width: 14px; height: 14px; border-radius: 50%; background: #1c2530 center / 200% 100% no-repeat; box-shadow: inset -3px -2px 4px rgba(0,0,0,0.6); }
+.gp-chip.on { border-color: rgba(217,169,64,0.7); color: #e8d9a8; background: rgba(217,169,64,0.1); }
+.gp-layers { display: flex; gap: 5px; flex-wrap: wrap; }
+.gp-layers .gp-chip { padding: 5px 10px; }
+
+.gp-cell { margin-top: 7px; font-size: 11px; line-height: 1.5; min-height: 33px; }
+.gp-cell b { color: #e8d9a8; font-weight: normal; }
+.gp-cell .k { color: #55606c; }
+.gp-cell .no { color: #d96a5a; }
+.gp-cell .ok { color: #8fc48f; }
+
+.gp-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 8px; margin-top: 7px; padding-top: 7px; border-top: 1px solid #1c2530; }
+.gp-legend span { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #8fa8c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-legend i { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; }
+.gp-legend em { font-style: normal; color: #55606c; margin-left: auto; }
+
+.gp-load {
+  position: fixed; inset: 0; z-index: 1100;
+  display: grid; place-items: center;
+  background: rgba(5,6,10,0.55);
+  font-size: 12px; color: #e8d9a8; letter-spacing: 1px;
+  transition: opacity 0.25s;
+}
+.gp-load.off { opacity: 0; pointer-events: none; }
+.gp-load div { display: flex; align-items: center; gap: 10px; background: rgba(8,11,17,0.92); border: 1px solid #1c2530; border-radius: 10px; padding: 12px 16px; }
+.gp-load span { width: 14px; height: 14px; border: 2px solid rgba(217,169,64,0.3); border-top-color: #d9a940; border-radius: 50%; animation: gp-spin 0.8s linear infinite; }
+@keyframes gp-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 380px) {
+  .gp-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 900px) {
+  .gp-top { left: 16px; right: auto; width: 380px; margin: 0; }
+  .gp-bottom { left: auto; right: 16px; width: 380px; margin: 0; }
+}

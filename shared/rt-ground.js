@@ -45,6 +45,16 @@
   var RAD_MAX = 2.5;
   var DEF_NEAR = 7, DEF_FAR = 20;  // пояс обороны: расстояние от центра площади (клетки)
   var SORTIE = 18;                 // оборона бросается на прорвавшихся, если они ближе этого
+  // Повадки в бою (как в абордаже): cover — ищет укрытие, откуда достаёт цель; push — идёт
+  // на цель до near клеток; crowd — толпой подтягивается на 0,6 дальности; kite — держит
+  // дистанцию, отходит, если цель ближе 0,45 дальности. every — как часто думать (с).
+  var STYLE = {
+    infantry: { k: 'cover', r: 5, every: 4 },
+    cis_b1: { k: 'crowd', every: 1.5 }, cis_militia: { k: 'crowd', every: 1.5 }, rep_militia: { k: 'crowd', every: 1.5 },
+    cis_b2: { k: 'push', near: 4, every: 1.3 },
+    rep_barc: { k: 'kite', every: 1.2 }, cis_stap: { k: 'kite', every: 1.2 }, rep_atrt: { k: 'kite', every: 1.5 }
+  };
+  var MICRO_END = 3;               // столько секунд без боя — боец возвращается к приказу
 
   function rng(seed) { var s = seed >>> 0 || 1; return function() { s += 0x6D2B79F5; var t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function turn(cur, to, step) {
@@ -160,7 +170,7 @@
     // туман: 0 — не видели, 1 — видели, 2 — видно сейчас
     this.seen = [new Uint8Array(n), new Uint8Array(n)];
     this.fogT = 0; this.aiT = 0; this.capT = 0; this.sqT = 0;
-    this.flows = new Flows(this);
+    this.flows = new Flows(this); this.claim = {};
     this.sx = this.town[0] + (this.town[2] >> 1) - (SQUARE >> 1); this.sy = this.town[1] + (this.town[3] >> 1) - (SQUARE >> 1);
     this.nextId = 0;
   }
@@ -178,7 +188,7 @@
       stuck: 0, lastD: 1e9, wig: 0, side: 1, wait: 0, engT: -99, turretA: extra.aim || 0, inside: -1,
       uid: extra.uid || null, name: extra.name || '', owner: extra.owner || null, dmgK: extra.dmgK || 1,
       stun: 0, fear: 0, choke: -1, mind: null, barrier: 0, revealT: -99,
-      hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1
+      hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false
     };
     a.rad = VRAD[tid] != null ? VRAD[tid] : (Ty.size === 2 ? 1.0 : R);
     if (Ty.hero) {
@@ -231,6 +241,7 @@
     for (var i = 0; i < list.length; i++) {
       var a = list[i], spot = this.spotNear(a, cx, cy, taken);
       if (!spot) continue;
+      if (!(opts && opts.auto)) this.microEnd(a, true);
       this.mark(taken, spot[0], spot[1], a);
       this.goCell(a, spot[0], spot[1], [cx, cy]); a.post = !(opts && opts.auto); a.hold = false; a.focus = -1; n++;
       if (!(opts && opts.auto)) { a.auto = false; a.dpost = null; a.sortie = false; }
@@ -257,7 +268,10 @@
     return best;
   };
   // key — общая точка отряда: поле направлений строится к ней одно на всех, последние клетки — напрямую
-  Ground.prototype.goCell = function(a, cx, cy, key) { a.goal = [cx, cy]; a.key = key || null; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wait = 0; };
+  Ground.prototype.goCell = function(a, cx, cy, key) {
+    if (a.og) { a.og = { g: [cx, cy], key: key || null, at: false }; return; }     // занят повадкой в бою — приказ подождёт
+    a.goal = [cx, cy]; a.key = key || null; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wait = 0;
+  };
   // Прямой ход до клетки: все клетки на отрезке проходимы
   Ground.prototype.straight = function(a, tx, ty) {
     var ok = this.pass[a.move + a.size], dx = tx - a.x, dy = ty - a.y, L = Math.sqrt(dx * dx + dy * dy), n = Math.ceil(L * 2) + 1, off = a.size === 2 ? 1 : 0.5;
@@ -267,17 +281,17 @@
   Ground.prototype.orderAttack = function(team, ids, tid) {
     var self = this, tg = this.agents[tid]; if (!tg || !tg.alive || tg.team === team) return 0;
     var n = 0;
-    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; a.focus = tid; a.post = false; a.hold = false; a.goal = null; a.at = true; a.auto = false; a.dpost = null; a.sortie = false; n++; });
+    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); a.focus = tid; a.post = false; a.hold = false; a.goal = null; a.at = true; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
   };
   Ground.prototype.orderHold = function(team, ids) {
     var self = this, n = 0;
-    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; var c = self.cellOf(a); a.goal = [c[0], c[1]]; a.at = true; a.post = true; a.hold = true; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
+    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); var c = self.cellOf(a); a.goal = [c[0], c[1]]; a.at = true; a.post = true; a.hold = true; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
   };
   Ground.prototype.orderStop = function(team, ids) {
     var self = this, n = 0;
-    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; a.goal = null; a.at = true; a.post = false; a.hold = false; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
+    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); a.goal = null; a.at = true; a.post = false; a.hold = false; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
   };
   // Отряды: sqId > 0 — в отряд, 0 — новый, −1 — без отряда
@@ -515,6 +529,17 @@
       if (tg.d > SABER * 0.9) { var tc = [Math.floor(tg.x), Math.floor(tg.y)]; if (!a.goal || a.goal[0] !== tc[0] || a.goal[1] !== tc[1]) this.goCell(a, tc[0], tc[1]); this.nav(a, dt, a.speed * 1.1); if (a.at && tg.d > SABER) { a.at = false; } return; }
       a.mv += (0 - a.mv) * Math.min(1, dt * 6); a.at = true; return;
     }
+    // повадки в бою: укрытие, натиск, толпа, дистанция — не для стоящих по приказу
+    if (!a.post && !a.hold && !a.hero && !a.T.artillery) {
+      if (engaged && this.micro(a, tg, range, dt)) return;
+      // под огнём без цели в дальности: перебежка в укрытие в сторону стрелка (и дальше по приказу, когда стихнет)
+      if (!engaged && !a.inCov && this.t - (a.hitT || -99) < 2.5 && this.t >= (a.mT || 0) && a.T.cls === 'infantry') {
+        var sh = a.hitBy != null ? this.agents[a.hitBy] : null, en = sh && sh.alive ? sh : this.nearestEnemy(a, a.vision);
+        if (en) { var ftg = { x: en.x, y: en.y, d: Math.sqrt((en.x - a.x) * (en.x - a.x) + (en.y - a.y) * (en.y - a.y)) }; a.engT = this.t; if (this.micro(a, ftg, Math.max(range, ftg.d + 1), dt)) return; }
+      }
+      if (a.og && this.t - (a.engT || -99) > MICRO_END) this.microEnd(a);
+      else if (a.og && !a.at && a.goal) { this.nav(a, dt, a.speed); return; }
+    }
     if (engaged) {
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
       if (tg.d > range * 0.6 && !a.at && !a.hold && a.goal) this.nav(a, dt, a.speed * 0.8);
@@ -529,6 +554,100 @@
       return;
     }
     this.nav(a, dt, a.speed);
+  };
+  // ---- повадки в бою
+  Ground.prototype.styleOf = function(a) { return STYLE[a.tid] || (a.T.cls === 'infantry' ? STYLE.infantry : null); };
+  // true — боец занят ходом по повадке (шаг сделан)
+  Ground.prototype.micro = function(a, tg, range, dt) {
+    var st = this.styleOf(a); if (!st) return false;
+    if (this.t >= (a.mT || 0)) {
+      a.mT = this.t + st.every * (0.8 + this.R() * 0.4);
+      var cell = null;
+      if (st.k === 'push') { if (tg.d > st.near + 0.5) cell = this.towards(a, tg, st.near); }
+      else if (st.k === 'crowd') { if (tg.d > range * 0.75) cell = this.towards(a, tg, range * 0.6); }
+      else if (st.k === 'kite') {
+        if (tg.d < range * 0.45) cell = this.away(a, tg, range * 0.7);
+        else if (tg.d > range * 0.9) cell = this.towards(a, tg, range * 0.7);
+      } else if (st.k === 'cover') {
+        a.inCov = this.coverK(a.x, a.y, tg.x, tg.y, a.team) < 1;
+        if (!a.inCov) cell = this.coverCell(a, tg, st.r, range);
+      }
+      if (cell && (cell[0] !== Math.floor(a.x) || cell[1] !== Math.floor(a.y))) this.microGo(a, cell);
+    }
+    if (a.og && !a.at && a.goal) {
+      if (st.k === 'push' && tg.d <= st.near) { a.goal = [Math.floor(a.x), Math.floor(a.y)]; a.at = true; return false; }
+      this.nav(a, dt, a.speed * (st.k === 'push' ? 1 : 1.1));
+      return true;
+    }
+    return false;
+  };
+  // Укрытие точки (px, py) от стрелка в (tx, ty): 1 — нет; меньше — есть (валун, ёж, заросли, окоп своей стороны)
+  Ground.prototype.coverK = function(px, py, tx, ty, team) {
+    var c = Math.floor(py) * N + Math.floor(px), si = this.structAt[c];
+    if (si >= 0) { var st = this.structs[si]; if (!st.dead && st.enter && st.team === team && st.cover) return 1 - st.cover / 100; }
+    return this.cover(tx, ty, { x: px, y: py, size: 1, inside: -1, air: false });
+  };
+  // Клетка по прямой к цели, в near клетках от неё (свободная, проходимая, по прямой)
+  Ground.prototype.towards = function(a, tg, near) {
+    var k = Math.max(0, 1 - near / Math.max(0.01, tg.d)), x = Math.floor(a.x + (tg.x - a.x) * k), y = Math.floor(a.y + (tg.y - a.y) * k);
+    return this.freeNear(a, x, y, 1);
+  };
+  Ground.prototype.away = function(a, tg, want) {
+    var dx = a.x - tg.x, dy = a.y - tg.y, L = Math.sqrt(dx * dx + dy * dy) || 1, k = want - L;
+    return this.freeNear(a, Math.floor(a.x + dx / L * k), Math.floor(a.y + dy / L * k), 2);
+  };
+  Ground.prototype.freeNear = function(a, x, y, r) {
+    var off = a.size === 2 ? 1 : 0.5, best = null, bd = 1e9;
+    for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++) {
+      var cx = x + dx, cy = y + dy; if (cx < 1 || cy < 1 || cx >= N - 1 || cy >= N - 1) continue;
+      var c = cy * N + cx; if (!this.okAt(a, cx, cy) || this.claim[c] != null && this.claim[c] !== a.id) continue;
+      if (!this.straight(a, cx + off, cy + off)) continue;
+      var d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [cx, cy]; }
+    }
+    return best;
+  };
+  // Укрытие: клетка в R шагах, откуда цель видна и достаётся, а стрелку хуже попасть
+  Ground.prototype.coverCell = function(a, tg, R, range) {
+    var ok = this.pass[a.move + 1], sx = Math.floor(a.x), sy = Math.floor(a.y), s0 = sy * N + sx, best = null, bs = 1e9;
+    var q = [s0], dep = [0], seen = {}; seen[s0] = 1;
+    for (var h = 0; h < q.length; h++) {
+      var k = q[h], x = k % N, y = (k - x) / N, d = dep[h];
+      if (d > 0) {
+        var cl = this.claim[k], ca = cl != null && this.agents[cl], free = !(ca && ca !== a && ca.alive && ca.og), o = this.cellHead[k];
+        if (free && (o === -1 || o === a.id)) {
+          var px = x + 0.5, py = y + 0.5, ddx = tg.x - px, ddy = tg.y - py, dd = Math.sqrt(ddx * ddx + ddy * ddy);
+          if (dd <= range * 0.95 && dd > 1.5) {
+            var kc = this.coverK(px, py, tg.x, tg.y, a.team);
+            if (kc < 1 && this.los(px, py, tg.x, tg.y) && this.straight(a, px, py)) {
+              var sc = d + Math.abs(dd - range * 0.7) * 0.3 + kc * 3;
+              if (sc < bs) { bs = sc; best = [x, y]; }
+            }
+          }
+        }
+      }
+      if (d >= R) continue;
+      for (var o4 = 0; o4 < 4; o4++) {
+        var nx = x + (o4 === 0 ? 1 : o4 === 1 ? -1 : 0), ny = y + (o4 === 2 ? 1 : o4 === 3 ? -1 : 0), nk = ny * N + nx;
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N || seen[nk] || !ok[nk] || !P.canStep(this.map, x, y, nx, ny, a.move)) continue;
+        seen[nk] = 1; q.push(nk); dep.push(d + 1);
+      }
+    }
+    return best;
+  };
+  // Сместиться по повадке; приказ (куда шёл) вернётся, когда бой стихнет
+  Ground.prototype.microGo = function(a, cell) {
+    if (!a.og) a.og = { g: a.goal, key: a.key, at: a.at };
+    if (a.mc != null && this.claim[a.mc] === a.id) delete this.claim[a.mc];
+    a.mc = cell[1] * N + cell[0]; this.claim[a.mc] = a.id;
+    a.goal = [cell[0], cell[1]]; a.key = null; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wait = 0;
+  };
+  Ground.prototype.microEnd = function(a, drop) {
+    if (a.mc != null && this.claim[a.mc] === a.id) delete this.claim[a.mc];
+    a.mc = null; a.inCov = false;
+    var og = a.og; a.og = null;
+    if (!og || drop) return;
+    if (og.g && !og.at) { a.goal = og.g; a.key = og.key; a.at = false; a.stuck = 0; a.lastD = 1e9; }
+    else { a.goal = og.g; a.at = true; }
   };
   Ground.prototype.nearestEnemy = function(a, r) {
     var ag = this.agents, best = null, bd = r * r, team = this.ctl(a);
@@ -602,6 +721,7 @@
 
   // ---- стрельба
   Ground.prototype.hurt = function(b, d, by) {
+    b.hitT = this.t; if (by != null) b.hitBy = by;
     if (!b.alive) return;
     if (b.barrier > this.t) d *= 0.7;
     if (b.hero && b.hero.passive.absorb) d *= 1 - b.hero.passive.absorb / 100;
@@ -886,14 +1006,16 @@
     // рубеж: в 16 клетках за поясом обороны, три точки; каждая — самое открытое место в округе
     var pf = this.pass.foot1, pt = this.pass.track2;
     for (var k = -1; k <= 1; k++) {
-      var x = Math.round(sqx + f[0] * (DEF_FAR + 16) - f[1] * k * 16), y = Math.round(sqy + f[1] * (DEF_FAR + 16) + f[0] * k * 16), best = null, bs = -1;
+      var x = Math.round(sqx + f[0] * (DEF_FAR + 16) - f[1] * k * 22), y = Math.round(sqy + f[1] * (DEF_FAR + 16) + f[0] * k * 22), best = null, bs = -1;
+      var reach = this.flows.get('foot', 1, Math.floor(sqx), Math.floor(sqy)).dir;      // откуда вообще дойти до площади
       for (var dy = -8; dy <= 8; dy += 2) for (var dx = -8; dx <= 8; dx += 2) {
         var cx = clamp(x + dx, 6, N - 7), cy = clamp(y + dy, 6, N - 7), sc = 0;
-        for (var yy = cy - 5; yy <= cy + 5; yy++) for (var xx = cx - 5; xx <= cx + 5; xx++) sc += pf[yy * N + xx] + (k === 0 ? pt[yy * N + xx] : 0);
+        if (!pf[cy * N + cx] || reach[cy * N + cx] === 255) continue;
+        for (var yy = cy - 5; yy <= cy + 5; yy++) for (var xx = cx - 5; xx <= cx + 5; xx++) sc += pf[yy * N + xx] + (k === 0 ? pt[yy * N + xx] : (this.coverC[yy * N + xx] < 1 ? 0.5 : 0));
         sc -= (Math.abs(dx) + Math.abs(dy)) * 0.5;
         if (sc > bs) { bs = sc; best = [cx, cy]; }
       }
-      out.push(best);
+      out.push(best || [clamp(x, 6, N - 7), clamp(y, 6, N - 7)]);
     }
     return (this._lanes = out);
   };
@@ -908,7 +1030,7 @@
   };
   Ground.prototype.aiAttack = function(tm, ids) {
     var ag = this.agents, sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, L = this.lanes(), groups = [[], [], []], toSq = [];
-    // сбор на рубеже: колонна идёт дальше, когда собралось больше половины (или кто-то уже пошёл)
+    // сбор на рубеже: колонны идут дальше вместе, когда собралось больше половины всего десанта (или кто-то уже пошёл)
     var tot = [0, 0, 0], here = [0, 0, 0], gone = [0, 0, 0], i, a;
     for (i = 0; i < ids.length; i++) {
       a = ag[ids[i]];
@@ -921,12 +1043,18 @@
     for (i = 0; i < ids.length; i++) {
       a = ag[ids[i]];
       if (onlyArt) { a.ph = 1; }
-      if (a.ph === 0.5 && !a.T.artillery && (here[a.lane] + gone[a.lane] >= tot[a.lane] * 0.6 || gone[a.lane] > 0)) { a.ph = 1; a.at = true; }
+      if (a.ph === 0.5 && !a.T.artillery && (here[0] + here[1] + here[2] + gone[0] + gone[1] + gone[2] >= (tot[0] + tot[1] + tot[2]) * 0.6 || gone[0] + gone[1] + gone[2] > 0)) { a.ph = 1; a.at = true; }
       if (a.tgt >= 0 || (a.goal && !a.at) || (a.T.artillery && a.ph > 0 && !onlyArt)) continue;
       if (a.ph < 1) groups[a.lane].push(a.id); else toSq.push(a.id);
     }
     for (var k = 0; k < 3; k++) if (groups[k].length) this.orderMove(tm, groups[k], L[k][0], L[k][1], { auto: true });
-    if (toSq.length) this.orderMove(tm, toSq, Math.floor(sqx), Math.floor(sqy), { auto: true });
+    // на площадь — каждая колонна со своей стороны (фланги заходят с боков)
+    var f = this.threatDir(), byLane = [[], [], []];
+    toSq.forEach(function(id) { byLane[ag[id].lane].push(id); });
+    for (k = 0; k < 3; k++) if (byLane[k].length) {
+      var kk = k - 1, tx = clamp(Math.round(sqx - f[1] * kk * 7), 2, N - 3), ty = clamp(Math.round(sqy + f[0] * kk * 7), 2, N - 3);
+      this.orderMove(tm, byLane[k], tx, ty, { auto: true });
+    }
   };
   Ground.prototype.aiDefend = function(tm, ids) {
     var ag = this.agents, sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, posts = this.defPosts(tm);

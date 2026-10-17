@@ -1605,6 +1605,7 @@ function insetFor(el) {
 }
 
 function focusCell(cx, cy) {
+  if (window.GL) return GL.focusCell(cx, cy);
   var vw = viewport.clientWidth;
   var vh = viewport.clientHeight - uiBottomInset;
   panX = vw / 2 - (cx + 0.5) * CELL_PX * scale;
@@ -2102,7 +2103,7 @@ var gbFogDirty = true;
 var GB_FOG_COLOR = 'rgba(4,7,12,0.62)';
 
 function loadVision() {
-  if (!systemId || buildMode) return;
+  if (!systemId || buildMode || window.GL) return;
   supabase.rpc('get_my_vision', { p_system_id: systemId, p_layer: 'ground' }).then(function(res) {
     if (res.error || !res.data) return;
     gbVision = res.data;
@@ -2290,6 +2291,7 @@ function drawConstructionProgress(building, px, py, size, now) {
 // focusCell. На экран оба изменения попадают в одном кадре — стиль
 // применяется к отрисовке, перед которой и срабатывает кадровый колбэк.
 function applyTransform() {
+  if (window.GL) return;
   cbSyncFxLayer();
   redrawScene();
 }
@@ -3704,12 +3706,12 @@ function scheduleRedraw() {
 // войска, захват, — и каждая заново красила всё поле 144×144. На
 // телефоне эти серии и давали чёрные вспышки.
 function redrawScene() {
-  if (!ctx) return;
+  if (!ctx || window.GL) return;               // наземка 2.0 рисует сама, каждый кадр
   scheduleRedraw();
 }
 
 function redrawSceneNow() {
-  if (!ctx) return;
+  if (!ctx || window.GL) return;
   if (!terrainCache) {
     terrainCache = generateTerrain(hashStringToSeed(systemId));
   }
@@ -3789,7 +3791,7 @@ function subscribeToGroundChanges() {
       gbSoon('buildings', loadBuildings, 250);
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'unit_positions', filter: 'system_id=eq.' + systemId }, function() {
-      gbSoon('units', loadUnits, 150);
+      if (!window.GL) gbSoon('units', loadUnits, 150);
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'field_structures', filter: 'system_id=eq.' + systemId }, function() {
       gbSoon('structures', loadStructures, 250);
@@ -3826,8 +3828,15 @@ function initGroundBattle() {
   systemId = getSystemIdFromUrl();
   buildMode = isBuildMode();
 
-  viewport = document.getElementById('ground-viewport');
-  canvas = document.getElementById('ground-canvas');
+  // Наземка 2.0 (js/ground-live.js): карту и бой рисует новый экран на своём холсте,
+  // панели планеты работают поверх него в тех же координатах
+  if (window.GL) {
+    canvas = document.getElementById('sp-canvas');
+    viewport = canvas;
+  } else {
+    viewport = document.getElementById('ground-viewport');
+    canvas = document.getElementById('ground-canvas');
+  }
   ctx = canvas ? canvas.getContext('2d') : null;
 
   if (!canvas) showFatal('В разметке нет <canvas id="ground-canvas">');
@@ -3946,12 +3955,11 @@ function initGroundBattle() {
         gbSoon('buildings', loadBuildings, 50);
         gbSoon('structures', loadStructures, 50);
       });
-      centerGridInitially();
-      initPanAndZoom();
+      if (!window.GL) { centerGridInitially(); initPanAndZoom(); }
       initBuildSwitcher();
       initBuildToggle(false);
       subscribeToGroundChanges();
-      if (typeof amInit === 'function') amInit();
+      if (typeof amInit === 'function' && !window.GL) amInit();
     });
   });
 }
@@ -4710,6 +4718,7 @@ var loadUnitsApplied = 0;
 var unitTypesFresh = false;
 
 function loadUnits() {
+  if (window.GL) return GL.loadUnits();        // наземка 2.0: бойцы — из зеркала боя
   var seq = ++loadUnitsSeq;
   var requestedAt = Date.now();
   Promise.all([
@@ -9276,7 +9285,7 @@ function renderStructureCards(unit, list) {
   var note = document.createElement('div');
   note.className = 'struct-note' + (own ? '' : ' warn');
   note.textContent = own
-    ? 'Строит в ' + structBuildRange + ' клетках от себя за одно действие. ' +
+    ? (window.GL ? 'Инженер сам дойдёт до места и заложит за одно действие. ' : 'Строит в ' + structBuildRange + ' клетках от себя за одно действие. ') +
       'Нельзя: зоны высадки, участки зданий, поселение с кольцом захвата и полоса вторжения.'
     : 'Строить можно только на планетах своей фракции.';
   list.appendChild(note);

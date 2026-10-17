@@ -1,0 +1,18 @@
+/* Экран планеты на наземке 2.0: новый бой под старыми панелями */
+body { background: #05060a; }
+#ground-back-btn, #drop-btn, #capture-bar { display: none !important; }
+/* лоток десанта открыт — низ нового экрана уступает ему место */
+body.dt-open .sp-bottom { display: none; }
+/* старые панели (z-index 1350…2200) и так выше нового худа (900…1200) */
+#sp-top .sp-kicker { color: #d9a940; }
+.gl-row .sp-chip em { font-style: normal; color: #55606c; font-size: 9px; margin-left: 4px; }
+/* старая полоса разведки — под шапкой нового экрана, справа */
+#scout-bar { top: calc(176px + env(safe-area-inset-top, 0px)); }
+/* подсказки размещения и очередь производства — над нижней панелью нового экрана */
+#placement-hint, #order-queue { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+/* правый верх занят панелью кредитов — часы боя не нужны, настройки графики уходят в шапку */
+#sp-tr { display: none; }
+.sp-top .sp-row #sp-gfx-b { display: grid; width: 26px; height: 22px; min-height: 0; border-radius: 11px; margin-left: 4px; }
+.sp-top .sp-row #sp-gfx-b svg { width: 14px; height: 14px; }
+/* переключатель режима стройки — над нижней панелью нового экрана */
+#build-switcher { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }

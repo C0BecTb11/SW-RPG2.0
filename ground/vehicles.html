@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060a">
-<title>Техника сверху — наземка 2.0</title>
+<title>Техника и герои — наземка 2.0</title>
 <link rel="stylesheet" href="preview.css?v=1">
 <style>
   html, body { overflow: auto; touch-action: auto; }
@@ -29,7 +29,7 @@
 <a id="gp-back" href="preview.html">← Карты</a>
 <div class="vh-wrap">
   <div class="vh-head">
-    <h1>Наземка 2.0 · техника сверху</h1>
+    <h1>Наземка 2.0 · техника и герои сверху</h1>
     <div class="vh-ctl" id="vh-ctl">
       <button class="gp-chip on" data-k="spin" type="button">Поворот</button>
       <button class="gp-chip on" data-k="walk" type="button">Ход</button>
@@ -39,8 +39,12 @@
     </div>
   </div>
   <div class="vh-grid" id="vh-grid"></div>
+  <div class="vh-head" style="margin-top:18px"><h1>Герои: джедаи и ситхи</h1>
+    <div class="vh-ctl" id="vh-acts"></div></div>
+  <div class="vh-grid" id="vh-heroes"></div>
 </div>
-<script src="../shared/rt-vehicles.js?v=1"></script>
+<script src="../shared/rt-vehicles.js?v=2"></script>
+<script src="../shared/rt-heroes.js?v=1"></script>
 <script>
 (function() {
   'use strict';
@@ -83,10 +87,47 @@
         c2.translate(need / 2, need / 2); c2.scale(pp, pp); V.draw(c2, k.id, u);
       });
     });
+    heroFrame(t, dpr);
     requestAnimationFrame(frame);
   }
+  // герои
+  var H = window.SWHeroes, ACT_NAME = { idle: 'Стойка', run: 'Бег', slash: 'Удар', deflect: 'Отражение', push: 'Толчок', 'throw': 'Бросок меча', dash: 'Выпад', lightning: 'Молнии', choke: 'Удушение', mind: 'Внушение', heal: 'Исцеление', barrier: 'Купол' };
+  var HS = { act: 'idle' }, hcards = [], acts = document.getElementById('vh-acts');
+  H.ACTS.forEach(function(a) { var b = document.createElement('button'); b.type = 'button'; b.className = 'gp-chip' + (a === 'idle' ? ' on' : ''); b.textContent = ACT_NAME[a]; b.setAttribute('data-act', a); acts.appendChild(b); });
+  acts.addEventListener('click', function(e) { var b = e.target.closest('[data-act]'); if (!b) return; HS.act = b.getAttribute('data-act'); Array.prototype.forEach.call(acts.children, function(x) { x.classList.toggle('on', x === b); }); });
+  var hgrid = document.getElementById('vh-heroes');
+  var portraits = []; for (var i = 1; i <= 11; i++) portraits.push(['republic', 'jedi_' + (i < 10 ? '0' + i : i)]); for (i = 1; i <= 6; i++) portraits.push(['cis', 'sith_0' + i]);
+  portraits.forEach(function(p) {
+    var card = document.createElement('div'), L = H.look(p[0], p[1]);
+    card.className = 'vh-card ' + (p[0] === 'cis' ? 'cis' : 'rep');
+    card.innerHTML = '<h2>' + (p[0] === 'cis' ? 'Ситх' : 'Джедай') + '<span>' + p[1] + '</span></h2><div class="vh-row"><img src="../assets/units/heroes/' + p[1] + '.jpg" alt=""><canvas class="vh-big"></canvas></div>' +
+      '<div class="vh-small"><canvas title="в бою: 32 точки на клетку"></canvas><canvas title="×2"></canvas><canvas title="×3"></canvas><span class="gp-dim">32 · 64 · 96</span></div>';
+    hgrid.appendChild(card);
+    hcards.push({ look: L, big: card.querySelector('.vh-big'), small: Array.prototype.slice.call(card.querySelectorAll('.vh-small canvas')) });
+  });
+  function heroFrame(t, dpr) {
+    hcards.forEach(function(k) {
+      var act = HS.act, kk = (t * 0.7) % 1, u = { aim: S.spin ? (t * 0.35) % TAU : 0, mv: act === 'run' || act === 'dash' ? 1 : 0, phase: t * 7, act: act, k: kk, look: k.look };
+      var big = k.big, w = big.clientWidth, px = Math.round(w * dpr);
+      if (big.width !== px) { big.width = px; big.height = px; }
+      var c = big.getContext('2d'), ppc = px / 2.6;
+      c.setTransform(1, 0, 0, 1, 0, 0); ground(c, px, px, ppc);
+      c.translate(px / 2, px / 2); c.scale(ppc, ppc); H.draw(c, u);
+      if (act === 'throw') H.fx.blade(c, 0.9, 0, t, k.look.blade);
+      if (act === 'lightning') { H.fx.lightning(c, 0.4, -0.1, 1.1, -0.25, (t * 20) | 0); H.fx.lightning(c, 0.4, 0.1, 1.15, 0.2, (t * 20 + 7) | 0); }
+      if (act === 'choke') H.fx.choke(c, 0.4, 0, 1.1, 0.1, t);
+      if (act === 'mind') H.fx.ring(c, 0.1, 0, kk);
+      if (act === 'barrier') H.fx.dome(c, 0, 0, 1.1, t);
+      if (act === 'push') H.fx.wave(c, 0.2, 0, u.aim, kk);
+      k.small.forEach(function(cv, i) {
+        var pp = [32, 64, 96][i], c2 = cv.getContext('2d'), need = Math.round(pp * 1.6);
+        if (cv.width !== need * dpr) { cv.width = cv.height = need * dpr; cv.style.width = cv.style.height = need + 'px'; }
+        c2.setTransform(dpr, 0, 0, dpr, 0, 0); ground(c2, need, need, pp); c2.translate(need / 2, need / 2); c2.scale(pp, pp); H.draw(c2, u);
+      });
+    });
+  }
   requestAnimationFrame(frame);
-  window.VH = { S: S, cards: cards };
+  window.VH = { S: S, cards: cards, HS: HS };
 })();
 </script>
 </body>

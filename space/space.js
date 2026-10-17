@@ -77,17 +77,22 @@
     return Promise.all(ids.map(loadPlan).concat([loadCraft()]));
   }
   // s: [класс, сторона, x, y, армия] — армия из игры («Мой флот») или типовая для полигона
-  function makeBattle(sc, aiBoard) {
-    var B = new SP.Battle({ seed: 1977 + Date.now() % 1000, aiBoard: aiBoard });
+  function makeBattle(sc, aiBoard, opts) {
+    opts = opts || {};
+    var B = new SP.Battle({ seed: 1977 + Date.now() % 1000, aiBoard: aiBoard, endless: !!opts.endless });
     // оборону своих кораблей ведёт игрок, чужих — ИИ (и когда враг стоит мишенью)
     B.defHuman = function(sh) { return sh.side === G.side; };
-    sc.ships.forEach(function(s) {
-      var plan = G.plans[s[0]], army = s[4] || window.SWArmy.typicalArmy(s[0]);
-      // каждый бой — свежий экипаж (состояние живёт в Crew, план общий и не меняется)
-      B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[1] === 0 ? 0 : Math.PI, figMap: F.crewFigs(plan.faction, ALL), figIds: FIG_IDS,
-                  army: army, name: army.name || window.SWArmy.shipName(s[0]) });
-    });
+    sc.ships.forEach(function(s) { addShipRow(B, s, opts); });
     return B;
+  }
+  // s: [класс, сторона, x, y, армия, курс, { id, owner, name, faction, trophy }] — курс и метки есть у орбиты системы
+  function addShipRow(B, s, opts) {
+    var plan = G.plans[s[0]], army = s[4] || window.SWArmy.typicalArmy(s[0]), meta = s[6] || null;
+    // каждый бой — свежий экипаж (состояние живёт в Crew, план общий и не меняется);
+    // по сети экипаж спит, пока корабль не смотрят изнутри или не абордируют: тела приходят с сервера
+    return B.addShip({ cls: s[0], plan: plan, side: s[1], x: s[2], y: s[3], hd: s[5] != null ? s[5] : (s[1] === 0 ? 0 : Math.PI), figMap: F.crewFigs(plan.faction, ALL), figIds: FIG_IDS,
+                       army: army, name: army.name || window.SWArmy.shipName(s[0]), dormant: !!(opts && opts.dormant),
+                       owner: meta ? meta.owner : null, faction: meta ? meta.faction : undefined, id: meta ? meta.id : undefined });
   }
   // Новый бой на экране (свой или сетевой): сброс выбора, камеры и панелей
   function setupBattle(B, scen) {
@@ -95,8 +100,10 @@
     G.who = null; IN.ship = -1; if (!G.speed) G.speed = G.lastSpd || 1;
     G.B = B; G.fx = { shots: [], booms: [], shields: [] }; DOWN = {}; G.wrecks = []; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
     G.sel = -1; G.foe = -1; G.bsel = {}; G.bm = {}; G.vent = false; G.quiet = false; G.usel = []; G.uselN = -1; G.lastTap = null; G.fmark = null; G.sheet = '';
-    for (i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side) { G.sel = i; break; }
-    for (i = 0; i < B.ships.length; i++) if (B.ships[i].side !== G.side) { G.foe = i; break; }
+    var me = G.net && G.net.sys ? G.net.user : null;
+    if (me) for (i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side && !B.ships[i].dead && B.ships[i].owner === me) { G.sel = i; break; }
+    if (G.sel < 0 && (!me || me === 'dev')) for (i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side && !B.ships[i].dead) { G.sel = i; break; }
+    for (i = 0; i < B.ships.length; i++) if (B.ships[i].side !== G.side && !B.ships[i].dead) { G.foe = i; break; }
     CHUNKS.clear(); TIER_N = { 4: 0, 8: 0, 16: 0, 32: 0 };
     setMode('space');
     buildFleet(); buildShipPanel(); hud(); fitAll();
@@ -1031,7 +1038,9 @@
     // остовы погибших — под живыми
     if (G.wrecks) for (i = 0; i < G.wrecks.length; i++) window.SPWreck.draw(c, G.wrecks[i], T0(), toS, s, CAM.vw, CAM.vh);
     // корабли: врага вне датчиков не видно — только метка последней засечки
+    drawSys(c);
     for (i = 0; i < B.ships.length; i++) {
+      if (B.ships[i].why === 'left') continue;                                     // ушёл с орбиты
       if (seen(B.ships[i])) drawShip(c, B.ships[i], T); else drawGhost(c, B.ships[i], T);
     }
     // куда бьёт враг по нашим кораблям
@@ -1083,6 +1092,34 @@
     }
   }
   // Сетка — чтобы было видно движение и масштаб (1 км)
+  // Орбита системы из игры: сетка 150 клеток по 200 м, полосы прихода из гиперпространства
+  // сверху и снизу, две площадки высадки на планету, место станции
+  function drawSys(c) {
+    var S = G.sys; if (!S || G.mode !== 'space') return;
+    var M = S.cellM, N = S.cells * M, z = S.zone * M, a = toS(0, 0), b = toS(N, N), s = CAM.s;
+    c.save();
+    c.strokeStyle = 'rgba(143,168,196,0.22)'; c.lineWidth = 1; c.setLineDash([6, 6]); c.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); c.setLineDash([]);
+    c.fillStyle = 'rgba(74,144,217,0.05)';
+    c.fillRect(a[0], a[1], b[0] - a[0], z * s); c.fillRect(a[0], b[1] - z * s, b[0] - a[0], z * s);
+    c.fillStyle = 'rgba(143,168,196,0.45)'; c.font = '10px "Courier New", monospace'; c.textAlign = 'left'; c.textBaseline = 'top';
+    if (z * s > 14) { c.fillText('ПОЛОСА ПРИХОДА ИЗ ГИПЕРПРОСТРАНСТВА', a[0] + 8, a[1] + 4); c.fillText('ПОЛОСА ПРИХОДА ИЗ ГИПЕРПРОСТРАНСТВА', a[0] + 8, b[1] - z * s + 4); }
+    (S.pads || []).forEach(function(p) {
+      var q = toS(p.x * M, p.y * M), w = p.size * M * s;
+      c.strokeStyle = 'rgba(217,169,64,0.55)'; c.setLineDash([4, 4]); c.strokeRect(q[0], q[1], w, w); c.setLineDash([]);
+      c.fillStyle = 'rgba(217,169,64,0.08)'; c.fillRect(q[0], q[1], w, w);
+      if (w > 40) { c.fillStyle = 'rgba(232,217,168,0.75)'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('ПЛОЩАДКА ' + p.idx, q[0] + w / 2, q[1] + w / 2); }
+    });
+    var sl = S.slot;
+    if (sl) {
+      var st = S.station, q2 = toS((sl.x + sl.size / 2) * M, (sl.y + sl.size / 2) * M), r = sl.size * M * s / 2;
+      c.strokeStyle = st ? (st.faction === 'cis' ? 'rgba(217,74,74,0.7)' : 'rgba(74,144,217,0.7)') : 'rgba(143,168,196,0.35)';
+      c.lineWidth = st ? 2 : 1; c.setLineDash(st ? [] : [3, 5]);
+      c.beginPath(); c.arc(q2[0], q2[1], Math.max(6, r), 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
+      if (st) { c.beginPath(); c.arc(q2[0], q2[1], Math.max(3, r * 0.45), 0, Math.PI * 2); c.stroke(); for (var k = 0; k < 4; k++) { var an = k * Math.PI / 2 + Math.PI / 4; c.beginPath(); c.moveTo(q2[0] + Math.cos(an) * r * 0.45, q2[1] + Math.sin(an) * r * 0.45); c.lineTo(q2[0] + Math.cos(an) * r, q2[1] + Math.sin(an) * r); c.stroke(); } }
+      if (r > 18) { c.fillStyle = 'rgba(232,217,168,0.7)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(st ? (st.name || 'Станция').toUpperCase() : 'МЕСТО ПОД СТАНЦИЮ', q2[0], q2[1] + r + 4); }
+    }
+    c.restore();
+  }
   function drawGrid(c) {
     var step = 1000, s = CAM.s;
     if (step * s < 26) step = 5000;
@@ -1847,7 +1884,7 @@
     if (window.SPSfx) window.SPSfx.setInside(m === 'inside');
     document.body.classList.toggle('inside', m === 'inside');
     $('sp-inside').textContent = m === 'inside' ? 'К бою' : 'Внутри';
-    $('sp-kicker').textContent = bv ? 'Абордаж' : m === 'inside' ? 'Внутри корабля' : 'Космический бой 2.0';
+    $('sp-kicker').textContent = bv ? 'Абордаж' : m === 'inside' ? 'Внутри корабля' : G.sys ? 'Орбита · ' + G.sys.name : 'Космический бой 2.0';
     if (m === 'inside') {
       var sh = G.B.ships[G.view]; if (!sh) return;
       G.aim = false; G.move = false;
@@ -2056,8 +2093,9 @@
       else attackTap(hit);
       return;
     }
-    // касание пустого космоса — курс своему кораблю
+    // касание пустого космоса — курс своему кораблю; на орбите игры сначала — станция и площадки
     if (G.aim) return;
+    if (window.SP_ON_TAP && window.SP_ON_TAP(p[0], p[1], px, py) === true) return;
     var me = B.ships[G.sel];
     if (me && !me.dead) {
       B.order(G.sel, p[0], p[1]);
@@ -2138,6 +2176,7 @@
     var B = G.B, html = ['<div class="sp-fleet-col">', '<div class="sp-fleet-col">'];
     var cols = [[], []];
     B.ships.forEach(function(s) {
+      if (s.why === 'left') return;
       var mine = s.side === G.side;
       cols[mine ? 0 : 1].push('<button class="sp-unit ' + (s.side === 0 ? 'rep' : 'cis') + '" data-ship="' + s.n + '">' +
         '<span class="sp-unit-name"><span>' + esc(s.name) + '</span><em id="sp-u-w' + s.n + '"></em></span>' +
@@ -2239,7 +2278,7 @@
     var bv = attView(), dvw = defView();
     document.body.classList.toggle('boardview', !!(bv || dvw));
     document.body.classList.toggle('defview', !!dvw);
-    $('sp-kicker').textContent = bv ? 'Абордаж' : dvw ? 'Оборона корабля' : G.mode === 'inside' ? 'Внутри корабля' : 'Космический бой 2.0';
+    $('sp-kicker').textContent = bv ? 'Абордаж' : dvw ? 'Оборона корабля' : G.mode === 'inside' ? 'Внутри корабля' : G.sys ? 'Орбита · ' + G.sys.name : 'Космический бой 2.0';
     if (!dvw && G.dmode) G.dmode = null;
     $('sp-view').textContent = 'Обзор';
     $('sp-view').title = G.mode === 'inside' ? 'Весь корабль на экране' : 'Все корабли на экране';
@@ -2310,7 +2349,7 @@
     // у «Орудий» — точка: красная, если есть выбитые, зелёная — если бьют
     dockTabs([['ship', 'Корабль'], ['guns', 'Орудия', out ? '<i class="bad">●</i>' : fire ? '<i>●</i>' : '']]);
     $('sp-tabs').title = 'Орудия: бьют ' + fire + (out ? ', выбито ' + out : '');
-    box.innerHTML = G.sheet === 'ship' ? sys + shs + holdLine(sh) + bs.rest + (G.mode === 'inside' ? atkLine(sh) : '') : '';
+    box.innerHTML = G.sheet === 'ship' ? sys + shs + holdLine(sh) + bs.rest + (G.mode === 'inside' ? atkLine(sh) : '') + (window.SP_SHEET ? window.SP_SHEET(sh) : '') : '';
     sheetShow(G.sheet === 'guns');
     // пушки
     var any = false;
@@ -2862,13 +2901,25 @@
       netFail(e.message, e.login);
     });
   }
+  // Орбита системы из игры: комната so:<система>; адрес сервера — из игры (rt_space_status) или замеров
+  function netOpenSys(system, srv, want) {
+    if (G.net) netClose(true);
+    ++START;
+    G.task = null; taskRow();
+    G.net = { sys: system, code: system, scen: 'vp', cfg: null, want: want, ws: null, M: null, side: -1, seats: null, tries: 0, q: [], ready: false, round: 0, lastAt: 0, vkey: '' };
+    document.body.classList.add('sys');
+    netPanel(false); netRow();
+    toast('Орбита: подключаюсь…', 'gold');
+    var auth = srv && !NET_DEV ? (window.SP_TOKEN ? window.SP_TOKEN() : Promise.resolve('dev')).then(function(tok) { return { url: srv, token: tok || 'dev' }; }) : netAuth();
+    auth.then(function(a) { if (G.net && G.net.sys === system) { G.net.auth = a; netConnect(); } }, function(e) { netFail(e.message, e.login); });
+  }
   function netConnect() {
     var N = G.net; if (!N || !N.auth) return;
     var ws;
     try { ws = new WebSocket(N.auth.url.replace(/^http/, 'ws') + '/ws'); } catch (e) { netFail('Сервер недоступен'); return; }
     ws.binaryType = 'arraybuffer';
     N.ws = ws; N.ok = false; netRow();
-    ws.onopen = function() { ws.send(JSON.stringify({ t: 'auth', token: N.auth.token, room: 'sp:' + N.code + ':' + N.scen, side: N.side >= 0 ? N.side : N.want, cfg: N.cfg || undefined })); };
+    ws.onopen = function() { ws.send(JSON.stringify({ t: 'auth', token: N.auth.token, room: N.sys ? 'so:' + N.sys : 'sp:' + N.code + ':' + N.scen, side: N.side >= 0 ? N.side : N.want, cfg: N.cfg || undefined })); };
     ws.onmessage = function(e) {
       if (G.net !== N || N.ws !== ws) return;
       N.lastAt = performance.now();
@@ -2876,6 +2927,8 @@
       var m; try { m = JSON.parse(e.data); } catch (er) { return; }
       if (m.t === 'hello') { N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return; }
       if (m.t === 'roster') { N.seats = m.seats; N.own = m.own || null; netRow(); return; }
+      if (m.t === 'ships') { netShips(m.ships || []); return; }
+      if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }
       if (m.t === 'note') { toast(m.msg, 'gold'); return; }
@@ -2886,7 +2939,8 @@
       if (G.net !== N || N.ws !== ws) return;
       N.ws = null; N.ready = N.ready && false; netRow();
       // отказ сервера (полная комната, вход не подтверждён) — не повторять
-      if (ev.code === 4003 || ev.code === 4004 || ev.code === 4005 || ev.code === 4006) { netFail(N.err || 'Сервер не пустил в бой'); return; }
+      if (ev.code === 4003 || ev.code === 4004 || ev.code === 4005 || ev.code === 4006 || ev.code === 4007) { netFail(N.err || 'Сервер не пустил в бой'); return; }
+      if (ev.code === 4008) { N.side = -1; }                                   // орбита пересоздана — войти заново
       if (N.tries >= NET_TRY.length) { netFail('Нет связи с сервером'); return; }
       toast(N.ok ? 'Связь прервалась — переподключаюсь…' : 'Сервер не ответил — пробую ещё', 'bad');
       setTimeout(function() { if (G.net === N) netConnect(); }, NET_TRY[N.tries++]);
@@ -2894,22 +2948,42 @@
   }
   // Сервер прислал бой: собрать зеркало (те же корабли и экипажи — расчёт не идёт)
   function netHello(m) {
-    var N = G.net, sc = m.cfg ? scObj({ cfg: m.cfg }) : SCEN[m.scen]; if (!sc) { netFail('Сервер прислал неизвестный бой'); return; }
+    var N = G.net, sys = m.kind === 'sys';
+    var sc = sys ? m.sc : m.cfg ? scObj({ cfg: m.cfg }) : SCEN[m.scen]; if (!sc) { netFail('Сервер прислал неизвестный бой'); return; }
     if (m.cfg) N.cfg = m.cfg;
-    N.ready = false; N.q = []; N.side = m.side; N.round = m.round;
+    N.ready = false; N.q = []; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
+    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station };
     var token = ++START;
     loadShips(sc).then(function() {
       if (token !== START || G.net !== N) return;
-      var B = makeBattle(sc, [false, false]);
-      G.side = m.side; G.scen = m.cfg ? { cfg: m.cfg } : m.scen;
+      var B = makeBattle(sc, [false, false], sys ? { dormant: true, endless: true } : null);
+      G.side = m.side; G.scen = sys ? { sys: m.system } : m.cfg ? { cfg: m.cfg } : m.scen;
       N.M = new NETLIB.Mirror(B, m.side, netSend, window.SWBoard);
       setupBattle(B, G.scen);
-      N.ready = true; N.vkey = '';
+      if (sys) G.follow = 'all';
+      N.ready = true; N.vkey = ''; N.addQ = Promise.resolve();
       netRow();
       var q = N.q; N.q = [];
       for (var i = 0; i < q.length; i++) { if (q[i] instanceof ArrayBuffer) N.M.onBin(q[i]); else N.M.onText(q[i]); }
-      toast((m.T > 1 ? 'Ты в бою: ' : 'Бой по сети начался: ') + SIDE_NAME[m.side] + '. Ссылка для соперника — «Ссылка»', 'gold');
+      if (sys) { var mine = B.ships.filter(function(x) { return !x.dead && x.owner === N.user; }).length; toast('Орбита ' + m.name + ': твоих кораблей ' + mine + (mine ? '. Коснись своего — команды, врага — атака' : '. Смотришь орбиту'), 'gold'); if (window.SP_ON_HELLO) window.SP_ON_HELLO(m, B); }
+      else toast((m.T > 1 ? 'Ты в бою: ' : 'Бой по сети начался: ') + SIDE_NAME[m.side] + '. Ссылка для соперника — «Ссылка»', 'gold');
     }).catch(function(e) { netFail('Не загрузилось: ' + e.message); });
+  }
+  // Орбита: пришли новые корабли (из гиперпространства, с верфи) — по порядку сервера
+  function netShips(rows) {
+    var N = G.net; if (!N || !N.ready) return;
+    N.addQ = N.addQ.then(function() {
+      return loadShips({ ships: rows }).then(function() {
+        if (G.net !== N || !G.B) return;
+        rows.forEach(function(r) {
+          var n = r[6] && r[6].n;
+          while (n != null && G.B.ships.length < n) addShipRow(G.B, r, { dormant: true });   // не должно случаться: дыр в нумерации нет
+          var sh = addShipRow(G.B, r, { dormant: true });
+          if (G.side === sh.side) toast('На орбите: ' + sh.name, 'gold');
+        });
+        buildFleet(); hud();
+      });
+    }).catch(function(e) { toast('Корабль не загрузился: ' + e.message, 'bad'); });
   }
   function netSend(m) { var N = G.net; if (N && N.ws && N.ws.readyState === 1) N.ws.send(JSON.stringify(m)); }
   // Что игрок смотрит: сервер шлёт людей и отсеки только этого корабля
@@ -2946,6 +3020,14 @@
     var row = $('sp-netrow'), N = G.net;
     document.body.classList.toggle('net', !!N);
     if (!N) { row.hidden = true; return; }
+    if (N.sys) {
+      // орбита: без кода и ссылки — только состояние связи
+      row.hidden = false;
+      var stt = !N.ws ? (N.fail ? 'bad' : 'wait') : N.ready ? 'ok' : 'wait';
+      $('sp-net-dot').className = 'sp-net-dot ' + stt; $('sp-net-code').textContent = '';
+      $('sp-net-foe').innerHTML = N.fail ? esc(N.fail) : !N.ready ? 'подключаюсь…' : 'орбита системы · бой идёт на сервере';
+      return;
+    }
     row.hidden = false;
     var st = !N.ws ? (N.fail ? 'bad' : 'wait') : N.ready ? 'ok' : 'wait';
     var foe = '';
@@ -3029,14 +3111,16 @@
   if (m2) side = m2[1] === 'cis' ? 1 : 0;
   else { try { side = +(localStorage.getItem('sp-side') || 0) === 1 ? 1 : 0; } catch (e) {} }
   if (!SCEN[scen]) scen = 'vp';
-  var mr = qs.match(/[?&]room=([a-z0-9]{3,12})/i);
+  var mr = qs.match(/[?&]room=([a-z0-9]{3,12})/i), ml = qs.match(/[?&]live=([a-z0-9_]{2,40})/i);
+  var live = window.SP_LIVE || (ml ? { system: ml[1].toLowerCase() } : null);
   polyLoad();
-  if (mr) { G.scen = scen; G.side = side; netOpen(mr[1].toLowerCase(), scen, m2 ? side : -1); }
+  if (live) { G.scen = scen; G.side = side; netOpenSys(live.system, live.srv || null, m2 ? side : -1); }
+  else if (mr) { G.scen = scen; G.side = side; netOpen(mr[1].toLowerCase(), scen, m2 ? side : -1); }
   else {
     start(scen, side);
     // полигон — сразу, если бой не задан ссылкой
     if (!m1) { POLY.side = side; polyOpen(true); }
   }
   requestAnimationFrame(frame);
-  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, start: start, itoS: itoS };
+  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, toW: toW, start: start, itoS: itoS, toast: toast, hud: hud, focusShip: focusShip };
 })();

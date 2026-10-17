@@ -124,12 +124,44 @@
     this.boardT = 3;
     // туман войны: что видит каждая сторона (fog: false — видно всё)
     this.fog = opts.fog !== false;
+    this.endless = !!opts.endless;     // орбита системы: бой не «кончается», корабли приходят и уходят
     this.vis = [{}, {}]; this.visC = [{}, {}]; this.last = [{}, {}]; this.senseT = 0;
     var list = opts.ships || [];
     for (var i = 0; i < list.length; i++) this.addShip(list[i]);
   }
 
-  // { cls, plan (SWShip.load), side, x, y, hd, figs, name, army }
+  // Спящий экипаж: корабль на орбите, которого бой ещё не коснулся. Ни тел, ни карт
+  // проходимости — только отсеки с целостью 100 и ответы «всё исправно». Как только по кораблю
+  // стреляют, идут на абордаж, смотрят внутрь или враг рядом — Battle.wake строит настоящий
+  // SWCrew.Crew. Так система со ста кораблями на орбите не стоит сотни экипажей в памяти.
+  function DormantCrew(plan, opts) {
+    this.ship = plan; this.w = plan.w; this.h = plan.h; this.team = opts.team || 0; this.dormant = true;
+    this.board = null; this.alertOn = !!opts.alert; this.t = 0; this.crewLost = opts.crewLost || 0;
+    this.agents = []; this.burning = []; this.fire = {}; this.scorch = []; this.roomList = []; this.rooms = {};
+    this.ev = { deaths: [], ignites: [], blasts: [], guns: [] };
+    for (var i = 0; i < plan.rooms.length; i++) {
+      var r = plan.rooms[i], st = { n: r.n, t: r.t, r: r, integ: 100, stun: 0, need: 0, fires: 0, anchor: null, staffed: 0, assigned: 0, fixers: 0, fighters: 0, firedAt: -99, runner: 0, spots: null };
+      this.rooms[r.n] = st; this.roomList.push(st);
+    }
+    // сколько людей будет на борту, когда корабль проснётся (для сводок)
+    this.n = (opts.roster || []).length + (opts.guards ? opts.guards.n : 0);
+  }
+  DormantCrew.prototype.step = function() {};
+  DormantCrew.prototype.sysEff = function() { return 1; };
+  DormantCrew.prototype.roomEff = function() { return 1; };
+  DormantCrew.prototype.alive = function() { return this.n; };
+  DormantCrew.prototype.gunFired = function() {};
+  DormantCrew.prototype.damageRoom = function() {};
+  DormantCrew.prototype.ignite = function() {};
+  DormantCrew.prototype.blast = function() {};
+  DormantCrew.prototype.releaseJob = function() {};
+  DormantCrew.prototype.sendPost = function() {};
+  DormantCrew.prototype.claimCell = function() {};
+  DormantCrew.prototype.go = function() {};
+  DormantCrew.prototype.spotIn = function() { return null; };
+  DormantCrew.prototype.heldType = function() { return false; };
+
+  // { cls, plan (SWShip.load), side, x, y, hd, figs, name, army, dormant }
   // army — что есть у корабля в игре (SWArmy.fromGame или типовой состав полигона):
   //   roster (бойцы трюма), hangar (машины), hpK/shK (целость), hpBonus/shBonus/dmgK
   //   (улучшения), crewLost (недобор экипажа). Без army на борту ни бойцов, ни машин.
@@ -146,13 +178,15 @@
       vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
-      crew: new SWCrew.Crew(plan, { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
-                                    roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0,
-                                    guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null }),
+      crew: null, crewOpts: { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
+                              roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0,
+                              guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null },
+      dormant: !!o.dormant, owner: o.owner || null, faction: o.faction || plan.faction,
       vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
       figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1,
       guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
     };
+    sh.crew = sh.dormant ? new DormantCrew(plan, sh.crewOpts) : new SWCrew.Crew(plan, sh.crewOpts);
     // орудия с секторами обстрела
     var main = 0, raw = 0;
     for (var g = 0; g < plan.mounts.length; g++) {
@@ -295,6 +329,13 @@
   };
   // Держать позицию (игрок отошёл): корабль стоит на месте, к врагу в досягаемости
   // поворачивается бортом с большим числом стволов; никуда не идёт и абордаж не начинает
+  // Разбудить спящий корабль: настоящий экипаж по тому же составу
+  Battle.prototype.wake = function(sh) {
+    if (!sh || !sh.dormant) return;
+    sh.crew = new SWCrew.Crew(sh.plan, sh.crewOpts); sh.dormant = false;
+    for (var i = 0; i < this.craft.length; i++) if (this.craft[i].home === sh.n) this.craft[i].idle = false;   // его истребители — в дело
+    this.ev.wakes = this.ev.wakes || []; this.ev.wakes.push(sh.n);
+  };
   Battle.prototype.guard = function(shipN, on) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
     sh.guard = !!on;
@@ -321,17 +362,17 @@
     for (i = 0; i < this.ships.length; i++) {
       sh = this.ships[i];
       if (sh.dead) continue;
-      sh.crew.step(dt);
+      if (!sh.dormant) sh.crew.step(dt);
       this.systems(sh, dt);
       this.drive(sh, dt);
       this.place(sh);
-      this.launch(sh, dt);
+      if (!sh.dormant) this.launch(sh, dt);
     }
     this.collide(dt);
     this.senseT -= dt;
     if (this.senseT <= 0) { this.senseT = 0.5; this.sense(); }
     this.boardStep(dt);
-    for (i = 0; i < this.ships.length; i++) if (!this.ships[i].dead) this.fireGuns(this.ships[i], dt);
+    for (i = 0; i < this.ships.length; i++) if (!this.ships[i].dead && !this.ships[i].dormant) this.fireGuns(this.ships[i], dt);
     this.flyCraft(dt);
     // попадания долетают
     var keep = [];
@@ -340,7 +381,7 @@
       if (p.at <= this.t) this.resolve(p); else keep.push(p);
     }
     this.pending = keep;
-    this.checkEnd();
+    if (!this.endless) this.checkEnd();
   };
 
   // Системы корабля из состояния отсеков
@@ -719,6 +760,7 @@
   Battle.prototype.resolve = function(p) {
     if (p.craft) {
       var c = this.craftById(p.craft); if (!c || c.dead) return;
+      if (c.idle) { c.idle = false; if (this.ships[c.home] && this.ships[c.home].dormant) this.wake(this.ships[c.home]); }
       c.hp -= p.dmg;
       if (c.hp <= 0) {
         c.dead = true; c.deadAt = this.t; this.ev.booms.push({ x: c.x, y: c.y, r: 30, t0: this.t, craft: 1 });
@@ -728,6 +770,7 @@
       return;
     }
     var sh = this.ships[p.ship]; if (!sh || sh.dead) return;
+    if (sh.dormant) this.wake(sh);
     var T = p.T, dmg = T.dmg * p.k * (0.85 + this.R() * 0.3);
     var w = this.toWorld(sh, p.lx, p.ly);
     // щит сектора
@@ -936,10 +979,20 @@
                       x: w[0], y: w[1], hd: sh.hd, v: C.speed * 0.6, hp: C.hp, max: C.hp, speed: C.speed,
                       cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t });
   };
+  // Малый корабль, который уже в полёте (в игре истребители стоят на орбите сами по себе):
+  // приписывается к своему крупному кораблю home, с которого «взлетел»
+  Battle.prototype.addCraft = function(type, side, home, x, y, hd, hpK) {
+    var C = CRAFT[type]; if (!C || !this.ships[home]) return null;
+    var c = { id: this.nextCraft++, type: type, role: C.role, img: C.img, side: side, home: home,
+              x: x, y: y, hd: hd || 0, v: 0, hp: C.hp * Math.max(0.02, Math.min(1, hpK == null ? 1 : hpK)), max: C.hp, speed: C.speed,
+              cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t, idle: !!this.ships[home].dormant };
+    this.craft.push(c);
+    return c;
+  };
   Battle.prototype.flyCraft = function(dt) {
     var R = this.R, i, c;
     for (i = 0; i < this.craft.length; i++) {
-      c = this.craft[i]; if (c.dead) continue;
+      c = this.craft[i]; if (c.dead || c.idle) continue;
       var gx, gy, want;
       if (c.role === 'shuttle') { this.flyShuttle(c, dt); continue; }
       if (c.role === 'fighter') {
@@ -1106,6 +1159,8 @@
   // (по 12) летят к шлюзу цели. Места в шлюзах цели и откат шаттлов заняты с приказа.
   // now — сразу в шаттлах, без сборов (учения полигона)
   Battle.prototype.board = function(n, t, all, now) {
+    if (this.ships[n] && this.ships[n].dormant) this.wake(this.ships[n]);
+    if (this.ships[t] && this.ships[t].dormant) this.wake(this.ships[t]);
     var can = this.canBoard(n, t, all); if (!can.ok) return can;
     var a = this.ships[n], b = this.ships[t], lock = this.portFor(b, a);
     if (!lock) return { ok: false, why: 'у цели нет шлюзов' };

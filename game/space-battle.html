@@ -2,7 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
 <title>Космическое пространство — Star Wars: Global Conflict</title>
 <link rel="stylesheet" href="../css/space-battle.css">
 <link rel="stylesheet" href="../css/shared-ui.css">
@@ -11,6 +12,8 @@
 <link rel="stylesheet" href="../css/lease.css">
 <link rel="stylesheet" href="../css/overwatch.css">
 <link rel="stylesheet" href="../css/boarding-space.css">
+<link rel="stylesheet" href="../space/space.css?v=17">
+<link rel="stylesheet" href="../css/space-live.css?v=1">
 </head>
 <body>
 
@@ -23,11 +26,178 @@
   <div class="sl-step"></div>
 </div>
 
-<button id="space-back-btn">← Галактика</button>
+<button id="space-back-btn" hidden>← Галактика</button>
 
-<div id="space-viewport">
+<!-- старая сетка орбиты: скрыта, но остаётся — на неё ссылаются панели старого экрана -->
+<div id="space-viewport" hidden>
   <div id="space-grid"></div>
 </div>
+
+<!-- Космос 2.0: орбита системы и бой в реальном времени (space/space.js), поверх — панели игры -->
+<canvas id="sp-canvas"></canvas>
+
+<a id="sp-back" href="galaxy-map.html">← Галактика</a>
+<div id="sp-tr">
+  <div class="sp-speed" role="group" aria-label="Скорость боя">
+    <button id="sp-pause" type="button" title="Пауза">❚❚</button>
+    <button id="sp-spd" type="button" title="Скорость: ×1, ×2, ×4">×1</button>
+  </div>
+  <button id="sp-snd" type="button" aria-label="Звук боя" title="Звук боя">
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path class="spk" d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path class="wv" d="M13 7a4 4 0 0 1 0 6M15.2 4.8a7 7 0 0 1 0 10.4"/><path class="x" d="M13 7.5l5 5M18 7.5l-5 5"/></svg>
+  </button>
+  <button id="sp-gfx-b" type="button" aria-label="Настройки графики" title="Настройки графики">
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>
+  </button>
+  <div id="sp-clock"><b id="sp-time">0:00</b><span class="fps"> · <span id="sp-fps">0</span> к/с</span></div>
+</div>
+
+<div class="sp-panel sp-top" id="sp-top">
+  <div class="sp-row">
+    <span class="sp-kicker" id="sp-kicker">Орбита</span>
+    <span class="sp-spacer"></span>
+    <span class="sp-side" id="sp-side">Республика</span>
+  </div>
+  <div class="sp-row sp-scen" id="sp-scen">
+    <button class="sp-chip net" data-poly="1">◎ Полигон</button>
+    <button class="sp-chip net" data-net="1">⇄ По сети</button>
+    <button class="sp-chip" data-scen="vp">Венатор × Провидение</button>
+    <button class="sp-chip" data-scen="am">Акламатор × Щедрый</button>
+    <button class="sp-chip" data-scen="2x2">Два на два</button>
+    <button class="sp-chip" data-scen="fl">Мандатор × Покоритель</button>
+    <button class="sp-chip" data-scen="lr">Венатор × Лукрехалк</button>
+    <button class="sp-chip" data-scen="vk">Победа × Провидение</button>
+    <button class="sp-chip" data-scen="vr">Валиант × Бунтарь</button>
+    <button class="sp-chip" data-scen="ad">Аркитенс × Алмаз</button>
+    <button class="sp-chip" data-scen="th">Тантив × Хардсел</button>
+  </div>
+  <div class="sp-row sp-netrow" id="sp-netrow" hidden>
+    <span class="sp-net-dot" id="sp-net-dot"></span>
+    <span class="sp-net-lab">по сети</span>
+    <span class="sp-net-code" id="sp-net-code"></span>
+    <span class="sp-net-foe" id="sp-net-foe"></span>
+    <button class="sp-mini gold" id="sp-net-link" type="button">Ссылка</button>
+    <button class="sp-mini" id="sp-net-quit" type="button">Выйти</button>
+  </div>
+  <div class="sp-row sp-taskrow" id="sp-taskrow" hidden>
+    <span class="sp-task-n" id="sp-task-n">1</span>
+    <span class="sp-task-body"><span id="sp-task-t"></span><em id="sp-task-how"></em></span>
+    <button class="sp-mini gold" id="sp-task-again" type="button">Заново</button>
+    <button class="sp-mini" id="sp-task-list" type="button">Задачи</button>
+    <button class="sp-mini" id="sp-task-x" type="button" aria-label="Закрыть задачу">✕</button>
+  </div>
+  <div class="sp-fleet" id="sp-fleet"></div>
+</div>
+
+<div class="sp-panel sp-bottom" id="sp-bottom">
+  <!-- шторка: подробности по вкладке, выезжает над полосой и не мешает полю боя -->
+  <div class="sp-sheet" id="sp-sheet" hidden>
+    <div class="sp-sheet-h"><span id="sp-sheet-t"></span><button class="sp-sheet-x" id="sp-sheet-x" type="button" aria-label="Свернуть">▾</button></div>
+    <div class="sp-sheet-b" id="sp-sheet-b">
+      <div id="sp-ship"></div>
+      <div id="sp-gunsbox" hidden>
+        <div class="sp-guns-head" id="sp-quick">
+          <span>Отметь пушки — потом цель</span>
+          <button class="sp-link" data-q="all">все</button>
+          <button class="sp-link" data-q="main">главные</button>
+          <button class="sp-link" data-q="pd">ПВО</button>
+          <button class="sp-link" data-q="none">снять</button>
+        </div>
+        <div class="sp-guns" id="sp-guns"></div>
+        <div class="sp-tg" id="sp-tg" hidden>
+          <div class="sp-tg-head" id="sp-tg-head">Цель для выбранных</div>
+          <div class="sp-tg-foe" id="sp-tg-foe"></div>
+          <div class="sp-tg-grid" id="sp-tg-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- полоса: самое нужное всегда на виду -->
+  <div id="sp-stat"></div>
+  <div class="sp-dock" id="sp-dock">
+    <span class="sp-tabs" id="sp-tabs"></span>
+    <button class="sp-btn" id="sp-move">Ход</button>
+    <button class="sp-btn gold" id="sp-inside">Внутри</button>
+    <button class="sp-btn" id="sp-view">Обзор</button>
+  </div>
+</div>
+
+<div class="sp-end" id="sp-end" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Итог боя</div>
+    <h2 id="sp-end-title">Победа</h2>
+    <p id="sp-end-text"></p>
+    <div class="sp-btns" style="grid-template-columns:1fr 1fr">
+      <button class="sp-btn" id="sp-end-look">Осмотреть</button>
+      <button class="sp-btn gold" id="sp-end-again">Ещё бой</button>
+    </div>
+  </div>
+</div>
+
+<div class="sp-end sp-poly" id="sp-poly" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Полигон · этап «космос и абордаж»</div>
+    <h2>Что проверить</h2>
+    <div class="sp-poly-tabs">
+      <button class="sp-chip on" data-ptab="tasks" type="button">Задачи</button>
+      <button class="sp-chip" data-ptab="own" type="button">Свой бой</button>
+      <button class="sp-chip" data-ptab="fleet" type="button">Мой флот</button>
+      <span class="sp-poly-prog" id="sp-poly-prog"></span>
+    </div>
+    <div id="sp-poly-tasks">
+      <p class="sp-poly-about">Каждая задача сама ставит ситуацию и отмечает, получилось ли. Внизу экрана — подсказка, что нажимать.</p>
+      <div class="sp-poly-list" id="sp-poly-list"></div>
+    </div>
+    <div id="sp-poly-own" hidden>
+      <div class="sp-poly-lab">Ты играешь за</div><div class="sp-poly-chips" id="sp-poly-side"></div>
+      <div class="sp-poly-lab">Республика · до трёх</div><div class="sp-poly-chips" id="sp-poly-a"></div>
+      <div class="sp-poly-lab">КНС · до трёх</div><div class="sp-poly-chips" id="sp-poly-b"></div>
+      <div class="sp-poly-lab">Дистанция</div><div class="sp-poly-chips" id="sp-poly-dist"></div>
+      <div class="sp-poly-lab">Трюмы — типовой десант</div><div class="sp-poly-chips" id="sp-poly-fill"></div>
+      <div class="sp-poly-lab">Противник (один, против ИИ)</div><div class="sp-poly-chips" id="sp-poly-foe"></div>
+      <div class="sp-poly-sum" id="sp-poly-sum"></div>
+      <div class="sp-btns" style="grid-template-columns:1fr 1fr">
+        <button class="sp-btn gold" id="sp-poly-go" type="button">В бой</button>
+        <button class="sp-btn" id="sp-poly-net" type="button">⇄ Этот бой по сети</button>
+      </div>
+    </div>
+    <div id="sp-poly-fleet" hidden></div>
+    <div class="sp-btns" style="grid-template-columns:1fr">
+      <button class="sp-btn" id="sp-poly-close" type="button">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<div class="sp-end sp-net" id="sp-net" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Бой по сети</div>
+    <h2>Двое — один бой</h2>
+    <p>Бой считает игровой сервер, телефоны только показывают. Создай комнату и отправь ссылку сопернику — он встанет за другую сторону. Пока его нет, за неё воюет ИИ.</p>
+    <div class="sp-net-scen">бой: <b id="sp-net-scen"></b></div>
+    <button class="sp-btn gold sp-net-make" id="sp-net-make" type="button">Создать комнату</button>
+    <div class="sp-net-or"><span>или по коду</span></div>
+    <div class="sp-net-joinrow">
+      <input class="sp-net-in" id="sp-net-in" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="код или ссылка">
+      <button class="sp-btn" id="sp-net-join" type="button">Войти</button>
+    </div>
+    <div class="sp-net-err" id="sp-net-err" hidden></div>
+    <div class="sp-btns" style="grid-template-columns:1fr 1fr">
+      <button class="sp-btn" id="sp-net-retry" type="button" hidden>Ещё раз</button>
+      <button class="sp-btn" id="sp-net-close" type="button">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<div class="sp-load" id="sp-load" hidden>
+  <div class="sp-load-card">
+    <div class="sp-kicker">Внутри корабля</div>
+    <b id="sp-load-name"></b>
+    <div class="sp-load-bar"><i id="sp-load-i"></i></div>
+    <span id="sp-load-t">Готовлю отсеки…</span>
+  </div>
+</div>
+
+<div class="sp-toast" id="sp-toast"></div>
+
 
 <div id="station-panel" style="display:none;">
   <div id="station-panel-box">
@@ -72,6 +242,21 @@
 <script src="../js/drag-command.js"></script>
 <script src="../js/production-lease.js"></script>
 <script src="../js/overwatch.js"></script>
+<script src="../shared/rt-core.js?v=5"></script>
+<script src="../shared/rt-figures.js?v=7"></script>
+<script src="../shared/rt-ship.js?v=2"></script>
+<script src="../shared/rt-crew.js?v=9"></script>
+<script src="../shared/rt-board.js?v=8"></script>
+<script src="../shared/rt-army.js?v=3"></script>
+<script src="../shared/rt-space.js?v=18"></script>
+<script src="../shared/rt-space-net.js?v=11"></script>
+<script src="../ships/ship-art.js?v=4"></script>
+<script src="../space/space-sfx.js?v=2"></script>
+<script src="../space/space-wreck.js?v=1"></script>
+<script src="../space/space-tasks.js?v=4"></script>
+<script src="../space/space-gfx.js?v=1"></script>
+<script src="../space/space-deck.js?v=1"></script>
+<script src="../js/space-live.js?v=1"></script>
 <script src="../js/space-battle.js"></script>
 <script src="../js/ship-control.js"></script>
 <script src="../js/automove-route.js"></script>

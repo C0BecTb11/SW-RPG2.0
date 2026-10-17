@@ -19,6 +19,20 @@ function make(dir, log) {
   var bySys = {};
   return function(fn, args) {
     try {
+      // орбита: снимок <система>.space.json (ответ rt_space_state + battle_id)
+      if (fn === 'rt_space_open' || fn === 'rt_space_pull') {
+        var sp = load(args.p_system + '.space'); bySys[sp.battle_id] = args.p_system + '.space';
+        return Promise.resolve(JSON.parse(JSON.stringify(sp)));
+      }
+      if (fn === 'rt_space_sync') {
+        var s5 = load(bySys[args.p_battle]);
+        (args.p_ships || []).forEach(function(r) { var sh = s5.ships.filter(function(x) { return x.id === r.id; })[0]; if (sh) { sh.x = r.x; sh.y = r.y; sh.facing = r.facing; sh.hp = r.hp; sh.shield_fore = r.sh[0]; sh.shield_starboard = r.sh[1]; sh.shield_aft = r.sh[2]; sh.shield_port = r.sh[3]; } });
+        s5.ships = s5.ships.filter(function(x) { return x.hp > 0; });
+        (args.p_captured || []).forEach(function(r) { var sh = s5.ships.filter(function(x) { return x.id === r.id; })[0]; if (sh) { sh.owner_user_id = r.by; sh.faction = r.faction; sh.trophy = true; } });
+        if (log) log('info', 'снимок орбиты: записано', { ships: (args.p_ships || []).length, craft: (args.p_craft || []).length, units: (args.p_units || []).length, captured: (args.p_captured || []).length });
+        return Promise.resolve({ ships: (args.p_ships || []).length });
+      }
+      if (fn === 'rt_space_close') return Promise.resolve(true);
       if (fn === 'rt_ground_open') { var st = load(args.p_system); bySys[st.battle_id] = args.p_system; return Promise.resolve(JSON.parse(JSON.stringify(st))); }
       if (fn === 'rt_ground_pull') { var s2 = load(bySys[args.p_battle] || args.p_system); return Promise.resolve(JSON.parse(JSON.stringify(s2))); }
       if (fn === 'rt_ground_sync') {

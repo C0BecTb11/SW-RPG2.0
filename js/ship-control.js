@@ -416,7 +416,9 @@ function scRenderTabs() {
 
   var tabs = [{ id: 'actions', label: 'Действия' }];
 
-  if ((scType.max_shield || 0) > 0) tabs.push({ id: 'shields', label: 'Щиты' });
+  // космос 2.0: ход, атаку и щиты ведёт бой — здесь только трюм, ангар и описание
+  if (window.SL) tabs = [];
+  if (!window.SL && (scType.max_shield || 0) > 0) tabs.push({ id: 'shields', label: 'Щиты' });
   // Трюм только у тех, кто возит: у истребителя вместимость ноль
   if (scCargoCap(scShip, scType) > 0) tabs.push({ id: 'cargo', label: 'Трюм' });
   // Ангар только у носителей. Истребителю он не нужен: возвращаться
@@ -425,7 +427,7 @@ function scRenderTabs() {
   tabs.push({ id: 'info', label: 'Описание' });
 
   // Вкладка могла исчезнуть при смене корабля — тогда возвращаемся к действиям
-  if (!tabs.some(function(t) { return t.id === scTab; })) scTab = 'actions';
+  if (!tabs.some(function(t) { return t.id === scTab; })) scTab = tabs.length ? tabs[0].id : 'actions';
 
   box.innerHTML = '';
   tabs.forEach(function(t) {

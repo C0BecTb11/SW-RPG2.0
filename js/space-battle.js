@@ -67,6 +67,7 @@ function loadStationSlot() {
 // Слот станции рисуется отдельным элементом поверх сетки —
 // пунктирный, если пусто, сплошной с иконкой, если станция построена.
 function renderStationSlot() {
+  if (window.SL) return;                        // космос 2.0: станцию рисует бой
   var existing = document.getElementById('station-slot');
   if (existing) existing.parentNode.removeChild(existing);
   if (!stationSlot) return;
@@ -462,6 +463,7 @@ function loadSpaceVision() {
 }
 
 function renderSpaceFog(rects) {
+  if (window.SL) return;
   if (!spFogEl) {
     spFogEl = document.createElement('canvas');
     spFogEl.id = 'space-fog';
@@ -488,6 +490,7 @@ function renderSpaceFog(rects) {
 }
 
 function renderHyperspaceZone() {
+  if (window.SL) return;
   var old = grid.querySelector('.hyperspace-zone');
   if (old) old.parentNode.removeChild(old);
   if (!myZoneSide) return;
@@ -566,6 +569,7 @@ function applyTransform() {
 var uiBottomInset = 0;
 
 function setBottomInset(px) {
+  if (window.SL) return;                        // космос 2.0: поле не двигаем
   var delta = px - uiBottomInset;
   uiBottomInset = px;
   panY -= delta;
@@ -576,6 +580,8 @@ function setBottomInset(px) {
 
 // Доводит карту до клетки, центрируя её над панелью управления
 function focusCell(cx, cy) {
+  // космос 2.0: камера нового экрана (клетка орбиты — 200 м)
+  if (window.SL && window.__sp) { var C = __sp.CAM; C.x = (cx + 0.5) * 200; C.y = (cy + 0.5) * 200; __sp.G.follow = ''; return; }
   var vw = viewport.clientWidth;
   var vh = viewport.clientHeight - uiBottomInset;
   panX = vw / 2 - (cx + 0.5) * CELL_PX * scale;
@@ -876,8 +882,7 @@ function initSpaceBattle() {
     Promise.all([loadStationSlot(), checkStationRights(), loadHyperspaceZone(), spLoadLeases()]).then(function() {
       loadStation();
       loadShips();
-      centerGridInitially();
-      initPanAndZoom();
+      if (!window.SL) { centerGridInitially(); initPanAndZoom(); }
       initBuildSwitcher();
       initBuildToggle(true);
       subscribeToSpaceChanges();
@@ -965,6 +970,7 @@ function shipBoxCells(type, facing) {
 // Корабли рисуем элементами поверх сетки: спрайт занимает ровно тот
 // прямоугольник клеток, который прописан у типа в БД.
 function renderShips() {
+  if (window.SL) return;                        // космос 2.0: корабли рисует бой
   var old = grid.querySelectorAll('.ship-sprite');
   for (var i = 0; i < old.length; i++) old[i].parentNode.removeChild(old[i]);
 

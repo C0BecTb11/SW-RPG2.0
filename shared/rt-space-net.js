@@ -131,7 +131,9 @@
       o.tr = [tA, tN]; o.hn = hn;
       var gA = 0, gN = 0, mu = 0; for (i = 0; i < sh.crew.agents.length; i++) { var ga = sh.crew.agents[i]; if (ga.team === sh.side && ga.role === 'guard') { gN++; if (ga.alive) gA++; } if (ga.alive && ga.job && ga.job.kind === 'muster') mu++; } o.gu = [gA, gN]; o.mu = mu; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
       o.g = [];
-      for (i = 0; i < sh.guns.length; i++) {
+      // пушки поимённо — только у корабля в панели или под осмотром (у флота из десятков кораблей это основной трафик)
+      var wantGuns = sh.n === this.sel || sh.n === this.view || (this.sel < 0 && B.ships.length <= 6);
+      for (i = 0; wantGuns && i < sh.guns.length; i++) {
         g = sh.guns[i];
         var a = g.aimAt;
         o.g.push([a && a.ship ? a.ship.n : -1, a && a.ship ? (a.room || 0) : 0, a && a.craft ? a.craft.id : 0, g.out ? 1 : 0,
@@ -182,10 +184,16 @@
   Viewer.prototype.light = function() {
     var B = this.B, side = this.side, i, out = { t: 's', T: r2(B.t), over: B.over, ships: [], craft: [], spd: this.spd };
     this.lk = (this.lk || 0) + 1;
-    for (i = 0; i < B.ships.length; i++) out.ships.push(this.shipLight(B.ships[i]));
+    for (i = 0; i < B.ships.length; i++) {
+      var ship = B.ships[i];
+      // орбита системы: спящий корабль стоит — его строка нужна раз в десять кадров (и всегда в первом)
+      if (ship.dormant && this.lk % 10 !== 1 && i !== this.sel && i !== this.foe && i !== this.view) continue;
+      out.ships.push(this.shipLight(ship));
+    }
     for (i = 0; i < B.craft.length; i++) {
       var c = B.craft[i]; if (c.dead) continue;
       if (c.side !== side && !B.visC[side][c.id]) continue;
+      if (c.idle && this.craftKnown[c.id] && this.lk % 10 !== 1) { out.craft.push([c.id]); continue; }   // стоит на орбите: только «жив», положение раз в десять кадров
       var row = [c.id, r0(c.x), r0(c.y), Math.round(c.hd * 100) / 100, r0(c.hp)];
       // что за машина — один раз
       if (!this.craftKnown[c.id]) { this.craftKnown[c.id] = 1; row.push(c.type, c.side, c.role, c.faction || '', c.img || '', c.len, r0(c.max), c.tgt != null && typeof c.tgt === 'number' ? c.tgt : -1); }
@@ -555,6 +563,7 @@
     // прошлый абордаж кончился, начался новый — новый объект (сообщения и события с нуля)
     if (bd && bd.over >= 0 && o.over < 0) bd = null;
     if (!bd) {
+      if (sh.dormant) this.B.wake(sh);
       bd = new this.SWBoard.Board(sh.crew, { flagship: sh.len >= 1200, figIds: sh.figIds, seed: 1 });
       bd.started = true;
       bd.defManual = bd.def === this.side;          // свою оборону ведёт игрок: отряды собирает он (как на сервере)
@@ -691,6 +700,7 @@
   // Люди: новое положение — цель сглаживания; служебные поля — сразу
   Mirror.prototype.agents = function(v, delta) {
     var n = v.getUint8(1), N = v.getUint16(2, true), ct = v.getFloat32(4, true), sh = this.B.ships[n]; if (!sh) return;
+    if (sh.dormant) this.B.wake(sh);                                   // смотрим внутрь: нужен настоящий экипаж (карты, отсеки)
     var c = sh.crew, ag = c.agents, now = Date.now(), o = 8, W = sh.plan.w, i;
     // разностный кадр к кораблю, полного кадра которого ещё не было, — ждём полный
     if (delta && this.agFull !== n) return;
@@ -820,6 +830,7 @@
       for (i = 0; i < B.craft.length; i++) old[B.craft[i].id] = B.craft[i];
       for (i = 0; i < list.length; i++) {
         var q = list[i], c = old[q[0]], meta = this.craftMeta[q[0]];
+        if (q.length === 1) { if (c) { c.tx = c.x; c.ty = c.y; out.push(c); } continue; }   // стоит — как был
         if (q.length > 5) meta = this.craftMeta[q[0]] = { type: q[5], side: q[6], role: q[7], faction: q[8], img: q[9] || null, len: q[10], max: q[11], tgt: q[12] >= 0 ? q[12] : null };
         if (!meta) continue;                               // кадр с описанием потерялся — до полного обновления не рисуем
         if (!c) c = { id: q[0], x: q[1], y: q[2], hd: q[3] };

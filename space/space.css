@@ -617,3 +617,8 @@ body.cisside .sp-hold .hero { color: #ff9a88; }
 .sp-gfx-tg em { font-style: normal; font-size: 9px; color: #55606c; }
 /* узкий телефон: кадры в секунду — в настройках, место — кнопкам */
 @media (max-width: 400px) { #sp-clock .fps { display: none; } #sp-tr { gap: 5px; } }
+/* орбита системы из игры: без списка боёв, полигона, скорости и ссылок */
+body.sys .sp-top .sp-scen, body.sys .sp-speed, body.sys #sp-net-link, body.sys #sp-net-quit, body.sys #sp-net-code { display: none; }
+/* орбита: флот из десятков кораблей — список прокручивается, не выше трети экрана */
+body.sys .sp-top .sp-fleet { max-height: 28vh; overflow-y: auto; scrollbar-width: none; }
+body.sys .sp-top .sp-fleet::-webkit-scrollbar { display: none; }

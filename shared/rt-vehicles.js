@@ -170,6 +170,8 @@
   // AT-TE: два корпуса на гармошке, 6 ног, массдрайвер сверху со стрелком, 4 + 2 шаровые турели
   function atte(c, u) {
     var P = REP, ph = u.phase || 0, mv = u.mv || 0;
+    var _b = body(u);
+    if (_b) {
     // ноги: тройки, шаг по фазе (трёхногая походка: 0,2,4 против 1,3,5)
     var hips = [[0.62, -0.4], [0, -0.42], [-0.62, -0.4], [0.62, 0.4], [0, 0.42], [-0.62, 0.4]];
     var lean = [0.32, 0, -0.32];
@@ -212,6 +214,8 @@
     ballTurret(c, u, 0.7, -0.47, 0.065, -1.1, P.mid, 0.1); ballTurret(c, u, 0.7, 0.47, 0.065, 1.1, P.mid, 0.1);
     ballTurret(c, u, -1.0, -0.3, 0.07, Math.PI + 0.4, P.mid); ballTurret(c, u, -1.0, 0.3, 0.07, Math.PI - 0.4, P.mid);
     // массдрайвер на задней половине: опора, станина, ствол вперёд, стрелок
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.translate(-0.38, 0); c.rotate(ta);
     c.fillStyle = 'rgba(0,0,0,0.35)'; dot(c, 0.02, 0.03, 0.2);
@@ -221,7 +225,11 @@
     tube(c, u, 0.1, -0.07, 0.42, -0.07, 0.035, '#8b949c'); tube(c, u, 0.1, 0.07, 0.42, 0.07, 0.035, '#8b949c');
     cloneHead(c, u, -0.2, 0, 0.07, P.gold);
     c.restore();
+    }
+    if (_b) {
+
     scorch(c, u, [[0.5, -0.2, 0.12], [-0.6, 0.25, 0.14], [0.9, 0.1, 0.1], [-0.2, -0.3, 0.1]]);
+    }
   }
 
   // AT-RT: двуногий разведчик с клоном в седле
@@ -306,6 +314,8 @@
   // HAVw A6: десять колёс, длинный корпус, башни, командирская вышка, красные полосы
   function turbo(c, u) {
     var P = REP, ph = u.phase || 0;
+    var _b = body(u);
+    if (_b) {
     shadowOf(c, u, 2.4, function() { rr(c, -1.14, -0.46, 2.28, 0.92, 0.22); });
     // колёса — по пять с борта, выступают из-под корпуса
     for (var i = 0; i < 5; i++) {
@@ -333,6 +343,8 @@
     tube(c, u, 1.05, -0.22, 1.24, -0.22, 0.035, '#50565c'); tube(c, u, 1.05, -0.16, 1.24, -0.16, 0.035, '#50565c');
     tube(c, u, 1.05, 0.22, 1.24, 0.22, 0.035, '#50565c'); tube(c, u, 1.05, 0.16, 1.24, 0.16, 0.035, '#50565c');
     // башня с тяжёлым лазером (середина) и роторная турель (корма)
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.translate(0.1, 0); c.rotate(ta);
     c.fillStyle = 'rgba(0,0,0,0.35)'; dot(c, 0.02, 0.03, 0.2);
@@ -340,17 +352,23 @@
     c.fillStyle = P.red; c.beginPath(); c.arc(0, 0, 0.2, 2.2, 4.1); c.lineTo(0, 0); c.fill();
     cannon(c, u, 0.08, 0, 0.78, 0, 0.075, '#4f565d');
     c.restore();
+    }
+    if (_b) {
+
     c.save(); c.translate(-0.62, 0); c.rotate(ta * 0.6);
     c.fillStyle = dome(c, u, 0, 0, 0.12, P.mid, 1.25, 0.66); dot(c, 0, 0, 0.12); edge(c, P.line, 0.01);
     tube(c, u, 0.05, -0.03, 0.38, -0.03, 0.03, '#50565c'); tube(c, u, 0.05, 0.03, 0.38, 0.03, 0.03, '#50565c');
     cloneHead(c, u, -0.05, 0, 0.055, P.gold);
     c.restore();
     scorch(c, u, [[-0.3, 0.2, 0.14], [0.5, -0.25, 0.12], [-0.8, -0.1, 0.1]]);
+    }
   }
 
   // TX-130: клиновидный ховертанк, две спаренные пушки в бортовых гондолах, башня сверху
   function tx130(c, u) {
     var P = REP;
+    var _b = body(u);
+    if (_b) {
     softShadow(c, u, 1.4, 1.05, 0.7);
     hoverGlow(c, -0.1, 0, 0.9, 0.5, 'rgba(120,190,255,0.35)');
     // бортовые гондолы
@@ -372,6 +390,8 @@
     c.fillStyle = 'rgba(100,170,255,0.8)'; c.fillRect(-0.99, -0.2, 0.025, 0.1); c.fillRect(-0.99, 0.1, 0.025, 0.1);
     // кабина и башня
     c.fillStyle = lit(c, u, 0.45, 0, 0.12, P.glass, 1.25, 0.55); rr(c, 0.3, -0.12, 0.26, 0.24, 0.08); c.fill(); edge(c, P.line, 0.01);
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.translate(-0.3, 0); c.rotate(ta);
     c.fillStyle = 'rgba(0,0,0,0.35)'; dot(c, 0.02, 0.03, 0.17);
@@ -379,12 +399,18 @@
     tube(c, u, 0.05, -0.045, 0.5, -0.045, 0.035, '#50565c'); tube(c, u, 0.05, 0.045, 0.5, 0.045, 0.035, '#50565c');
     c.fillStyle = '#15181b'; dot(c, 0.5, -0.045, 0.013); dot(c, 0.5, 0.045, 0.013);
     c.restore();
+    }
+    if (_b) {
+
     scorch(c, u, [[0.2, -0.3, 0.12], [-0.5, 0.3, 0.12]]);
+    }
   }
 
   // Артиллерия Республики (по модели: шагающее орудие с длинным стволом, белое с красным, клон рядом)
   function sphaRep(c, u) {
     var P = REP, ph = u.phase || 0, mv = u.mv || 0;
+    var _b = body(u);
+    if (_b) {
     shadowOf(c, u, 1.5, function() { rr(c, -0.8, -0.5, 1.4, 1.0, 0.25); });
     // четыре короткие ноги
     var hips = [[0.3, -0.42], [-0.5, -0.42], [0.3, 0.42], [-0.5, 0.42]];
@@ -400,6 +426,8 @@
     // генераторы по углам
     c.fillStyle = dome(c, u, -0.6, -0.3, 0.1, P.mid, 1.3, 0.6); dot(c, -0.6, -0.3, 0.1); c.fillStyle = dome(c, u, -0.6, 0.3, 0.1, P.mid, 1.3, 0.6); dot(c, -0.6, 0.3, 0.1);
     // орудие: люлька, длинный ствол далеко вперёд, противооткат
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.translate(-0.15, 0); c.rotate(ta);
     c.fillStyle = 'rgba(0,0,0,0.35)'; dot(c, 0.02, 0.03, 0.3);
@@ -410,15 +438,21 @@
     cannon(c, u, 0.1, 0, 1.3, 0, 0.11, '#4f565d');
     c.fillStyle = '#3a4046'; rr(c, 1.08, -0.08, 0.14, 0.16, 0.03); c.fill();
     c.restore();
+    }
+    if (_b) {
+
     // расчёт: клон у станины
     cloneHead(c, u, -0.68, 0, 0.065, '#3d74d6');
     scorch(c, u, [[0.0, 0.3, 0.12], [-0.5, -0.1, 0.1]]);
+    }
   }
 
   // ---------------------------------------------------------------- КНС
   // AAT: лопатообразный корпус, башня с длинной пушкой сзади, бортовые лазеры, носовые пусковые
   function aat(c, u) {
     var P = TF;
+    var _b = body(u);
+    if (_b) {
     softShadow(c, u, 1.5, 1.1, 0.75);
     hoverGlow(c, -0.1, 0, 0.95, 0.6, 'rgba(255,170,90,0.28)');
     // нижний корпус-лопата
@@ -439,6 +473,8 @@
       c.fillStyle = '#15181b'; dot(c, 0.78, s * 0.52, 0.015);
     }
     // башня сзади с длинной пушкой
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.translate(-0.35, 0); c.rotate(ta);
     c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.ellipse(0.02, 0.03, 0.3, 0.26, 0, 0, TAU); c.fill();
@@ -448,9 +484,13 @@
     cannon(c, u, 0.15, 0, 1.25, 0, 0.065, '#4a3a2a');
     tube(c, u, 0.3, 0, 0.6, 0, 0.09, '#5b4532');
     c.restore();
+    }
+    if (_b) {
+
     // задние жалюзи
     c.fillStyle = 'rgba(0,0,0,0.4)'; for (var r = -0.4; r <= 0.4; r += 0.1) c.fillRect(-0.95, r - 0.02, 0.06, 0.04);
     scorch(c, u, [[0.3, 0.1, 0.14], [-0.6, -0.3, 0.12], [0.7, -0.2, 0.1]]);
+    }
   }
 
   // MTT: слоноподобный транспорт — широкая голова впереди, узкое тело назад, кабина сверху, носовые бластеры
@@ -529,6 +569,8 @@
   // Паук-дроид ПВО (по модели: белый шар с красным глазом на четырёх длинных ногах, тарелка сверху)
   function spider(c, u) {
     var P = CISW, ph = u.phase || 0, mv = u.mv || 0;
+    var _b = body(u);
+    if (_b) {
     shadowOf(c, u, 2.2, function() { dot(c, 0, 0, 0.42); });
     // четыре длинные ноги по диагоналям, высокие колени
     for (var i = 0; i < 4; i++) {
@@ -543,13 +585,19 @@
     // глаз спереди
     c.fillStyle = '#5a0e0e'; dot(c, 0.33, 0, 0.09); c.fillStyle = '#e63a2e'; dot(c, 0.35, 0, 0.055); c.fillStyle = 'rgba(255,200,200,0.8)'; dot(c, 0.36, -0.02, 0.02);
     // тарелка-излучатель и стволы ПВО сверху
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.rotate(ta);
     c.fillStyle = dome(c, u, -0.05, 0, 0.16, P.mid, 1.3, 0.7); dot(c, -0.05, 0, 0.16); edge(c, P.line, 0.01);
     c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = 0.012; c.beginPath(); c.arc(-0.05, 0, 0.1, 0, TAU); c.stroke();
     tube(c, u, 0.0, -0.05, 0.42, -0.05, 0.035, '#3f433f'); tube(c, u, 0.0, 0.05, 0.42, 0.05, 0.035, '#3f433f');
     c.restore();
+    }
+    if (_b) {
+
     scorch(c, u, [[0.1, 0.2, 0.12]]);
+    }
   }
 
   // Ракетный шагоход (по модели: песочный дроид с двумя высокими ракетными пакетами, две ноги)
@@ -579,6 +627,8 @@
   // Артиллерия КНС (по модели: сине-серый шагающий модуль с длинным стволом, песочные опоры)
   function artCis(c, u) {
     var P = CISB, ph = u.phase || 0, mv = u.mv || 0;
+    var _b = body(u);
+    if (_b) {
     shadowOf(c, u, 1.6, function() { dot(c, -0.1, 0, 0.55); });
     var hips = [[0.25, -0.35], [-0.45, -0.35], [0.25, 0.35], [-0.45, 0.35]];
     for (var i = 0; i < 4; i++) {
@@ -593,6 +643,8 @@
     c.fillStyle = 'rgba(0,0,0,0.35)'; for (var v = -0.6; v < -0.35; v += 0.08) c.fillRect(v, -0.1, 0.04, 0.2);
     c.fillStyle = '#e63a2e'; dot(c, 0.38, -0.14, 0.03); dot(c, 0.38, 0.14, 0.03);
     // орудие: цапфы, длинный ствол
+    }
+    if (top(u)) {
     var ta = (u.turret == null ? u.ang || 0 : u.turret) - (u.ang || 0);
     c.save(); c.translate(0.0, 0); c.rotate(ta);
     c.fillStyle = 'rgba(0,0,0,0.35)'; dot(c, 0.02, 0.03, 0.24);
@@ -602,39 +654,48 @@
     cannon(c, u, 0.1, 0, 1.28, 0, 0.1, '#3a4652');
     c.fillStyle = '#2a333d'; rr(c, 1.05, -0.08, 0.15, 0.16, 0.03); c.fill();
     c.restore();
+    }
+    if (_b) {
+
     scorch(c, u, [[-0.3, 0.2, 0.14], [0.2, -0.3, 0.1]]);
+    }
   }
 
   // ---------------------------------------------------------------- набор
   // size — клеток по стороне; h — высота (для тени); walk — есть ли анимация шага/качения
   var TYPES = {
-    rep_atte:      { name: 'AT-TE',               draw: atte,    size: 2, walk: true,  span: 2.5 },
+    rep_atte:      { name: 'AT-TE',               draw: atte,    size: 2, walk: true,  turret: true, span: 2.5 },
     rep_atrt:      { name: 'AT-RT',               draw: atrt,    size: 1, walk: true,  span: 1.3 },
     rep_barc:      { name: 'Спидер BARC',         draw: barc,    size: 1, walk: false, span: 1.3 },
     rep_laat:      { name: 'Канонерка LAAT',      draw: laat,    size: 2, walk: false, span: 2.5 },
-    rep_turbo:     { name: 'Турботанк HAVw A6',   draw: turbo,   size: 2, walk: true,  span: 2.6 },
-    rep_aa:        { name: 'Зенитный танк TX-130', draw: tx130,  size: 2, walk: false, span: 2.4 },
-    rep_artillery: { name: 'Артиллерия SPHA',     draw: sphaRep, size: 2, walk: true,  span: 2.6 },
-    cis_aat:       { name: 'Танк AAT',            draw: aat,     size: 2, walk: false, span: 2.5 },
+    rep_turbo:     { name: 'Турботанк HAVw A6',   draw: turbo,   size: 2, walk: true,  turret: true, span: 2.6 },
+    rep_aa:        { name: 'Зенитный танк TX-130', draw: tx130,  size: 2, walk: false, turret: true, span: 2.4 },
+    rep_artillery: { name: 'Артиллерия SPHA',     draw: sphaRep, size: 2, walk: true,  turret: true, span: 2.6 },
+    cis_aat:       { name: 'Танк AAT',            draw: aat,     size: 2, walk: false, turret: true, span: 2.5 },
     cis_mtt:       { name: 'Транспорт MTT',       draw: mtt,     size: 2, walk: false, span: 2.6 },
     cis_stap:      { name: 'Спидер STAP',         draw: stap,    size: 1, walk: false, span: 1.3 },
     cis_hmp:       { name: 'Канонерка HMP',       draw: hmp,     size: 2, walk: false, span: 2.5 },
-    cis_spider:    { name: 'Паук-дроид ПВО',      draw: spider,  size: 2, walk: true,  span: 2.4 },
+    cis_spider:    { name: 'Паук-дроид ПВО',      draw: spider,  size: 2, walk: true,  turret: true, span: 2.4 },
     cis_missile:   { name: 'Ракетный шагоход',    draw: missile, size: 2, walk: true,  span: 2.0 },
-    cis_artillery: { name: 'Артиллерия КНС',      draw: artCis,  size: 2, walk: true,  span: 2.6 }
+    cis_artillery: { name: 'Артиллерия КНС',      draw: artCis,  size: 2, walk: true,  turret: true, span: 2.6 }
   };
 
-  // Нарисовать машину: контекст уже в клетках поля, центр машины — (0, 0)
+  // Нарисовать машину: контекст уже в клетках поля, центр машины — (0, 0).
+  // u.part: 'body' — только корпус (для набора картинок), 'turret' — только башня (рисуется
+  // живьём поверх картинки, со своим углом u.turret), иначе — всё.
   function draw(c, id, u) {
     var T = TYPES[id]; if (!T) return false;
+    if (u.part === 'turret' && !T.turret) return true;
     c.save(); c.rotate(u.ang || 0); c.lineCap = 'round'; c.lineJoin = 'round';
     T.draw(c, u);
     c.restore();
     return true;
   }
+  function body(u) { return u.part !== 'turret'; }
+  function top(u) { return u.part !== 'body'; }
 
   // Набор картинок: курс × кадр (0 — стоит, 1..FRAMES-1 — шаг). cell — пикселей на клетку поля.
-  var DIRS = 16, FRAMES = 5;
+  var DIRS = 16, FRAMES = 8;
   function bake(ids, cell) {
     var per = DIRS * FRAMES, cols = 10;
     var cells = ids.map(function(id) { return TYPES[id].span; });
@@ -649,7 +710,7 @@
         c.save();
         c.translate((idx % cols) * px + px / 2, Math.floor(idx / cols) * px + px / 2);
         c.scale(cell, cell);
-        draw(c, ids[t], { ang: d / DIRS * TAU, mv: f === 0 ? 0 : 1, phase: f === 0 ? 0 : (f - 1) * (TAU / 4) });
+        draw(c, ids[t], { ang: d / DIRS * TAU, mv: f === 0 ? 0 : 1, phase: f === 0 ? 0 : (f - 1) * (TAU / (FRAMES - 1)), part: 'body' });
         c.restore();
       }
     }

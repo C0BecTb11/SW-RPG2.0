@@ -69,6 +69,9 @@
   }
 
   // ---------------------------------------------------------------- подготовка карты
+  // Материалы города (слой m с 8, см. shared/rt-town.js) — не зависят от палитры планеты
+  var TOWN_MAT = { 8: 'wall', 9: 'palisade', 10: 'stall', 11: 'crate', 12: 'statue', 13: 'planterbox', 14: 'barrier', 15: 'fence', 16: 'hedge', 17: 'pavement', 18: 'bldg' };
+  var TOWN_LOOK_DEF = { wall: 'stone', roof: 'flat', c: [180, 176, 168], roofC: [120, 116, 110], trim: [80, 78, 74] };
   // Какие «скалы» рисуются рельефом по точкам (остальное непроходимое — предметами)
   var ROCKLIKE = { rock: 1, outcrop: 1, mesa: 1, spoil: 1, icecrag: 1, crystalridge: 1, cliff: 1 };
   var ROCK_H = { rock: 1.7, outcrop: 1.3, mesa: 2.4, spoil: 1.1, icecrag: 1.6, crystalridge: 1.4, cliff: 1.8 };
@@ -77,7 +80,8 @@
     var map = P.load(json), N = map.w, n = N * N, L = json.look || {};
     this.map = map; this.look = L; this.N = N; this.id = json.id;
     var mats = L.mats || {};
-    this.matName = function(code, m) { var a = mats[code]; return a && a[m] ? a[m] : (a && a[0]) || ''; };
+    this.matName = function(code, m) { if (m >= 8 && TOWN_MAT[m]) return TOWN_MAT[m]; var a = mats[code]; return a && a[m] ? a[m] : (a && a[0]) || ''; };
+    this.tlook = (json.settle && json.settle.look) || TOWN_LOOK_DEF;
     // цвета
     this.C = {
       g: (L.ground || ['#5a6a40', '#66764a', '#4e5e38']).map(rgb),
@@ -361,7 +365,7 @@
   Terrain.prototype.pixels = function(img, x0, y0, wc, hc, ppc) {
     var N = this.N, C = this.C, L = this.look, NTs = noises(), N0 = NTs[0], N1 = NTs[1], N2 = NTs[2];
     var R = this.R, Lf = this.L, L1 = this.L1, R1 = this.R1, D = this.D, B = this.B, W = this.W, V = this.V, F = this.F, S = this.S, AO = this.AO, GL = this.GL;
-    var WD = this.WD, VD = this.VD, objCell = this.objCell;
+    var WD = this.WD, VD = this.VD, objCell = this.objCell, Mm = this.map.m;
     var W2 = Math.round(wc * ppc), H2 = Math.round(hc * ppc), d = img.data, inv = 1 / ppc, gfn = this.groundFn;
     var voidKind = L.void || 'chasm', ocean = !!L.ocean, roadStyle = L.roadStyle || 'trail';
     var ls0 = this.matName(TT.LIGHT, 0), ls1 = this.matName(TT.LIGHT, 1), rs0 = this.matName(TT.ROUGH, 0), rs1 = this.matName(TT.ROUGH, 1);
@@ -425,8 +429,9 @@
         w = bl(D, u + dx * 0.25, v + dy * 0.25);
         if (w > TH - 0.12) {
           t = smooth((w - TH) * TW + 0.5);
-          var dc = C.road, dk;
-          if (roadStyle === 'trail') dk = 0.88 + n2 * 0.2 + (hf - 0.5) * 0.12;
+          var dc = C.road, dk, pcell = Mm[(v | 0) * N + (u | 0)] === 17;
+          if (pcell) { var pq = (Math.floor(u * 2) + Math.floor(v * 2)) & 1; dk = ((u * 2) % 1 < 0.06 || (v * 2) % 1 < 0.06 ? 0.86 : 1.06) * (0.98 + pq * 0.05 + f * 0.04); }
+          else if (roadStyle === 'trail') dk = 0.88 + n2 * 0.2 + (hf - 0.5) * 0.12;
           else if (roadStyle === 'paved' || roadStyle === 'stone') { var sq = (Math.floor(u * 2) + Math.floor(v * 2)) & 1; dk = ((u * 2) % 1 < 0.05 || (v * 2) % 1 < 0.05 ? 0.84 : 1) * (0.95 + sq * 0.04 + f * 0.05); }
           else if (roadStyle === 'walkway' || roadStyle === 'metal') { var gx = (u * 4) % 1, gy = (v * 4) % 1; dk = gx < 0.1 || gy < 0.1 ? 0.76 : 1.02; }
           else if (roadStyle === 'avenue' || roadStyle === 'asphalt') dk = 0.9 + f * 0.1 - Math.max(0, n0 - 0.62) * 0.4 + (hf - 0.5) * 0.06;
@@ -643,6 +648,35 @@
       ctx.restore();
     },
     barrier: function(ctx, T, x, y) { linked(ctx, T, x, y, TT.COVER, T.map.m[y * T.N + x], 0.3, [170, 162, 150], 'block'); },
+    // стена города: по облику планеты (камень, металл, дерево, улей, кристалл, лёд); парапет и зубцы
+    wall: function(ctx, T, x, y, hsh, det) {
+      var lk = T.tlook, kind = lk.wall, col = wallColor(lk, T);
+      // тень на юго-восток, корпус во всю клетку, дорожка по гребню, зубцы по углам
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x + 0.2, y + 0.25, 1, 1);
+      ctx.fillStyle = css(col, 0.62); ctx.fillRect(x, y, 1, 1);
+      ctx.fillStyle = css(col, 0.98); ctx.fillRect(x, y, 0.86, 0.86);
+      if (kind === 'hive') { ctx.fillStyle = css(col, 1.2); ctx.beginPath(); ctx.arc(x + 0.5, y + 0.45, 0.34, 0, TAU); ctx.fill(); ctx.fillStyle = css(col, 0.7); ctx.beginPath(); ctx.arc(x + 0.5 + (hsh - 0.5) * 0.2, y + 0.45, 0.1, 0, TAU); ctx.fill(); return; }
+      if (kind === 'wood') { ctx.strokeStyle = css(col, 0.6, 0.7); ctx.lineWidth = 0.03; for (var q = 0.2; q < 1; q += 0.2) { ctx.beginPath(); ctx.moveTo(x + q, y); ctx.lineTo(x + q, y + 0.88); ctx.stroke(); } }
+      ctx.fillStyle = css(col, 1.22); ctx.fillRect(x + 0.26, y + 0.26, 0.36, 0.36);
+      ctx.fillStyle = css(col, kind === 'crystal' || kind === 'ice' ? 1.5 : 1.3);
+      ctx.fillRect(x + 0.04, y + 0.04, 0.24, 0.24); ctx.fillRect(x + 0.6, y + 0.04, 0.24, 0.24); ctx.fillRect(x + 0.04, y + 0.6, 0.24, 0.24); ctx.fillRect(x + 0.6, y + 0.6, 0.24, 0.24);
+      if (kind === 'metal' && det) { ctx.fillStyle = 'rgba(255,214,130,0.8)'; if (hsh < 0.3) ctx.fillRect(x + 0.42, y + 0.42, 0.06, 0.06); }
+    },
+    palisade: function(ctx, T, x, y, hsh) {
+      var lk = T.tlook, m = T.map.m[y * T.N + x], col = lk.wall === 'metal' || lk.wall === 'ice' || lk.wall === 'crystal' ? [128, 130, 134] : [120, 88, 56];
+      linked(ctx, T, x, y, TT.COVER, m, 0.42, col, 'log');
+      ctx.fillStyle = css(col, 1.3); ctx.beginPath(); ctx.arc(x + 0.5, y + 0.5, 0.16, 0, TAU); ctx.fill();
+    },
+    // торговый лоток: навес в полоску
+    stall: function(ctx, T, x, y, hsh) {
+      var cx = x + 0.5, cy = y + 0.5, hor = hsh < 0.5, w = hor ? 0.8 : 0.5, h = hor ? 0.5 : 0.8;
+      var pal = [[200, 70, 60], [60, 110, 180], [210, 160, 50], [70, 140, 90]], c = pal[Math.floor(hash(x, y, 11) * pal.length)];
+      ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(cx - w / 2 + 0.1, cy - h / 2 + 0.13, w, h);
+      ctx.fillStyle = css(c, 1.05); ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      for (var i = 0; i < 4; i++) { if (hor) ctx.fillRect(cx - w / 2 + i * w / 4 + w / 16, cy - h / 2, w / 8, h); else ctx.fillRect(cx - w / 2, cy - h / 2 + i * h / 4 + h / 16, w, h / 8); }
+      ctx.strokeStyle = 'rgba(40,30,20,0.6)'; ctx.lineWidth = 0.03; ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+    },
     planterbox: function(ctx, T, x, y) {
       ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(x + 0.18, y + 0.2, 0.7, 0.7);
       ctx.fillStyle = '#8a8070'; ctx.fillRect(x + 0.12, y + 0.12, 0.76, 0.76);
@@ -882,7 +916,101 @@
   }
 
   // Крупные предметы из objs
+  // Здание города: корпус в цвете планеты и крыша по стилю (flat, dome, gable, organic, panel, wood, crystal, tier);
+  // над районом — его знак (госпиталь, связь, казармы, мастерские, склады)
+  function bldgRoof(ctx, T, o, lk) {
+    var x = o.x, y = o.y, w = o.w, h = o.h, c = lk.c, rc = lk.roofC, tr = lk.trim, st = lk.roof, z = o.z || 1;
+    var sh = 0.35 + z * 0.3;
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + sh, y + sh * 1.1); ctx.lineTo(x + w + sh, y + h + sh * 1.1); ctx.lineTo(x + sh, y + h + sh * 1.1); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill();
+    // стены: светлая северо-западная кромка, тёмная юго-восточная
+    ctx.fillStyle = css(c, 0.82); ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = css(c, 1.08); ctx.fillRect(x, y, w - 0.12, h - 0.12);
+    var ix = x + 0.14, iy = y + 0.14, iw = w - 0.28, ih = h - 0.28;
+    if (st === 'dome') {
+      ctx.fillStyle = css(rc, 0.9); ctx.fillRect(ix, iy, iw, ih);
+      var r = Math.min(iw, ih) / 2 * 0.9, cx = ix + iw / 2, cy = iy + ih / 2;
+      if (iw > ih * 1.6) { for (var d = 0; d < 2; d++) { var dcx = ix + iw * (0.27 + d * 0.46); ctx.beginPath(); ctx.arc(dcx, cy, r * 0.85, 0, TAU); ctx.fillStyle = radial(ctx, dcx, cy, r * 0.85, rc, 1.35, 0.62); ctx.fill(); } }
+      else { ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fillStyle = radial(ctx, cx, cy, r, rc, 1.35, 0.6); ctx.fill(); ctx.strokeStyle = css(rc, 1.5, 0.6); ctx.lineWidth = 0.04; ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, TAU); ctx.stroke(); }
+    } else if (st === 'gable') {
+      var hor = iw >= ih, g = hor ? ctx.createLinearGradient(ix, iy, ix, iy + ih) : ctx.createLinearGradient(ix, iy, ix + iw, iy);
+      g.addColorStop(0, css(rc, 1.25)); g.addColorStop(0.5, css(rc, 1.05)); g.addColorStop(0.5, css(rc, 0.78)); g.addColorStop(1, css(rc, 0.66));
+      ctx.fillStyle = g; ctx.fillRect(ix, iy, iw, ih);
+      ctx.strokeStyle = css(rc, 1.45, 0.8); ctx.lineWidth = 0.05; ctx.beginPath();
+      if (hor) { ctx.moveTo(ix, iy + ih / 2); ctx.lineTo(ix + iw, iy + ih / 2); } else { ctx.moveTo(ix + iw / 2, iy); ctx.lineTo(ix + iw / 2, iy + ih); } ctx.stroke();
+      if (o.w >= 3 && o.h >= 3) { ctx.fillStyle = css(tr, 0.9); ctx.fillRect(ix + iw * 0.7, iy + ih * 0.2, 0.3, 0.3); }
+    } else if (st === 'organic') {
+      var p = function() { blobPath(ctx, ix + iw / 2, iy + ih / 2, Math.min(iw, ih) / 2 * 1.05, 9, 0.12, o.x * 7 + o.y); };
+      ctx.fillStyle = css(c, 0.95); ctx.fillRect(ix, iy, iw, ih);
+      p(); ctx.fillStyle = radial(ctx, ix + iw / 2, iy + ih / 2, Math.min(iw, ih) / 2, rc, 1.3, 0.7); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.arc(ix + iw / 2, iy + ih / 2, Math.min(iw, ih) * 0.12, 0, TAU); ctx.fill();
+    } else if (st === 'panel' || st === 'crystal') {
+      ctx.fillStyle = css(rc, 1); ctx.fillRect(ix, iy, iw, ih);
+      ctx.strokeStyle = css(rc, st === 'crystal' ? 1.6 : 0.7, 0.8); ctx.lineWidth = 0.035;
+      for (var px = 1; px < iw; px += 1) { ctx.beginPath(); ctx.moveTo(ix + px, iy); ctx.lineTo(ix + px, iy + ih); ctx.stroke(); }
+      for (var py = 1; py < ih; py += 1) { ctx.beginPath(); ctx.moveTo(ix, iy + py); ctx.lineTo(ix + iw, iy + py); ctx.stroke(); }
+      if (st === 'crystal') { ctx.fillStyle = 'rgba(200,240,255,0.35)'; ctx.beginPath(); ctx.moveTo(ix, iy + ih); ctx.lineTo(ix + iw * 0.5, iy); ctx.lineTo(ix + iw, iy + ih * 0.4); ctx.closePath(); ctx.fill(); }
+    } else if (st === 'wood') {
+      ctx.fillStyle = css(rc, 1); ctx.fillRect(ix, iy, iw, ih);
+      ctx.strokeStyle = css(rc, 0.65, 0.7); ctx.lineWidth = 0.03;
+      for (var wy = 0.3; wy < ih; wy += 0.3) { ctx.beginPath(); ctx.moveTo(ix, iy + wy); ctx.lineTo(ix + iw, iy + wy); ctx.stroke(); }
+    } else if (st === 'tier') {
+      ctx.fillStyle = css(rc, 0.95); ctx.fillRect(ix, iy, iw, ih);
+      var t2 = Math.min(iw, ih) * 0.22;
+      ctx.fillStyle = css(rc, 1.15); ctx.fillRect(ix + t2, iy + t2, iw - t2 * 2, ih - t2 * 2);
+      ctx.fillStyle = css(rc, 1.3); ctx.fillRect(ix + t2 * 2, iy + t2 * 2, Math.max(0.3, iw - t2 * 4), Math.max(0.3, ih - t2 * 4));
+    } else {
+      // плоская: парапет, вентиляция, пара огней
+      ctx.fillStyle = css(rc, 1); ctx.fillRect(ix, iy, iw, ih);
+      ctx.strokeStyle = css(c, 1.2, 0.9); ctx.lineWidth = 0.06; ctx.strokeRect(ix, iy, iw, ih);
+      var nv = Math.min(3, Math.floor(iw * ih / 4));
+      for (var i = 0; i < nv; i++) { var vx = ix + 0.3 + hash(o.x, o.y, 10 + i) * (iw - 0.9), vy = iy + 0.3 + hash(o.x, o.y, 20 + i) * (ih - 0.9), vs = 0.3 + hash(o.x, o.y, 30 + i) * 0.3; ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(vx + 0.08, vy + 0.1, vs, vs); ctx.fillStyle = css(rc, 1.25); ctx.fillRect(vx, vy, vs, vs); }
+    }
+    // знак района
+    var cxs = x + w / 2, cys = y + h / 2, rs = Math.min(w, h) * 0.22;
+    if (o.s === 'hospital') { ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.beginPath(); ctx.arc(cxs, cys, rs * 1.25, 0, TAU); ctx.fill(); ctx.fillStyle = '#d23c3c'; ctx.fillRect(cxs - rs * 0.3, cys - rs, rs * 0.6, rs * 2); ctx.fillRect(cxs - rs, cys - rs * 0.3, rs * 2, rs * 0.6); }
+    else if (o.s === 'garrison') { ctx.fillStyle = css(tr, 1, 0.95); ctx.beginPath(); ctx.moveTo(cxs, cys - rs * 1.2); ctx.lineTo(cxs + rs, cys - rs * 0.6); ctx.lineTo(cxs + rs * 0.8, cys + rs * 0.6); ctx.lineTo(cxs, cys + rs * 1.2); ctx.lineTo(cxs - rs * 0.8, cys + rs * 0.6); ctx.lineTo(cxs - rs, cys - rs * 0.6); ctx.closePath(); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(cxs - rs * 0.15, cys - rs * 0.7, rs * 0.3, rs * 1.4); }
+    else if (o.s === 'workshop') { ctx.strokeStyle = css(tr, 1, 0.95); ctx.lineWidth = rs * 0.35; ctx.beginPath(); ctx.arc(cxs, cys, rs * 0.7, 0, TAU); ctx.stroke(); ctx.fillStyle = css(tr, 1, 0.95); for (var g2 = 0; g2 < 8; g2++) { var ga = g2 / 8 * TAU; ctx.fillRect(cxs + Math.cos(ga) * rs - rs * 0.12, cys + Math.sin(ga) * rs - rs * 0.12, rs * 0.24, rs * 0.24); } }
+    else if (o.s === 'warehouse') { ctx.strokeStyle = css(tr, 0.9, 0.7); ctx.lineWidth = 0.04; for (var wl = 0.5; wl < w; wl += 0.5) { ctx.beginPath(); ctx.moveTo(x + wl, y + 0.2); ctx.lineTo(x + wl, y + h - 0.2); ctx.stroke(); } }
+    else if (o.s === 'market') { ctx.fillStyle = 'rgba(210,70,60,0.9)'; ctx.fillRect(x + 0.2, y + h - 0.45, w - 0.4, 0.25); ctx.fillStyle = 'rgba(255,255,255,0.8)'; for (var mk = 0.3; mk < w - 0.4; mk += 0.6) ctx.fillRect(x + mk, y + h - 0.45, 0.3, 0.25); }
+    else if (o.s === 'comms') { ctx.fillStyle = css(tr, 1.1, 0.9); ctx.fillRect(cxs - 0.12, y + 0.2, 0.24, h - 0.4); }
+    // огни по углам у больших
+    if (w >= 3 && h >= 3) { ctx.fillStyle = 'rgba(255,214,130,0.9)'; ctx.fillRect(x + 0.18, y + 0.18, 0.1, 0.1); ctx.fillRect(x + w - 0.3, y + h - 0.3, 0.1, 0.1); }
+  }
+  function wallColor(lk, T) {
+    var kind = lk.wall;
+    return kind === 'metal' ? [104, 108, 114] : kind === 'wood' ? [104, 76, 48] : kind === 'hive' ? [138, 92, 62] : kind === 'crystal' ? [96, 156, 206] : kind === 'ice' ? [150, 178, 206] : mixc(lk.trim, lk.c, 0.2);
+  }
   var OBJ = {
+    bldg: function(ctx, T, o) { bldgRoof(ctx, T, o, T.tlook); },
+    // башня на углу стены: круглый бастион 2×2 (орудие рисует экран боя)
+    bastion: function(ctx, T, o) {
+      var lk = T.tlook, col = wallColor(lk, T), cx = o.x + 1, cy = o.y + 1;
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.beginPath(); ctx.arc(cx + 0.3, cy + 0.36, 1.05, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 1.05, 0, TAU); ctx.fillStyle = radial(ctx, cx, cy, 1.05, col, 1.3, 0.72); ctx.fill();
+      ctx.strokeStyle = css(col, 0.6); ctx.lineWidth = 0.06; ctx.stroke();
+      ctx.fillStyle = css(col, 1.35);
+      for (var i = 0; i < 8; i++) { var a = i / 8 * TAU; ctx.fillRect(cx + Math.cos(a) * 0.86 - 0.11, cy + Math.sin(a) * 0.86 - 0.11, 0.22, 0.22); }
+      ctx.fillStyle = css(col, 0.85); ctx.beginPath(); ctx.arc(cx, cy, 0.55, 0, TAU); ctx.fill();
+    },
+    // столбы ворот по краям проёма
+    gateposts: function(ctx, T, o) {
+      var lk = T.tlook, col = wallColor(lk, T), hor = o.w > o.h, pts = hor ? [[o.x - 0.5, o.y + 0.5], [o.x + o.w + 0.5, o.y + 0.5]] : [[o.x + 0.5, o.y - 0.5], [o.x + 0.5, o.y + o.h + 0.5]];
+      pts.forEach(function(p) {
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(p[0] + 0.14, p[1] + 0.18, 0.5, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(p[0], p[1], 0.5, 0, TAU); ctx.fillStyle = radial(ctx, p[0], p[1], 0.5, col, 1.3, 0.7); ctx.fill();
+        ctx.fillStyle = 'rgba(255,214,130,0.9)'; ctx.beginPath(); ctx.arc(p[0], p[1], 0.1, 0, TAU); ctx.fill();
+      });
+    },
+    antenna: function(ctx, T, o) {
+      // мачта с тарелкой над узлом связи
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.arc(o.x + 0.5, o.y + 0.6, 0.9, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(200,204,210,0.9)'; ctx.lineWidth = 0.08;
+      for (var i = 0; i < 3; i++) { var a = i / 3 * TAU + 0.5; ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + Math.cos(a) * 0.9, o.y + Math.sin(a) * 0.9); ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(o.x, o.y, 0.7, 0, TAU); ctx.fillStyle = radial(ctx, o.x, o.y, 0.7, [190, 196, 204], 1.35, 0.6); ctx.fill();
+      ctx.strokeStyle = 'rgba(70,80,90,0.6)'; ctx.lineWidth = 0.04; ctx.beginPath(); ctx.arc(o.x, o.y, 0.42, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#ff6a5a'; ctx.beginPath(); ctx.arc(o.x, o.y, 0.1, 0, TAU); ctx.fill();
+    },
     tower: function(ctx, T, o) {
       var z = o.z || 2, sh = 0.5 + z * 0.55, pal = [[118, 108, 96], [96, 104, 112], [132, 118, 100], [86, 82, 78]], c = pal[o.s % pal.length];
       // тень — вытянутый к юго-востоку контур

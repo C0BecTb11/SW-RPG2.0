@@ -42,7 +42,8 @@ function placeArmy(g, team, list, box, R) {
 function setup(planet, opts) {
   opts = opts || {};
   const js = require(path.join('../../shared/planets', planet + '.json'));
-  const g = new G.Ground(js, { seed: opts.seed || 11, auto0: opts.auto0 !== false, auto1: opts.auto1 !== false, att: opts.att == null ? 0 : opts.att, captureSeconds: opts.captureSeconds || 120 });
+  const settle = opts.settle || { level: 3, districts: [{ slot: 1, id: 'market' }, { slot: 2, id: 'garrison' }, { slot: 3, id: 'hospital' }] };
+  const g = new G.Ground(js, { seed: opts.seed || 11, auto0: opts.auto0 !== false, auto1: opts.auto1 !== false, att: opts.att == null ? 0 : opts.att, captureSeconds: opts.captureSeconds || 120, settle: settle, militiaAuto: true });
   const R = G.rng(opts.seed || 5);
   const att = g.att, def = 1 - att;
   // атакующие — в полосе вторжения и чуть выше; защитники — у города
@@ -79,8 +80,9 @@ function check(g) {
 }
 
 if (require.main === module) {
-  const planet = process.argv[2] || 'naboo', secs = +process.argv[3] || 240;
-  const { g, nA, nD } = setup(planet);
+  const planet = process.argv[2] || 'naboo', secs = +process.argv[3] || 240, lvl = +process.argv[4] || 3;
+  const { g, nA, nD } = setup(planet, { settle: { level: lvl, districts: [{ slot: 1, id: 'market' }, { slot: 2, id: 'garrison' }, { slot: 3, id: 'hospital' }, { slot: 4, id: 'comms' }] } });
+  console.log('поселение: уровень ' + g.settle.level + ' (' + g.settle.name + '), ворот ' + g.settle.gates.length + ', башен ' + g.settle.towers.length + ', районов ' + g.districts.length);
   console.log(planet + ': атакующих ' + nA + ', защитников ' + nD);
   let t0 = Date.now(), ticks = 0, bad = 0, lastRep = 0, shots = 0, deaths = 0;
   while (g.t < secs && g.over < 0) {
@@ -91,7 +93,9 @@ if (require.main === module) {
       lastRep = g.t;
       const e = check(g).concat(overlaps(g)); bad += e.length;
       const s = g.summary();
-      console.log(`t=${g.t.toFixed(0).padStart(4)}с живых ${s.alive[0]}/${s.alive[1]} площадь ${s.cap.cnt} ${s.cap.status} ${s.cap.prog.toFixed(0)}  выстрелов ${shots}  поля ${g.flows.built} (${g.flows.ms} мс)` + (e.length ? '  ! ' + e.slice(0, 3).join('; ') : ''));
+      const gates = g.settle.gates.map(q => q.s.dead ? 'x' : Math.round(q.s.hp / q.s.hpMax * 100) + '%').join(' ');
+      const dist = s.districts.map(d => d.id[0] + (d.by === g.def ? '+' : '-')).join('');
+      console.log(`t=${g.t.toFixed(0).padStart(4)}с живых ${s.alive[0]}/${s.alive[1]} площадь ${s.cap.cnt} ${s.cap.status} ${s.cap.prog.toFixed(0)}  выстрелов ${shots}  ворота ${gates}  районы ${dist}  поля ${g.flows.built} (${g.flows.ms} мс)` + (e.length ? '  ! ' + e.slice(0, 3).join('; ') : ''));
     }
   }
   const ms = Date.now() - t0;

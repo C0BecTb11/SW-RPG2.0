@@ -61,13 +61,18 @@
     return fetch(url, { cache: 'no-cache' }).then(function(r) { if (!r.ok) throw new Error(url + ': ' + r.status); return r.json(); });
   }
   function loading(on) { $('gp-load').classList.toggle('off', !on); }
-  function pick(id) {
-    if (id === G.id && G.ter) return;
+  // Поселение для просмотра: уровень 0 — голая карта, 1..4 — город с типовыми кварталами
+  var TOWN_DISTS = [{ slot: 1, id: 'market' }, { slot: 2, id: 'garrison' }, { slot: 3, id: 'hospital' }, { slot: 4, id: 'comms' }];
+  G.lvl = 0;
+  function withTown(j) { return G.lvl > 0 && window.SWTown ? SWTown.apply(j, { level: G.lvl, districts: TOWN_DISTS }).map : j; }
+  function pick(id, force) {
+    if (id === G.id && G.ter && !force) return;
     loading(true);
-    fetchJson('../shared/planets/' + id + '.json').then(function(j) {
+    fetchJson('../shared/planets/' + id + '.json').then(function(j0) {
       // дать индикатору показаться до тяжёлой работы
       setTimeout(function() {
-        G.id = id; G.json = j; G.ter = GTerrain.create(j); G.sel = null;
+        var j = withTown(j0);
+        G.id = id; G.json = j; G.raw = j0; G.ter = GTerrain.create(j); G.sel = null;
         G.base = document.createElement('canvas');
         G.base.width = G.base.height = N * 4;
         G.ter.render(G.base.getContext('2d'), 0, 0, N, N, 4);
@@ -390,6 +395,12 @@
   });
   $('gp-planets').addEventListener('click', function(e) {
     var b = e.target.closest('[data-id]'); if (b) pick(b.getAttribute('data-id'));
+  });
+  $('gp-town').addEventListener('click', function(e) {
+    var b = e.target.closest('[data-lvl]'); if (!b) return;
+    G.lvl = +b.getAttribute('data-lvl');
+    Array.prototype.forEach.call($('gp-town').children, function(x) { x.classList.toggle('on', +x.getAttribute('data-lvl') === G.lvl); });
+    if (G.id) pick(G.id, true);
   });
   window.addEventListener('resize', function() { resize(); fit(); });
 

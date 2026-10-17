@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#05060a">
 <title>Наземный бой 2.0</title>
 <link rel="stylesheet" href="../space/space.css?v=16">
-<link rel="stylesheet" href="ground.css?v=2">
+<link rel="stylesheet" href="ground.css?v=3">
 </head>
 <body>
 <canvas id="sp-canvas"></canvas>
@@ -36,6 +36,7 @@
     <button class="sp-chip net" id="gd-poly-b" type="button">◎ Другой бой</button>
   </div>
   <div class="sp-row gd-cap" id="gd-cap"></div>
+  <div class="sp-row gd-dist" id="gd-dist"></div>
 </div>
 
 <div class="sp-panel sp-bottom" id="sp-bottom">
@@ -76,6 +77,8 @@
     <p class="gd-poly-hint" id="gd-poly-size-h"></p>
     <div class="sp-poly-lab">Противник</div><div class="sp-poly-chips" id="gd-poly-foe"></div>
     <p class="gd-poly-hint" id="gd-poly-foe-h"></p>
+    <div class="sp-poly-lab">Поселение</div><div class="sp-poly-chips" id="gd-poly-lvl"></div>
+    <p class="gd-poly-hint" id="gd-poly-lvl-h"></p>
     <div class="sp-poly-lab">Сколько держать площадь для захвата</div><div class="sp-poly-chips" id="gd-poly-cap"></div>
     <div class="sp-btns" style="grid-template-columns:1fr"><button class="sp-btn gold" id="gd-poly-go" type="button">В бой</button></div>
   </div>
@@ -87,13 +90,14 @@
 <script src="../shared/rt-core.js?v=5"></script>
 <script src="../shared/rt-figures.js?v=7"></script>
 <script src="../shared/rt-army.js?v=3"></script>
-<script src="../shared/rt-planets.js?v=2"></script>
-<script src="../shared/rt-units.js?v=1"></script>
-<script src="../shared/rt-ground.js?v=2"></script>
+<script src="../shared/rt-planets.js?v=3"></script>
+<script src="../shared/rt-units.js?v=2"></script>
+<script src="../shared/rt-town.js?v=1"></script>
+<script src="../shared/rt-ground.js?v=3"></script>
 <script src="../shared/rt-vehicles.js?v=3"></script>
 <script src="../shared/rt-heroes.js?v=1"></script>
-<script src="terrain.js?v=3"></script>
+<script src="terrain.js?v=4"></script>
 <script src="../space/space-gfx.js?v=1"></script>
-<script src="ground.js?v=2"></script>
+<script src="ground.js?v=3"></script>
 </body>
 </html>

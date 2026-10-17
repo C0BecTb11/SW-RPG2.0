@@ -43,14 +43,23 @@
     <button class="gp-chip" data-layer="grid" type="button">Сетка</button>
     <button class="gp-chip on" data-layer="weather" type="button">Погода</button>
   </div>
+  <div class="gp-layers" id="gp-town">
+    <span class="gp-dim" style="align-self:center">Поселение:</span>
+    <button class="gp-chip on" data-lvl="0" type="button">нет</button>
+    <button class="gp-chip" data-lvl="1" type="button">1 Посёлок</button>
+    <button class="gp-chip" data-lvl="2" type="button">2 Городок</button>
+    <button class="gp-chip" data-lvl="3" type="button">3 Город</button>
+    <button class="gp-chip" data-lvl="4" type="button">4 Столица</button>
+  </div>
   <div class="gp-cell" id="gp-cell"><span class="gp-dim">Коснитесь клетки — покажу, что на ней.</span></div>
   <div class="gp-legend" id="gp-legend"></div>
 </div>
 
 <div class="gp-load" id="gp-load"><div><span></span>Рисую местность…</div></div>
 
-<script src="../shared/rt-planets.js?v=2"></script>
-<script src="terrain.js?v=2"></script>
-<script src="preview.js?v=2"></script>
+<script src="../shared/rt-planets.js?v=3"></script>
+<script src="../shared/rt-town.js?v=1"></script>
+<script src="terrain.js?v=4"></script>
+<script src="preview.js?v=3"></script>
 </body>
 </html>

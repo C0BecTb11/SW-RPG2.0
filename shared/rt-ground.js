@@ -40,7 +40,9 @@
   var SPREAD = 0.9;                // шаг строя при приказе нескольким
   // Радиус расталкивания техники (клетки): по её виду сверху, чтобы машины не наезжали друг
   // на друга и на пехоту. Проходимость считается по-прежнему 2×2 клетки.
-  var VRAD = { rep_atte: 1.5, rep_turbo: 1.5, rep_artillery: 1.5, cis_mtt: 1.5, cis_artillery: 1.4, cis_aat: 1.3, rep_aa: 1.2, cis_spider: 1.2, cis_missile: 1.2, rep_atrt: 0.6, rep_barc: 0.6, cis_stap: 0.5 };
+  // = 0,42 × размах машины сверху (rt-vehicles span), чтобы пехота не стояла «внутри»
+  var VRAD = { rep_atte: 1.9, rep_turbo: 2.5, rep_artillery: 2.3, cis_mtt: 2.5, cis_artillery: 1.7, cis_aat: 1.5, rep_aa: 1.35, cis_spider: 1.35, cis_missile: 1.35, rep_atrt: 0.7, rep_barc: 0.75, cis_stap: 0.6 };
+  var RAD_MAX = 2.5;
   var DEF_NEAR = 7, DEF_FAR = 20;  // пояс обороны: расстояние от центра площади (клетки)
   var SORTIE = 18;                 // оборона бросается на прорвавшихся, если они ближе этого
 
@@ -171,7 +173,7 @@
       id: this.agents.length, tid: tid, T: Ty, team: team, x: x, y: y, vx: 0, vy: 0, dvx: 0, dvy: 0,
       aim: extra.aim || 0, legs: extra.aim || 0, mv: 0, phase: this.R() * TAU,
       hpMax: Math.round((extra.hpMax || Ty.hp) * (extra.hpK || 1)), hp: 0, alive: true, gone: false, diedAt: 0,
-      size: Ty.size, move: Ty.move, air: Ty.air, speed: Ty.speed, range: Ty.range * RANGE_K, vision: Ty.vision * RANGE_K,
+      size: Ty.size, move: Ty.move, air: Ty.air, fly: Ty.move === 'air', speed: Ty.speed, range: Ty.range * RANGE_K, vision: Ty.vision * RANGE_K,
       goal: null, at: true, post: false, hold: false, sq: 0, tgt: -1, focus: -1, scan: this.R() * SCAN, cd: this.R() * Ty.rof,
       stuck: 0, lastD: 1e9, wig: 0, side: 1, wait: 0, engT: -99, turretA: extra.aim || 0, inside: -1,
       uid: extra.uid || null, name: extra.name || '', owner: extra.owner || null, dmgK: extra.dmgK || 1,
@@ -203,7 +205,7 @@
     var c = cy * N + cx;
     if (!this.pass[a.move + a.size][c]) return false;
     var s = this.structAt[c];
-    if (s >= 0 && !a.air) { var st = this.structs[s]; if (st.dead) return true; if (!st.enter || st.team !== a.team || (st.infOnly && a.T.cls !== 'infantry' && a.T.cls !== 'hero')) return false; }
+    if (s >= 0 && !(a.air || a.fly)) { var st = this.structs[s]; if (st.dead) return true; if (!st.enter || st.team !== a.team || (st.infOnly && a.T.cls !== 'infantry' && a.T.cls !== 'hero')) return false; }
     return true;
   };
   Ground.prototype.nearestOk = function(mv, size, x, y) {
@@ -324,7 +326,7 @@
       var r = a.vision - this.weather * RANGE_K;
       // глушилка врага: обзор режется до 2 клеток
       for (var j = 0; j < jam.length; j++) { var jm = jam[j]; if (jm.team === a.team) continue; var jdx = jm.x + 1 - a.x, jdy = jm.y + 1 - a.y; if (jdx * jdx + jdy * jdy <= jm.radius * jm.radius * RANGE_K * RANGE_K) r = Math.min(r, 2 * RANGE_K); }
-      if (a.air) r += 2;
+      if ((a.air || a.fly)) r += 2;
       this.reveal(a.team, a.x, a.y, r, a.x, a.y);
     }
     for (i = 0; i < this.structs.length; i++) { var st = this.structs[i]; if (st.dead || st.team > 1) continue; if (st.kind === 'radar' || st.kind === 'turret') this.reveal(st.team, st.x + st.w / 2, st.y + st.h / 2, (st.radius || 3) * RANGE_K); }
@@ -448,7 +450,7 @@
     if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.2 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; return; }
     var tx, ty;
     var key = a.key || a.goal;
-    if (a.air || (dist < 6 && this.straight(a, gx + off, gy + off))) { tx = gx + off; ty = gy + off; }
+    if ((a.air || a.fly) || (dist < 6 && this.straight(a, gx + off, gy + off))) { tx = gx + off; ty = gy + off; }
     else {
       var f = this.flows.get(a.move, a.size, key[0], key[1]), d = f.dir[cy * N + cx];
       if (d === 255) {
@@ -541,7 +543,7 @@
       var k = Math.min(1, dt * 10);
       a.vx += (a.dvx - a.vx) * k; a.vy += (a.dvy - a.vy) * k;
       a.x += a.vx * dt; a.y += a.vy * dt;
-      if (!a.air) this.wall(a);
+      if (!(a.air || a.fly)) this.wall(a);
     }
     this.cellHead.fill(-1);
     for (i = 0; i < ag.length; i++) {
@@ -550,16 +552,16 @@
       this.nextIn[i] = this.cellHead[c]; this.cellHead[c] = i;
     }
     for (i = 0; i < ag.length; i++) {
-      a = ag[i]; if (!a.alive || a.air) continue;
-      var ax = Math.floor(a.x), ay = Math.floor(a.y), ra = a.rad;
-      for (var yy = ay - 2; yy <= ay + 2; yy++) for (var xx = ax - 2; xx <= ax + 2; xx++) {
+      a = ag[i]; if (!a.alive || a.air || a.fly) continue;
+      var ax = Math.floor(a.x), ay = Math.floor(a.y), ra = a.rad, rr = Math.ceil(ra + RAD_MAX);
+      for (var yy = ay - rr; yy <= ay + rr; yy++) for (var xx = ax - rr; xx <= ax + rr; xx++) {
         if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
         for (var j = this.cellHead[yy * N + xx]; j !== -1; j = this.nextIn[j]) {
           if (j <= i) continue;
-          var b = ag[j]; if (!b.alive || b.air) continue;
+          var b = ag[j]; if (!b.alive || b.air || b.fly) continue;
           var rb = b.rad, D = ra + rb;
           // техника с техникой — теснее (могут частично наезжать); застрявшая в пробке — на 2 с «призрак»
-          if (a.size === 2 && b.size === 2) { D *= 0.7; if (a.ghostT > this.t || b.ghostT > this.t) continue; }
+          if (a.size === 2 && b.size === 2) { D *= a.ghostT > this.t || b.ghostT > this.t ? 0.4 : 0.8; }
           var dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
           if (d2 >= D * D || d2 < 1e-6) continue;
           var d = Math.sqrt(d2), push = (D - d) * 0.5, nx = dx / d, ny = dy / d;
@@ -836,9 +838,9 @@
       if (!st && (pt[c] || ph[c]) && d >= DEF_NEAR - 2 && d <= DEF_FAR - 6 && dot > -0.3) veh.push([m.e[c] * 0.8 + dot * 1.2 - d * 0.1 + R() * 0.3, x, y, pt[c], ph[c]]);
       if (!st && pf[c] && d >= 2 && d <= DEF_NEAR + 2) near.push([-d + R() * 0.5, x, y]);
     }
-    function pick(list, lim, margin) {
+    function pick(list, lim, margin, taken) {
       list.sort(function(a, b) { return b[0] - a[0]; });
-      var taken = {}, out = [];
+      var out = []; taken = taken || {};
       for (var i = 0; i < list.length && out.length < lim; i++) {
         var p = list[i], c = p[2] * N + p[1]; if (taken[c]) continue;
         out.push({ x: p[1], y: p[2], by: -1, track: p[3], hover: p[4] });
@@ -846,7 +848,11 @@
       }
       return out;
     }
-    return (this._posts = { team: team, foot: pick(foot, 220, 1), veh: pick(veh, 50, 2), near: pick(near, 60, 1) });
+    // сначала техника (с запасом под её радиус), пехоте и ближним постам эти клетки не достаются
+    var vp = pick(veh, 50, 3), used = {};
+    vp.forEach(function(p) { for (var yy = p.y - 2; yy <= p.y + 3; yy++) for (var xx = p.x - 2; xx <= p.x + 3; xx++) used[yy * N + xx] = 1; });
+    var fp = pick(foot, 220, 1, used), np = pick(near, 60, 1, used);
+    return (this._posts = { team: team, foot: fp, veh: vp, near: np });
   };
   // Общая точка для поля направлений: середина квадрата 8×8, чтобы соседние посты делили одно поле
   Ground.prototype.qkey = function(a, x, y) {
@@ -858,7 +864,7 @@
     var posts = this.defPosts(team), ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (!a.alive || a.team !== team || a.T.artillery) continue;
-      var list = a.T.cls === 'aa' || a.air || a.T.medic || a.T.builder ? posts.near : a.T.vehicle ? posts.veh : posts.foot;
+      var list = a.T.cls === 'aa' || a.air || a.fly || a.T.medic || a.T.builder ? posts.near : a.T.vehicle ? posts.veh : posts.foot;
       var p = this.freePost(list, a) || this.freePost(posts.foot, a); if (!p) continue;
       p.by = a.id; a.dpost = p; var off = a.size === 2 ? 1 : 0.5;
       a.x = p.x + off; a.y = p.y + off; a.goal = [p.x, p.y]; a.at = true; a.hold = true; a.post = false;
@@ -906,7 +912,7 @@
     var tot = [0, 0, 0], here = [0, 0, 0], gone = [0, 0, 0], i, a;
     for (i = 0; i < ids.length; i++) {
       a = ag[ids[i]];
-      if (a.lane < 0) a.lane = a.T.vehicle || a.air ? 1 : a.id % 3;
+      if (a.lane < 0) a.lane = a.T.vehicle || a.air || a.fly ? 1 : a.id % 3;
       tot[a.lane]++;
       if (a.ph === 1) gone[a.lane]++;
       else { var lp = L[a.lane]; if (Math.abs(a.x - lp[0]) < 8 && Math.abs(a.y - lp[1]) < 8) { a.ph = 0.5; here[a.lane]++; } }
@@ -930,7 +936,7 @@
     for (var i = 0; i < ids.length; i++) {
       var a = ag[ids[i]];
       if (!a.dpost) {
-        var list = a.T.cls === 'aa' || a.air || a.T.medic || a.T.builder ? posts.near : a.T.vehicle ? posts.veh : posts.foot;
+        var list = a.T.cls === 'aa' || a.air || a.fly || a.T.medic || a.T.builder ? posts.near : a.T.vehicle ? posts.veh : posts.foot;
         var p = this.freePost(list, a) || this.freePost(posts.foot, a);
         if (!p) continue;
         p.by = a.id; a.dpost = p; a.hold = false; a.sortie = false; a.post = false; a.focus = -1;
@@ -941,7 +947,7 @@
         // герой: ближайший враг в SORTIE/2 — навстречу, иначе на пост
         var en = this.nearestEnemy(a, SORTIE / 2);
         if (en) { if (!a.sortie || a.at) { a.sortie = true; a.hold = false; this.goCell(a, Math.floor(en.x), Math.floor(en.y), this.qkey(a, Math.floor(en.x), Math.floor(en.y))); } continue; }
-      } else if (intr.length && a.tgt < 0 && !a.air) {
+      } else if (intr.length && a.tgt < 0 && !(a.air || a.fly)) {
         var best = null, bd = SORTIE * SORTIE;
         for (var q = 0; q < intr.length; q++) { var dx = intr[q].x - a.x, dy = intr[q].y - a.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = intr[q]; } }
         if (best) { if (!a.sortie || a.at) { a.sortie = true; a.hold = false; this.goCell(a, Math.floor(best.x), Math.floor(best.y), this.qkey(a, Math.floor(best.x), Math.floor(best.y))); } continue; }

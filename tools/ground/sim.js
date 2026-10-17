@@ -56,6 +56,16 @@ function setup(planet, opts) {
   return { g, nA, nD };
 }
 
+// Столкновения: никто не стоит «внутри» другого (пехота в технике, техника в технике)
+function overlaps(g) {
+  const ag = g.agents.filter(a => a.alive && !a.air && !a.fly), out = [];
+  for (let i = 0; i < ag.length; i++) for (let j = i + 1; j < ag.length; j++) {
+    const a = ag[i], b = ag[j], dx = a.x - b.x, dy = a.y - b.y, d = Math.sqrt(dx * dx + dy * dy);
+    const D = (a.rad + b.rad) * (a.size === 2 && b.size === 2 ? 0.8 : 1);
+    if (d < D * 0.75) out.push(a.tid + '~' + b.tid + ' ' + d.toFixed(2) + '<' + D.toFixed(2));
+  }
+  return out;
+}
 function check(g) {
   const err = [];
   for (const a of g.agents) {
@@ -79,7 +89,7 @@ if (require.main === module) {
     deaths = g.agents.filter(a => !a.alive).length;
     if (g.t - lastRep >= 20) {
       lastRep = g.t;
-      const e = check(g); bad += e.length;
+      const e = check(g).concat(overlaps(g)); bad += e.length;
       const s = g.summary();
       console.log(`t=${g.t.toFixed(0).padStart(4)}с живых ${s.alive[0]}/${s.alive[1]} площадь ${s.cap.cnt} ${s.cap.status} ${s.cap.prog.toFixed(0)}  выстрелов ${shots}  поля ${g.flows.built} (${g.flows.ms} мс)` + (e.length ? '  ! ' + e.slice(0, 3).join('; ') : ''));
     }
@@ -88,4 +98,4 @@ if (require.main === module) {
   console.log(`итог: ${g.over < 0 ? 'время вышло' : 'победа стороны ' + g.over + ' (' + g.why + ')'}; ${ticks} шагов за ${ms} мс = ${(ms / ticks).toFixed(2)} мс/шаг; погибших ${deaths}; ошибок ${bad}`);
   process.exit(bad ? 1 : 0);
 }
-module.exports = { setup, placeArmy, check, ARMY };
+module.exports = { setup, placeArmy, check, overlaps, ARMY };

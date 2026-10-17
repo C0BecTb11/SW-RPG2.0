@@ -155,6 +155,7 @@
     this.att = opts.att == null ? 0 : opts.att; this.def = 1 - this.att;      // кто штурмует планету
     this.capNeed = opts.captureSeconds || 21600;
     this.militiaAuto = !!opts.militiaAuto;
+    this.capExternal = !!opts.capExternal;   // в игре прогресс захвата и исход считает база (capture_tick)
     this.cap = { prog: 0, rate: 0, status: 'stalled', cnt: [0, 0] };
     this.structs = [];
     this.weather = P.WEATHER[this.id] ? P.WEATHER[this.id][1] : 0;
@@ -199,13 +200,22 @@
       stuck: 0, lastD: 1e9, wig: 0, side: 1, wait: 0, engT: -99, turretA: extra.aim || 0, inside: -1,
       uid: extra.uid || null, name: extra.name || '', owner: extra.owner || null, dmgK: extra.dmgK || 1,
       stun: 0, fear: 0, choke: -1, mind: null, barrier: 0, revealT: -99,
-      hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false, npc: !!extra.npc, rofK: 1
+      hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false, npc: !!extra.npc, rofK: 1, accB: 0, evaB: 0
     };
     a.rad = VRAD[tid] != null ? VRAD[tid] : (Ty.size === 2 ? 1.0 : R);
     if (Ty.hero) {
       a.range = SABER; a.hero = { act: 'idle', k: 0, actT: 0, cds: {}, abil: extra.abil || (team === 0 ? ACTIVE_LIGHT : ACTIVE_DARK).slice(), portrait: extra.portrait || (team === 0 ? 'jedi_01' : 'sith_01'), passive: extra.passive || {} };
       if (a.hero.passive.hp) a.hpMax += a.hero.passive.hp;
       if (a.hero.passive.vision) a.vision += a.hero.passive.vision * RANGE_K;
+    }
+    // бонусы из игры (bonus_*): дальность и обзор — клетки игры, ход — клетки за ход, меткость и уклонение — проценты
+    var bo = extra.bonus || null;
+    if (bo) {
+      if (bo.range) a.range += bo.range * RANGE_K;
+      if (bo.vision) a.vision += bo.vision * RANGE_K;
+      if (bo.move) a.speed = Math.max(0.2, (Ty.speed / U.SPEED_K + bo.move) * U.SPEED_K);
+      if (bo.damage && Ty.dmg > 0) a.dmgK *= (Ty.dmg + bo.damage) / Ty.dmg;
+      a.accB = bo.accuracy || 0; a.evaB = bo.evasion || 0;
     }
     if (Ty.artillery) a.range = Ty.range;       // артиллерия: на всю карту (144)
     a.hp = extra.hp != null ? Math.min(a.hpMax, extra.hp) : a.hpMax;
@@ -668,6 +678,11 @@
     if (og.g && !og.at) { a.goal = og.g; a.key = og.key; a.at = false; a.stuck = 0; a.lastD = 1e9; }
     else { a.goal = og.g; a.at = true; }
   };
+  // Меткость и уклонение бойца с бонусами игры (остальное — у типа)
+  Ground.prototype.statsOf = function(a) {
+    if (!a.accB && !a.evaB) return a.T;
+    return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0), range: a.T.range, cls: a.T.cls, dmg: a.T.dmg };
+  };
   Ground.prototype.nearestEnemy = function(a, r) {
     var ag = this.agents, best = null, bd = r * r, team = this.ctl(a);
     for (var i = 0; i < ag.length; i++) { var b = ag[i]; if (!b.alive || this.ctl(b) === team) continue; var dx = b.x - a.x, dy = b.y - a.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = b; } }
@@ -784,7 +799,7 @@
       }
       var b = tg.a;
       var inMul = a.inside >= 0 ? this.structs[a.inside].inMul : 1;
-      var p = U.hitChance(a.T, b.T, tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1);
+      var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1);
       if (b.hero && b.hero.passive.evasion) p *= 1 - b.hero.passive.evasion / 100;
       hit = this.R() < p;
       // джедай отражает выстрелы: часть попаданий уходит обратно
@@ -1165,12 +1180,13 @@
     if (A > D) { c.rate = 1; c.status = 'capturing'; }
     else if (D > A) { c.rate = -1; c.status = c.prog > 0 ? 'reverting' : 'stalled'; }
     else { c.rate = 0; c.status = A ? 'contested' : 'stalled'; }
-    c.prog = clamp(c.prog + c.rate * dt, 0, this.capNeed);
+    if (!this.capExternal) c.prog = clamp(c.prog + c.rate * dt, 0, this.capNeed);
     // штурм отбит: десант уничтожен — или от него осталась горстка (≤10 %), и полторы минуты никого в городе
     var nA = this.alive(this.att), tw = this.town, near = false;
     if (this.attN0 == null && this.t > 5) this.attN0 = nA;
     for (i = 0; i < ag.length; i++) { var b = ag[i]; if (b.alive && this.ctl(b) === this.att && b.x >= tw[0] - 6 && b.x < tw[0] + tw[2] + 6 && b.y >= tw[1] - 6 && b.y < tw[1] + tw[3] + 6) { near = true; break; } }
     if (near || this.lastNear == null) this.lastNear = this.t;
+    if (this.capExternal) return;            // в игре бой не «кончается»: планета живёт дальше
     if (this.over < 0 && this.t > 5 && (nA === 0 || (this.attN0 && nA <= Math.max(2, this.attN0 * 0.1) && this.t - this.lastNear > 90))) { this.over = this.def; this.why = 'Штурм отбит'; this.msg('Штурм отбит', this.def, 'gold'); this.msg(nA ? 'Десант разбит' : 'Десант уничтожен', this.att, 'bad'); }
     if (c.prog >= this.capNeed && this.over < 0) { this.over = this.att; this.why = 'Площадь захвачена'; this.msg('Поселение захвачено', this.att, 'gold'); this.msg('Поселение потеряно', this.def, 'bad'); }
   };

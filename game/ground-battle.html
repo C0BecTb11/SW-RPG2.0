@@ -2,7 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
 <title>Наземное сражение — Star Wars: Global Conflict</title>
 <link rel="stylesheet" href="../css/ground-battle.css">
 <link rel="stylesheet" href="../css/drop.css">
@@ -11,6 +12,9 @@
 <link rel="stylesheet" href="../css/supply.css">
 <link rel="stylesheet" href="../css/lease.css">
 <link rel="stylesheet" href="../css/overwatch.css">
+<link rel="stylesheet" href="../space/space.css?v=16">
+<link rel="stylesheet" href="../ground/ground.css?v=3">
+<link rel="stylesheet" href="../css/ground-live.css?v=1">
 </head>
 <body>
 
@@ -23,11 +27,87 @@
   <div class="sl-step"></div>
 </div>
 
-<button id="ground-back-btn">← Галактика</button>
+<button id="ground-back-btn" hidden>← Галактика</button>
 
-<div id="ground-viewport">
-  <canvas id="ground-canvas"></canvas>
+<!-- Наземка 2.0: карта планеты и бой в реальном времени (ground/ground.js), поверх — панели планеты -->
+<canvas id="sp-canvas"></canvas>
+
+<a id="sp-back" href="galaxy-map.html">← Галактика</a>
+<div id="sp-tr">
+  <div class="sp-speed" role="group" aria-label="Скорость боя">
+    <button id="sp-pause" type="button" title="Пауза">❚❚</button>
+    <button id="sp-spd" type="button" title="Скорость: ×1, ×2, ×4">×1</button>
+  </div>
+  <button id="sp-gfx-b" type="button" aria-label="Настройки графики" title="Настройки графики">
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>
+  </button>
+  <div id="sp-clock"><b id="sp-time">0:00</b><span class="fps"> · <span id="sp-fps">0</span> к/с</span></div>
 </div>
+
+<div class="sp-panel sp-top" id="sp-top">
+  <div class="sp-row">
+    <span class="sp-kicker" id="sp-kicker">Планета</span>
+    <span class="sp-spacer"></span>
+    <span class="sp-side" id="sp-side">Республика</span>
+  </div>
+  <div class="sp-row gd-task">
+    <i class="gd-globe" id="gd-globe"></i><b id="gd-planet">—</b>
+    <span class="gd-goal" id="gd-goal"></span>
+    <span class="sp-spacer"></span>
+    <button class="sp-chip net" id="gd-poly-b" type="button">◎ Другой бой</button>
+  </div>
+  <div class="sp-row gd-cap" id="gd-cap"></div>
+  <div class="sp-row gd-dist" id="gd-dist"></div>
+</div>
+
+<div class="sp-panel sp-bottom" id="sp-bottom">
+  <div class="sp-sheet" id="sp-sheet" hidden>
+    <div class="sp-sheet-h"><span id="sp-sheet-t"></span><button class="sp-sheet-x" id="sp-sheet-x" type="button" aria-label="Свернуть">▾</button></div>
+    <div class="sp-sheet-b" id="sp-sheet-b"><div id="sp-ship"></div></div>
+  </div>
+  <div id="sp-stat"></div>
+  <div class="sp-dock" id="sp-dock">
+    <span class="sp-tabs" id="sp-tabs"></span>
+    <button class="sp-btn" id="gd-all" type="button">Все свои</button>
+    <button class="sp-btn" id="sp-view" type="button">Вся карта</button>
+  </div>
+</div>
+
+<div class="sp-end" id="sp-end" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Итог боя</div>
+    <h2 id="sp-end-title">Победа</h2>
+    <p id="sp-end-text"></p>
+    <div class="sp-btns" style="grid-template-columns:1fr 1fr">
+      <button class="sp-btn" id="sp-end-look" type="button">Осмотреть</button>
+      <button class="sp-btn gold" id="sp-end-again" type="button">Ещё бой</button>
+    </div>
+  </div>
+</div>
+
+<div class="sp-end sp-poly" id="sp-poly" hidden>
+  <div class="sp-end-card">
+    <div class="sp-kicker">Полигон наземного боя</div>
+    <h2>Новый бой</h2>
+    <p class="gd-poly-about">Пробный бой против ИИ. Штурм высаживается у нижнего края карты и должен занять площадь в центре города; оборона держит её. Выбери условия и жми «В бой».</p>
+    <div class="sp-poly-lab">Планета</div><div class="sp-poly-chips" id="gd-poly-planet"></div>
+    <div class="sp-poly-lab">Ты играешь за</div><div class="sp-poly-chips" id="gd-poly-side"></div>
+    <div class="sp-poly-lab">Твоя задача</div><div class="sp-poly-chips" id="gd-poly-role"></div>
+    <p class="gd-poly-hint" id="gd-poly-role-h"></p>
+    <div class="sp-poly-lab">Размер армий</div><div class="sp-poly-chips" id="gd-poly-size"></div>
+    <p class="gd-poly-hint" id="gd-poly-size-h"></p>
+    <div class="sp-poly-lab">Противник</div><div class="sp-poly-chips" id="gd-poly-foe"></div>
+    <p class="gd-poly-hint" id="gd-poly-foe-h"></p>
+    <div class="sp-poly-lab">Поселение</div><div class="sp-poly-chips" id="gd-poly-lvl"></div>
+    <p class="gd-poly-hint" id="gd-poly-lvl-h"></p>
+    <div class="sp-poly-lab">Сколько держать площадь для захвата</div><div class="sp-poly-chips" id="gd-poly-cap"></div>
+    <div class="sp-btns" style="grid-template-columns:1fr"><button class="sp-btn gold" id="gd-poly-go" type="button">В бой</button></div>
+  </div>
+</div>
+
+<div class="sp-toast" id="sp-toast"></div>
+<div class="gp-load" id="gd-load"><div><span></span>Готовлю планету…</div></div>
+
 
 <div id="build-panel" style="display:none;">
   <div id="build-panel-box">
@@ -139,6 +219,19 @@
 <script src="../js/drag-command.js"></script>
 <script src="../js/production-lease.js"></script>
 <script src="../js/overwatch.js"></script>
+<script src="../shared/rt-core.js?v=5"></script>
+<script src="../shared/rt-figures.js?v=7"></script>
+<script src="../shared/rt-army.js?v=3"></script>
+<script src="../shared/rt-planets.js?v=3"></script>
+<script src="../shared/rt-units.js?v=2"></script>
+<script src="../shared/rt-town.js?v=1"></script>
+<script src="../shared/rt-ground.js?v=4"></script>
+<script src="../shared/rt-ground-net.js?v=1"></script>
+<script src="../shared/rt-vehicles.js?v=3"></script>
+<script src="../shared/rt-heroes.js?v=1"></script>
+<script src="../ground/terrain.js?v=4"></script>
+<script src="../space/space-gfx.js?v=1"></script>
+<script src="../js/ground-live.js?v=1"></script>
 <script src="../js/ground-battle.js"></script>
 <script src="../js/drop-tray.js"></script>
 <script src="../js/automove-route.js"></script>

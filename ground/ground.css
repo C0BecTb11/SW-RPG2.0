@@ -39,3 +39,5 @@
 .gd-dist:empty { display: none; }
 .gd-dist i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: 0; background: #6fb8ff; }
 .gd-dist i.foe { background: #ff6e5a; }
+/* живая планета: скорость боя задаёт сервер, диалог полигона не нужен */
+body.live .sp-speed, body.live #gd-poly-b { display: none; }

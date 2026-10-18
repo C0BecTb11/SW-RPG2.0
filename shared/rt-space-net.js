@@ -192,7 +192,7 @@
     }
     for (i = 0; i < B.craft.length; i++) {
       var c = B.craft[i]; if (c.dead) continue;
-      if (c.side !== side && !B.visC[side][c.id]) continue;
+      if (B.fog && c.side !== side && !B.visC[side][c.id]) continue;
       if (c.idle && this.craftKnown[c.id] && this.lk % 10 !== 1) { out.craft.push([c.id]); continue; }   // стоит на орбите: только «жив», положение раз в десять кадров
       var row = [c.id, r0(c.x), r0(c.y), Math.round(c.hd * 100) / 100, r0(c.hp)];
       // что за машина — один раз

@@ -33,7 +33,7 @@
     var go = function(srv, online) {
       window.SP_LIVE = { system: systemId, srv: srv };
       if (online === false) toastSoon('Сервер боёв не на связи — орбита может не открыться', 'bad');
-      var s = document.createElement('script'); s.src = '../space/space.js?v=20'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../space/space.js?v=21'; document.body.appendChild(s);
     };
     sb().rpc('rt_space_status', { p_system: systemId }).then(function(r) {
       var d = r && r.data, srv = (d && d.server && d.server.url) || SP_SERVER_FALLBACK;
@@ -108,9 +108,7 @@
   // ---- старая панель корабля: закрывать по касанию поля, чипы листа
   function bind() {
     var bottom = $('sp-bottom'); if (bottom) bottom.addEventListener('pointerdown', onSheetClick);
-    // правый верх занят панелью кредитов: звук и графика — в первой строке шапки
-    var row = $('sp-top') && $('sp-top').querySelector('.sp-row');
-    ['sp-snd', 'sp-gfx-b'].forEach(function(id) { var b = $(id); if (b && row) row.appendChild(b); });
+
     var cv = $('sp-canvas'); if (cv) cv.addEventListener('pointerdown', function() { if (typeof scDeselect === 'function' && window.scShip) scDeselect(); });
   }
 

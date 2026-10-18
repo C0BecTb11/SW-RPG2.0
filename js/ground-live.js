@@ -36,10 +36,10 @@
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=5'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=6'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=5'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=6'; document.body.appendChild(s);
     });
   }
   var toastQ = [];
@@ -126,6 +126,20 @@
       if (typeof cancelStructurePlacement === 'function') cancelStructurePlacement();
       window.selectedUnit = null;
     };
+    // наём: клетку в зоне высадки больше не выбирают — бойцы выходят у самой постройки (deliver_ready_units)
+    window.updateDeployCounter = function() { var el = $('unit-panel-capacity'); if (el) { el.textContent = 'Новобранцы выйдут у постройки'; el.className = 'unit-panel-capacity'; } };
+    window.startPlacement = function(unitTypeId, quantity, upgrades, heroName) {
+      var bld = window.unitPanelBuilding; if (!bld) return;
+      var t = window.unitTypeById && unitTypeById[unitTypeId], name = heroName || ((t && t.name) || 'бойцы');
+      if (typeof closeUnitPanel === 'function') closeUnitPanel();
+      var q = heroName ? sb().rpc('hire_hero', { p_building_id: bld.id, p_name: heroName })
+                       : sb().rpc('order_unit', { p_building_id: bld.id, p_unit_type: unitTypeId, p_quantity: quantity, p_upgrades: upgrades || [] });
+      q.then(function(res) {
+        if (res.error) { GD.toast('Не удалось нанять: ' + res.error.message, 'bad'); return; }
+        GD.toast(name + (heroName ? '' : ' ×' + quantity) + ': выйдут у постройки, как будут готовы', 'gold');
+        if (typeof loadUnitOrders === 'function') loadUnitOrders();
+      });
+    };
   }
 
   // ---- касание: режимы старого экрана первыми, потом площадь, укрепления, участки
@@ -210,9 +224,24 @@
   // ---- кнопки нового низа: десант (лоток старого экрана)
   function bindDock() {
     var dock = $('sp-dock'); if (!dock) return;
-    var b = document.createElement('button'); b.className = 'sp-btn'; b.id = 'gl-drop'; b.type = 'button'; b.textContent = 'Десант';
-    b.onclick = function() { if (typeof openDropTray === 'function') openDropTray(); };
-    dock.insertBefore(b, $('sp-view'));
+    var mk = function(id, text, fn) { var b = document.createElement('button'); b.className = 'sp-btn'; b.id = id; b.type = 'button'; b.textContent = text; b.onclick = fn; dock.insertBefore(b, $('sp-view')); return b; };
+    // поселение — кнопкой, а не только касанием площади (на ней стоят бойцы)
+    mk('gl-settle', 'Поселение', function() { if (typeof openSettlementPanel === 'function') openSettlementPanel(); });
+    // инженер выбран — стройка укрепления прямо из дока
+    var eng = mk('gl-build', 'Стройка', function() {
+      var sel = window.GD && GD.selected ? GD.selected() : [], e = sel.filter(function(a) { return a.T.builder && a.owner === GL.user; })[0];
+      var row = e && GL.rowByAgent(e.id);
+      if (row && typeof openStructureBuildPanel === 'function') { window.selectedUnit = row; openStructureBuildPanel(row); }
+      else GD.toast('Выбери своего инженера', 'bad');
+    });
+    eng.hidden = true;
+    setInterval(function() {
+      var sel = window.GD && GD.selected ? GD.selected() : [];
+      eng.hidden = !sel.some(function(a) { return a.T.builder && a.owner === GL.user; });
+      document.body.classList.toggle('build', !!window.buildMode);          // стройка: боевой низ не нужен
+      document.body.classList.toggle('placing', !!(window.placingStructure || window.placingOrder));   // выбор клетки — тоже
+    }, 400);
+    mk('gl-drop', 'Десант', function() { if (typeof openDropTray === 'function') openDropTray(); });
     window.GD_COMPACT = true;                    // верхней панели нет: захват площади — в нижней полосе
     $('sp-bottom').addEventListener('pointerdown', onSheetClick);
     // лоток десанта открыт — низ нового экрана уступает место

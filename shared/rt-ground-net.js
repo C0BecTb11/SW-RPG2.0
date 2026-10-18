@@ -43,9 +43,13 @@
   // ownerCheck: приказы только своим бойцам (a.owner === user); на полигоне — всей стороне
   function Viewer(B, side, user, opts) {
     this.B = B; this.side = side; this.user = user; this.opts = opts || {};
-    this.known = {}; this.seenAt = {}; this.lastT = -1; this.msgSeq = 0; this.full = true; this.stHp = {}; this.sqKey = ''; this.last = {}; this.shown = {};
+    this.known = {}; this.seenAt = {}; this.lastT = -1; this.msgSeq = 0; this.full = true; this.stHp = {}; this.stKnown = {}; for (var si = 0; si < B.structs.length; si++) this.stKnown[si] = 1; this.sqKey = ''; this.last = {}; this.shown = {};
   }
   Viewer.prototype.lost = function() { this.full = true; this.known = {}; this.shown = {}; this.last = {}; };
+  // постройка для клиента (hello и появившиеся позже)
+  function structRow(s) {
+    return { i: s.i, kind: s.kind, team: s.team, x: s.x, y: s.y, w: s.w, h: s.h, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: s.uid || null, cover: s.cover || 0, enter: !!s.enter, infOnly: !!s.infOnly };
+  }
   Viewer.prototype.visible = function(a) {
     if (!a.alive) return false;
     if (this.B.ctl(a) === this.side || a.team === this.side) return true;
@@ -73,7 +77,10 @@
       }
       if (!this.known[a.id] || full) { this.known[a.id] = 1; nw.push(this.intro(a)); }
       var aux = a.T.vehicle && a.size === 2 ? r2(a.turretA) : a.hero ? [ACT_N[a.hero.actT > 0 ? a.hero.act : 'idle'] || 0, r2(a.hero.k || 0)] : 0;
-      var row = [a.id, r2(a.x), r2(a.y), r2(a.aim), a.mv > 0.3 ? 1 : 0, Math.round(a.hp), this.flags(a), aux], key = row.join(',');
+      var row = [a.id, r2(a.x), r2(a.y), r2(a.aim), a.mv > 0.3 ? 1 : 0, Math.round(a.hp), this.flags(a), aux];
+      // свои: куда идёт (клетка приказа) и что прикрывает — для линий хода и карточки
+      if (a.team === side) { row.push(a.goal && !a.at ? a.goal[1] * N + a.goal[0] : -1, a.inside >= 0 ? a.inside : -1); }
+      var key = row.join(',');
       // стоящие не повторяются в каждом кадре: только изменения, раз в 2 с — все
       if (snap || !this.shown[a.id] || this.last[a.id] !== key) { f.n.push(row); this.last[a.id] = key; }
       this.shown[a.id] = 1;
@@ -95,9 +102,14 @@
     f.ev.d = B.ev.deaths.filter(function(q) { return q.t > since; }).map(function(q) { return q.id; });
     this.lastT = t;
     // здоровье построек — только изменившиеся
-    var st = [];
-    for (i = 0; i < B.structs.length; i++) { var s = B.structs[i], key = Math.round(s.hp) + ':' + (s.dead ? 1 : 0); if (this.stHp[i] !== key || full) { this.stHp[i] = key; st.push([i, Math.round(s.hp), s.dead ? 1 : 0]); } }
+    var st = [], stNew = [];
+    for (i = 0; i < B.structs.length; i++) {
+      var s = B.structs[i], key = Math.round(s.hp) + ':' + (s.dead ? 1 : 0);
+      if (!this.stKnown[i]) { this.stKnown[i] = 1; stNew.push(structRow(s)); }           // появилось после входа (инженер, база)
+      if (this.stHp[i] !== key || full) { this.stHp[i] = key; st.push([i, Math.round(s.hp), s.dead ? 1 : 0]); }
+    }
     if (st.length) f.st = st;
+    if (stNew.length) f.stNew = stNew;
     if (slow) {
       f.cnt = [B.alive(0), B.alive(1)];
       f.cap = { prog: r1(B.cap.prog), status: B.cap.status, cnt: B.cap.cnt, need: B.capNeed };
@@ -173,10 +185,17 @@
   }
   Mirror.prototype.ctl = function(a) { return a.mind && a.mind.until > this.t ? a.mind.by : a.team; };
   Mirror.prototype.canSee = function(side, a) { return !!a.vis; };
+  Mirror.prototype.coverInfo = function(a) {
+    if (a.air || a.fly) return { k: 'air', text: 'в воздухе' };
+    if (a.inside >= 0) { var st = this.structs[a.inside]; if (st) return { k: 'struct', text: (st.name || st.kind).toLowerCase() + (st.cover ? ' · урон −' + st.cover + ' %' : '') + (st.kind === 'trench' ? ', стреляет чаще' : '') }; }
+    var m = this.map, bx = Math.floor(a.x), by = Math.floor(a.y), near = 0;
+    if (m && m.t) for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var x = bx + dx, y = by + dy; if (x < 0 || y < 0 || x >= N || y >= N) continue; var tt = m.t[y * N + x]; if (tt === P.T.COVER || tt === P.T.TRAP) near++; }
+    return near ? { k: 'cover', text: 'за укрытием (с той стороны, где оно)' } : { k: 'open', text: 'на открытом месте' };
+  };
   Mirror.prototype.alive = function(team) { return this.cnt[team] || 0; };
   Mirror.prototype.squadOf = function(team, id) { var sqs = this.teams[team].squads; for (var i = 0; i < sqs.length; i++) if (sqs[i].id === id) return sqs[i]; return null; };
   Mirror.prototype.cmd = function(k, o) { o = o || {}; o.t = 'cmd'; o.k = k; this.send(JSON.stringify(o)); };
-  Mirror.prototype.orderMove = function(team, ids, x, y) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.goal = [x, y]; a.at = false; a.post = true; a.hold = false; a.focus = -1; } }); this.cmd('move', { ids: ids, x: x, y: y }); return ids.length; };
+  Mirror.prototype.orderMove = function(team, ids, x, y) { var self = this, now = Date.now(); ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.goal = [x, y]; a.at = false; a.post = true; a.hold = false; a.focus = -1; a.ordT = now; } }); this.cmd('move', { ids: ids, x: x, y: y }); return ids.length; };
   Mirror.prototype.orderAttack = function(team, ids, tid) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.focus = tid; a.hold = false; } }); this.cmd('attack', { ids: ids, tid: tid }); return ids.length; };
   Mirror.prototype.orderHold = function(team, ids) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = true; a.at = true; a.post = true; } }); this.cmd('hold', { ids: ids }); return ids.length; };
   Mirror.prototype.orderStop = function(team, ids) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = false; a.at = true; a.post = false; a.goal = null; a.focus = -1; } }); this.cmd('stop', { ids: ids }); return ids.length; };
@@ -214,6 +233,11 @@
       b.mind = fl & 64 ? { until: now + 1, by: 1 - b.team } : null; b.post = !!(fl & 128);
       if (b.T.vehicle && b.size === 2) b.turretA = +u[7] || 0;
       else if (b.hero && Array.isArray(u[7])) { b.hero.act = ACTS[u[7][0]] || 'idle'; b.hero.k = u[7][1]; b.hero.actT = b.hero.act === 'idle' ? 0 : 1; }
+      if (u.length > 8) {
+        // клетка приказа своего бойца — с сервера (на экране приказ ставился в точку касания)
+        if (u[8] >= 0) { b.goal = [u[8] % N, Math.floor(u[8] / N)]; if (!b.ordT) b.ordT = Date.now(); } else { b.goal = null; b.ordT = 0; }
+        b.inside = u[9] >= 0 ? u[9] : -1;
+      }
       b.vis = true; b.seenT = now; b.alive = true;
     }
     if (f.gone) for (i = 0; i < f.gone.length; i++) { var g = this.agents[f.gone[i]]; if (g && g.alive) { g.alive = false; g.diedAt = now; g.vis = false; } }
@@ -227,6 +251,7 @@
       if (e.m) e.m.forEach(function(q) { self.ev.msgs.push({ seq: ++self.seq, t: now, text: q[1], kind: q[2], team: self.side }); });
       if (e.d) e.d.forEach(function(id) { var d = self.agents[id]; if (d && d.alive) { d.alive = false; d.diedAt = now; } self.ev.deaths.push({ t: now, id: id }); });
     }
+    if (f.stNew) for (i = 0; i < f.stNew.length; i++) { var ns = f.stNew[i]; this.structs[ns.i] = ns; }
     if (f.st) for (i = 0; i < f.st.length; i++) { var s = this.structs[f.st[i][0]]; if (s) { s.hp = f.st[i][1]; s.dead = !!f.st[i][2]; } }
     if (f.cnt) this.cnt = f.cnt;
     if (f.cap) { this.cap = { prog: f.cap.prog, status: f.cap.status, cnt: f.cap.cnt }; if (f.cap.need) this.capNeed = f.cap.need; }
@@ -259,5 +284,5 @@
     while (this.ev.shells.length && t - this.ev.shells[0].t1 > 2) this.ev.shells.shift();
   };
 
-  return { Viewer: Viewer, Mirror: Mirror, rle: rle, unrle: unrle, DELAY: DELAY, FRAME_EVERY: FRAME_EVERY };
+  return { Viewer: Viewer, Mirror: Mirror, structRow: structRow, rle: rle, unrle: unrle, DELAY: DELAY, FRAME_EVERY: FRAME_EVERY };
 });

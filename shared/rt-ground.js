@@ -282,7 +282,9 @@
         var x = cx + dx, y = cy + dy, c = y * N + x;
         if (!this.okAt(a, x, y) || taken[c]) continue;
         if (a.size === 2 && (taken[c + 1] || taken[c + N] || taken[c + N + 1])) continue;
-        if (a.size === 1 && r < 10 && ((x + y) & 1)) continue;          // пехота — в шахматном порядке, чтобы не толпиться
+        // окоп, бункер — каждая клетка укрепления занимается (иначе боец вставал рядом с окопом)
+        var sti = this.structAt[c], inSt = sti >= 0 && this.structs[sti].enter && !this.structs[sti].dead;
+        if (a.size === 1 && r < 10 && ((x + y) & 1) && !inSt) continue;          // пехота — в шахматном порядке, чтобы не толпиться
         var d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [x, y]; }
       }
     }
@@ -423,6 +425,16 @@
     }
     if (b.size === 1 && P.heightAt(m, Math.floor(b.x), Math.floor(b.y)) > P.heightAt(m, Math.floor(ax), Math.floor(ay))) k *= 0.85;
     return k;
+  };
+
+  // Что прикрывает бойца — для карточки: укрепление, рельеф рядом, свет
+  Ground.prototype.coverInfo = function(a) {
+    if (a.air || a.fly) return { k: 'air', text: 'в воздухе' };
+    if (a.inside >= 0) { var st = this.structs[a.inside]; if (st && !st.dead) return { k: 'struct', text: st.name.toLowerCase() + ' · урон −' + st.cover + ' %' + (st.kind === 'trench' ? ', стреляет чаще' : '') }; }
+    var m = this.map, bx = Math.floor(a.x), by = Math.floor(a.y), near = 0, lit = !!this.light[by * N + bx];
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var x = bx + dx, y = by + dy; if (x < 0 || y < 0 || x >= N || y >= N) continue; var c = y * N + x; if (m.t[c] === T.COVER || m.t[c] === T.TRAP) near++; }
+    if (near) return { k: 'cover', text: 'за укрытием (с той стороны, где оно)' + (lit ? ' · на свету' : '') };
+    return { k: 'open', text: 'на открытом месте' + (lit ? ' · на свету' : '') };
   };
 
   // ---- цели

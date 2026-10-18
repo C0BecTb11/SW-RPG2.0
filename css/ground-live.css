@@ -1,8 +1,11 @@
 /* Экран планеты на наземке 2.0: новый бой под старыми панелями */
 body { background: #05060a; }
 #ground-back-btn, #drop-btn, #capture-bar { display: none !important; }
-/* лоток десанта открыт — низ нового экрана уступает ему место */
-body.dt-open .sp-bottom { display: none; }
+/* лоток десанта открыт, режим стройки, выбор клетки под укрепление или под новобранца —
+   боевой низ нового экрана не нужен, подсказка размещения встаёт на его место */
+body.dt-open .sp-bottom, body.build .sp-bottom, body.placing .sp-bottom { display: none; }
+body.build #sp-tr, body.placing #sp-tr { display: none; }
+body.placing #placement-hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
 /* старые панели (z-index 1350…2200) и так выше нового худа (900…1200) */
 #sp-top .sp-kicker { color: #d9a940; }
 .gl-row .sp-chip em { font-style: normal; color: #55606c; font-size: 9px; margin-left: 4px; }
@@ -12,7 +15,7 @@ body.dt-open .sp-bottom { display: none; }
 #placement-hint, #order-queue { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 /* верхней панели нет: захват площади — в нижней полосе; графика — под панелью кредитов */
 #sp-top { display: none; }
-#sp-tr { top: calc(54px + env(safe-area-inset-top, 0px)); left: 12px; right: auto; }   /* справа под кредитами — трекер обучения */
+#sp-tr { top: calc(96px + env(safe-area-inset-top, 0px)); left: 12px; right: auto; }   /* слева: под «Галактика» и «Строительство»; справа под кредитами — трекер обучения */
 #sp-clock { display: none; }
 .gd-capline { display: flex; align-items: center; gap: 8px; }
 .gd-capline i { flex: 1; height: 4px; border-radius: 2px; background: rgba(28,37,48,0.9); overflow: hidden; }
@@ -20,3 +23,11 @@ body.dt-open .sp-bottom { display: none; }
 .gd-capline.bad i b { background: #d94a4a; }
 /* переключатель режима стройки — над нижней панелью нового экрана */
 #build-switcher { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+/* в доке планеты семь кнопок — панель чуть шире, подписи без переносов и обрезок */
+.sp-panel.sp-bottom { max-width: 520px; }
+.sp-dock .sp-btn { padding-left: 2px; padding-right: 2px; }
+@media (max-width: 480px) {
+  .sp-dock { flex-wrap: wrap; row-gap: 5px; }
+  .sp-dock .sp-btn { flex: 1 1 22%; font-size: 10.5px; }
+  #placement-hint, #order-queue { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+}

@@ -337,11 +337,24 @@ SystemRoom.prototype.kick = function(msg) {
 };
 
 // ---- приказы
+// своя полоса гиперпространства (как hyperspace_side в базе): система нашей фракции — верх, чужая — низ,
+// ничейная — Республика сверху, КНС снизу. В чужую полосу ход закрыт: курс прижимается к её кромке.
+SystemRoom.prototype.myBand = function(side) {
+  var f = side === 1 ? 'cis' : 'republic', sf = this.state && this.state.system && this.state.system.faction;
+  if (!sf || sf === 'neutral') return f === 'republic' ? 'top' : 'bottom';
+  return sf === f ? 'top' : 'bottom';
+};
+SystemRoom.prototype.clampY = function(side, y) {
+  var z = ((this.state && this.state.settings && this.state.settings.zone) || 14) * CELL_M, N = this.grid * CELL_M, pad = 300;
+  if (this.myBand(side) === 'top') return Math.min(y, N - z - pad);
+  return Math.max(y, z + pad);
+};
 SystemRoom.prototype.command = function(c, m) {
   if (!c.viewer) return;
   if (m.t === 'cmd') {
     var sh = this.B.ships[m.n | 0];
     if (sh && sh.dormant && m.k !== 'view') this.B.wake(sh);
+    if (m.k === 'order' && m.x != null && m.x !== 'hold' && isFinite(+m.y)) m.y = this.clampY(c.side, +m.y);
     if (m.k === 'view' && m.view != null && m.view >= 0 && this.B.ships[m.view | 0] && this.B.ships[m.view | 0].dormant) this.B.wake(this.B.ships[m.view | 0]);
     c.viewer.command(m);
     return;

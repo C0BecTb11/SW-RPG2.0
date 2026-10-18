@@ -418,10 +418,35 @@
     return false;
   };
 
+  // Пакет приказов группе кораблей { t:'cmd', k:'many', list:[{k:'order'|'attack', n, x, y, face, to}] }:
+  // разложить на обычные приказы (не больше 40; другие виды — мимо)
+  var MANY_K = { order: 1, attack: 1 };
+  function eachMany(m, fn) {
+    if (!m || !Array.isArray(m.list)) return;
+    m.list.slice(0, 40).forEach(function(x) {
+      if (x && typeof x === 'object' && !Array.isArray(x) && MANY_K[x.k]) fn({ t: 'cmd', k: x.k, n: x.n, x: x.x, y: x.y, face: x.face, to: x.to });
+    });
+  }
+
   // ================================================================ браузер
   // B — локальный SWSpace.Battle с теми же кораблями (не считается); send(obj) — на сервер
   function Mirror(B, side, send, SWBoard) {
     this.B = B; this.side = side; this.send = send; this.SWBoard = SWBoard;
+    // batch(fn): приказы внутри fn уходят одним пакетом many (если сервер умеет — caps), иначе по одному
+    var send0 = send, q = null;
+    send = function(m) { if (q && m.t === 'cmd' && MANY_K[m.k]) q.push(m); else send0(m); };
+    this.many = false;
+    this.batch = function(fn) {
+      if (!self.many) { fn(); return; }
+      q = [];
+      try { fn(); } finally {
+        var list = q; q = null;
+        for (var i = 0; i < list.length; i += 40) {
+          var part = list.slice(i, i + 40);
+          if (part.length === 1) send0(part[0]); else send0({ t: 'cmd', k: 'many', list: part.map(function(x) { delete x.t; return x; }) });
+        }
+      }
+    };
     this.snap = [];            // два последних лёгких кадра: { T, at, ships, craft }
     this.queue = { shots: [], booms: [], shields: [], kills: [], boards: [] };
     this.craftMeta = {}; this.agFull = -1; this.agVis = null; this.viewN = -1; this.whoMap = {};
@@ -848,5 +873,5 @@
     return true;
   };
 
-  return { Viewer: Viewer, Mirror: Mirror, BIN: BIN, DELAY: DELAY, SCEN: SCEN, SHIPS: SHIPS, SHIP_BY: SHIP_BY, cfgClean: cfgClean, layout: layout, cfgName: cfgName };
+  return { Viewer: Viewer, Mirror: Mirror, eachMany: eachMany, BIN: BIN, DELAY: DELAY, SCEN: SCEN, SHIPS: SHIPS, SHIP_BY: SHIP_BY, cfgClean: cfgClean, layout: layout, cfgName: cfgName };
 });

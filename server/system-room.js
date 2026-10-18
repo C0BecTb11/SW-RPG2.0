@@ -193,7 +193,7 @@ SystemRoom.prototype.admit = function(c) {
 SystemRoom.prototype.hello = function(c) {
   var B = this.B, self = this, st = this.state;
   return {
-    t: 'hello', kind: 'sys', system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
+    t: 'hello', kind: 'sys', caps: ['many'], system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
     user: c.who.user,
     sc: { name: st.system.name, ships: B.ships.map(function(sh) { return self.shipRow(sh); }) },
     grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: st.station || null }
@@ -378,6 +378,8 @@ SystemRoom.prototype.dockStep = function() {
 };
 SystemRoom.prototype.command = function(c, m) {
   if (!c.viewer) return;
+  // приказы группе кораблей одним сообщением — каждый как обычный (полоса, площадка сброса)
+  if (m.t === 'cmd' && m.k === 'many') { var self = this; Net.eachMany(m, function(x) { self.command(c, x); }); return; }
   if (m.t === 'cmd') {
     var sh = this.B.ships[m.n | 0];
     if (sh && sh.dormant && m.k !== 'view') this.B.wake(sh);

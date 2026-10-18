@@ -97,13 +97,17 @@
   // Новый бой на экране (свой или сетевой): сброс выбора, камеры и панелей
   function setupBattle(B, scen) {
     var i;
+    // орбита: после переподключения группа та же (по кораблям игры, номера могли смениться)
+    var keepG = G.net && G.net.sys && G.B && G.grpMode ? (G.grp || []).map(function(n) { var o = G.B.ships[n]; return o && !o.dead ? o.gameId || o.id : null; }).filter(function(x) { return typeof x === 'string'; }) : [];
     G.who = null; IN.ship = -1; if (!G.speed) G.speed = G.lastSpd || 1;
     G.B = B; G.fx = { shots: [], booms: [], shields: [] }; DOWN = {}; G.wrecks = []; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
     G.sel = -1; G.foe = -1; G.bsel = {}; G.bm = {}; G.vent = false; G.quiet = false; G.usel = []; G.uselN = -1; G.lastTap = null; G.fmark = null; G.sheet = '';
+    G.grp = []; G.grpMode = false; G.gmarks = null;
     var me = G.net && G.net.sys ? G.net.user : null;
     if (me) for (i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side && !B.ships[i].dead && B.ships[i].owner === me) { G.sel = i; break; }
     if (G.sel < 0 && (!me || me === 'dev')) for (i = 0; i < B.ships.length; i++) if (B.ships[i].side === G.side && !B.ships[i].dead) { G.sel = i; break; }
     for (i = 0; i < B.ships.length; i++) if (B.ships[i].side !== G.side && !B.ships[i].dead) { G.foe = i; break; }
+    if (keepG.length) { G.grpMode = true; for (i = 0; i < B.ships.length; i++) if (keepG.indexOf(B.ships[i].gameId || B.ships[i].id) >= 0 && !B.ships[i].dead) G.grp.push(i); }
     CHUNKS.clear(); TIER_N = { 4: 0, 8: 0, 16: 0, 32: 0 };
     setMode('space');
     buildFleet(); buildShipPanel(); hud(); fitAll();
@@ -1073,6 +1077,20 @@
       for (var qa = 0; qa < 4; qa++) { c.beginPath(); c.arc(0, 0, rr, qa * Math.PI / 2 + 0.25, qa * Math.PI / 2 + Math.PI / 2 - 0.25); c.stroke(); c.beginPath(); c.moveTo(rr - 5, 0); c.lineTo(rr + 6, 0); c.stroke(); c.rotate(Math.PI / 2); }
       c.restore();
     }
+    // группа: куда идёт каждый (тоньше, чем ведущий) и вспышки мест строя
+    grpList().forEach(function(gs) {
+      if (gs.n === G.sel || !gs.order || gs.order.face) return;
+      var gp = toS(gs.order.x, gs.order.y), gq = toS(gs.x, gs.y);
+      c.strokeStyle = 'rgba(217,169,64,0.28)'; c.setLineDash([4, 6]); c.lineWidth = 1;
+      c.beginPath(); c.moveTo(gq[0], gq[1]); c.lineTo(gp[0], gp[1]); c.stroke(); c.setLineDash([]);
+      c.strokeStyle = 'rgba(217,169,64,0.6)'; c.beginPath(); c.arc(gp[0], gp[1], 4.5, 0, TAU); c.stroke();
+    });
+    if (G.gmarks) {
+      var gk = (performance.now() - G.gmarks.t) / 700;
+      if (gk < 1) G.gmarks.pts.forEach(function(q) { var mq = toS(q[0], q[1]); c.strokeStyle = 'rgba(217,169,64,' + (0.8 * (1 - gk)) + ')'; c.lineWidth = 1.5; c.beginPath(); c.arc(mq[0], mq[1], 4 + gk * 14, 0, TAU); c.stroke(); });
+      else G.gmarks = null;
+    }
+    DECK.drawBox(c);
     // точка хода
     if (G.sel >= 0) {
       var me = B.ships[G.sel];
@@ -1196,7 +1214,7 @@
     }
     // выбранный — рамка; цель — красный уголок
     c.globalAlpha = 1;
-    var mark = sh.n === G.sel ? '#d9a940' : sh.n === G.foe ? (sh.side === G.side ? null : 'rgba(255,110,90,0.8)') : null;
+    var mark = sh.n === G.sel ? '#d9a940' : inGrp(sh.n) ? 'rgba(217,169,64,0.55)' : sh.n === G.foe ? (sh.side === G.side ? null : 'rgba(255,110,90,0.8)') : null;
     if (mark && !dead) {
       c.strokeStyle = mark; c.lineWidth = 1.5 / s;
       var m = 30, x0 = -W / 2 - m, y0 = -H / 2 - m, x1 = W / 2 + m, y1 = H / 2 + m, L = Math.min(W, H) * 0.22;
@@ -1946,7 +1964,10 @@
         // удержание пальца в космосе — развернуть корабль носом к точке
         var g0 = GES, px0 = e.clientX, py0 = e.clientY;
         clearTimeout(LONG); G.ifly = null;
-        if (G.mode === 'space') LONG = setTimeout(function() {
+        g0.mod = e.pointerType === 'mouse' && (e.shiftKey || e.ctrlKey || e.metaKey);
+        // мышь с Shift/Ctrl: повёл — рамка своих кораблей в группу, щёлкнул — корабль в группу или из неё
+        if (G.mode === 'space' && g0.mod) g0.sbox = true;
+        else if (G.mode === 'space') LONG = setTimeout(function() {
           if (GES !== g0 || g0.moved || PTR.size !== 1) return;
           g0.long = true; faceAt(px0, py0);
         }, 450);
@@ -1986,6 +2007,7 @@
       if (GES.mini) { var mq = DECK.miniAt(e.clientX, e.clientY); if (mq) flyTo(mq, false); return; }
       if (GES.boxArm && !GES.box && Math.abs(p.x - p.x0) + Math.abs(p.y - p.y0) > 8) { GES.box = true; GES.moved = true; DECK.S.box = { x0: p.x0, y0: p.y0, x1: p.x, y1: p.y }; }
       if (GES.box) { if (DECK.S.box) { DECK.S.box.x1 = e.clientX; DECK.S.box.y1 = e.clientY; } return; }
+      if (GES.sbox && Math.abs(p.x - p.x0) + Math.abs(p.y - p.y0) > 8) { GES.box = true; GES.moved = true; DECK.S.box = { x0: p.x0, y0: p.y0, x1: p.x, y1: p.y }; return; }
       if (Math.abs(p.x - p.x0) + Math.abs(p.y - p.y0) > 8) GES.moved = true;
       if (GES.moved) {
         if (ins) { ICAM.x -= dx / ICAM.s; ICAM.y -= dy / ICAM.s; }
@@ -1997,8 +2019,8 @@
       if (!GES) return;
       if (PTR.size === 0) {
         clearTimeout(LONG);
-        if (GES.box) { if (e.type === 'pointerup') boxSelect(); DECK.S.box = null; }
-        else if (p && !GES.moved && !GES.long && e.type === 'pointerup') tap(p.x, p.y);
+        if (GES.box) { if (e.type === 'pointerup') { if (G.mode === 'space') boxShips(); else boxSelect(); } DECK.S.box = null; }
+        else if (p && !GES.moved && !GES.long && e.type === 'pointerup') tap(p.x, p.y, GES.mod);
         GES = null;
       }
       else GES.pinch = null;
@@ -2042,7 +2064,7 @@
   function clampS(s) { return Math.max(0.008, Math.min(1.2, s)); }
   function clampI(s) { return Math.max(1.2, Math.min(48, s)); }
 
-  function tap(px, py) {
+  function tap(px, py, mod) {
     var B = G.B; if (!B) return;
     if (G.mode === 'inside') {
       var sh0 = B.ships[G.view], w = itoW(px, py), r = SH.roomAt(sh0.plan, w[0], w[1]);
@@ -2112,14 +2134,16 @@
       }
     }
     if (hit) {
-      if (hit.side === G.side) { if (ctl(hit)) selectShip(hit.n); else toast(hit.name + ': корабль союзника' + (ownerNick(hit) ? ' ' + ownerNick(hit) : '') + ' — ведёт он', 'gold'); }
+      if (hit.side === G.side) { if (ctl(hit)) { if (G.grpMode || mod) grpToggle(hit.n); else selectShip(hit.n); } else toast(hit.name + ': корабль союзника' + (ownerNick(hit) ? ' ' + ownerNick(hit) : '') + ' — ведёт он', 'gold'); }
       else if (G.aim) { G.foe = hit.n; buildTargets(); hud(); toast('Цель: ' + hit.name + ' — коснись отсека', 'gold'); }   // выбор отсека — только смена корабля
       else attackTap(hit);
       return;
     }
     // касание пустого космоса — курс своему кораблю; на орбите игры сначала — станция и площадки
     if (G.aim) return;
-    if (window.SP_ON_TAP && window.SP_ON_TAP(p[0], p[1], px, py) === true) return;
+    var many = grpList().length >= 2;
+    if (window.SP_ON_TAP && window.SP_ON_TAP(p[0], p[1], px, py, many) === true) return;
+    if (many) { grpMove(p[0], p[1]); return; }
     var me = B.ships[G.sel];
     if (me && !me.dead) {
       if (G.sys) { var cl = sysClamp(p[0], p[1]); if (cl[2]) { p = [cl[0], cl[1]]; toast('Чужая полоса гиперпространства закрыта — встанем у её кромки', 'bad'); } }
@@ -2133,6 +2157,13 @@
   function attackTap(foe) {
     var B = G.B, me = B.ships[G.sel];
     G.foe = foe.n; buildTargets();
+    var L = grpList();
+    if (L.length >= 2) {
+      batch(function() { L.forEach(function(s) { B.attack(s.n, foe.n); }); });
+      toast('Группа атакует: ' + foe.name + ' · ' + L.length + ' ' + plural(L.length, 'корабль', 'корабля', 'кораблей'), 'gold');
+      try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {}
+      hud(); return;
+    }
     if (!me || me.dead || !ctl(me)) { hud(); toast('Цель: ' + foe.name, 'gold'); return; }
     var n = B.attack(G.sel, foe.n);
     toast(me.name + ' атакует: ' + foe.name + (n ? ' · ' + n + ' ' + plural(n, 'орудие', 'орудия', 'орудий') : ''), 'gold');
@@ -2142,7 +2173,13 @@
   }
   function faceAt(px, py) {
     var B = G.B, me = B && B.ships[G.sel]; if (!me || me.dead || G.aim) return;
-    var p = toW(px, py);
+    var p = toW(px, py), L = grpList();
+    if (L.length >= 2) {
+      batch(function() { L.forEach(function(s) { B.order(s.n, p[0], p[1], true); }); });
+      G.mark = { x: p[0], y: p[1], t: performance.now(), face: true };
+      try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {}
+      toast('Группа: разворот носом к точке', 'gold'); hud(); return;
+    }
     B.order(G.sel, p[0], p[1], true);
     G.mark = { x: p[0], y: p[1], t: performance.now(), face: true };
     try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {}
@@ -2164,6 +2201,113 @@
     }
     return best;
   }
+  // ---------------------------------------------------------------- группа кораблей
+  // Несколько своих кораблей под одним приказом: ход строем, атака, разворот. Ведущий — выбранный
+  // (его панель внизу); касание своего корабля в режиме группы — добавить или убрать
+  function grpList() {
+    var B = G.B, out = []; if (!B || !G.grp || !G.grp.length) return out;
+    for (var i = 0; i < G.grp.length; i++) { var s = B.ships[G.grp[i]]; if (s && !s.dead && s.why !== 'left' && s.side === G.side && ctl(s)) out.push(s); }
+    return out;
+  }
+  function inGrp(n) { return !!(G.grp && G.grp.length > 1 && G.grp.indexOf(n) >= 0 && G.B.ships[n] && !G.B.ships[n].dead); }
+  function ownShips() { return G.B.ships.filter(function(s) { return !s.dead && s.why !== 'left' && s.side === G.side && ctl(s); }); }
+  function grpStart(list) {
+    G.grpMode = true;
+    G.grp = (list || []).map(function(s) { return s.n; });
+    if (G.sel >= 0 && G.grp.indexOf(G.sel) < 0 && G.B.ships[G.sel] && ctl(G.B.ships[G.sel])) G.grp.unshift(G.sel);
+    if (G.grp.length && G.grp.indexOf(G.sel) < 0) selectShip(G.grp[0]);
+  }
+  function grpOff() { G.grp = []; G.grpMode = false; hud(); }
+  function grpToggle(n) {
+    if (!G.grpMode) grpStart([]);
+    var i = G.grp.indexOf(n);
+    if (i >= 0) { G.grp.splice(i, 1); if (G.sel === n && G.grp.length) selectShip(G.grp[G.grp.length - 1]); }
+    else G.grp.push(n);
+    if (!G.grp.length) { grpOff(); return; }
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {}
+    hud();
+  }
+  function grpAll() {
+    var L = ownShips();
+    if (L.length < 2) { toast('Своих кораблей здесь меньше двух — группа не нужна', 'bad'); return; }
+    grpStart(L);
+    toast('В группе все твои корабли: ' + L.length + '. Космос — курс строем, враг — атака всеми', 'gold'); hud();
+  }
+  // мышь с Shift/Ctrl — рамка: свои корабли в ней становятся группой (вместе с уже выбранными)
+  function boxShips() {
+    var b = DECK.S.box; if (!b || !G.B) return;
+    var x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+    var add = ownShips().filter(function(s) { var q = toS(s.x, s.y); return q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1; });
+    if (!add.length) { toast('В рамке нет твоих кораблей', 'bad'); return; }
+    if (!G.grpMode) grpStart([]);
+    add.forEach(function(s) { if (G.grp.indexOf(s.n) < 0) G.grp.push(s.n); });
+    if (G.grp.indexOf(G.sel) < 0) selectShip(G.grp[0]);
+    toast('В группе кораблей: ' + grpList().length, 'gold'); hud();
+  }
+  // приказы группе по сети — одним пакетом
+  function batch(fn) { var M = G.net && G.net.M; if (M && M.batch) M.batch(fn); else fn(); }
+  // Строй к точке: ряды поперёк курса, впереди — кто ближе к цели, в ряду — по месту слева направо,
+  // так пути не перекрещиваются; между бортами 220 м, между рядами 320 м; центр строя — в точке касания
+  function formation(L, tx, ty) {
+    var cx = 0, cy = 0, i;
+    for (i = 0; i < L.length; i++) { cx += L[i].x; cy += L[i].y; }
+    cx /= L.length; cy /= L.length;
+    var dx = tx - cx, dy = ty - cy, lead = G.B.ships[G.sel];
+    var a = dx * dx + dy * dy > 400 * 400 ? Math.atan2(dy, dx) : lead ? lead.hd : 0;
+    var fx = Math.cos(a), fy = Math.sin(a), ux = -fy, uy = fx, GAP = 220, ROWGAP = 320;
+    var per = Math.max(3, Math.ceil(Math.sqrt(L.length * 1.6)));
+    var fwd = function(s) { return (s.x - cx) * fx + (s.y - cy) * fy; }, lat = function(s) { return (s.x - cx) * ux + (s.y - cy) * uy; };
+    var byF = L.slice().sort(function(p, q) { return fwd(q) - fwd(p); }), rows = [];
+    for (i = 0; i < byF.length; i += per) rows.push(byF.slice(i, i + per));
+    var off = 0, prev = 0;
+    rows.forEach(function(r, k) {
+      var dep = 0; r.forEach(function(s) { dep = Math.max(dep, s.len); });
+      if (k) off -= prev / 2 + dep / 2 + ROWGAP;
+      r.off = off; prev = dep;
+    });
+    var mid = off / 2, out = [];
+    rows.forEach(function(r) {
+      r.sort(function(p, q) { return lat(p) - lat(q); });
+      var W = GAP * (r.length - 1); r.forEach(function(s) { W += s.wid; });
+      var x = -W / 2;
+      r.forEach(function(s) {
+        var c = x + s.wid / 2; x += s.wid + GAP;
+        var al = r.off - mid;
+        out.push({ sh: s, x: tx + fx * al + ux * c, y: ty + fy * al + uy * c });
+      });
+    });
+    // орбита: не за край карты и не в чужую полосу гиперпространства — строй сдвигается целиком
+    // (по одному прижимать нельзя: ряды легли бы друг на друга)
+    if (G.sys) {
+      var N = G.sys.cells * G.sys.cellM, sx = 0, sy = 0, cut = false;
+      var fit = function(q) { var cl = sysClamp(q.x + sx, q.y + sy), m = q.sh.len / 2 + 100; if (cl[2]) cut = true; return [Math.max(m, Math.min(N - m, cl[0])) - q.x - sx, Math.max(m, Math.min(N - m, cl[1])) - q.y - sy]; };
+      for (var it = 0; it < 2; it++) {
+        var ax = 0, ay = 0;
+        out.forEach(function(q) { var f = fit(q); if (Math.abs(f[0]) > Math.abs(ax)) ax = f[0]; if (Math.abs(f[1]) > Math.abs(ay)) ay = f[1]; });
+        sx += ax; sy += ay;
+      }
+      out.forEach(function(q) { q.x += sx; q.y += sy; var f = fit({ x: q.x - sx, y: q.y - sy, sh: q.sh }); q.x += f[0]; q.y += f[1]; q.cl = cut; });
+    }
+    return out;
+  }
+  function grpMove(tx, ty) {
+    var B = G.B, L = grpList(); if (L.length < 2) return;
+    var slots = formation(L, tx, ty);
+    batch(function() { slots.forEach(function(q) { B.order(q.sh.n, q.x, q.y); }); });
+    G.mark = { x: tx, y: ty, t: performance.now(), face: false };
+    G.gmarks = { t: performance.now(), pts: slots.map(function(q) { return [q.x, q.y]; }) };
+    var cut = slots.some(function(q) { return q.cl; });
+    toast('Группа идёт строем: ' + L.length + ' ' + plural(L.length, 'корабль', 'корабля', 'кораблей') + (cut ? ' · у кромки чужой полосы' : ''), cut ? 'bad' : 'gold');
+    hud();
+  }
+  // строка группы в полосе: сколько, «все», снять
+  function grpLine() {
+    if (!G.grpMode) return '';
+    var n = grpList().length;
+    return '<div class="sp-grp"><span>группа</span><b>' + n + '</b><em>' + (n < 2 ? 'коснись своих кораблей — добавить' : 'космос — строем · враг — атака всеми · свой — убрать') + '</em>' +
+      '<button class="sp-grp-b" data-grp="all" type="button">Все</button><button class="sp-atk-x" data-grp="off" type="button" title="Снять группу">✕</button></div>';
+  }
+
   function selectShip(n) {
     if (G.sel !== n) { G.sel = n; G.gsel = {}; buildShipPanel(); }
     G.follow = 'ship'; G.aim = false; G.move = false;
@@ -2289,7 +2433,7 @@
       $('sp-u-s' + s.n).style.width = shAll(s) * 100 + '%';
       var ob = boardOf(s.n);
       $('sp-u-w' + s.n).textContent = s.dead ? (s.why === 'captured' ? (s.captured === G.side ? '⚑ трофей' : '⚑ захвачен') : '✗') : ob && ob.over < 0 ? '⚔ абордаж' : s.crit && intel(s) ? '⚠ ' + Math.ceil(s.crit) : burnN(s) ? '🔥' : s.side === G.side && !ctl(s) ? 'союзник' : '';
-      el.classList.toggle('on', s.n === G.sel || s.n === G.foe);
+      el.classList.toggle('on', s.n === G.sel || s.n === G.foe || inGrp(s.n));
       el.classList.toggle('dead', s.dead);
       el.classList.toggle('ally', !s.dead && s.side === G.side && !ctl(s));
     });
@@ -2367,7 +2511,7 @@
     var bs = boardStrip(sh), foeS = B.ships[G.foe];
     // выбор отсека на схеме врага: шторка уходит, подсказка — в полосе
     var aimL = G.aim ? '<div class="sp-aim"><span>Коснись отсека на корабле «' + esc(foeS ? foeS.name : '') + '»</span><button class="sp-mini" data-ba="aimx">Отмена</button></div>' : '';
-    stat.innerHTML = head + (G.mode === 'inside' ? inside : atkLine(sh)) + aimL + bs.now;
+    stat.innerHTML = (G.mode === 'space' ? grpLine() : '') + head + (G.mode === 'inside' ? inside : atkLine(sh)) + aimL + bs.now;
     // орудия: сколько бьёт, сколько выбито
     var fire = 0, out = 0;
     sh.guns.forEach(function(g) { if (g.out) out++; else if (g.aimAt) fire++; });
@@ -2404,6 +2548,8 @@
       if (k === 'aim') cur = G.aim || (same && same.k === 'room' && same.ship === G.foe);
       b.classList.toggle('cur', !!cur);
     }
+    var gb = $('sp-grp');
+    if (gb) { gb.classList.toggle('on', G.grpMode); gb.hidden = G.mode !== 'space'; }          // сколько в группе — в строке над кораблём
     var mv = $('sp-move');
     mv.textContent = sh.guard ? 'Ход: стоит' : sh.ai ? 'Ход: сам' : 'Ход: мой';
     mv.title = sh.guard ? 'Пока тебя не было, корабль держал позицию: стоит и бьёт тех, кто подошёл. Коснись — снова твой курс' : '';
@@ -2476,7 +2622,7 @@
     $('sp-fleet').addEventListener('click', function(e) {
       var b = e.target.closest('[data-ship]'); if (!b || !G.B) return;
       var s = G.B.ships[+b.getAttribute('data-ship')]; if (!s || s.dead) return;
-      if (s.side === G.side) { if (ctl(s)) selectShip(s.n); else toast(s.name + ': корабль союзника' + (ownerNick(s) ? ' ' + ownerNick(s) : '') + ' — ведёт он', 'gold'); }
+      if (s.side === G.side) { if (ctl(s)) { if (G.grpMode || e.shiftKey || e.ctrlKey || e.metaKey) grpToggle(s.n); else selectShip(s.n); } else toast(s.name + ': корабль союзника' + (ownerNick(s) ? ' ' + ownerNick(s) : '') + ' — ведёт он', 'gold'); }
       else {
         G.foe = s.n; buildTargets();
         var sp = shownPos(s);
@@ -2496,6 +2642,8 @@
       var tb = e.target.closest('[data-tab]');
       if (tb) { e.preventDefault(); openSheet(tb.getAttribute('data-tab')); return; }
       if (e.target.closest('#sp-sheet-x')) { e.preventDefault(); G.sheet = ''; hud(); return; }
+      var gq = e.target.closest('[data-grp]');
+      if (gq) { e.preventDefault(); if (gq.getAttribute('data-grp') === 'all') grpAll(); else { grpOff(); toast('Группа снята — приказы одному кораблю', 'gold'); } return; }
       var ba = e.target.closest('[data-ba]'), bq = e.target.closest('[data-bsq]'), bo = e.target.closest('[data-bo]'), as = e.target.closest('[data-as]');
       if (ba) { e.preventDefault(); boardAction(ba.getAttribute('data-ba'), ba.getAttribute('data-n'), ba); return; }
       if (as) {
@@ -2588,6 +2736,14 @@
       if (sh.guard) { G.B.order(G.sel, 'hold'); toast('Курс снова твой: коснись космоса — ход, удержи — разворот', 'gold'); }
       else if (!sh.ai) { G.B.order(G.sel, null); toast('Корабль ведёт сам: дистанция и борт к врагу', 'gold'); }
       else { G.B.order(G.sel, 'hold'); toast('Курс твой: коснись космоса — ход, удержи — разворот', 'gold'); }
+      hud();
+    };
+    if ($('sp-grp')) $('sp-grp').onclick = function() {
+      if (!G.B || G.mode !== 'space') return;
+      if (G.grpMode) { grpOff(); toast('Группа снята — приказы одному кораблю', 'gold'); return; }
+      if (ownShips().length < 2) { toast('Своих кораблей здесь меньше двух — группа не нужна', 'bad'); return; }
+      grpStart([]);
+      toast('Группа: коснись своих кораблей — добавить или убрать («Все» — весь флот). Космос — курс строем, враг — атака всеми', 'gold');
       hud();
     };
     $('sp-inside').onclick = function() { if (G.B && G.B.ships[G.sel] && !G.B.ships[G.sel].dead) setMode(G.mode === 'inside' ? 'space' : 'inside'); else if (G.mode === 'inside') setMode('space'); };
@@ -2985,6 +3141,7 @@
       var B = makeBattle(sc, [false, false], sys ? { dormant: true, endless: true } : null);
       G.side = m.side; G.scen = sys ? { sys: m.system } : m.cfg ? { cfg: m.cfg } : m.scen;
       N.M = new NETLIB.Mirror(B, m.side, netSend, window.SWBoard);
+      N.M.many = !!(m.caps && m.caps.indexOf('many') >= 0);            // сервер принимает приказы группе одним пакетом
       if (sys) B.fog = false;                                          // орбита: все корабли видны как есть
       setupBattle(B, G.scen);
       if (sys) G.follow = 'all';

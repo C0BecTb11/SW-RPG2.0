@@ -499,6 +499,16 @@
 
       case 'assign':
         if (!f.ship) return null;
+        if (window.SL) return {
+          page: 'space', system: f.ship.system, goLabel: 'На орбиту ' + (f.capital_name || ''),
+          targets: [
+            { sel: '#ship-info .ship-assign-select', tip: 'Выбери себя' },
+            { sel: '[data-sl="cmd"]', tip: '«Командир»' },
+            { sel: '#sp-tabs .sp-tab[data-tab="ship"]:not(.open)', when: qShipSelected, tip: '«Корабль»' },
+            { cell: qShipCell, tip: 'Коснись своего корабля' }
+          ],
+          shipFocus: f.ship
+        };
         return {
           page: 'space', system: f.ship.system, goLabel: 'Перейти в космос ' + (f.capital_name || ''),
           targets: [
@@ -523,6 +533,17 @@
         ]);
 
       case 'jump':
+        if (window.SL && f.ship && !f.ship.in_transit && !f.ship.in_jump_zone) {
+          return {
+            page: 'space', system: f.ship.system, goLabel: 'На орбиту',
+            targets: [
+              { cell: qJumpBandCell, when: qShipSelected, tip: 'Коснись полосы — корабль полетит' },
+              { cell: qShipCell, tip: 'Коснись корабля' }
+            ],
+            marks: [{ cell: qJumpBandCell, label: 'Полоса прыжка' }],
+            shipFocus: f.ship
+          };
+        }
         if (f.ship && !f.ship.in_transit && !f.ship.in_jump_zone && !qShipInZone('.hyperspace-zone')) {
           return {
             page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
@@ -547,6 +568,18 @@
 
       case 'drop':
         if (!f.ship || f.ship.in_transit) return null;
+        if (window.SL) return {
+          // своя планета: площадка не нужна — трюм открывается из листа корабля
+          page: 'space', system: f.ship.system, goLabel: 'На орбиту',
+          targets: [
+            { sel: '#sc-tab-cargo .sc-hangar-btn', when: ourHud, tip: 'Высадить' },
+            { sel: '.sc-tab[data-tab="cargo"]', when: ourHud, tip: 'Вкладка «Трюм»' },
+            { sel: '[data-sl="hold"]', tip: '«Трюм и ангар»' },
+            { sel: '#sp-tabs .sp-tab[data-tab="ship"]:not(.open)', when: qShipSelected, tip: '«Корабль»' },
+            { cell: qShipCell, tip: 'Коснись своего корабля' }
+          ],
+          shipFocus: f.ship
+        };
         var inDrop = f.ship.in_drop || qShipInZone('.orbital-drop-zone');
         return {
           page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
@@ -565,6 +598,15 @@
 
       case 'target':
         if (!f.target) return null;
+        if (window.GL) return {
+          page: 'ground', system: f.target.system, goLabel: 'На поверхность',
+          targets: [
+            { cell: qTargetCell, when: qGdSelected, tip: 'Коснись мародёра — огонь' },
+            { cell: qNearestOwnUnit, tip: 'Коснись своего бойца' }
+          ],
+          marks: [{ cell: qTargetCell, label: 'Мародёр' }],
+          cellFocus: { x: f.target.x, y: f.target.y }
+        };
         return {
           page: 'ground', system: f.target.system, goLabel: 'На поверхность',
           targets: [
@@ -639,6 +681,15 @@
 
       case 'guard':
         if (!f.planet) return null;
+        if (window.GL) return {
+          page: 'ground', system: f.planet, goLabel: 'На поверхность: ' + f.planet_name,
+          targets: [
+            { cell: qGuardCell, when: qGdSelected, tip: 'Коснись площади — боец пойдёт' },
+            { cell: qNearestInfantry, tip: 'Коснись бойца' }
+          ],
+          marks: [{ cell: qSettlementZoneCell, label: 'Площадь' }],
+          cellFocus: f.infantry ? { x: f.infantry.x, y: f.infantry.y } : { x: 70, y: 70 }
+        };
         return {
           page: 'ground', system: f.planet, goLabel: 'На поверхность: ' + f.planet_name,
           targets: [
@@ -673,6 +724,32 @@
     }
     return codes;
   }
+
+  // ===== Живые экраны 2.0: корабль и зоны орбиты, выбор бойца на планете =====
+
+  function qLiveShip(id) {
+    var S = window.__sp, B = S && S.G && S.G.B; if (!B) return null;
+    for (var i = 0; i < B.ships.length; i++) if (!B.ships[i].dead && (B.ships[i].gameId === id || B.ships[i].id === id)) return B.ships[i];
+    return null;
+  }
+  // клетки орбиты вокруг корабля боя (его длина — в обе стороны, разворот не считаем)
+  function qShipCell() {
+    var f = qData && qData.focus && qData.focus.ship, sh = f && qLiveShip(f.id), S = window.__sp;
+    if (!sh || !S || !S.G.sys) return null;
+    var M = S.G.sys.cellM, r = sh.len / 2 / M;
+    return { x: sh.x / M - r, y: sh.y / M - r, w: r * 2, h: r * 2 };
+  }
+  function qShipSelected() {
+    var f = qData && qData.focus && qData.focus.ship, sh = f && qLiveShip(f.id), S = window.__sp;
+    return !!(sh && S && S.G.sel === sh.n);
+  }
+  // полоса прыжка своей стороны: хозяин системы — сверху, пришедший — снизу (как hyperspace_side в базе)
+  function qJumpBandCell() {
+    var S = window.__sp, sys = S && S.G.sys; if (!sys) return null;
+    var side = window.myZoneSide || 'bottom';
+    return side === 'top' ? { x: 0, y: 0, w: sys.cells, h: sys.zone } : { x: 0, y: sys.cells - sys.zone, w: sys.cells, h: sys.zone };
+  }
+  function qGdSelected() { return !!(window.GD && GD.usel && GD.usel.length); }
 
   // ===== Клетки карты поверхности =====
 
@@ -772,7 +849,7 @@
 
   // Корабль целиком внутри зоны — сверяем по экрану, это быстрее опроса
   function qShipInZone(zoneSel) {
-    if (QPAGE !== 'space' || !qData || !qData.focus || !qData.focus.ship) return false;
+    if (QPAGE !== 'space' || !qData || !qData.focus || !qData.focus.ship || window.SL) return false;
     var ship = document.querySelector('.ship-sprite[data-ship-id="' + qData.focus.ship.id + '"]');
     if (!ship) return false;
     var s = ship.getBoundingClientRect();
@@ -790,8 +867,19 @@
   // экран, а камеру (сдвиг и масштаб) держат panX/panY/scale наземной
   // карты — считаем от окна просмотра по ним
   function qCellRect(c) {
+    if (!c) return null;
+    // наземка 2.0: камера нового холста (клетка — GD.CAM.s px)
+    if (QPAGE === 'ground' && window.GL && window.GD && GD.toS && GD.CAM) {
+      var gp = GD.toS(c.x, c.y), gk = GD.CAM.s;
+      return { left: gp[0], top: gp[1], width: c.w * gk, height: c.h * gk };
+    }
+    // космос 2.0: клетка орбиты — 200 м
+    if (QPAGE === 'space' && window.SL && window.__sp && __sp.G.sys) {
+      var M = __sp.G.sys.cellM, sp = __sp.toS(c.x * M, c.y * M), sk = M * __sp.CAM.s;
+      return { left: sp[0], top: sp[1], width: c.w * sk, height: c.h * sk };
+    }
     var vp = document.getElementById('ground-viewport');
-    if (!vp || !c || typeof window.scale !== 'number') return null;
+    if (!vp || typeof window.scale !== 'number') return null;
     var r = vp.getBoundingClientRect();
     var k = (window.CELL_PX || 32) * window.scale;
     if (!k) return null;
@@ -835,6 +923,18 @@
   function qFocusNow(plan) {
     if (plan.galaxyFocus) {
       return typeof focusGalaxySystem === 'function' && focusGalaxySystem(plan.galaxyFocus);
+    }
+    if (plan.shipFocus && QPAGE === 'space' && window.SL) {
+      // космос 2.0: выбрать корабль и подвести камеру
+      var lsh = qLiveShip(plan.shipFocus.id); if (!lsh || !window.__sp) return false;
+      __sp.selectShip(lsh.n); __sp.focusShip(lsh);
+      return true;
+    }
+    if (plan.cellFocus && QPAGE === 'ground' && window.GL) {
+      if (!window.GD || !GD.CAM) return false;
+      if (GD.CAM.s < 14) GD.CAM.s = 14;
+      GD.CAM.x = plan.cellFocus.x + 0.5; GD.CAM.y = plan.cellFocus.y + 0.5; GD.follow = '';
+      return true;
     }
     if (plan.shipFocus && QPAGE === 'space') {
       var f = plan.shipFocus;
@@ -934,7 +1034,7 @@
           break;
         }
         if (qSpotTarget) break;
-      } else if (t.cell && QPAGE === 'ground') {
+      } else if (t.cell && (QPAGE === 'ground' || (QPAGE === 'space' && window.SL))) {
         // Клетки карты под открытым окном подтверждения не подсвечиваем
         if (document.getElementById('gc-confirm')) continue;
         var c = t.cell();
@@ -981,7 +1081,7 @@
           var er = els[i].getBoundingClientRect();
           if (er.width > 0) boxes.push({ r: er, label: m.label });
         }
-      } else if (m.cell && QPAGE === 'ground') {
+      } else if (m.cell && (QPAGE === 'ground' || (QPAGE === 'space' && window.SL))) {
         var cr = qCellRect(m.cell());
         if (cr) boxes.push({ r: cr, label: m.label });
       }

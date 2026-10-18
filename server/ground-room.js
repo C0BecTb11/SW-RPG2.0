@@ -198,10 +198,11 @@ GroundRoom.prototype.sync = function() {
   this.syncAt = Date.now();
   Object.keys(this.byUid).forEach(function(uid) {
     var a = B.agents[self.byUid[uid]]; if (!a || a.removed) return;
-    var c = B.cellOf(a), hp = a.alive ? Math.max(1, Math.round(a.hp)) : 0, key = c[0] + ',' + c[1] + ',' + hp;
+    var c = B.cellOf(a), hp = a.alive ? Math.max(1, Math.round(a.hp)) : 0, fire = a.alive && B.t - (a.hitT || -99) < 30;
+    var key = c[0] + ',' + c[1] + ',' + hp + ',' + (fire ? 1 : 0);
     if (self.lastSync[uid] === key) return;
     self.lastSync[uid] = key;
-    var row = { id: uid, x: c[0], y: c[1], hp: hp };
+    var row = { id: uid, x: c[0], y: c[1], hp: hp, fire: fire };        // под огнём — в базе закрыта погрузка со стороны
     if (!a.alive && a.hitBy != null) { var k = B.agents[a.hitBy]; if (k && k.uid) row.by = k.uid; }   // кому засчитать (герою)
     rows.push(row);
   });

@@ -2959,6 +2959,7 @@
       var B = makeBattle(sc, [false, false], sys ? { dormant: true, endless: true } : null);
       G.side = m.side; G.scen = sys ? { sys: m.system } : m.cfg ? { cfg: m.cfg } : m.scen;
       N.M = new NETLIB.Mirror(B, m.side, netSend, window.SWBoard);
+      if (sys) B.fog = false;                                          // орбита: все корабли видны как есть
       setupBattle(B, G.scen);
       if (sys) G.follow = 'all';
       N.ready = true; N.vkey = ''; N.addQ = Promise.resolve();

@@ -69,7 +69,8 @@ SystemRoom.prototype.open = function() {
     self.battleId = st.battle_id; self.state = st;
     self.types = {}; (st.types || []).forEach(function(t) { self.types[t.id] = t; });
     self.grid = (st.settings && st.settings.grid) || 150;
-    var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [false, false], endless: true });
+    // орбита планеты: датчики покрывают её целиком — тумана и «засечек» нет, все корабли видны как есть
+    var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [false, false], endless: true, fog: false });
     B.defHuman = function(sh) { return !!(sh.owner && self.here(sh.owner)); };
     // кто пошёл на абордаж — тому и трофей
     var board0 = B.board;

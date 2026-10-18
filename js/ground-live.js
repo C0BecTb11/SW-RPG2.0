@@ -36,10 +36,10 @@
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=4'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=5'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=4'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=5'; document.body.appendChild(s);
     });
   }
   var toastQ = [];
@@ -213,9 +213,7 @@
     var b = document.createElement('button'); b.className = 'sp-btn'; b.id = 'gl-drop'; b.type = 'button'; b.textContent = 'Десант';
     b.onclick = function() { if (typeof openDropTray === 'function') openDropTray(); };
     dock.insertBefore(b, $('sp-view'));
-    // правый верх занят панелью кредитов: кнопка графики — в первой строке шапки
-    var gfx = $('sp-gfx-b'), row = $('sp-top') && $('sp-top').querySelector('.sp-row');
-    if (gfx && row) row.appendChild(gfx);
+    window.GD_COMPACT = true;                    // верхней панели нет: захват площади — в нижней полосе
     $('sp-bottom').addEventListener('pointerdown', onSheetClick);
     // лоток десанта открыт — низ нового экрана уступает место
     var mo = new MutationObserver(function() { document.body.classList.toggle('dt-open', typeof dtOpen !== 'undefined' && !!dtOpen); });

@@ -578,7 +578,9 @@
     var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника' : 'врага')
       : sel.length ? 'Выбрано <b>' + sel.length + '</b> · касание земли — идти, врага — атаковать'
       : 'Коснись своего бойца, чтобы выбрать · долгое нажатие — рамка';
-    $('sp-stat').innerHTML = '<div class="sp-bd-strip' + (cp.status === 'capturing' && !mineAtt ? ' bad' : '') + '">' + stat + '<span class="gd-tip">' + tip + '</span></div>';
+    // в игре верхней панели нет — захват площади одной строкой в полосе
+    var capLine = window.GD_COMPACT ? '<div class="sp-bd-strip gd-capline' + ((cp.status === 'capturing' && !mineAtt) || (cp.status === 'reverting' && mineAtt) ? ' bad' : '') + '"><span>Площадь: <b>' + stName + '</b></span><i><b style="width:' + (cp.prog / B.capNeed * 100).toFixed(1) + '%"></b></i><span><b>' + Math.round(cp.prog / B.capNeed * 100) + '%</b></span></div>' : '';
+    $('sp-stat').innerHTML = capLine + '<div class="sp-bd-strip' + (cp.status === 'capturing' && !mineAtt ? ' bad' : '') + '">' + stat + '<span class="gd-tip">' + tip + '</span></div>';
     dockTabs([['units', 'Войска', B.teams[G.side].squads.length ? '<em class="dot"></em>' : ''], ['act', 'Приказы']]);
     $('gd-all').classList.toggle('on', G.usel.length > 0); $('gd-all').textContent = G.usel.length ? 'Снять' : 'Все свои';
     if (G.sheet === 'units') $('sp-ship').innerHTML = unitsPanel(B, sel);

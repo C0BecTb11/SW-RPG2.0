@@ -240,6 +240,8 @@ var server = http.createServer(function(req, res) {
 
 // ---------- WebSocket ----------
 var CLIENTS = new Set();
+// браузер коротко: «Firefox/144», «Chrome/141», «Edg/141» — для разбора обрывов
+function uaShort(ua) { var m = String(ua || '').match(/(Edg|OPR|YaBrowser|Firefox|Chrome|Version)\/(\d+)/); return m ? m[1] + '/' + m[2] + (/Mobile|Android|iPhone/.test(ua) ? ' mob' : '') : undefined; }
 server.on('upgrade', function(req, sock, head) {
   if (req.url.split('?')[0] !== '/ws') { sock.destroy(); return; }
   var origin = req.headers.origin || '';
@@ -248,7 +250,7 @@ server.on('upgrade', function(req, sock, head) {
   }
   var ws = wsLite.accept(req, sock, head);
   if (!ws) return;
-  var c = { ws: ws, side: 0, room: null, who: null, msgs: 0, rx: 0, at: Date.now(), msgWin: Date.now(), ip: req.headers['x-forwarded-for'] || sock.remoteAddress,
+  var c = { ws: ws, side: 0, room: null, who: null, msgs: 0, rx: 0, at: Date.now(), msgWin: Date.now(), ua: uaShort(req.headers['user-agent']), ip: req.headers['x-forwarded-for'] || sock.remoteAddress,
             send: function(buf) {
               // медленный игрок: не копим очередь — пропускаем такт и потом шлём бой заново
               if (ws.bufferedAmount > 2 * 1048576) { c.resync = true; return; }
@@ -282,7 +284,7 @@ server.on('upgrade', function(req, sock, head) {
           if (!r.join(c)) return;
         } else r.join(c);
         c.room = r;
-        log('info', 'игрок вошёл', { room: r.name, user: who.user, nick: who.nick, side: c.side });
+        log('info', 'игрок вошёл', { room: r.name, user: who.user, nick: who.nick, side: c.side, ua: c.ua });
       }, function(e) {
         c.authing = false;
         ws.send(JSON.stringify({ t: 'error', msg: e.message })); ws.close(4003);
@@ -338,8 +340,15 @@ function hello() {
     .catch(function(e) { log('error', 'rt_server_hello не прошёл', { err: e.message }); setTimeout(hello, 30000); });
 }
 
+// что стоит перед сервером: версия Caddy и включён ли только HTTP/1.1 (для разбора обрывов связи)
+function caddyInfo() {
+  var r = {};
+  try { r.h1 = /protocols h1\s*$/m.test(require('fs').readFileSync('/etc/caddy/Caddyfile', 'utf8')); } catch (e) { r.h1 = null; }
+  try { r.ver = String(childProcess.execFileSync('caddy', ['version'], { timeout: 3000 })).trim().split(' ')[0]; } catch (e) { r.ver = null; }
+  return r;
+}
 server.listen(CFG.port, CFG.host, function() {
-  log('info', 'сервер запущен', { port: CFG.port, version: VERSION, node: process.version });
+  log('info', 'сервер запущен', { port: CFG.port, version: VERSION, node: process.version, caddy: CFG.dev ? undefined : caddyInfo() });
   hello();
   setTimeout(loop, TICK_MS);
 });

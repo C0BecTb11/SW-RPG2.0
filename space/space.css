@@ -284,6 +284,12 @@ body.spectate #sp-move, body.spectate #sp-grp, body.spectate #sp-inside, body.sp
 @keyframes sp-pulse { 50% { border-color: rgba(255,110,90,0.2); } }
 .sp-bd-go .why { flex: 1 1 100%; font-size: 9.5px; color: #55606c; line-height: 1.35; }
 .sp-bd-go .fly { font-size: 9px; color: #6fb8ff; }
+/* абордаж: что мешает — две короткие метки; можно — строка золотится */
+.sp-bd-go.ready { border-color: rgba(217,169,64,0.55); background: rgba(217,169,64,0.07); }
+.sp-bd-ch { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.sp-bd-ch i { font-style: normal; font-size: 9.5px; padding: 1px 6px; border-radius: 6px; border: 1px solid #1c2530; white-space: nowrap; }
+.sp-bd-ch i.no { color: #ff9a80; border-color: rgba(255,110,90,0.35); background: rgba(255,110,90,0.06); }
+.sp-bd-ch i.yes { color: #7fdc88; border-color: rgba(95,217,104,0.3); background: rgba(95,217,104,0.05); }
 .sp-bd-count { display: flex; flex-wrap: wrap; gap: 0 5px; margin-top: 3px; font-size: 10px; color: #55606c; }
 .sp-bd-count b { color: #cfe3ff; font-weight: normal; }
 .sp-bd-goal { margin-top: 6px; font-size: 10.5px; color: #8fa8c4; line-height: 1.4; }

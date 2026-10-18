@@ -2967,7 +2967,8 @@
       if (ev.code === 4003 || ev.code === 4004 || ev.code === 4005 || ev.code === 4006 || ev.code === 4007) { netFail(N.err || 'Сервер не пустил в бой'); return; }
       if (ev.code === 4008) { N.side = -1; }                                   // орбита пересоздана — войти заново
       if (N.tries >= NET_TRY.length) { netFail('Нет связи с сервером'); return; }
-      toast(N.ok ? 'Связь прервалась — переподключаюсь…' : 'Сервер не ответил — пробую ещё', 'bad');
+      // код закрытия в подсказке: по нему видно, кто оборвал (1006 — сеть или защита на компьютере, 1000/1001 — закрыто штатно)
+      toast((N.ok ? 'Связь прервалась' : 'Сервер не ответил') + (ev.code ? ' (код ' + ev.code + ')' : '') + (N.ok ? ' — переподключаюсь…' : ' — пробую ещё'), 'bad');
       setTimeout(function() { if (G.net === N) netConnect(); }, NET_TRY[N.tries++]);
     };
   }
@@ -3011,7 +3012,12 @@
       });
     }).catch(function(e) { toast('Корабль не загрузился: ' + e.message, 'bad'); });
   }
-  function netSend(m) { var N = G.net; if (N && N.ws && N.ws.readyState === 1) N.ws.send(JSON.stringify(m)); }
+  function netSend(m) {
+    var N = G.net; if (!N) return;
+    if (N.ws && N.ws.readyState === 1) { N.ws.send(JSON.stringify(m)); return; }
+    // приказ без связи пропал бы молча — сказать игроку (раз в 4 с)
+    if (m.t === 'cmd' && m.k !== 'view' && performance.now() - (N.offAt || -1e9) > 4000) { N.offAt = performance.now(); toast('Нет связи с сервером — приказ не дошёл, повтори после переподключения', 'bad'); }
+  }
   // Что игрок смотрит: сервер шлёт людей и отсеки только этого корабля
   function netView() {
     var N = G.net, v = G.mode === 'inside' ? G.view : -1, k = G.sel + ':' + G.foe + ':' + v, t = performance.now();

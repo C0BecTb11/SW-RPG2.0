@@ -98,6 +98,12 @@ UNIT
 
 # --- HTTPS ---
 cat > /etc/caddy/Caddyfile <<CADDY
+{
+	servers {
+		protocols h1
+	}
+}
+
 $HOSTNAME_PUBLIC {
 	encode gzip
 	reverse_proxy 127.0.0.1:8080

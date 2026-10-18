@@ -339,6 +339,8 @@ GroundRoom.prototype.quiet = function() { return Date.now() - this.quietSince > 
 GroundRoom.prototype.shouldClose = function() {
   if (this.closed) return true;
   if (!this.ready || this.clients.length) return false;
+  // игрок закрыл экран, а бойцы ещё идут по приказу (к точке, на погрузку, на стройку) — доводим (не дольше 10 мин)
+  if (Date.now() - this.emptySince < 10 * 60e3 && this.B && this.B.agents.some(function(a) { return a.alive && !a.npc && ((a.goal && !a.at) || a.loadShip || a.build); })) return false;
   return Date.now() - this.emptySince > QUIET_MS && this.quiet();
 };
 GroundRoom.prototype.close = function(why) {

@@ -568,18 +568,30 @@
 
       case 'drop':
         if (!f.ship || f.ship.in_transit) return null;
-        if (window.SL) return {
-          // своя планета: площадка не нужна — трюм открывается из листа корабля
-          page: 'space', system: f.ship.system, goLabel: 'На орбиту',
-          targets: [
-            { sel: '#sc-tab-cargo .sc-hangar-btn', when: ourHud, tip: 'Высадить' },
-            { sel: '.sc-tab[data-tab="cargo"]', when: ourHud, tip: 'Вкладка «Трюм»' },
-            { sel: '[data-sl="hold"]', tip: '«Трюм и ангар»' },
-            { sel: '#sp-tabs .sp-tab[data-tab="ship"]:not(.open)', when: qShipSelected, tip: '«Корабль»' },
-            { cell: qShipCell, tip: 'Коснись своего корабля' }
-          ],
-          shipFocus: f.ship
-        };
+        if (window.SL) {
+          // высадка — только из площадки сброса: сначала корабль в неё, потом трюм
+          var onPad = window.SL.onPad ? !!window.SL.onPad(f.ship.id) : !!f.ship.in_drop;
+          if (!onPad) return {
+            page: 'space', system: f.ship.system, goLabel: 'На орбиту',
+            targets: [
+              { cell: qPadCell, when: qShipSelected, tip: 'Коснись площадки — корабль встанет в неё' },
+              { cell: qShipCell, tip: 'Коснись своего корабля' }
+            ],
+            marks: [{ cell: qPadCell, label: 'Площадка сброса' }],
+            shipFocus: f.ship
+          };
+          return {
+            page: 'space', system: f.ship.system, goLabel: 'На орбиту',
+            targets: [
+              { sel: '#sc-tab-cargo .sc-hangar-btn', when: ourHud, tip: 'Высадить' },
+              { sel: '.sc-tab[data-tab="cargo"]', when: ourHud, tip: 'Вкладка «Трюм»' },
+              { sel: '[data-sl="hold"]', tip: '«Трюм и ангар»' },
+              { sel: '#sp-tabs .sp-tab[data-tab="ship"]:not(.open)', when: qShipSelected, tip: '«Корабль»' },
+              { cell: qShipCell, tip: 'Коснись своего корабля' }
+            ],
+            shipFocus: f.ship
+          };
+        }
         var inDrop = f.ship.in_drop || qShipInZone('.orbital-drop-zone');
         return {
           page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
@@ -748,6 +760,13 @@
     var S = window.__sp, sys = S && S.G.sys; if (!sys) return null;
     var side = window.myZoneSide || 'bottom';
     return side === 'top' ? { x: 0, y: 0, w: sys.cells, h: sys.zone } : { x: 0, y: sys.cells - sys.zone, w: sys.cells, h: sys.zone };
+  }
+  // площадка сброса, ближняя к кораблю
+  function qPadCell() {
+    var S = window.__sp, sys = S && S.G.sys; if (!sys || !sys.pads || !sys.pads.length) return null;
+    var f = qData && qData.focus && qData.focus.ship, sh = f && qLiveShip(f.id), best = sys.pads[0], bd = 1e18;
+    if (sh) sys.pads.forEach(function(p) { var dx = (p.x + p.size / 2) * sys.cellM - sh.x, dy = (p.y + p.size / 2) * sys.cellM - sh.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = p; } });
+    return { x: best.x, y: best.y, w: best.size, h: best.size };
   }
   function qGdSelected() { return !!(window.GD && GD.usel && GD.usel.length); }
 

@@ -339,7 +339,8 @@
   Battle.prototype.guard = function(shipN, on) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
     sh.guard = !!on;
-    if (on) { sh.ai = false; sh.order = null; sh.focusAuto = true; }
+    // игрок закрыл экран: корабль доходит заданный курс и только потом держит позицию
+    if (on) { sh.ai = false; if (sh.order && sh.order.face) sh.order = null; sh.focusAuto = true; }
   };
   // Курс: к точке; face — только развернуться носом к точке; x == null — корабль ведёт ИИ;
   // hold — стоять (свой курс без точки)

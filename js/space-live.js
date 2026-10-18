@@ -84,12 +84,40 @@
   // ---- касание пустого космоса: место станции — панель станции
   window.SP_ON_TAP = function(wx, wy) {
     if (!SL.ready) return false;
-    var G = sp().G, sys = G.sys; if (!sys || !sys.slot) return false;
+    var G = sp().G, sys = G.sys; if (!sys) return false;
     var M = sys.cellM, sl = sys.slot;
-    if (wx >= sl.x * M && wx < (sl.x + sl.size) * M && wy >= sl.y * M && wy < (sl.y + sl.size) * M) {
+    if (sl && wx >= sl.x * M && wx < (sl.x + sl.size) * M && wy >= sl.y * M && wy < (sl.y + sl.size) * M) {
       if (typeof onStationSlotTapped === 'function') { onStationSlotTapped(); return true; }
     }
+    // площадка сброса: свой корабль летит в неё и встаёт целиком (сервер ставит ровно по прибытии)
+    var pad = SL.padAt(wx, wy), me = G.B && G.B.ships[G.sel];
+    if (pad && me && !me.dead && me.side === G.side && me.ctl !== false) {
+      var t = typeof shipTypeById !== 'undefined' && shipTypeById[me.cls], fit = !t || Math.min(t.width_cells, t.height_cells) <= pad.size && Math.max(t.width_cells, t.height_cells) <= pad.size;
+      if (!fit) { sp().toast(me.name + ' не помещается в площадку сброса — грузить и высаживать будет другой корабль', 'bad'); return true; }
+      G.B.order(G.sel, (pad.x + pad.size / 2) * M, (pad.y + pad.size / 2) * M);
+      G.mark = { x: (pad.x + pad.size / 2) * M, y: (pad.y + pad.size / 2) * M, t: performance.now(), face: false };
+      sp().toast(me.name + ' идёт в площадку ' + pad.idx + ' — там погрузка и высадка войск', 'gold');
+      sp().hud();
+      return true;
+    }
     return false;
+  };
+  SL.padAt = function(wx, wy) {
+    var sys = sp() && sp().G.sys; if (!sys) return null;
+    var M = sys.cellM, pads = sys.pads || [];
+    for (var i = 0; i < pads.length; i++) { var p = pads[i]; if (wx >= p.x * M && wx < (p.x + p.size) * M && wy >= p.y * M && wy < (p.y + p.size) * M) return p; }
+    return null;
+  };
+  // Корабль целиком в площадке — так же, как его увидит база (клетка и разворот, как пишет сервер)
+  SL.onPad = function(gameId) {
+    var S = sp(), G = S && S.G, sys = G && G.sys; if (!sys || !G.B) return null;
+    var sh = null; for (var i = 0; i < G.B.ships.length; i++) if (G.B.ships[i].id === gameId && !G.B.ships[i].dead) { sh = G.B.ships[i]; break; }
+    var t = sh && typeof shipTypeById !== 'undefined' && shipTypeById[sh.cls]; if (!t) return null;
+    var d = Math.round(sh.hd * 180 / Math.PI + 90); d = ((d % 360) + 360) % 360; var f = Math.round(d / 90) * 90 % 360;
+    var w = f === 90 || f === 270 ? t.height_cells : t.width_cells, h = f === 90 || f === 270 ? t.width_cells : t.height_cells, M = sys.cellM;
+    var cx = Math.round(sh.x / M - w / 2), cy = Math.round(sh.y / M - h / 2), pads = sys.pads || [];
+    for (i = 0; i < pads.length; i++) { var p = pads[i]; if (cx >= p.x && cx + w <= p.x + p.size && cy >= p.y && cy + h <= p.y + p.size) return p; }
+    return null;
   };
 
   // ---- бой открылся

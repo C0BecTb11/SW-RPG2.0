@@ -493,6 +493,14 @@ function scRenderCargo() {
       '<span class="' + (cap && used >= cap ? 'sc-cargo-full' : '') + '">' +
       used + ' из ' + cap + '</span></div>';
 
+    // Орбита 2.0: погрузка и высадка — только из площадки сброса; говорим заранее, а не после отказа
+    if (window.SL && window.SL.onPad && (mine.length || vehicles.length) && !window.SL.onPad(forShip)) {
+      var padNote = document.createElement('div');
+      padNote.className = 'sc-hangar-empty sc-pad-warn';
+      padNote.textContent = 'Высадка только из площадки сброса. Коснись квадрата «ПЛОЩАДКА» на орбите — корабль встанет в неё целиком';
+      box.appendChild(padNote);
+    }
+
     if (!mine.length && !vehicles.length && !goods.length) {
       var empty = document.createElement('div');
       empty.className = 'sc-hangar-empty';
@@ -1760,6 +1768,13 @@ function scFail(msg) {
   if (msg && /^Корабль не найден/.test(msg)) {
     if (typeof loadShips === 'function') loadShips();
     if (typeof scDeselect === 'function') scDeselect();
+    return;
+  }
+  // орбита 2.0: строки подсказок старой панели нет — ответ базы всплывает уведомлением
+  if (window.SL && window.__sp && window.__sp.toast) {
+    var m2 = msg || 'Не получилось';
+    if (/площадке сброса/.test(m2)) m2 += '. Коснись квадрата «ПЛОЩАДКА» на орбите — корабль встанет в неё';
+    window.__sp.toast(m2, 'bad');
     return;
   }
   var hint = document.getElementById('sc-hint');

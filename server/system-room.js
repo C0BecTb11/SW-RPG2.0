@@ -227,6 +227,7 @@ SystemRoom.prototype.step = function() {
   if (!this.ready || this.closed) return;
   var B = this.B, i, j;
   B.tick(SWSpace.TICK);
+  this.dockStep();
   this.tickN++; this.battle.tick = this.tickN;
   var ev = B.takeEvents();
   var t = B.t;
@@ -349,12 +350,44 @@ SystemRoom.prototype.clampY = function(side, y) {
   if (this.myBand(side) === 'top') return Math.min(y, N - z - pad);
   return Math.max(y, z + pad);
 };
+// ---- площадки сброса: погрузка и высадка только оттуда (is_in_orbital_drop — корабль целиком внутри)
+SystemRoom.prototype.padAt = function(x, y) {
+  var pads = (this.state && this.state.pads) || [];
+  for (var i = 0; i < pads.length; i++) { var p = pads[i]; if (x >= p.x * CELL_M && x < (p.x + p.size) * CELL_M && y >= p.y * CELL_M && y < (p.y + p.size) * CELL_M) return p; }
+  return null;
+};
+// разворот, при котором корабль целиком помещается в площадку: ближний к нынешнему; null — не помещается никак
+SystemRoom.prototype.fitFacing = function(sh, pad) {
+  var type = this.types[sh.cls], f0 = facingOf(sh.hd), fs = [f0, (f0 + 180) % 360, (f0 + 90) % 360, (f0 + 270) % 360];
+  for (var i = 0; i < fs.length; i++) { var b = boxOf(type, fs[i]); if (b.w <= pad.size - 1 && b.h <= pad.size - 1) return fs[i]; }
+  for (i = 0; i < fs.length; i++) { b = boxOf(type, fs[i]); if (b.w <= pad.size && b.h <= pad.size) return fs[i]; }
+  return null;
+};
+// дошёл до середины площадки — встать ровно: по центру и прямым разворотом (так база видит его в площадке)
+SystemRoom.prototype.dockStep = function() {
+  var B = this.B, M = CELL_M;
+  for (var i = 0; i < B.ships.length; i++) {
+    var sh = B.ships[i], pad = sh.dock; if (!pad) continue;
+    if (sh.dead) { sh.dock = null; continue; }
+    if (sh.order) continue;                                    // ещё идёт
+    var cx = (pad.x + pad.size / 2) * M, cy = (pad.y + pad.size / 2) * M, f = this.fitFacing(sh, pad);
+    sh.dock = null;
+    if (f == null || Math.abs(sh.x - cx) > pad.size * M / 2 || Math.abs(sh.y - cy) > pad.size * M / 2) continue;   // остановили не у площадки
+    sh.x = cx; sh.y = cy; sh.hd = hdOf(f); sh.v = 0;
+  }
+};
 SystemRoom.prototype.command = function(c, m) {
   if (!c.viewer) return;
   if (m.t === 'cmd') {
     var sh = this.B.ships[m.n | 0];
     if (sh && sh.dormant && m.k !== 'view') this.B.wake(sh);
     if (m.k === 'order' && m.x != null && m.x !== 'hold' && isFinite(+m.y)) m.y = this.clampY(c.side, +m.y);
+    // курс в площадку сброса — к её середине, по прибытии корабль встаёт в неё целиком (dockStep)
+    if (m.k === 'order' && sh && sh.side === c.side) {
+      var pad = m.x != null && m.x !== 'hold' && !m.face && isFinite(+m.x) ? this.padAt(+m.x, +m.y) : null;
+      if (pad && this.fitFacing(sh, pad) != null) { m.x = (pad.x + pad.size / 2) * CELL_M; m.y = (pad.y + pad.size / 2) * CELL_M; sh.dock = pad; }
+      else sh.dock = null;
+    }
     if (m.k === 'view' && m.view != null && m.view >= 0 && this.B.ships[m.view | 0] && this.B.ships[m.view | 0].dormant) this.B.wake(this.B.ships[m.view | 0]);
     c.viewer.command(m);
     return;
@@ -371,6 +404,8 @@ SystemRoom.prototype.quiet = function() { return Date.now() - this.quietSince > 
 SystemRoom.prototype.shouldClose = function() {
   if (this.closed) return true;
   if (!this.ready || this.clients.length) return false;
+  // корабль ещё идёт по курсу (игрок закрыл экран) — доводим, потом закрываемся
+  if (Date.now() - this.emptySince < 15 * 60e3 && this.B && this.B.ships.some(function(sh) { return !sh.dead && sh.order && !sh.order.face; })) return false;
   return Date.now() - this.emptySince > QUIET_MS && this.quiet();
 };
 SystemRoom.prototype.close = function(why) {

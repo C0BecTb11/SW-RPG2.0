@@ -406,3 +406,83 @@ as $$
   order by st.name;
 $$;
 grant execute on function public.get_loadable_ships(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Нанятые бойцы выходят у постройки (применено миграциями units_spawn_at_building,
+-- units_spawn_capacity). Кольцо вокруг участка 6×6, только свободные клетки вне зданий,
+-- укреплений, стен и зоны вражеского десанта; если вокруг тесно — зоны высадки, как раньше.
+-- ---------------------------------------------------------------------------
+create or replace function public.find_spawn_box_near(p_system_id text, p_building uuid, p_w integer, p_h integer)
+returns table(x integer, y integer)
+language sql stable security definer
+set search_path to 'public', 'pg_temp'
+as $$
+  with slot as (
+    select ps.x, ps.y, 6 as size
+      from buildings b join planet_slots ps on ps.system_id = b.system_id and ps.slot_index = b.slot_index
+     where b.id = p_building and b.system_id = p_system_id
+  ),
+  ring as (
+    select s.x + dx as x, s.y + dy as y, greatest(abs(dx + (p_w - 1) / 2.0 - s.size / 2.0), abs(dy + (p_h - 1) / 2.0 - s.size / 2.0)) as d
+      from slot s, generate_series(-8, s.size + 7) dx, generate_series(-8, s.size + 7) dy
+     where (dx + p_w <= 0 or dx >= s.size or dy + p_h <= 0 or dy >= s.size)     -- не на самом участке
+  )
+  select r.x, r.y from ring r
+   where r.x >= 0 and r.y >= 0 and r.x + p_w <= game_setting_int('ground_grid_cells', 144) and r.y + p_h <= game_setting_int('ground_grid_cells', 144)
+     and not is_in_ground_attack_zone(r.y + p_h - 1)
+     and not exists (select 1 from settlement_zone_box() z where r.x < z.x + z.size and r.x + p_w > z.x and r.y < z.y + z.size and r.y + p_h > z.y)
+     and is_ground_box_free(p_system_id, r.x, r.y, p_w, p_h, null)
+   order by r.d, r.y, r.x;
+$$;
+
+-- Место для новых бойцов: у постройки + зоны высадки, минус уже заказанное.
+-- Используется в order_unit / hire_hero / hero_hire_check вместо подсчёта только зон высадки.
+create or replace function public.spawn_space(p_system_id text, p_building uuid)
+returns integer
+language sql stable security definer
+set search_path to 'public', 'pg_temp'
+as $$
+  select greatest(0,
+    (select count(*)::integer from find_spawn_box_near(p_system_id, p_building, 1, 1))
+    + (select count(*)::integer from free_deploy_cells(p_system_id, 0, 0))
+    - coalesce((select sum(quantity)::integer from unit_orders where system_id = p_system_id and not delivered), 0));
+$$;
+
+-- deliver_ready_units: сначала find_spawn_box_near(system, building, w, h), затем find_deploy_box.
+create or replace function public.deliver_ready_units()
+returns void
+language plpgsql security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+as $$
+declare
+  o record; spot record; placed integer; v_hp integer; v_w integer; v_h integer; v_new uuid; h record;
+begin
+  for o in select * from unit_orders where not delivered and completes_at <= now() order by completes_at for update skip locked loop
+    select max_hp, width_cells, height_cells into v_hp, v_w, v_h from unit_types where id = o.unit_type;
+    v_w := coalesce(v_w, 1); v_h := coalesce(v_h, 1);
+    placed := 0;
+    while placed < o.quantity loop
+      -- у постройки; если вокруг неё всё занято — в зоне высадки, как раньше
+      select * into spot from find_spawn_box_near(o.system_id, o.building_id, v_w, v_h) limit 1;
+      if not found then
+        select * into spot from find_deploy_box(o.system_id, v_w, v_h, coalesce(o.target_x, 0), coalesce(o.target_y, 0)) limit 1;
+      end if;
+      exit when not found;
+      insert into unit_positions (system_id, layer, x, y, owner_user_id, faction, unit_type, quantity, hp)
+      values (o.system_id, 'ground', spot.x, spot.y, o.owner_user_id, o.faction, o.unit_type, 1, coalesce(v_hp, 100))
+      returning id into v_new;
+      if o.hero_id is not null then
+        select name, portrait into h from heroes where id = o.hero_id;
+        if found then update unit_positions set hero_id = o.hero_id, hero_name = h.name, portrait = h.portrait where id = v_new; end if;
+      end if;
+      if coalesce(array_length(o.upgrades, 1), 0) > 0 then perform apply_unit_upgrades(v_new, o.upgrades); end if;
+      placed := placed + 1;
+    end loop;
+    if placed >= o.quantity then
+      update unit_orders set delivered = true where id = o.id;
+    elsif placed > 0 then
+      update unit_orders set quantity = quantity - placed where id = o.id;
+    end if;
+  end loop;
+end;
+$$;

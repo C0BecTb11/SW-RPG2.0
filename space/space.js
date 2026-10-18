@@ -1094,20 +1094,44 @@
   // Сетка — чтобы было видно движение и масштаб (1 км)
   // Орбита системы из игры: сетка 150 клеток по 200 м, полосы прихода из гиперпространства
   // сверху и снизу, две площадки высадки на планету, место станции
+  // Полосы гиперпространства (как в базе, hyperspace_side): своя — где система нашей фракции, верх;
+  // чужая — низ; на ничейной Республика сверху, КНС снизу. Своя полоса — и приход, и прыжок.
+  function sysMyBand() {
+    var S = G.sys, f = G.side === 1 ? 'cis' : 'republic', sf = S && S.faction;
+    if (!sf || sf === 'neutral') return f === 'republic' ? 'top' : 'bottom';
+    return sf === f ? 'top' : 'bottom';
+  }
+  function sysOwn() { var S = G.sys; return !!(S && S.faction === (G.side === 1 ? 'cis' : 'republic')); }
+  // точка в чужой полосе → прижимаем к её кромке; возвращает [x, y, true] если поправили
+  function sysClamp(x, y) {
+    var S = G.sys; if (!S) return [x, y, false];
+    var M = S.cellM, N = S.cells * M, z = S.zone * M, pad = 300;
+    if (sysMyBand() === 'top') { if (y > N - z - pad) return [x, N - z - pad, true]; }
+    else if (y < z + pad) return [x, z + pad, true];
+    return [x, y, false];
+  }
   function drawSys(c) {
     var S = G.sys; if (!S || G.mode !== 'space') return;
-    var M = S.cellM, N = S.cells * M, z = S.zone * M, a = toS(0, 0), b = toS(N, N), s = CAM.s;
+    var M = S.cellM, N = S.cells * M, z = S.zone * M, a = toS(0, 0), b = toS(N, N), s = CAM.s, mineTop = sysMyBand() === 'top', own = sysOwn();
     c.save();
     c.strokeStyle = 'rgba(143,168,196,0.22)'; c.lineWidth = 1; c.setLineDash([6, 6]); c.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); c.setLineDash([]);
-    c.fillStyle = 'rgba(74,144,217,0.05)';
-    c.fillRect(a[0], a[1], b[0] - a[0], z * s); c.fillRect(a[0], b[1] - z * s, b[0] - a[0], z * s);
-    c.fillStyle = 'rgba(143,168,196,0.45)'; c.font = '10px "Courier New", monospace'; c.textAlign = 'left'; c.textBaseline = 'top';
-    if (z * s > 14) { c.fillText('ПОЛОСА ПРИХОДА ИЗ ГИПЕРПРОСТРАНСТВА', a[0] + 8, a[1] + 4); c.fillText('ПОЛОСА ПРИХОДА ИЗ ГИПЕРПРОСТРАНСТВА', a[0] + 8, b[1] - z * s + 4); }
+    c.fillStyle = mineTop ? 'rgba(74,144,217,0.07)' : 'rgba(217,74,74,0.06)'; c.fillRect(a[0], a[1], b[0] - a[0], z * s);
+    c.fillStyle = mineTop ? 'rgba(217,74,74,0.06)' : 'rgba(74,144,217,0.07)'; c.fillRect(a[0], b[1] - z * s, b[0] - a[0], z * s);
+    c.font = '10px "Courier New", monospace'; c.textAlign = 'left'; c.textBaseline = 'top';
+    if (z * s > 14) {
+      var mineL = 'НАША ПОЛОСА ГИПЕРПРОСТРАНСТВА · СЮДА ПРИХОДЯТ СВОИ, ОТСЮДА ПРЫГАЮТ', foeL = 'ПОЛОСА ПРИХОДА ВРАГА · ХОД ТУДА ЗАКРЫТ';
+      c.fillStyle = mineTop ? 'rgba(143,188,236,0.6)' : 'rgba(236,150,150,0.55)'; c.fillText(mineTop ? mineL : foeL, a[0] + 8, a[1] + 4);
+      c.fillStyle = mineTop ? 'rgba(236,150,150,0.55)' : 'rgba(143,188,236,0.6)'; c.fillText(mineTop ? foeL : mineL, a[0] + 8, b[1] - z * s + 4);
+    }
     (S.pads || []).forEach(function(p) {
       var q = toS(p.x * M, p.y * M), w = p.size * M * s;
       c.strokeStyle = 'rgba(217,169,64,0.55)'; c.setLineDash([4, 4]); c.strokeRect(q[0], q[1], w, w); c.setLineDash([]);
       c.fillStyle = 'rgba(217,169,64,0.08)'; c.fillRect(q[0], q[1], w, w);
-      if (w > 40) { c.fillStyle = 'rgba(232,217,168,0.75)'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('ПЛОЩАДКА ' + p.idx, q[0] + w / 2, q[1] + w / 2); }
+      if (w > 40) {
+        c.fillStyle = 'rgba(232,217,168,0.75)'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText('ПЛОЩАДКА ' + p.idx, q[0] + w / 2, q[1] + w / 2 - (w > 90 ? 7 : 0));
+        if (w > 90) { c.fillStyle = 'rgba(232,217,168,0.5)'; c.font = '9px "Courier New", monospace'; c.fillText(own ? 'ПОГРУЗКА ВОЙСК НА БОРТ' : 'ВЫСАДКА ДЕСАНТА', q[0] + w / 2, q[1] + w / 2 + 7); c.font = '10px "Courier New", monospace'; }
+      }
     });
     var sl = S.slot;
     if (sl) {
@@ -2098,6 +2122,7 @@
     if (window.SP_ON_TAP && window.SP_ON_TAP(p[0], p[1], px, py) === true) return;
     var me = B.ships[G.sel];
     if (me && !me.dead) {
+      if (G.sys) { var cl = sysClamp(p[0], p[1]); if (cl[2]) { p = [cl[0], cl[1]]; toast('Чужая полоса гиперпространства закрыта — встанем у её кромки', 'bad'); } }
       B.order(G.sel, p[0], p[1]);
       G.mark = { x: p[0], y: p[1], t: performance.now(), face: false };
       if (!G.taught) { G.taught = true; toast('Курс задан. Удержи палец — развернуться носом к точке', 'gold'); }

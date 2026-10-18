@@ -215,6 +215,7 @@
     drawDead(c, s, vis);
     drawShells(c, s, t);
     drawUnits(c, s, vis, t);
+    drawOrders(c, s);
     drawShots(c, s, t);
     drawFx(c, s, t);
     drawFog(c, s);
@@ -292,7 +293,7 @@
     var sp = toS(B.sx, B.sy), cp = B.cap, col = cp.status === 'capturing' ? 'rgba(255,110,90,' : cp.status === 'contested' ? 'rgba(240,200,106,' : 'rgba(111,184,255,';
     c.fillStyle = col + '0.12)'; c.fillRect(sp[0], sp[1], SQ * s, SQ * s);
     c.strokeStyle = col + '0.9)'; c.lineWidth = 2; c.strokeRect(sp[0], sp[1], SQ * s, SQ * s);
-    if (SQ * s > 40) label(c, 'ПЛОЩАДЬ', sp[0] + SQ * s / 2, sp[1] - 8, 'rgba(232,217,168,0.9)', fs);
+    if (SQ * s > 40) label(c, 'ПЛОЩАДЬ ГОРОДА', sp[0] + SQ * s / 2, sp[1] - 8, 'rgba(232,217,168,0.9)', fs);
   }
   var SIMG = {};
   function simg(kind, team) { var k = (team === 0 ? 'rep_' : 'cis_') + (kind === 'extractor' ? 'mine_ore' : kind); if (!SIMG[k]) { var im = new Image(); im.src = '../assets/structures/' + k + '.png'; SIMG[k] = im; } return SIMG[k]; }
@@ -409,6 +410,27 @@
   }
   // Радиус бойца на экране в клетках: техника — по виду сверху, пехота и герои — по фигурке
   function vrad(m) { if (m.T.vehicle) { var vt = V.TYPES[m.tid]; return vt ? vt.span * 0.4 : 1; } return 0.42 * HK; }
+  // Куда идут свои: линия от бойца к его клетке и квадрат места — у выбранных всегда,
+  // у остальных 4 с после приказа (как на палубе при абордаже)
+  function drawOrders(c, s) {
+    var B = G.B, ag = B.agents, now = Date.now(), sel = {};
+    G.usel.forEach(function(id) { sel[id] = 1; });
+    c.save(); c.lineWidth = 1;
+    for (var i = 0; i < ag.length; i++) {
+      var a = ag[i]; if (!a.alive || B.ctl(a) !== G.side || !a.goal || a.at) continue;
+      var fresh = now - (a.ordT || 0) < 4000;
+      if (!sel[a.id] && !fresh) continue;
+      var off = a.size === 2 ? 1 : 0.5, p = toS(a.x, a.y), q = toS(a.goal[0] + off, a.goal[1] + off);
+      var al = sel[a.id] ? 0.85 : Math.max(0.15, 0.85 * (1 - (now - (a.ordT || 0)) / 4000));
+      c.strokeStyle = 'rgba(240,200,106,' + al.toFixed(2) + ')';
+      c.setLineDash([4, 4]); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); c.setLineDash([]);
+      var w = a.size * s;
+      c.strokeRect(q[0] - w / 2, q[1] - w / 2, w, w);
+    }
+    // точка касания — общая цель приказа
+    if (G.ordMark && now - G.ordMark.t < 1200) { var mk = toS(G.ordMark.x + 0.5, G.ordMark.y + 0.5), k = (now - G.ordMark.t) / 1200; c.strokeStyle = 'rgba(240,200,106,' + (1 - k).toFixed(2) + ')'; c.lineWidth = 1.5; c.beginPath(); c.arc(mk[0], mk[1], 4 + k * 14, 0, TAU); c.stroke(); }
+    c.restore();
+  }
   function drawUnits(c, s, vis, t) {
     var B = G.B, ag = B.agents, A = atlas(), side = G.side, sel = {};
     G.usel.forEach(function(id) { sel[id] = 1; });
@@ -575,7 +597,9 @@
     var sel = selected(), alive = B.alive(G.side), foe = B.alive(1 - G.side);
     var stat = '<span>Своих <b>' + alive + '</b> · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
     // подсказка по шагу: что сейчас сделает касание
+    var one = sel.length === 1 ? sel[0] : null, oneCv = one && B.coverInfo ? B.coverInfo(one) : null;
     var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника' : 'врага')
+      : one ? '<b>' + (one.name || one.T.name) + '</b> · ' + Math.round(one.hp) + '/' + one.hpMax + (oneCv ? ' · ' + (oneCv.k === 'struct' ? '🛡 ' : '') + oneCv.text.split(' (')[0].split(' ·')[0] : '') + (one.focus >= 0 ? ' · атакует ' + unitName(B, one.focus) : one.tgt >= 0 && one.tgt < 100000 ? ' · стреляет по ' + unitName(B, one.tgt) : one.goal && !one.at ? ' · идёт' : '')
       : sel.length ? 'Выбрано <b>' + sel.length + '</b> · касание земли — идти, врага — атаковать'
       : 'Коснись своего бойца, чтобы выбрать · долгое нажатие — рамка';
     // в игре верхней панели нет — захват площади одной строкой в полосе
@@ -604,10 +628,14 @@
     html += '<p class="gd-hint">Касание бойца — выбрать, двойное — весь его отряд. Долгое нажатие на поле — рамка. Касание земли — идти, врага — атаковать.</p>';
     return html;
   }
+  function unitName(B, id) { var b = B.agents[id]; return b ? (b.name || b.T.name) : ''; }
+  var CLS_RU = { infantry: 'пехота', vehicle: 'техника', artillery: 'артиллерия', air: 'авиация', hero: 'одарённый' };
   function unitCard(B, a) {
-    var Ty = a.T, st = a.hold ? 'держит позицию' : a.post && !a.at ? 'идёт к точке' : a.focus >= 0 ? 'атакует цель' : a.tgt >= 0 ? 'ведёт бой' : a.goal && !a.at ? 'идёт' : 'стоит';
-    var html = '<div class="sp-ucard"><div class="nm"><b' + (a.hero ? ' class="hero"' : '') + '>' + (a.name || Ty.name) + '</b><em>' + Ty.name + ' · урон ' + Ty.dmg + ' · дальность ' + Ty.range + '</em></div>' +
-      '<div class="hp' + (a.hp / a.hpMax < 0.35 ? ' low' : '') + '"><span>' + Math.round(a.hp) + ' / ' + a.hpMax + '</span><i><b style="width:' + Math.round(a.hp / a.hpMax * 100) + '%"></b></i></div><div class="st' + (a.tgt >= 0 ? ' fire' : '') + '">' + st + (a.inside >= 0 ? ' · в укрытии' : '') + (a.stun > 0 ? ' · оглушён' : '') + (a.fear > 0 ? ' · бежит в страхе' : '') + '</div>';
+    var Ty = a.T, st = a.hold ? 'держит позицию' : a.post && !a.at ? 'идёт к точке' : a.focus >= 0 ? 'атакует: ' + unitName(B, a.focus) : a.tgt >= 0 && a.tgt < 100000 ? 'стреляет по: ' + unitName(B, a.tgt) : a.goal && !a.at ? 'идёт' : 'стоит';
+    var cv = B.coverInfo ? B.coverInfo(a) : null;
+    var html = '<div class="sp-ucard"><div class="nm"><b' + (a.hero ? ' class="hero"' : '') + '>' + (a.name || Ty.name) + '</b><em>' + Ty.name + ' · урон ' + Ty.dmg + ' · дальность ' + Ty.range + (CLS_RU[Ty.cls] ? ' · ' + CLS_RU[Ty.cls] : '') + '</em></div>' +
+      '<div class="hp' + (a.hp / a.hpMax < 0.35 ? ' low' : '') + '"><span>' + Math.round(a.hp) + ' / ' + a.hpMax + '</span><i><b style="width:' + Math.round(a.hp / a.hpMax * 100) + '%"></b></i></div><div class="st' + (a.tgt >= 0 ? ' fire' : '') + '">' + st + (a.stun > 0 ? ' · оглушён' : '') + (a.fear > 0 ? ' · бежит в страхе' : '') + '</div>' +
+      (cv ? '<div class="st cv ' + cv.k + '">' + (cv.k === 'struct' ? '🛡 ' : cv.k === 'cover' ? '◧ ' : '') + cv.text + '</div>' : '');
     if (a.hero) {
       html += '<div class="gd-ab">';
       a.hero.abil.forEach(function(ab) { var A = GR.ABIL[ab]; if (!A || !A[0]) return; var cd = Math.max(0, (a.hero.cds[ab] || 0) - B.t); html += '<button class="sp-chip' + (cd > 0 ? ' cd' : '') + (G.arm && G.arm.ab === ab ? ' arm' : '') + '" data-ab="' + ab + '">' + GR.ABIL_NAME[ab] + (cd > 0 ? '<em> ' + Math.ceil(cd) + 'с</em>' : '') + '</button>'; });
@@ -673,7 +701,7 @@
       hud(); return;
     }
     if (a && sel.length) { var n = B.orderAttack(G.side, G.usel, hit); if (n) toast('Атаковать: ' + (a.name || a.T.name), 'gold'); return; }
-    if (sel.length && cx >= 0 && cy >= 0 && cx < N && cy < N) { var m = B.orderMove(G.side, G.usel, cx, cy); if (!m) toast('Туда не пройти', 'bad'); return; }
+    if (sel.length && cx >= 0 && cy >= 0 && cx < N && cy < N) { var m = B.orderMove(G.side, G.usel, cx, cy); if (!m) toast('Туда не пройти', 'bad'); else { var nowO = Date.now(); sel.forEach(function(a) { a.ordT = nowO; }); G.ordMark = { x: cx, y: cy, t: nowO }; } return; }
     if (a) { toast((a.name || a.T.name) + ' · ' + Math.round(a.hp) + ' / ' + a.hpMax); return; }
     // ничего: район или пояснение клетки
     for (var di = 0; di < B.districts.length; di++) { var dd = B.districts[di], dr = dd.rect; if (cx >= dr[0] && cx < dr[0] + dr[2] && cy >= dr[1] && cy < dr[1] + dr[3]) { toast(dd.name + ' — ' + (dd.by === G.side ? 'держим мы' : 'держит враг') + '. ' + dd.effect, dd.by === G.side ? 'gold' : 'bad'); return; } }

@@ -148,7 +148,7 @@ GroundRoom.prototype.admit = function(c) {
   this.clients.push(c);
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'ground', system: this.system, name: this.state.system.name, side: c.side, att: this.att, T: Math.round(B.t * 100) / 100, capNeed: B.capNeed,
-    map: this.mapPacked, structs: B.structs.map(function(s) { return { i: s.i, kind: s.kind, team: s.team, x: s.x, y: s.y, w: s.w, h: s.h, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: s.uid || null }; }),
+    map: this.mapPacked, structs: B.structs.map(Net.structRow),
     districts: B.districts.map(function(d) { return { id: d.id, name: d.name, effect: d.effect, rect: d.rect, by: d.by, cnt: d.cnt }; }),
     faction: this.state.system.faction, controller: this.state.system.controller, zones: this.zones, zoneBox: this.zoneBox,
     buildings: this.state.buildings || [], plots: this.state.plots || []

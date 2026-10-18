@@ -25,6 +25,7 @@ function initCreditsBar() {
     creditsBarUserId = res.data.session.user.id;
 
     refreshCreditsBar();
+    initDevButton();
 
     supabase
       .channel('credits-' + creditsBarUserId)
@@ -65,6 +66,28 @@ function refreshCreditsSoon() {
 }
 
 document.addEventListener('DOMContentLoaded', initCreditsBar);
+
+// ===== Кнопка DEV =====
+// Только для админов (sql/dev_panel.sql). База сама отвечает, админ ли вошедший;
+// код и стили панели подгружаются лишь после её «да». Права проверяются ещё и
+// в каждой функции панели — спрятанная кнопка тут не защита, а удобство.
+function initDevButton() {
+  if (document.getElementById('dev-btn')) return;
+  supabase.rpc('dev_is_admin').then(function(r) {
+    if (r.error || r.data !== true || document.getElementById('dev-btn')) return;
+    var css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = '../css/dev-panel.css?v=1';
+    document.head.appendChild(css);
+    var js = document.createElement('script');
+    js.src = '../js/dev-panel.js?v=1';
+    document.body.appendChild(js);
+    var btn = document.createElement('button');
+    btn.id = 'dev-btn'; btn.type = 'button'; btn.textContent = 'DEV'; btn.title = 'Панель разработчика';
+    btn.addEventListener('click', function(e) { e.stopPropagation(); if (window.DevPanel) window.DevPanel.open(); });
+    var bar = document.getElementById('credits-bar'), icon = document.getElementById('credits-icon');
+    if (bar) bar.insertBefore(btn, icon && icon.parentNode === bar ? icon : bar.firstChild);   // между часами и суммой
+  }, function() {});
+}
 
 // ===== Серверное время =====
 // Вся игра живёт по часам сервера: выдача ресурсов и кредитов — в 04:00

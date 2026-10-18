@@ -13,6 +13,7 @@ as $$
 declare
   n_u integer := 0; n_s integer := 0; n_d integer := 0;
   r record;
+  fire jsonb;
 begin
   perform rt_need_key(p_key);
   perform set_config('app.rt_battle', '1', true);
@@ -52,7 +53,16 @@ begin
   update field_structures f set hp = rows.hp from rows where f.id = rows.id;
   get diagnostics n_s = row_count;
 
-  update rt_battles set heartbeat_at = now() where id = p_battle and status = 'active';
+  -- кто под огнём (rt_battle_guard: погрузка на корабль и его уход закрыты 30 с после попадания)
+  select coalesce(jsonb_object_agg(x->>'id', to_jsonb(now())), '{}'::jsonb) into fire
+    from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x where coalesce((x->>'fire')::boolean, false);
+  update rt_battles b
+     set heartbeat_at = now(),
+         snapshot = jsonb_build_object('fire', coalesce((
+           select jsonb_object_agg(k, v) from jsonb_each(coalesce(b.snapshot->'fire', '{}'::jsonb)) e(k, v)
+            where (v #>> '{}')::timestamptz > now() - interval '60 seconds' and not (fire ? k)), '{}'::jsonb) || fire),
+         snapshot_at = now()
+   where b.id = p_battle and b.status = 'active';
   return jsonb_build_object('units', n_u, 'dead', n_d, 'structs', n_s);
 end;
 $$;

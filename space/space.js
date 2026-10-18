@@ -1133,13 +1133,16 @@
     var M = S.cellM, N = S.cells * M, z = S.zone * M, a = toS(0, 0), b = toS(N, N), s = CAM.s, mineTop = sysMyBand() === 'top', own = sysOwn();
     c.save();
     c.strokeStyle = 'rgba(143,168,196,0.22)'; c.lineWidth = 1; c.setLineDash([6, 6]); c.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); c.setLineDash([]);
-    c.fillStyle = mineTop ? 'rgba(74,144,217,0.07)' : 'rgba(217,74,74,0.06)'; c.fillRect(a[0], a[1], b[0] - a[0], z * s);
-    c.fillStyle = mineTop ? 'rgba(217,74,74,0.06)' : 'rgba(74,144,217,0.07)'; c.fillRect(a[0], b[1] - z * s, b[0] - a[0], z * s);
+    // полосы гиперпространства: своя — всегда; полоса прихода врага — только нападающему (хозяину
+    // орбиты она ни к чему: ход туда и так закрыт, об этом скажет подсказка у кромки)
+    var showFoe = !own;
+    if (mineTop || showFoe) { c.fillStyle = mineTop ? 'rgba(74,144,217,0.07)' : 'rgba(217,74,74,0.06)'; c.fillRect(a[0], a[1], b[0] - a[0], z * s); }
+    if (!mineTop || showFoe) { c.fillStyle = mineTop ? 'rgba(217,74,74,0.06)' : 'rgba(74,144,217,0.07)'; c.fillRect(a[0], b[1] - z * s, b[0] - a[0], z * s); }
     c.font = '10px "Courier New", monospace'; c.textAlign = 'left'; c.textBaseline = 'top';
     if (z * s > 14) {
       var mineL = 'НАША ПОЛОСА ГИПЕРПРОСТРАНСТВА · СЮДА ПРИХОДЯТ СВОИ, ОТСЮДА ПРЫГАЮТ', foeL = 'ПОЛОСА ПРИХОДА ВРАГА · ХОД ТУДА ЗАКРЫТ';
-      c.fillStyle = mineTop ? 'rgba(143,188,236,0.6)' : 'rgba(236,150,150,0.55)'; c.fillText(mineTop ? mineL : foeL, a[0] + 8, a[1] + 4);
-      c.fillStyle = mineTop ? 'rgba(236,150,150,0.55)' : 'rgba(143,188,236,0.6)'; c.fillText(mineTop ? foeL : mineL, a[0] + 8, b[1] - z * s + 4);
+      if (mineTop || showFoe) { c.fillStyle = mineTop ? 'rgba(143,188,236,0.6)' : 'rgba(236,150,150,0.55)'; c.fillText(mineTop ? mineL : foeL, a[0] + 8, a[1] + 4); }
+      if (!mineTop || showFoe) { c.fillStyle = mineTop ? 'rgba(236,150,150,0.55)' : 'rgba(143,188,236,0.6)'; c.fillText(mineTop ? foeL : mineL, a[0] + 8, b[1] - z * s + 4); }
     }
     (S.pads || []).forEach(function(p) {
       var q = toS(p.x * M, p.y * M), w = p.size * M * s;

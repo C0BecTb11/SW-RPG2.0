@@ -283,9 +283,12 @@
   }
   function drawZones(c, s) {
     var B = G.B, z = B.zones, tw = B.town, fs = Math.max(9, Math.min(12, s * 1.1));
-    var a = toS(0, N - P.GEO.strip);
-    c.fillStyle = 'rgba(217,74,74,0.1)'; c.fillRect(a[0], a[1], N * s, P.GEO.strip * s);
-    c.strokeStyle = 'rgba(217,74,74,0.6)'; c.lineWidth = 1; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(a[0] + N * s, a[1]); c.stroke();
+    // полоса вторжения — только нападающему: туда он высаживает десант (хозяину планеты она ни к чему)
+    if (G.side === B.att) {
+      var a = toS(0, N - P.GEO.strip);
+      c.fillStyle = 'rgba(217,74,74,0.1)'; c.fillRect(a[0], a[1], N * s, P.GEO.strip * s);
+      c.strokeStyle = 'rgba(217,74,74,0.6)'; c.lineWidth = 1; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(a[0] + N * s, a[1]); c.stroke();
+    }
     z.deploy.forEach(function(d, i) { var p = toS(d[0], d[1]), w = d[2] * s; c.strokeStyle = 'rgba(217,169,64,0.7)'; c.strokeRect(p[0], p[1], w, w); if (w > 22) label(c, 'ЗОНА ' + (i + 1), p[0] + w / 2, p[1] + w / 2, 'rgba(232,217,168,0.8)', fs); });
     z.slots.forEach(function(sl) { var p = toS(sl[0], sl[1]), w = 6 * s; c.strokeStyle = 'rgba(143,168,196,0.35)'; c.lineWidth = 1; c.strokeRect(p[0], p[1], w, w); });
     var tp = toS(tw[0], tw[1]); c.strokeStyle = 'rgba(217,169,64,0.5)'; c.strokeRect(tp[0], tp[1], tw[2] * s, tw[3] * s);

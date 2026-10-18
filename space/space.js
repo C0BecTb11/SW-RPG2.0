@@ -451,17 +451,51 @@
       now += '<div class="sp-bd-strip bad"><span>Шаттлы абордажа: <b>' + inc.length + '</b> · до стыковки <b>~' + Math.ceil(eta) + ' с</b></span>' +
         '<button class="sp-mini' + (pdOn ? ' on' : ' gold') + '" data-ba="pdshut">' + (pdOn ? 'Огонь по шаттлам ✓' : 'Огонь по шаттлам') + '</button></div>';
     }
-    var foe = B.ships[G.foe];
-    if (foe && !foe.dead && seen(foe) && !sh.dead) {
-      var own = !!(sh.crew.board && sh.crew.board.started && sh.crew.board.over < 0 && sh.crew.board.def === G.side);
-      var can = B.canBoard(sh.n, foe.n, own), fly = foe.inbound;
-      var go = '<div class="sp-bd-go"><span class="sp-dim">абордаж · <b>' + esc(foe.name) + '</b></span>' +
-        (can.ok ? '<button class="sp-mini gold" data-ba="go">' + (can.reinforce ? 'Подкрепление ' : own ? 'Контрабордаж ' : 'Высадить ') + can.party + '</button>'
-                : '<span class="why">' + esc(can.why) + '</span>') +
-        (fly ? '<span class="fly">в полёте ' + fly + ' ' + plural(fly, 'шаттл', 'шаттла', 'шаттлов') + '</span>' : '') + '</div>';
-      if (can.ok || fly) now += go; else rest += go;
+    // абордаж: выбранная цель — или ближний враг, которого можно брать прямо сейчас. Есть десант и враг
+    // рядом — одна строка в полосе: что мешает (дистанция, щит с нашей стороны) или кнопка «На абордаж»
+    var bp = boardPick(sh);
+    G.bdPick = bp && bp.can.ok ? { n: sh.n, t: bp.foe.n } : null;
+    if (bp) {
+      var foe = bp.foe, can = bp.can, fly = foe.inbound, own = bp.own;
+      var hasTro = can.tro == null ? can.why !== 'на борту нет десанта' : can.tro > 0;
+      var go = '<div class="sp-bd-go' + (can.ok ? ' ready' : '') + '"><span class="sp-dim">⚔ абордаж · <b>' + esc(foe.name) + '</b></span>';
+      if (can.ok) go += '<button class="sp-mini gold" data-ba="go" data-n="' + foe.n + '">' + (can.reinforce ? 'Подкрепление ' : own ? 'Контрабордаж ' : 'На абордаж ') + can.party + '</button>';
+      else if (hasTro && can.gap != null && /^(далеко|щит цели)/.test(can.why)) go += boardChips(can);
+      else go += '<span class="why">' + esc(can.why) + '</span>';
+      go += (fly ? '<span class="fly">в полёте ' + fly + ' ' + plural(fly, 'шаттл', 'шаттла', 'шаттлов') + '</span>' : '') + '</div>';
+      // в полосу — когда есть с кем: десант на борту и враг в 10 км (или шаттлы уже летят); иначе — в лист корабля
+      if (can.ok || fly || (hasTro && can.gap != null && can.gap < 10000)) now += go; else rest += go;
     }
     return { now: now, rest: rest };
+  }
+  // Кого брать на абордаж: выбранная цель, если можно; иначе ближний враг, которого можно; иначе — выбранная
+  // (или ближняя) с причиной. По сети ответ «можно ли» считает сервер для выбранной и трёх ближних
+  function boardPick(sh) {
+    var B = G.B; if (!sh || sh.dead || !ctl(sh)) return null;
+    var own = !!(sh.crew.board && sh.crew.board.started && sh.crew.board.over < 0 && sh.crew.board.def === G.side);
+    var foes = B.ships.filter(function(o) { return !o.dead && o.side !== G.side && seen(o) && o.why !== 'left'; });
+    if (!foes.length) return null;
+    var d2 = function(o) { var dx = o.x - sh.x, dy = o.y - sh.y; return dx * dx + dy * dy; };
+    foes.sort(function(p, q) { return (p.n === G.foe ? -1e18 : d2(p)) - (q.n === G.foe ? -1e18 : d2(q)); });
+    var res = [];
+    for (var i = 0; i < foes.length && res.length < 4; i++) {
+      var f = foes[i]; if (f.n !== G.foe && d2(f) > 10000 * 10000) continue;
+      var c = B.canBoard(sh.n, f.n, own);
+      if (c.why === 'жду сервер…' && f.n !== G.foe) continue;
+      res.push({ foe: f, can: c, own: own });
+      if (c.ok) return res[res.length - 1];
+    }
+    return res[0] || null;
+  }
+  // Что мешает абордажу — коротко: дистанция и щит со стороны нашего корабля (или стоят двигатели цели)
+  var SEC_N = ['носа', 'пр. борта', 'кормы', 'лев. борта'];
+  function boardChips(c) {
+    var far = c.gap > c.need, sh = c.stuck || c.shK <= 0.15;
+    var km = function(m) { return (m / 1000).toFixed(1).replace('.', ','); };
+    return '<span class="sp-bd-ch">' +
+      '<i class="' + (far ? 'no' : 'yes') + '" title="Между корпусами, нужно ближе ' + km(c.need) + ' км">' + (far ? km(c.gap) + ' км, нужно ≤' + km(c.need).replace(',0', '') : 'дистанция ✓') + '</i>' +
+      '<i class="' + (sh ? 'yes' : 'no') + '" title="Щит цели с той стороны, где наш корабль: нужно ниже 15% (или стоящие двигатели цели)">' +
+      (c.stuck ? 'двигатели стоят ✓' : sh ? 'щит ✓' : 'щит ' + SEC_N[c.sec] + ' ' + Math.round(c.shK * 100) + '%, нужно ≤15%') + '</i></span>';
   }
   // Самое срочное для защитника — коротко в полосу
   function defShort(b) {
@@ -618,7 +652,8 @@
   function boardAction(k, n, el) {
     var B = G.B, sh, b;
     if (k === 'go') {
-      var tgt = G.mode === 'inside' && attView() ? G.view : G.foe;
+      var tgt = G.mode === 'inside' && attView() ? G.view : n != null && n !== '' && isFinite(+n) ? +n : G.foe;
+      if (tgt !== G.foe && G.mode !== 'inside') { G.foe = tgt; buildTargets(); }
       var mb = B.ships[G.sel] && B.ships[G.sel].crew.board, own = !!(mb && mb.started && mb.over < 0 && mb.def === G.side);
       var r = B.board(G.sel, tgt, own);
       if (r.ok && r.muster) toast('Десант к шлюзу: ' + r.party + ' ' + plural(r.party, 'боец', 'бойца', 'бойцов') + ' бегут на посадку — шаттлы стартуют, как соберутся', 'gold');
@@ -1049,6 +1084,18 @@
     }
     // куда бьёт враг по нашим кораблям
     drawThreats(c, T);
+    // цель, которую можно брать на абордаж: золотые скобы-«крючья» вокруг неё
+    if (G.bdPick && G.bdPick.n === G.sel && G.mode === 'space') {
+      var bt = B.ships[G.bdPick.t];
+      if (bt && !bt.dead && seen(bt)) {
+        var bpp = shownPos(bt) || bt, bq = toS(bpp.x, bpp.y), br = Math.max(18, bt.len * 0.6 * CAM.s) + 6 + Math.sin(T * 4) * 2;
+        c.save(); c.strokeStyle = 'rgba(240,200,106,0.85)'; c.lineWidth = 1.6;
+        for (var bi = 0; bi < 4; bi++) { var ba = bi * Math.PI / 2 + Math.PI / 4; c.beginPath(); c.arc(bq[0], bq[1], br, ba - 0.32, ba + 0.32); c.stroke(); c.beginPath(); c.moveTo(bq[0] + Math.cos(ba) * br, bq[1] + Math.sin(ba) * br); c.lineTo(bq[0] + Math.cos(ba) * (br - 7), bq[1] + Math.sin(ba) * (br - 7)); c.stroke(); }
+        c.font = 'bold 11px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillStyle = 'rgba(240,200,106,0.95)';
+        c.fillText('⚔ АБОРДАЖ', bq[0], bq[1] - br - 4);
+        c.restore();
+      }
+    }
     // цели выбранного корабля
     if (G.sel >= 0) drawAims(c, B.ships[G.sel], T);
     // отсеки на схеме — в режиме прицела
@@ -2512,6 +2559,14 @@
       if (wa) inside = '<div class="sp-hint" style="margin-top:4px">' + whoLine(sh, wa) + '</div>' + inside;
     }
     var bs = boardStrip(sh), foeS = B.ships[G.foe];
+    // абордаж стал возможен — сказать один раз (по паре кораблей не чаще раза в 40 с)
+    var bk = G.bdPick ? G.bdPick.n + ':' + G.bdPick.t : null;
+    if (bk && bk !== G.bdKey) {
+      G.bdToast = G.bdToast || {};
+      var nowB = performance.now(), tgS = B.ships[G.bdPick.t];
+      if (tgS && nowB - (G.bdToast[bk] || -1e9) > 40000) { G.bdToast[bk] = nowB; toast('⚔ Можно на абордаж: ' + tgS.name + ' — кнопка «На абордаж» внизу', 'gold'); }
+    }
+    G.bdKey = bk;
     // выбор отсека на схеме врага: шторка уходит, подсказка — в полосе
     var aimL = G.aim ? '<div class="sp-aim"><span>Коснись отсека на корабле «' + esc(foeS ? foeS.name : '') + '»</span><button class="sp-mini" data-ba="aimx">Отмена</button></div>' : '';
     stat.innerHTML = (G.mode === 'space' ? grpLine() : '') + head + (G.mode === 'inside' ? inside : atkLine(sh)) + aimL + bs.now;

@@ -1145,28 +1145,34 @@
     if (!a || !b || a.dead || b.dead) return { ok: false, why: 'цели нет', party: 0 };
     if (a.side === b.side) return { ok: false, why: 'это свой корабль', party: 0 };
     if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью', party: 0 };
+    // что видно игроку в полосе: зазор между корпусами, щит цели со стороны нашего корабля, стоят ли её двигатели
+    var gx = b.x - a.x, gy = b.y - a.y, gapM = Math.sqrt(gx * gx + gy * gy) - (a.len + b.len) / 2;
+    var sec0 = this.sector(b, a.x, a.y), cap0 = this.shieldCap(b, sec0);
+    var geo = { gap: Math.round(Math.max(0, gapM)), need: BOARD_GAP, sec: sec0, shK: Math.round(b.sh[sec0] / Math.max(1, cap0) * 100) / 100, stuck: b.eff.engine < 0.3 };
+    var res = function(o) { for (var k in geo) o[k] = geo[k]; return o; };
     var tro = this.troopsOf(a, all), avail = tro.length, cap = boardCap(b);
+    geo.tro = avail;
     // меньше четырёх бойцов на абордаж не идут — кроме героя (джедай, ситх)
     var minP = tro.some(function(x) { return x.hero; }) ? 1 : 4;
     var bd = b.crew.board, on = !!(bd && bd.over < 0 && bd.att === a.side && bd.started);
-    if (bd && bd.over < 0 && bd.started && bd.att !== a.side) return { ok: false, why: 'на борту цели уже идёт чужой абордаж', party: 0 };
+    if (bd && bd.over < 0 && bd.started && bd.att !== a.side) return res({ ok: false, why: 'на борту цели уже идёт чужой абордаж', party: 0 });
     // в бою на борту уже свои — подкрепление: места в шлюзах за вычетом тех, кто там и в пути
     var inside = 0;
     if (on) { var ag = b.crew.agents; for (var i = 0; i < ag.length; i++) if (ag[i].alive && ag[i].team === a.side) inside++; }
     var party = Math.min(avail, Math.max(0, cap - inside - this.menTo(b) - (b.mustered || 0)));   // в шаттлах и на сборах у шлюзов
-    for (var mi = 0; mi < this.musters.length; mi++) if (this.musters[mi].n === n) return { ok: false, why: 'десант уже бежит к шлюзу', party: 0, cap: cap };
-    if (a.boardCd > 0) return { ok: false, why: 'шаттлы вернутся через ' + Math.ceil(a.boardCd) + ' с', party: party, cap: cap };
+    for (var mi = 0; mi < this.musters.length; mi++) if (this.musters[mi].n === n) return res({ ok: false, why: 'десант уже бежит к шлюзу', party: 0, cap: cap });
+    if (a.boardCd > 0) return res({ ok: false, why: 'шаттлы вернутся через ' + Math.ceil(a.boardCd) + ' с', party: party, cap: cap });
     var own = a.crew.board;
-    if (avail < minP) return { ok: false, why: own && own.started && own.over < 0 ? 'десант обороняет свой корабль' : 'на борту нет десанта', party: 0, cap: cap };
-    if (party < minP) return { ok: false, why: 'шлюзы цели заняты своими', party: 0, cap: cap };
+    if (avail < minP) return res({ ok: false, why: own && own.started && own.over < 0 ? 'десант обороняет свой корабль' : avail ? 'мало десанта: ' + avail + ', нужно от ' + minP + ' (или герой)' : 'на борту нет десанта', party: 0, cap: cap });
+    if (party < minP) return res({ ok: false, why: 'шлюзы цели заняты своими', party: 0, cap: cap });
     var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
-    if (gap > BOARD_GAP) return { ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, нужно ближе ' + BOARD_GAP / 1000 + ' км', party: party, cap: cap };
+    if (gap > BOARD_GAP) return res({ ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, нужно ближе ' + BOARD_GAP / 1000 + ' км', party: party, cap: cap });
     if (!on) {
       var s = this.sector(b, a.x, a.y), cap2 = this.shieldCap(b, s);
       var down = b.sh[s] <= cap2 * 0.15, stuck = b.eff.engine < 0.3;
-      if (!down && !stuck) return { ok: false, why: 'щит цели с этой стороны ' + Math.round(b.sh[s] / Math.max(1, cap2) * 100) + '% — нужно ниже 15% или стоящие двигатели', party: party, cap: cap };
+      if (!down && !stuck) return res({ ok: false, why: 'щит цели с этой стороны ' + Math.round(b.sh[s] / Math.max(1, cap2) * 100) + '% — нужно ниже 15% или стоящие двигатели', party: party, cap: cap });
     }
-    return { ok: true, why: '', party: party, cap: cap, reinforce: on };
+    return res({ ok: true, why: '', party: party, cap: cap, reinforce: on });
   };
   // Шлюз корабля b, ближайший к точке from
   Battle.prototype.portFor = function(b, from) {

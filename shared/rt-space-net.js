@@ -218,14 +218,25 @@
     var tgt = this.view >= 0 && B.ships[this.view] && B.ships[this.view].side !== side ? this.view : this.foe, pairs = [];
     var self = this;
     if (this.sel >= 0 && B.ships[this.sel] && this.ctl(B.ships[this.sel]) && tgt >= 0 && B.ships[tgt]) pairs.push([this.sel, tgt]);
+    // и ближние враги выбранного (до трёх, в 10 км), если у него есть десант: полоса подскажет,
+    // кого можно брать на абордаж прямо сейчас
+    var me = this.sel >= 0 && B.ships[this.sel];
+    if (me && !me.dead && this.ctl(me) && B.troopsOf(me, false).length) {
+      B.ships.filter(function(o) { return !o.dead && o.side !== side && o.n !== tgt && B.sees(side, o) && Math.abs(o.x - me.x) + Math.abs(o.y - me.y) < 14000; })
+        .map(function(o) { var dx = o.x - me.x, dy = o.y - me.y; return [dx * dx + dy * dy, o.n]; })
+        .filter(function(q) { return q[0] < 10000 * 10000; })
+        .sort(function(p, q) { return p[0] - q[0]; }).slice(0, 3)
+        .forEach(function(q) { pairs.push([me.n, q[1]]); });
+    }
     var vs = this.view >= 0 && B.ships[this.view];
     if (vs && self.ctl(vs) && vs.crew.board && vs.crew.board.started && vs.crew.board.over < 0) {
       B.ships.forEach(function(o) { if (!o.dead && o.side !== side) pairs.push([vs.n, o.n]); });
     }
-    out.can = pairs.slice(0, 4).map(function(p) {
+    out.can = pairs.slice(0, 7).map(function(p) {
       var own = B.ships[p[0]].crew.board, all = !!(own && own.started && own.over < 0 && own.def === side);
       var cb = B.canBoard(p[0], p[1], all);
-      return { n: p[0], t: p[1], ok: cb.ok, why: cb.why || '', party: cb.party || 0, reinforce: !!cb.reinforce, cap: cb.cap || 0 };
+      return { n: p[0], t: p[1], ok: cb.ok, why: cb.why || '', party: cb.party || 0, reinforce: !!cb.reinforce, cap: cb.cap || 0,
+               gap: cb.gap, need: cb.need, sec: cb.sec, shK: cb.shK, stuck: !!cb.stuck, tro: cb.tro };
     });
     return out;
   };

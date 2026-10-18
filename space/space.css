@@ -239,7 +239,7 @@ button { font-family: inherit; }
 .sp-tg { margin-top: 6px; padding-top: 6px; border-top: 1px solid #141a22; }
 .sp-tg[hidden] { display: none; }
 /* бой с союзниками без своих кораблей: только смотреть */
-body.spectate #sp-move, body.spectate #sp-inside, body.spectate .sp-tabs { display: none; }
+body.spectate #sp-move, body.spectate #sp-grp, body.spectate #sp-inside, body.spectate .sp-tabs { display: none; }
 .sp-tg-head { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #d9a940; margin-bottom: 5px; }
 .sp-tg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .sp-tg-grid .wide { grid-column: span 2; }
@@ -342,7 +342,7 @@ body.cisside .sp-ucard .nm b.hero { color: #ff9a88; }
 .sp-bd-fire span { flex: 1; min-width: 0; }
 .sp-bd-fire b { color: #cfd8dc; font-weight: normal; }
 /* смотрим внутрь вражеского корабля: свои пушки и курс тут ни к чему */
-body.boardview #sp-move { display: none !important; }
+body.boardview #sp-move, body.boardview #sp-grp { display: none !important; }
 
 .sp-hint { font-size: 10px; color: #8fa8c4; line-height: 1.4; }
 .sp-hint b { color: #e8d9a8; font-weight: normal; }
@@ -581,6 +581,15 @@ body.cisside .sp-hold .hero { color: #ff9a88; }
 .sp-atk.on b { color: #ff8a70; font-weight: normal; letter-spacing: 0.5px; }
 .sp-atk-x { margin-left: auto; width: 22px; height: 18px; padding: 0; border: 1px solid rgba(255,110,90,0.35); border-radius: 6px; background: rgba(255,110,90,0.08); color: #ff8a70; font: inherit; font-size: 10px; cursor: pointer; }
 .sp-atk-x:active { background: rgba(255,110,90,0.2); }
+/* группа кораблей: кнопка в полосе и строка над кораблём-ведущим */
+#sp-grp.on { border-color: rgba(217,169,64,0.75); color: #f0c86a; background: rgba(217,169,64,0.1); }
+.sp-grp { display: flex; align-items: center; gap: 6px; margin: 0 0 5px; padding: 4px 6px 4px 8px; border: 1px solid rgba(217,169,64,0.3); border-radius: 8px; background: rgba(217,169,64,0.06); font-size: 10px; color: #8fa8c4; line-height: 1.35; }
+.sp-grp > span { color: #a08a52; letter-spacing: 1px; }
+.sp-grp > b { color: #f0c86a; font-weight: normal; min-width: 12px; }
+.sp-grp em { font-style: normal; color: #55606c; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-grp-b { height: 18px; padding: 0 9px; border: 1px solid rgba(217,169,64,0.45); border-radius: 6px; background: rgba(217,169,64,0.08); color: #e8d9a8; font: inherit; font-size: 10px; cursor: pointer; white-space: nowrap; }
+.sp-grp-b:active { background: rgba(217,169,64,0.2); }
+.sp-grp .sp-atk-x { margin-left: 0; }
 .sp-a { display: block; text-align: center; text-decoration: none; }
 .sp-poly-sum .sp-dim { font-size: 9.5px; }
 .sp-fl {

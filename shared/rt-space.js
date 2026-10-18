@@ -482,9 +482,10 @@
       else if (d < 120) { sh.order = null; }
       else {
         want = Math.atan2(dy, dx); wantV = Math.min(vmax, d / 20);
-        // точка занята чужим корпусом (или туда же идёт свой): упёрся и 12 с не продвинулся — приказ снят
+        // точка занята чужим корпусом (или туда же идёт свой): упёрся и 12 с не продвинулся — приказ снят;
+        // далеко от точки — это толчея на пути (строй разворачивается), ждём дольше — 45 с
         if (sh.order.bd == null || d < sh.order.bd - 40) { sh.order.bd = d; sh.order.bt = this.t; }
-        else if (this.t - sh.order.bt > 12 && this.t - (sh.touchT || -99) < 2) { sh.order = null; want = null; wantV = 0; }
+        else if (this.t - sh.order.bt > (d < sh.len + 1500 ? 12 : 45) && this.t - (sh.touchT || -99) < 2) { sh.order = null; want = null; wantV = 0; }
       }
     } else if (sh.guard) {
       // на позиции: враг в досягаемости — борт к нему, ход ноль
@@ -852,7 +853,7 @@
     return out;
   };
   // Касание корпусов: развести (тяжёлый сдвигается меньше), погасить ход в сторону
-  // удара; на скорости — удар: корпус, отсек у места удара, пожар и раненые
+  // удара; на скорости — удар по врагу: корпус, отсек у места удара, пожар и раненые
   var RAM_V = 10, RAM_K = 4;
   Battle.prototype.collide = function(dt) {
     var S = this.ships, i, j;
@@ -882,8 +883,10 @@
     // выталкивать по сумме всех касаний (внутри «диска» из кругов одна пара толкала бы в соседний круг)
     var sl = Math.sqrt(sx * sx + sy * sy);
     if (sl > 0.01) { best.nx = sx / sl; best.ny = sy / sl; }
-    // n — от b к a; массы — по корпусу класса
-    a.touchT = b.touchT = this.t;
+    // n — от b к a; массы — по корпусу класса. «Упёрся» (снять приказ, если не движется) — о врага или
+    // о своего, что стоит в точке курса; толчея своих по пути приказ не снимает
+    if (a.side !== b.side || blocksGoal(a, b)) a.touchT = this.t;
+    if (a.side !== b.side || blocksGoal(b, a)) b.touchT = this.t;
     var ma = a.hullMax, mb = b.hullMax, ka = mb / (ma + mb), kb = ma / (ma + mb);
     a.x += best.nx * best.depth * ka; a.y += best.ny * best.depth * ka;
     b.x -= best.nx * best.depth * kb; b.y -= best.ny * best.depth * kb;
@@ -895,8 +898,9 @@
     this.place(a); this.place(b);
     var key = a.n < b.n ? a.n + ':' + b.n : b.n + ':' + a.n;
     this.ramT = this.ramT || {};
-    // удар — по скорости сверх «притирания» и по доле чужой массы (малый о большой — больно малому)
-    if (first && close > RAM_V && this.t - (this.ramT[key] || -99) > 4) {
+    // удар — по скорости сверх «притирания» и по доле чужой массы (малый о большой — больно малому);
+    // свои корабли друг друга не бьют: рулевые расходятся, корпуса только расталкиваются
+    if (first && a.side !== b.side && close > RAM_V && this.t - (this.ramT[key] || -99) > 4) {
       this.ramT[key] = this.t;
       this.ram(a, (close - RAM_V) * RAM_K * 2 * ka, best.x, best.y);
       this.ram(b, (close - RAM_V) * RAM_K * 2 * kb, best.x, best.y);
@@ -916,24 +920,42 @@
     this.hitRoom(sh, lx, ly, Math.min(40, dmg * 0.6), GUNS.heavy, 1);
     if (sh.hull <= 0) this.kill(sh, 'ram');
   };
+  // Корабль o занимает точку курса корабля sh
+  function blocksGoal(sh, o) {
+    var q = sh.order; if (!q || q.face) return false;
+    var dx = o.x - q.x, dy = o.y - q.y, r = (o.len + sh.len) / 2 + 200;
+    return dx * dx + dy * dy < r * r;
+  }
   // Обход: впереди по курсу чужой корпус — отвернуть и сбавить ход (ИИ и курс игрока)
   Battle.prototype.avoid = function(sh, want, wantV) {
-    var best = null, bd = 1e18, ord = sh.order;
+    var best = null, bd = 1e18, ord = sh.order, follow = null;
+    // до точки курса: кто стоит дальше неё, тот не мешает (строй у точки — соседи по бокам и за ней)
+    var togo = ord && !ord.face ? Math.sqrt((ord.x - sh.x) * (ord.x - sh.x) + (ord.y - sh.y) * (ord.y - sh.y)) : 1e18;
     for (var i = 0; i < this.ships.length; i++) {
       var o = this.ships[i]; if (o === sh || o.dead) continue;
       // игрок сам повёл корабль на врага (точка на его корпусе или рядом) — это таран, не обходим
       if (ord && o.side !== sh.side) { hullCircles(o.plan); var tx = ord.x - o.x, ty = ord.y - o.y; if (tx * tx + ty * ty < (o.plan._colR + 300) * (o.plan._colR + 300)) continue; }
       var dx = o.x - sh.x, dy = o.y - sh.y, d = Math.sqrt(dx * dx + dy * dy), clear = (sh.len + o.len) / 2 + 250 + Math.abs(sh.v) * 10;
       if (d > clear) continue;
+      if (d - (o.len + o.wid) / 4 > togo) continue;
       var off = wrap(Math.atan2(dy, dx) - want);
       if (Math.abs(off) > 1.1) continue;                     // не по курсу
       // насколько пройдём мимо: боковой зазор до центра другого корабля
-      var side = Math.abs(Math.sin(off)) * d, need = (Math.max(sh.wid, o.wid) + Math.min(sh.len, o.len) * 0.5) / 2 + 150;
+      // ширина другого поперёк нашего курса — по его развороту (стоит бортом — шире, носом — уже)
+      var oa = wrap(o.hd - want), across = Math.abs(Math.sin(oa)) * o.len / 2 + Math.abs(Math.cos(oa)) * o.wid / 2;
+      var side = Math.abs(Math.sin(off)) * d, need = sh.wid / 2 + across + 150;
       if (side > need) continue;
-      if (d < bd) { bd = d; best = { off: off, d: d, clear: clear }; }
+      // свой идёт впереди туда же — не отворачивать, а держаться за ним (колонна, не толчея)
+      if (o.side === sh.side && o.v > 3 && Math.cos(wrap(o.hd - want)) > 0.6 && Math.abs(off) < 0.8) {
+        var fv = o.v * Math.max(0.5, Math.min(1, (d - (sh.len + o.len) / 2) / 400));
+        if (follow == null || fv < follow) follow = fv;
+        continue;
+      }
+      if (d < bd) { bd = d; best = { off: off, d: d, clear: clear, stop: o.side !== sh.side || blocksGoal(sh, o) }; }
     }
-    if (!best) return null;
-    sh.touchT = Math.max(sh.touchT || -99, this.t - 1.5);           // обходит — считается «упёрся» (для приказа)
+    if (!best) return follow == null || follow >= wantV ? null : { want: want, wantV: follow };
+    if (follow != null) wantV = Math.min(wantV, follow);
+    if (best.stop) sh.touchT = Math.max(sh.touchT || -99, this.t - 1.5);   // обходит чужого или своего в точке — «упёрся» (для приказа)
     var k = 1 - best.d / best.clear;
     // отвернуть в ту сторону, где он «уже» сбоку; чем ближе — тем круче и медленнее
     return { want: want - (best.off >= 0 ? 1 : -1) * (0.5 + 0.7 * k), wantV: wantV * Math.max(0.15, 1 - k * 1.2) };

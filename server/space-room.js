@@ -194,7 +194,7 @@ SpaceRoom.prototype.leave = function(c) {
 SpaceRoom.prototype.hello = function(c) {
   var B = this.B;
   this.send(c, JSON.stringify({
-    t: 'hello', code: this.code, scen: this.scen, cfg: this.cfg, side: c.side, spd: this.speed, round: this.round, T: B.t, over: B.over,
+    t: 'hello', caps: ['many'], code: this.code, scen: this.scen, cfg: this.cfg, side: c.side, spd: this.speed, round: this.round, T: B.t, over: B.over,
     ships: B.ships.map(function(s) { return [s.cls, s.side]; })
   }));
 };
@@ -241,6 +241,7 @@ SpaceRoom.prototype.step = function() {
 
 SpaceRoom.prototype.command = function(c, m) {
   if (!c.viewer || c.spectator) return;
+  if (m.t === 'cmd' && m.k === 'many') { Net.eachMany(m, function(x) { c.viewer.command(x); }); return; }
   if (m.t === 'cmd') { c.viewer.command(m); return; }
   // замеры (RT_DEV): подвести врага, прогнать бой вперёд
   if (m.t === 'dbg' && this.dev) {

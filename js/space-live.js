@@ -33,7 +33,7 @@
     var go = function(srv, online) {
       window.SP_LIVE = { system: systemId, srv: srv };
       if (online === false) toastSoon('Сервер боёв не на связи — орбита может не открыться', 'bad');
-      var s = document.createElement('script'); s.src = '../space/space.js?v=23'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../space/space.js?v=24'; document.body.appendChild(s);
     };
     sb().rpc('rt_space_status', { p_system: systemId }).then(function(r) {
       var d = r && r.data, srv = (d && d.server && d.server.url) || SP_SERVER_FALLBACK;
@@ -82,7 +82,7 @@
   }
 
   // ---- касание пустого космоса: место станции — панель станции
-  window.SP_ON_TAP = function(wx, wy) {
+  window.SP_ON_TAP = function(wx, wy, px, py, group) {
     if (!SL.ready) return false;
     var G = sp().G, sys = G.sys; if (!sys) return false;
     var M = sys.cellM, sl = sys.slot;
@@ -90,7 +90,8 @@
       if (typeof onStationSlotTapped === 'function') { onStationSlotTapped(); return true; }
     }
     // площадка сброса: свой корабль летит в неё и встаёт целиком (сервер ставит ровно по прибытии)
-    var pad = SL.padAt(wx, wy), me = G.B && G.B.ships[G.sel];
+    // группе площадка не нужна: она идёт строем к точке (в площадку встаёт один корабль)
+    var pad = group ? null : SL.padAt(wx, wy), me = G.B && G.B.ships[G.sel];
     if (pad && me && !me.dead && me.side === G.side && me.ctl !== false) {
       var t = typeof shipTypeById !== 'undefined' && shipTypeById[me.cls], fit = !t || Math.min(t.width_cells, t.height_cells) <= pad.size && Math.max(t.width_cells, t.height_cells) <= pad.size;
       if (!fit) { sp().toast(me.name + ' не помещается в площадку сброса — грузить и высаживать будет другой корабль', 'bad'); return true; }

@@ -100,7 +100,7 @@ update player_characters pc set current_system = tutorial_capital(p.faction) fro
 
 -- 5. планеты игрокам: лидеру — столица, остальным по одной в порядке регистрации
 insert into system_control (system_id, controller_user_id)
-select pl.system_id, pl.user_id
+select pl2.system_id, pl.user_id
   from (
     select p.id as user_id, p.faction,
            row_number() over (partition by p.faction order by (l.leader_user_id = p.id) desc nulls last, p.created_at) as n

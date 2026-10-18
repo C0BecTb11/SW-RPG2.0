@@ -55,7 +55,8 @@ Socket.prototype.onData = function(d) {
 
 Socket.prototype.frame = function(fin, op, data) {
   if (op >= 0x8 && (!fin || data.length > 125)) return this.fail(1002);   // служебные кадры — короткие и целые
-  if (op === 0x8) { this.close(1000); return; }
+  this.alive = true;                            // любой кадр от игрока — он на связи (не только pong)
+  if (op === 0x8) { this.peerCode = data.length >= 2 ? data.readUInt16BE(0) : 1005; this.close(1000); return; }
   if (op === 0x9) { this.write(0xA, data); return; }
   if (op === 0xA) { this.alive = true; return; }
   if (op === 0x1 || op === 0x2) {
@@ -102,6 +103,7 @@ Socket.prototype.ping = function() { this.write(0x9, Buffer.alloc(0)); };
 
 Socket.prototype.close = function(code) {
   if (!this.open) return;
+  if (this.peerCode == null) this.byServer = true;
   var p = Buffer.alloc(2); p.writeUInt16BE(code || 1000, 0);
   this.write(0x8, p);
   var s = this.sock;
@@ -111,7 +113,7 @@ Socket.prototype.close = function(code) {
 
 Socket.prototype.fail = function(code) { this.close(code); };
 
-Socket.prototype.terminate = function() { this.sock.destroy(); this.finish(1006); };
+Socket.prototype.terminate = function() { this.byServer = true; this.sock.destroy(); this.finish(1006); };
 
 Socket.prototype.finish = function(code) {
   if (!this.open) return;

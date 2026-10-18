@@ -248,7 +248,7 @@ server.on('upgrade', function(req, sock, head) {
   }
   var ws = wsLite.accept(req, sock, head);
   if (!ws) return;
-  var c = { ws: ws, side: 0, room: null, who: null, msgs: 0, msgWin: Date.now(), ip: req.headers['x-forwarded-for'] || sock.remoteAddress,
+  var c = { ws: ws, side: 0, room: null, who: null, msgs: 0, rx: 0, at: Date.now(), msgWin: Date.now(), ip: req.headers['x-forwarded-for'] || sock.remoteAddress,
             send: function(buf) {
               // медленный игрок: не копим очередь — пропускаем такт и потом шлём бой заново
               if (ws.bufferedAmount > 2 * 1048576) { c.resync = true; return; }
@@ -259,6 +259,7 @@ server.on('upgrade', function(req, sock, head) {
   var authTimer = setTimeout(function() { if (!c.who) ws.close(4001); }, 10000);
   ws.on('message', function(data, binary) {
     var t = Date.now();
+    c.rx++;
     if (t - c.msgWin > 1000) { c.msgWin = t; c.msgs = 0; }
     if (++c.msgs > 30) return;                  // не больше 30 сообщений в секунду
     if (binary) return;
@@ -294,13 +295,17 @@ server.on('upgrade', function(req, sock, head) {
       catch (e) { log('error', 'ошибка приказа', { err: String(e).slice(0, 300) }); }
     }
   });
-  ws.on('close', function() {
+  ws.on('close', function(code) {
     clearTimeout(authTimer);
     CLIENTS.delete(c);
     if (c.room) {
       c.room.leave(c);
       if (!c.room.clients.length) c.room.emptySince = Date.now();
-      log('info', 'игрок вышел', { room: c.room.name, user: c.who && c.who.user, kb: Math.round((c.bytes || 0) / 1024) });
+      // почему: code — код закрытия (1006 — оборвалось без прощания), peer — код от браузера,
+      // by — кто закрыл (srv — сервер: другая вкладка 4006, нет ответа на ping 1006; client — браузер; net — оборвалось в сети), rx — сколько пришло от игрока
+      log('info', 'игрок вышел', { room: c.room.name, user: c.who && c.who.user, kb: Math.round((c.bytes || 0) / 1024),
+                                  code: code, peer: ws.peerCode != null ? ws.peerCode : undefined, by: ws.byServer ? 'srv' : ws.peerCode != null ? 'client' : 'net',
+                                  sec: Math.round((Date.now() - c.at) / 1000), rx: c.rx });
     }
   });
 });

@@ -531,6 +531,14 @@
       else if (f.k === 'healed' && age < 1) { c.save(); c.globalAlpha = 1 - age; c.strokeStyle = 'rgba(180,255,210,0.9)'; c.lineWidth = 0.06; c.beginPath(); c.arc(f.x, f.y, 0.5 + age * 0.8, 0, TAU); c.stroke(); c.restore(); }
       else if (f.k === 'deflect' && age < 0.3 && a) { c.save(); c.globalAlpha = 1 - age / 0.3; c.strokeStyle = heroLook(a).blade; c.lineWidth = 0.08; c.beginPath(); c.arc(a.x, a.y, 0.6, 0, TAU); c.stroke(); c.restore(); }
       else if (f.k === 'artfire' && age < 0.3) { c.save(); c.globalAlpha = 1 - age / 0.3; c.fillStyle = '#ffd27a'; c.beginPath(); c.arc(f.x, f.y, 0.6 + age * 2, 0, TAU); c.fill(); c.restore(); }
+      // способность бойца из исследований: название над ним (свои — золотом, враг — красным)
+      else if (f.k === 'skill' && age < 1.6) {
+        var sa = a && a.alive ? a : f;
+        c.save(); c.translate(sa.x, sa.y - 1.1 - age * 0.5); c.scale(1 / s, 1 / s); c.globalAlpha = Math.min(1, (1.6 - age) * 2);
+        c.font = 'bold 11px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'bottom';
+        c.lineWidth = 3; c.strokeStyle = 'rgba(5,6,10,0.85)'; c.strokeText(f.name, 0, 0);
+        c.fillStyle = f.team === G.side ? '#f0c86a' : '#ff9a80'; c.fillText(f.name, 0, 0); c.restore();
+      }
     }
     c.restore();
   }

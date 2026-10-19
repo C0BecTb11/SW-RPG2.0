@@ -90,7 +90,7 @@ GroundRoom.prototype.applyUnits = function(units) {
     var hpMax = Ty.hp + (u.bonus && u.bonus.hp || 0), abil = u.abil || [];
     var a = B.add(u.type, team, x + size / 2, y + size / 2, {
       uid: u.id, name: u.name || '', portrait: u.portrait || undefined, hpMax: hpMax, hp: Math.min(hpMax, u.hp), owner: u.owner || null,
-      bonus: u.bonus || null, npc: !!u.npc, aim: team === self.def ? Math.PI / 2 : -Math.PI / 2,
+      bonus: u.bonus || null, npc: !!u.npc, aim: team === self.def ? Math.PI / 2 : -Math.PI / 2, skills: u.skills || null,
       abil: Ty.hero ? abil.filter(function(id) { var A = GR.ABIL[id]; return A && A[0]; }) : undefined, passive: Ty.hero ? passiveOf(abil) : undefined
     });
     if (!a) return;

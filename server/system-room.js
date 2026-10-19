@@ -33,6 +33,8 @@ var CELL_M = 200;            // клетка орбиты игры в метра
 var SYNC_EVERY = 5000, PULL_EVERY = 5000, QUIET_MS = 180000, WAKE_M = 9000, WAKE_CRAFT_M = 5000;
 var FIRE_HOLD = 30;          // секунд после попадания корабль считается «под огнём» (прыжок закрыт)
 
+// отпечаток улучшений корабля: что даёт верфь
+function upgKey(s) { return [s.bonus_hp, s.bonus_shield, s.bonus_damage, s.bonus_move, s.bonus_vision, s.bonus_fore, (s.upgrades || []).join('|')].join(','); }
 function sideOf(faction) { return faction === 'cis' ? 1 : 0; }
 function boxOf(type, facing) {
   var w = type ? type.width_cells || 1 : 1, h = type ? type.height_cells || 1 : 1;
@@ -52,6 +54,7 @@ function SystemRoom(name, system, cfg) {
   this.unitHp = {};            // id бойца → последний записанный hp
   this.craftHp = {};
   this.lastSync = {};
+  this.upg = {};               // id корабля → отпечаток улучшений (модернизация на верфи — подхватить на ходу)
   this.hitAt = {};             // n → время последнего попадания (бой)
   this.syncAt = Date.now(); this.pullAt = Date.now(); this.quietSince = Date.now(); this.emptySince = Date.now(); this.created = Date.now();
   var self = this;
@@ -100,7 +103,16 @@ SystemRoom.prototype.applyShips = function(list) {
       var type0 = self.types[s.ship_type], max0 = type0 ? (type0.max_hp || 0) + (s.bonus_hp || 0) : 0;
       if (max0 && s.hp > self.lastHp(s.id)) old.hull = Math.min(old.hullMax, Math.max(old.hull, old.hullMax * s.hp / max0));
       if (old.faction !== s.faction || old.owner !== (s.owner_user_id || null)) { old.dead = true; old.why = 'left'; old.deadAt = B.t; delete self.byId[s.id]; }
-      else { self.syncUnits(old, s); return; }
+      else {
+        // верфь поставила улучшения — корабль в бою меняется сразу (корпус, щиты, орудия, ход, сонар)
+        var uk = upgKey(s);
+        if (self.upg[s.id] != null && self.upg[s.id] !== uk && type0) {
+          B.refitShip(old.n, Army.fromGame(s, type0, [], [], {}));
+          self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
+        }
+        self.upg[s.id] = uk;
+        self.syncUnits(old, s); return;
+      }
     } else if (old) { if (old.captured < 0 && old.why !== 'left') return; delete self.byId[s.id]; }   // погиб в бою — строка с hp 0 ещё лежит
     var type = self.types[s.ship_type] || null;
     if (type && type.is_fighter) { self.addFree(s, type); return; }
@@ -114,7 +126,7 @@ SystemRoom.prototype.applyShips = function(list) {
     sh.gameId = s.id; sh.trophy = !!s.trophy; sh.commander = s.commander_id || null;
     sh.units = (s.units || []).map(function(u) { return { id: u.id, hpMax: u.hp }; });
     sh.craftIds = (s.craft || []).map(function(c) { return c.id; });
-    self.byId[s.id] = sh.n; self.lastSync[s.id] = null;
+    self.byId[s.id] = sh.n; self.lastSync[s.id] = null; self.upg[s.id] = upgKey(s);
     (s.units || []).forEach(function(u) { self.unitHp[u.id] = u.hp; });
     (s.craft || []).forEach(function(c) { self.craftHp[c.id] = c.hp; });
     added.push(sh);

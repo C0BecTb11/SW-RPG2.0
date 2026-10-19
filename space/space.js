@@ -1056,6 +1056,9 @@
     var i;
     for (i = 0; i < B.ships.length; i++) { var o = B.ships[i]; if (!o.dead && o.side === G.side) hole(o.x, o.y, B.sensRange(o)); }
     for (i = 0; i < B.craft.length; i++) { var cr = B.craft[i]; if (!cr.dead && cr.side === G.side) hole(cr.x, cr.y, 3500); }
+    // орбита: своя готовая станция видит на 12 км (как на сервере)
+    var S0 = G.sys, st0 = S0 && S0.station, sl0 = S0 && S0.slot;
+    if (st0 && sl0 && st0.ready !== false && st0.faction === (G.side === 1 ? 'cis' : 'republic')) hole((sl0.x + sl0.size / 2) * S0.cellM, (sl0.y + sl0.size / 2) * S0.cellM, 12000);
     c.drawImage(FOG.cv, 0, 0, w * k, h * k);
     // кромка датчиков выбранного корабля
     var me = B.ships[G.sel];
@@ -1175,6 +1178,14 @@
     else if (y < z + pad) return [x, z + pad, true];
     return [x, y, false];
   }
+  // Арт станции по фракции (тот же, что на старой орбите); пока грузится — значок кольцами
+  var ST_ART = {};
+  function stationArt(f) {
+    if (f !== 'cis' && f !== 'republic') return null;
+    var im = ST_ART[f];
+    if (!im) { im = ST_ART[f] = new Image(); im.src = '../assets/stations/station-' + f + '.png'; }
+    return im.complete && im.naturalWidth ? im : null;
+  }
   function drawSys(c) {
     var S = G.sys; if (!S || G.mode !== 'space') return;
     var M = S.cellM, N = S.cells * M, z = S.zone * M, a = toS(0, 0), b = toS(N, N), s = CAM.s, mineTop = sysMyBand() === 'top', own = sysOwn();
@@ -1204,10 +1215,21 @@
     var sl = S.slot;
     if (sl) {
       var st = S.station, q2 = toS((sl.x + sl.size / 2) * M, (sl.y + sl.size / 2) * M), r = sl.size * M * s / 2;
+      var art = st && stationArt(st.faction);
       c.strokeStyle = st ? (st.faction === 'cis' ? 'rgba(217,74,74,0.7)' : 'rgba(74,144,217,0.7)') : 'rgba(143,168,196,0.35)';
       c.lineWidth = st ? 2 : 1; c.setLineDash(st ? [] : [3, 5]);
-      c.beginPath(); c.arc(q2[0], q2[1], Math.max(6, r), 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
-      if (st) { c.beginPath(); c.arc(q2[0], q2[1], Math.max(3, r * 0.45), 0, Math.PI * 2); c.stroke(); for (var k = 0; k < 4; k++) { var an = k * Math.PI / 2 + Math.PI / 4; c.beginPath(); c.moveTo(q2[0] + Math.cos(an) * r * 0.45, q2[1] + Math.sin(an) * r * 0.45); c.lineTo(q2[0] + Math.cos(an) * r, q2[1] + Math.sin(an) * r); c.stroke(); } }
+      if (art) {
+        // арт станции (как на старой орбите): вписан в квадрат места, с тенью; строящаяся — бледная, под пунктиром
+        var iw = art.naturalWidth, ih = art.naturalHeight, k0 = Math.min(2 * r / iw, 2 * r / ih), dw = iw * k0, dh = ih * k0;
+        c.save(); c.globalAlpha = st.ready === false ? 0.45 : 1; c.shadowColor = 'rgba(0,0,0,0.8)'; c.shadowBlur = Math.max(4, r * 0.15);
+        c.drawImage(art, q2[0] - dw / 2, q2[1] - dh / 2, dw, dh); c.restore();
+        c.globalAlpha = 0.35; c.beginPath(); c.arc(q2[0], q2[1], Math.max(6, r * 1.04), 0, Math.PI * 2); c.stroke(); c.globalAlpha = 1;
+        if (st.ready === false) { c.setLineDash([3, 5]); c.beginPath(); c.arc(q2[0], q2[1], Math.max(6, r * 1.04), 0, Math.PI * 2); c.stroke(); }
+        c.setLineDash([]);
+      } else {
+        c.beginPath(); c.arc(q2[0], q2[1], Math.max(6, r), 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
+        if (st) { c.beginPath(); c.arc(q2[0], q2[1], Math.max(3, r * 0.45), 0, Math.PI * 2); c.stroke(); for (var k = 0; k < 4; k++) { var an = k * Math.PI / 2 + Math.PI / 4; c.beginPath(); c.moveTo(q2[0] + Math.cos(an) * r * 0.45, q2[1] + Math.sin(an) * r * 0.45); c.lineTo(q2[0] + Math.cos(an) * r, q2[1] + Math.sin(an) * r); c.stroke(); } }
+      }
       if (r > 18) { c.fillStyle = 'rgba(232,217,168,0.7)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(st ? (st.name || 'Станция').toUpperCase() : 'МЕСТО ПОД СТАНЦИЮ', q2[0], q2[1] + r + 4); }
     }
     c.restore();

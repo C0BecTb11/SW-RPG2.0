@@ -586,6 +586,8 @@
       var vis = {}, visC = {}, eyes = [];
       for (i = 0; i < S.length; i++) if (!S[i].dead && S[i].side === side) eyes.push([S[i].x, S[i].y, this.sensRange(S[i])]);
       for (i = 0; i < C.length; i++) if (!C[i].dead && C[i].side === side) eyes.push([C[i].x, C[i].y, CRAFT_SENS]);
+      // неподвижные датчики (станция на орбите): [сторона, x, y, дальность]
+      if (this.eyes) for (i = 0; i < this.eyes.length; i++) if (this.eyes[i][0] === side) eyes.push([this.eyes[i][1], this.eyes[i][2], this.eyes[i][3]]);
       for (i = 0; i < S.length; i++) {
         var o = S[i]; if (o.dead || o.side === side) continue;
         var seen = false, flash = this.t - o.flash < FLASH;

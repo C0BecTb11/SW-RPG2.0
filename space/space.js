@@ -2420,7 +2420,7 @@
     return s ? s : n;
   }
   function buildTargets() {
-    var B = G.B, foes = B.ships.filter(function(s) { return s.side !== G.side && !s.dead; });
+    var B = G.B, foes = B.ships.filter(function(s) { return s.side !== G.side && !s.dead && (!G.sys || seen(s)); });
     if (G.foe < 0 || !B.ships[G.foe] || B.ships[G.foe].dead) G.foe = foes.length ? foes[0].n : -1;
     $('sp-tg-foe').innerHTML = foes.length < 2 ? '' : foes.map(function(s) {
       return '<button class="sp-chip' + (s.n === G.foe ? ' on' : '') + '" data-foe="' + s.n + '">' + esc(s.name) + '</button>';
@@ -2478,6 +2478,7 @@
       var h = $('sp-u-h' + s.n); if (!h) return;
       var el = h.parentNode.parentNode, lost = !seen(s);
       el.classList.toggle('lost', lost);
+      el.style.display = G.sys && lost && !s.dead ? 'none' : '';     // орбита: кого не видят датчики — того в списке нет
       if (lost) { $('sp-u-w' + s.n).textContent = 'нет контакта'; return; }   // полоски застывают на последнем, что видели
       h.style.width = hullK(s) * 100 + '%';
       $('sp-u-s' + s.n).style.width = shAll(s) * 100 + '%';
@@ -3200,7 +3201,7 @@
       G.side = m.side; G.scen = sys ? { sys: m.system } : m.cfg ? { cfg: m.cfg } : m.scen;
       N.M = new NETLIB.Mirror(B, m.side, netSend, window.SWBoard);
       N.M.many = !!(m.caps && m.caps.indexOf('many') >= 0);            // сервер принимает приказы группе одним пакетом
-      if (sys) B.fog = false;                                          // орбита: все корабли видны как есть
+      if (sys) B.fog = m.fog === true;                                 // орбита: туман, если сервер его ведёт (без засечек)
       setupBattle(B, G.scen);
       if (sys) G.follow = 'all';
       N.ready = true; N.vkey = ''; N.addQ = Promise.resolve();

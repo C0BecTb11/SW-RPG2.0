@@ -183,7 +183,7 @@
                               guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null },
       dormant: !!o.dormant, owner: o.owner || null, faction: o.faction || plan.faction,
       vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
-      figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1,
+      figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1, stands: o.stands || null,
       guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
     };
     sh.crew = sh.dormant ? new DormantCrew(plan, sh.crewOpts) : new SWCrew.Crew(plan, sh.crewOpts);
@@ -235,6 +235,7 @@
     if (A.shBonus) sh.shMax *= A.shBonus;
     for (var q = 0; q < 4; q++) sh.sh[q] = sh.shMax * (A.shK && A.shK[q] != null ? A.shK[q] : 1);
     this.ships.push(sh);
+    if (!sh.dormant) this.applyStands(sh);
     this.place(sh);
     // разведка перед боем: где противник стоял на старте, обе стороны знают
     this.last[1 - sh.side][sh.n] = { x: sh.x, y: sh.y, hd: sh.hd, t: this.t };
@@ -348,8 +349,24 @@
   Battle.prototype.wake = function(sh) {
     if (!sh || !sh.dormant) return;
     sh.crew = new SWCrew.Crew(sh.plan, sh.crewOpts); sh.dormant = false;
+    this.applyStands(sh);
     for (var i = 0; i < this.craft.length; i++) if (this.craft[i].home === sh.n) this.craft[i].idle = false;   // его истребители — в дело
     this.ev.wakes = this.ev.wakes || []; this.ev.wakes.push(sh.n);
+  };
+  // Посты десанта (rt-crew standUnits): uid бойца → клетка плана. Живут в корабле боя (и в базе —
+  // ships.troop_posts), поэтому переживают сон корабля и новое открытие орбиты
+  Battle.prototype.applyStands = function(sh) {
+    if (!sh.stands || sh.dormant || !sh.crew.standAt) return;
+    var ag = sh.crew.agents;
+    for (var i = 0; i < ag.length; i++) { var a = ag[i], p = a.uid && sh.stands[a.uid]; if (p && a.alive && a.team === sh.side) sh.crew.standAt(a, p); }
+  };
+  Battle.prototype.standTroops = function(shipN, ids, cell) {
+    var sh = this.ships[shipN]; if (!sh || sh.dead || !Array.isArray(ids)) return 0;
+    if (sh.dormant) this.wake(sh);
+    var n = sh.crew.standUnits(ids.slice(0, 128), cell | 0), st = {}, ag = sh.crew.agents;
+    for (var i = 0; i < ag.length; i++) if (ag[i].alive && ag[i].stand && ag[i].uid) st[ag[i].uid] = ag[i].stand.slice(0, 2);
+    sh.stands = st; sh.standsDirty = true;
+    return n;
   };
   Battle.prototype.guard = function(shipN, on) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
@@ -1152,6 +1169,7 @@
       if (!st || !(st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory')) continue;
       if (a.job && a.job.kind === 'defend' && !(all && !(a.tgt >= 0))) continue;
       if (a.job && a.job.kind === 'muster') continue;              // уже бежит к шлюзу
+      if (a.stand) continue;                                         // на посту (поставил игрок) — на абордаж не идёт
       out.push(a);
     }
     return out;

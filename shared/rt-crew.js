@@ -444,6 +444,70 @@
     a.face = a.spot && a.spot[2] != null ? a.spot[2] : null;
     this.go(a, st.n, a.spot, 'post');
   };
+  // ---------------------------------------------------------------- посты десанта
+  // Игрок ставит бойцов трюма (не экипаж) на точку корабля: стоят там, пожары и ремонт их не
+  // дёргают, на абордаж не идут, при обороне держат эту точку; снять — обратно в казарму.
+  Crew.prototype.standSpots = function(cell, n) {
+    var W = this.w, H = this.h, walk = this.walk, out = [], seen = {}, q = [], rm, i;
+    if (!(cell >= 0 && cell < W * H)) return out;
+    if (!walk[cell]) {
+      // ткнули в стену или мебель — ближайший пол в 6 клетках (свой отсек — в приоритете)
+      var cx = cell % W, cy = (cell - cx) / W, best = -1, bd = 1e9; rm = this.ship.room[cell];
+      for (var dy = -6; dy <= 6; dy++) for (var dx = -6; dx <= 6; dx++) {
+        var x = cx + dx, y = cy + dy, k = y * W + x;
+        if (x < 0 || y < 0 || x >= W || y >= H || !walk[k]) continue;
+        var dd = dx * dx + dy * dy + (this.ship.room[k] === rm ? 0 : 50);
+        if (dd < bd) { bd = dd; best = k; }
+      }
+      if (best < 0) return out;
+      cell = best;
+    }
+    q.push(cell); seen[cell] = 1;
+    for (i = 0; i < q.length && out.length < n; i++) {
+      var c = q[i], qx = c % W, qy = (c - qx) / W;
+      out.push([qx, qy]);
+      var nb = [c - 1, c + 1, c - W, c + W];
+      for (var j = 0; j < 4; j++) { var m = nb[j]; if (m < 0 || m >= W * H || seen[m] || !walk[m] || (j < 2 && Math.floor(m / W) !== qy)) continue; seen[m] = 1; q.push(m); }
+    }
+    return out;
+  };
+  Crew.prototype.standGo = function(a) {
+    var k = a.stand[1] * this.w + a.stand[0];
+    a.job = { kind: 'stand', room: this.ship.room[k] || a.home, cell: k };
+    this.go(a, a.job.room, [a.stand[0], a.stand[1]], 'stand'); a.face = null;
+  };
+  // ids — номера людей; cell < 0 — снять с поста. Вернёт, скольких поставили (сняли)
+  Crew.prototype.standUnits = function(ids, cell) {
+    var list = [], n = 0, i, self = this;
+    for (i = 0; i < ids.length && list.length < 128; i++) {
+      var a = this.agents[ids[i] | 0];
+      if (!a || !a.alive || a.gone || a.team !== this.team || !a.utype || list.indexOf(a) >= 0) continue;
+      if (a.job && (a.job.kind === 'muster' || a.job.kind === 'defend' || a.job.kind === 'weld')) continue;   // на сборах и в бою — не сейчас
+      list.push(a);
+    }
+    if (cell < 0) {
+      list.forEach(function(b) { if (!b.stand) return; b.stand = null; if (b.job && b.job.kind === 'stand') b.job = null; self.sendPost(b); n++; });
+      return n;
+    }
+    var spots = this.standSpots(cell, list.length); if (!spots.length) return 0;
+    var px = cell % this.w + 0.5, py = Math.floor(cell / this.w) + 0.5;
+    list.sort(function(p, q) { return (p.x - px) * (p.x - px) + (p.y - py) * (p.y - py) - (q.x - px) * (q.x - px) - (q.y - py) * (q.y - py); });
+    for (i = 0; i < list.length && spots.length; i++) {
+      var u = list[i], bi = 0, bd = 1e9;
+      for (var k = 0; k < spots.length; k++) { var dx = spots[k][0] + 0.5 - u.x, dy = spots[k][1] + 0.5 - u.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; bi = k; } }
+      this.releaseJob(u);
+      u.stand = spots.splice(bi, 1)[0];
+      this.standGo(u); n++;
+    }
+    return n;
+  };
+  // Пост сразу, без пути (корабль проснулся — бойцы уже стоят, где их поставили)
+  Crew.prototype.standAt = function(a, p) {
+    var k = p[1] * this.w + p[0]; if (!(k >= 0 && k < this.walk.length) || !this.walk[k]) return false;
+    a.stand = [p[0], p[1]]; a.x = p[0] + 0.5; a.y = p[1] + 0.5;
+    this.standGo(a); a.at = true;
+    return true;
+  };
   Crew.prototype.go = function(a, roomN, cell, task) {
     a.goalRoom = roomN; a.goal = cell; a.task = task; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wig = 0;
     a.sprayAt = -1; a.fixAt = -1;
@@ -779,6 +843,8 @@
   // На месте: вахта у пультов, тушение, ремонт, лечение, подноска; в мирное время — прогулки
   Crew.prototype.work = function(a, dt) {
     var j = a.job, W = this.w;
+    // на посту (поставил игрок): стоит, оружие наготове, поглядывает по сторонам
+    if (j && j.kind === 'stand') { a.phase = (a.phase + dt * 1.2) % 6.28; a.aim = turn(a.aim, a.aim + Math.sin(this.t * 0.4 + a.id) * 0.6, 0.6 * dt); return; }
     // десант у шлюза: ждёт посадки в шаттл, оружие наготове
     if (j && j.kind === 'muster') { a.phase = (a.phase + dt * 1.5) % 6.28; if (a.face != null) a.aim = turn(a.aim, a.face, 3 * dt); return; }
     if (j && j.kind === 'fire') {

@@ -321,6 +321,38 @@
     var s = G.B.ships[G.view], b = s && boardOf(s.n);
     return b && b.def === G.side && s.side === G.side && b.over < 0 ? b : null;
   }
+  // Смотрим внутрь своего корабля без боя на борту: десант трюма (не экипаж) ставят на посты
+  function ownView() {
+    if (G.mode !== 'inside' || defView() || attView()) return null;
+    var s = G.B.ships[G.view]; return s && !s.dead && s.side === G.side && ctl(s) ? s : null;
+  }
+  function trooper(a) { return !!(a && a.alive && !a.gone && a.team === G.side && a.utype); }
+  function onPost(a) { return !!(a.job && a.job.kind === 'stand'); }
+  // Строка постов в полосе: сколько на постах, выбранные, снять
+  function postLine(vs) {
+    var tro = vs.crew.agents.filter(trooper); if (!tro.length) return '';
+    var posted = tro.filter(onPost).length, sel = uSel(vs).length;
+    return '<div class="sp-bd-strip"><span>Десант на постах <b>' + posted + '</b> из ' + tro.length + (sel ? ' · выбрано <b>' + sel + '</b>' : '') +
+      '<em class="sp-dim"> · ' + (sel ? 'коснись пола — встанут там' : 'боец или рамка — выбрать, двойное касание — весь') + '</em></span>' +
+      (sel ? '<button class="sp-mini" data-ba="unstand">С поста</button><button class="sp-mini" data-ba="usx">Отмена</button>' : posted ? '<button class="sp-mini" data-ba="unstandall">Снять всех</button>' : '') + '</div>';
+  }
+  // Посты на схеме своего корабля: выбранные — кольцо, на посту — золотой ромбик под ногами
+  function drawPosts(c, sh, T) {
+    if (ownView() !== sh) return;
+    var s = ICAM.s, us = uSel(sh), dd = Math.max(2.5, s * 0.16);
+    sh.crew.agents.forEach(function(a) {
+      if (!trooper(a)) return;
+      var p = itoS(a.x, a.y);
+      if (onPost(a)) { var q = itoS(a.x, a.y + 0.55); c.fillStyle = 'rgba(240,200,106,0.9)'; c.beginPath(); c.moveTo(q[0], q[1] - dd); c.lineTo(q[0] + dd, q[1]); c.lineTo(q[0], q[1] + dd); c.lineTo(q[0] - dd, q[1]); c.closePath(); c.fill(); }
+      if (us.indexOf(a) >= 0) { c.strokeStyle = 'rgba(240,200,106,0.95)'; c.lineWidth = 1.5; c.setLineDash([3, 2.5]); c.lineDashOffset = -T * 6; c.beginPath(); c.arc(p[0], p[1], Math.max(5, s * 0.55), 0, TAU); c.stroke(); c.setLineDash([]); }
+    });
+    var bm = G.bmark;
+    if (bm && bm.n === sh.n) {
+      var mk = (performance.now() - bm.t) / 600;
+      if (mk < 1) { var W2 = sh.plan.w, mx = bm.cell % W2, mp = itoS(mx + 0.5, (bm.cell - mx) / W2 + 0.5); c.strokeStyle = 'rgba(217,169,64,' + (1 - mk) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(mp[0], mp[1], 5 + mk * 18, 0, TAU); c.stroke(); }
+      else G.bmark = null;
+    }
+  }
   // Абордажные шаттлы врага, что летят к нашим кораблям: [{c, ship, eta}]
   function shuttlesIn() {
     var B = G.B, out = [];
@@ -367,7 +399,8 @@
   // Бойцы, выбранные поштучно (как на пробной палубе): живые, свои, на этом корабле
   function uSel(sh) {
     if (!G.usel || !G.usel.length || G.uselN !== sh.n) return [];
-    var bo = boardOf(sh.n); if (!bo || bo.over >= 0) { G.usel = []; return []; }     // бой на борту кончился — выбор снят
+    var bo = boardOf(sh.n);
+    if ((!bo || bo.over >= 0) && ownView() !== sh) { G.usel = []; return []; }     // бой на борту кончился — выбор снят (свой корабль — посты)
     var ag = sh.crew.agents;
     G.usel = G.usel.filter(function(id) { var a = ag[id]; return a && a.alive && !a.gone && a.team === G.side; });
     return G.usel.map(function(id) { return ag[id]; });
@@ -659,6 +692,11 @@
       if (r.ok && r.muster) toast('Десант к шлюзу: ' + r.party + ' ' + plural(r.party, 'боец', 'бойца', 'бойцов') + ' бегут на посадку — шаттлы стартуют, как соберутся', 'gold');
       else if (r.ok) toast('На абордаж: ' + r.party + ' ' + plural(r.party, 'боец', 'бойца', 'бойцов') + ' в ' + r.shuttles + ' ' + plural(r.shuttles, 'шаттле', 'шаттлах', 'шаттлах') + '. Прикрой их от ПВО', 'gold');
       else toast(r.why, 'bad');
+    } else if (k === 'unstand' || k === 'unstandall' || k === 'usx') {
+      var vs = ownView(); if (!vs) return;
+      var ids = k === 'unstandall' ? vs.crew.agents.filter(function(a) { return trooper(a) && onPost(a); }).map(function(a) { return a.id; }) : uSel(vs).map(function(a) { return a.id; });
+      if (k !== 'usx' && ids.length && B.standTroops) { var nu = B.standTroops(vs.n, ids, -1); toast(nu ? 'С поста — в казармы: ' + nu : 'Выбранные не стоят на постах', nu ? 'gold' : 'bad'); }
+      G.usel = [];
     } else if (k === 'mcancel') {
       G.vent = false; G.dmode = null;
     } else if (k === 'aimx') {
@@ -1674,6 +1712,7 @@
     drawBoardUnder(c, sh, T);
     drawCrew(c, sh, T);
     drawBoardOver(c, sh, T);
+    drawPosts(c, sh, T);
     DECK.drawOver(c, sh, T);
     drawBlasts(c, sh);
     drawAlarm(c, sh, T);
@@ -2118,19 +2157,19 @@
     if (smooth === false) { ICAM.x = w[0]; ICAM.y = y; G.ifly = null; } else G.ifly = { x: w[0], y: y };
   }
   // Рамкой выделяют своих бойцов там, где ими командуешь (абордаж и оборона)
-  function boxable() { return !!(attView() || defView()) && !G.dmode && !G.vent; }
+  function boxable() { return !!(attView() || defView() || ownView()) && !G.dmode && !G.vent; }
   function boxSelect() {
     var b = DECK.S.box, sh = G.B && G.B.ships[G.view]; if (!b || !sh || !boxable()) return;
     var x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
     if (x1 - x0 < 10 && y1 - y0 < 10) return;
-    var bv = attView(), ids = [];
+    var bv = attView(), ov = ownView() === sh, ids = [];
     sh.crew.agents.forEach(function(a) {
-      if (!a.alive || a.gone || a.team !== G.side || !(bv ? a.sq : defU(a)) || ids.length >= 128) return;
+      if (!a.alive || a.gone || a.team !== G.side || !(bv ? a.sq : ov ? trooper(a) : defU(a)) || ids.length >= 128) return;
       var q = itoS(a.x, a.y);
       if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) ids.push(a.id);
     });
     G.usel = ids; G.uselN = sh.n; G.bsel = {};
-    toast(ids.length ? 'Выбрано бойцов: ' + ids.length + '. Пол — бегут туда, враг — огонь по нему' : 'В рамке нет твоих бойцов', ids.length ? 'gold' : 'bad');
+    toast(ids.length ? 'Выбрано бойцов: ' + ids.length + (ov ? '. Коснись пола — встанут там на пост' : '. Пол — бегут туда, враг — огонь по нему') : ov ? 'В рамке нет десанта (экипаж на постах не ставят)' : 'В рамке нет твоих бойцов', ids.length ? 'gold' : 'bad');
     hud();
   }
   function clampS(s) { return Math.max(0.008, Math.min(1.2, s)); }
@@ -2147,6 +2186,29 @@
         if (!a.alive || a.gone || (bv && a.team !== G.side && !bv.vis[a.id])) return;
         var dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < wd) { wd = d; who = a; }
       });
+      // свой корабль без боя на борту: десант трюма — на посты (касание бойца — выбрать, пол — встать там)
+      var ov = ownView();
+      if (ov === sh0) {
+        var nowO = performance.now(), dblO = G.lastTap && nowO - G.lastTap.t < 380 && G.lastTap.id === (who ? who.id : -1);
+        G.lastTap = { t: nowO, id: who ? who.id : -1 };
+        if (G.uselN !== sh0.n) { G.usel = []; G.uselN = sh0.n; }
+        if (who && trooper(who)) {
+          if (dblO) { G.usel = sh0.crew.agents.filter(trooper).slice(0, 128).map(function(a) { return a.id; }); toast('Выбран весь десант: ' + G.usel.length + '. Коснись пола — встанут там на пост', 'gold'); hud(); return; }
+          var oi = G.usel.indexOf(who.id);
+          if (oi >= 0) G.usel.splice(oi, 1); else G.usel.push(who.id);
+          try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {}
+          hud(); return;
+        }
+        if (G.usel.length) {
+          var cxo = Math.floor(w[0]), cyo = Math.floor(w[1]);
+          if (cxo >= 0 && cyo >= 0 && cxo < sh0.plan.w && cyo < sh0.plan.h) {
+            var no = B.standTroops ? B.standTroops(sh0.n, G.usel.slice(), cyo * sh0.plan.w + cxo) : 0;
+            if (no) { G.bmark = { cell: cyo * sh0.plan.w + cxo, n: sh0.n, t: nowO }; toast(no + ' ' + plural(no, 'боец встанет', 'бойца встанут', 'бойцов встанут') + ' на пост: держат место и при обороне, на абордаж не идут', 'gold'); G.usel = []; }
+            else toast('Туда не встать', 'bad');
+            hud(); return;
+          }
+        }
+      }
       // оборона: режим дверей — ближайшая дверь под пальцем
       var dv = defView();
       if (dv && G.dmode) { doorTap(dv, w); return; }
@@ -2464,7 +2526,7 @@
 
   // Трюм корабля: десант (живые / сколько было), герои, техника; недобор экипажа
   function holdLine(sh) {
-    var c = sh.crew, alive = 0, all = 0, heroes = [], gA = 0, gN = 0, mu = 0;
+    var c = sh.crew, alive = 0, all = 0, heroes = [], gA = 0, gN = 0, mu = 0, posted = G.net ? sh.netPosts || 0 : c.agents.filter(function(a) { return a.alive && a.stand; }).length;
     if (G.net && sh.netTroops) { alive = sh.netTroops[0]; all = sh.netTroops[1]; heroes = sh.netHeroes || []; mu = sh.netMuster || 0; if (sh.netGuards) { gA = sh.netGuards[0]; gN = sh.netGuards[1]; } }
     else c.agents.forEach(function(a) {
       if (a.team !== sh.side) return;
@@ -2478,6 +2540,7 @@
       (all ? 'десант на борту <b>' + alive + '</b><em> из ' + all + '</em>' : '<span class="sp-dim">десанта в трюме нет — бойцов грузят в игре</span>') +
       (heroes.length ? ' · <b class="hero">★ ' + heroes.map(esc).join(', ') + '</b>' : '') +
       (mu ? ' · <b class="mu">бегут к шлюзу ' + mu + '</b>' : '') +
+      (posted ? ' · на постах <b>' + posted + '</b>' : '') +
       (sh.vehicles && sh.vehicles.length ? ' · техника <b>' + sh.vehicles.length + '</b>' : '') +
       (gN ? ' · охрана <b>' + gA + '</b>' + (gA < gN ? '<em> из ' + gN + '</em>' : '') : '') +
       (c.crewLost ? ' · <span class="foe">недобор экипажа ' + c.crewLost + '</span>' : '') + '</div>';
@@ -2592,7 +2655,8 @@
     G.bdKey = bk;
     // выбор отсека на схеме врага: шторка уходит, подсказка — в полосе
     var aimL = G.aim ? '<div class="sp-aim"><span>Коснись отсека на корабле «' + esc(foeS ? foeS.name : '') + '»</span><button class="sp-mini" data-ba="aimx">Отмена</button></div>' : '';
-    stat.innerHTML = (G.mode === 'space' ? grpLine() : '') + head + (G.mode === 'inside' ? inside : atkLine(sh)) + aimL + bs.now;
+    var ovS = ownView();
+    stat.innerHTML = (G.mode === 'space' ? grpLine() : '') + head + (G.mode === 'inside' ? inside : atkLine(sh)) + (ovS ? postLine(ovS) : '') + aimL + bs.now;
     // орудия: сколько бьёт, сколько выбито
     var fire = 0, out = 0;
     sh.guns.forEach(function(g) { if (g.out) out++; else if (g.aimAt) fire++; });

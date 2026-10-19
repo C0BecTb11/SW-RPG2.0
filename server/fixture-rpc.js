@@ -33,6 +33,7 @@ function make(dir, log) {
         return Promise.resolve({ ships: (args.p_ships || []).length });
       }
       if (fn === 'rt_space_close') return Promise.resolve(true);
+      if (fn === 'rt_space_posts') { log('info', 'посты десанта: записано', { ships: (args.p_ships || []).length, posts: JSON.stringify(args.p_ships || []).slice(0, 200) }); return Promise.resolve(true); }
       if (fn === 'rt_ground_open') { var st = load(args.p_system); bySys[st.battle_id] = args.p_system; return Promise.resolve(JSON.parse(JSON.stringify(st))); }
       if (fn === 'rt_ground_pull') { var s2 = load(bySys[args.p_battle] || args.p_system); return Promise.resolve(JSON.parse(JSON.stringify(s2))); }
       if (fn === 'rt_ground_sync') {

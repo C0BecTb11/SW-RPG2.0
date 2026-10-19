@@ -269,13 +269,15 @@
     return a.grp === 'troops' && a.role === 'reserve' && !!st && (st.t === 'troops' || st.t === 'droids' || st.t === 'vehicle' || st.t === 'armory');
   };
   Board.prototype.toDefend = function(a) {
-    var c = this.c;
+    var c = this.c, stand = a.stand;
     a.post = null; a.focus = -1; this.microEnd(a, true);
     c.releaseJob(a); c.claimCell(a, null);
     a.job = { kind: 'defend', room: a.home };
     if (!a.wpn) { a.wpn = this.wpnOf(a); a.hpMax = WPN[a.wpn].hp; a.hp = a.hpMax * Math.min(1, a.hp / 100); }
     a.tgt = -1; a.scan = this.R() * SCAN; a.cd = this.R(); a.at = false; a.wait = this.R() * 1.5; a.guard = 0;
     if (this.defManual) this.holdHere(a);
+    // поставлен игроком на пост — держит его и в обороне
+    if (stand && c.walk[stand[1] * this.W + stand[0]]) { a.post = [stand[0], stand[1]]; this.goCell(a, a.post); }
   };
   // Держать место, где стоит (оборона за игроком, боец без отряда)
   Board.prototype.holdHere = function(a) {
@@ -1217,7 +1219,7 @@
     if (this.alarm) this.setAlarm(false);
     for (var i = 0; i < c.agents.length; i++) {
       var a = c.agents[i];
-      if (a.alive && a.team === this.def && a.job && a.job.kind === 'defend') { a.job = null; a.guard = 0; a.hunt = false; c.sendPost(a); }
+      if (a.alive && a.team === this.def && a.job && a.job.kind === 'defend') { a.job = null; a.guard = 0; a.hunt = false; if (a.stand) c.standGo(a); else c.sendPost(a); }
       else if (a.alive && a.job && a.job.kind === 'weld') this.weldEnd(a, this.doors[a.job.door]);
       a.dsq = 0;
     }

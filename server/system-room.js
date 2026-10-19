@@ -69,18 +69,26 @@ SystemRoom.prototype.open = function() {
     self.battleId = st.battle_id; self.state = st;
     self.types = {}; (st.types || []).forEach(function(t) { self.types[t.id] = t; });
     self.grid = (st.settings && st.settings.grid) || 150;
-    // орбита планеты: датчики покрывают её целиком — тумана и «засечек» нет, все корабли видны как есть
-    var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [false, false], endless: true, fog: false });
+    // туман войны: враг виден в дальности датчиков своих кораблей, истребителей и станции (и по вспышкам
+    // главного калибра); «засечек» на месте, где видели, игрокам орбиты не шлём
+    var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [false, false], endless: true, fog: true });
     B.defHuman = function(sh) { return !!(sh.owner && self.here(sh.owner)); };
     // кто пошёл на абордаж — тому и трофей
     var board0 = B.board;
     B.board = function(n, t, all, now) { var r = board0.call(B, n, t, all, now); if (r && r.ok && B.ships[t]) B.ships[t].boardBy = B.ships[n].owner || null; return r; };
     self.B = B;
+    self.setEyes();
     self.applyShips(st.ships || []);
     self.cfg.log('info', 'орбита открыта', { room: self.name, battle: self.battleId, ships: B.ships.length, system: st.system.faction });
   });
 };
 
+// Станция видит вокруг себя — для своей стороны (готовая; строящаяся ещё слепа)
+var STATION_SENS = 12000;
+SystemRoom.prototype.setEyes = function() {
+  var st = this.state && this.state.station, sl = this.state && this.state.slot;
+  this.B.eyes = st && st.ready && st.faction ? [[sideOf(st.faction), ((st.x != null ? st.x : sl.x) + (st.size || sl.size) / 2) * CELL_M, ((st.y != null ? st.y : sl.y) + (st.size || sl.size) / 2) * CELL_M, STATION_SENS]] : [];
+};
 // Корабли из базы → бой. Повторный вызов (pull) добавляет прибывших и убирает ушедших.
 SystemRoom.prototype.applyShips = function(list) {
   var B = this.B, self = this, seen = {}, added = [];
@@ -183,6 +191,7 @@ SystemRoom.prototype.admit = function(c) {
   }
   c.side = c.side === 1 || (c.side !== 0 && c.who.side === 1) ? 1 : 0;
   c.viewer = new Net.Viewer(B, c.side, c.who.user);
+  c.viewer.noLast = true;                         // туман без «засечек»: кого не видно — того нет
   c.viewer.sysRoom = this;
   this.clients.push(c);
   this.emptySince = 0;
@@ -193,7 +202,7 @@ SystemRoom.prototype.admit = function(c) {
 SystemRoom.prototype.hello = function(c) {
   var B = this.B, self = this, st = this.state;
   return {
-    t: 'hello', kind: 'sys', caps: ['many'], system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
+    t: 'hello', kind: 'sys', caps: ['many'], fog: true, system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
     user: c.who.user,
     sc: { name: st.system.name, ships: B.ships.map(function(sh) { return self.shipRow(sh); }) },
     grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: st.station || null }
@@ -329,6 +338,7 @@ SystemRoom.prototype.pull = function() {
   return this.rpc('rt_space_pull', { p_battle: this.battleId, p_system: this.system }).then(function(st) {
     if (!st || st.closed) { self.cfg.log('warn', 'орбита закрыта базой', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
     self.state = st;
+    self.setEyes();
     self.applyShips(st.ships || []);
   }).catch(function(e) { self.cfg.log('error', 'rt_space_pull', { room: self.name, err: e.message }); });
 };

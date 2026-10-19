@@ -202,7 +202,7 @@
     out.vis = B.vis[side]; out.visC = null;
     var last = {}, L = B.last[side];
     for (var k in L) last[k] = [r0(L[k].x), r0(L[k].y), Math.round(L[k].hd * 100) / 100, r1(L[k].t)];
-    out.last = last;
+    out.last = this.noLast ? {} : last;            // орбита: туман без «засечек»
     // события
     var ev = this.ev;
     out.ev = {

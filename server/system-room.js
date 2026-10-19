@@ -122,7 +122,7 @@ SystemRoom.prototype.applyShips = function(list) {
     var box = boxOf(type, s.facing), side = sideOf(s.faction);
     var sh = B.addShip({ cls: s.ship_type, plan: p, side: side, x: (s.x + box.w / 2) * CELL_M, y: (s.y + box.h / 2) * CELL_M, hd: hdOf(s.facing),
                          figMap: FIG.crewFigs(p.faction, ALL), figIds: FIG_IDS, army: army, name: army.name, id: s.id, owner: s.owner_user_id || null,
-                         faction: s.faction, dormant: true });
+                         faction: s.faction, dormant: true, stands: s.troop_posts && typeof s.troop_posts === 'object' ? s.troop_posts : null });
     sh.gameId = s.id; sh.trophy = !!s.trophy; sh.commander = s.commander_id || null;
     sh.units = (s.units || []).map(function(u) { return { id: u.id, hpMax: u.hp }; });
     sh.craftIds = (s.craft || []).map(function(c) { return c.id; });
@@ -333,6 +333,13 @@ SystemRoom.prototype.sync = function() {
     var c = self.free[id]; if (!c || c.why === 'left') return;
     var v = c.dead ? 0 : Math.max(1, Math.round(c.gameMax * c.hp / c.max));
     if (self.craftHp[id] !== v) { craft.push({ id: id, hp: v }); self.craftHp[id] = v; }
+  });
+  // посты десанта поменялись (игрок поставил или снял) — в базу отдельно: ships.troop_posts
+  var posts = [];
+  B.ships.forEach(function(sh) { if (sh.standsDirty && sh.gameId && !sh.dead) { posts.push({ id: sh.gameId, posts: sh.stands || {} }); sh.standsDirty = false; } });
+  if (posts.length) this.rpc('rt_space_posts', { p_battle: this.battleId, p_ships: posts }).catch(function(e) {
+    self.cfg.log('error', 'rt_space_posts', { room: self.name, err: e.message });
+    posts.forEach(function(p) { var n = self.byId[p.id]; if (n != null && B.ships[n]) B.ships[n].standsDirty = true; });
   });
   if (!ships.length && !craft.length && !units.length && !captured.length) return Promise.resolve();
   return this.rpc('rt_space_sync', { p_battle: this.battleId, p_ships: ships, p_craft: craft, p_units: units, p_captured: captured })

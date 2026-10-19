@@ -25,7 +25,7 @@
   var AG = 16;
   var LOCK = 900;                                           // мс: свой приказ важнее кадров, что уже летят                                              // байт на человека в кадре экипажа
   var BIN = { AGENTS: 11, FIRE: 12, AGENTS_D: 13 };
-  var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board', 'weld', 'muster'];
+  var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board', 'weld', 'muster', 'stand'];
   var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
   var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper', 'guard'];
   var ROLE_N = {}; for (var ri = 0; ri < ROLES.length; ri++) ROLE_N[ROLES[ri]] = ri;
@@ -126,9 +126,10 @@
       o.ow = this.ctl(sh) ? 1 : 2; o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.gd = sh.guard ? 1 : 0; o.at = sh.foeT != null ? sh.foeT : -1; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
       o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
       // трюм: десант на борту / всего, герои, техника, недобор экипажа
-      var tA = 0, tN = 0, hn = [];
-      for (i = 0; i < sh.crew.agents.length; i++) { var ta = sh.crew.agents[i]; if (ta.team !== sh.side || !ta.utype) continue; tN++; if (ta.alive) { tA++; if (ta.hero && ta.uname) hn.push(ta.uname); } }
-      o.tr = [tA, tN]; o.hn = hn;
+      var tA = 0, tN = 0, tP = 0, hn = [];
+      for (i = 0; i < sh.crew.agents.length; i++) { var ta = sh.crew.agents[i]; if (ta.team !== sh.side || !ta.utype) continue; tN++; if (ta.alive) { tA++; if (ta.stand) tP++; if (ta.hero && ta.uname) hn.push(ta.uname); } }
+      if (sh.dormant && sh.stands) tP = Object.keys(sh.stands).length;     // спит — посты по записи
+      o.tr = [tA, tN]; o.hn = hn; o.ps = tP;
       var gA = 0, gN = 0, mu = 0; for (i = 0; i < sh.crew.agents.length; i++) { var ga = sh.crew.agents[i]; if (ga.team === sh.side && ga.role === 'guard') { gN++; if (ga.alive) gA++; } if (ga.alive && ga.job && ga.job.kind === 'muster') mu++; } o.gu = [gA, gN]; o.mu = mu; o.veh = (sh.vehicles || []).length; o.cl = sh.crew.crewLost || 0;
       o.g = [];
       // пушки поимённо — только у корабля в панели или под осмотром (у флота из десятков кораблей это основной трафик)
@@ -410,6 +411,7 @@
       case 'focus': if (!mine) return false; if (m.auto) { sh.focusAuto = true; return true; } B.setFocus(m.n, m.s | 0); return true;
       case 'board': if (!mine || !B.ships[m.to | 0]) return false; return B.board(m.n, m.to | 0, !!m.all);
       case 'hold': if (!mine) return false; B.setHold(m.n, m.to | 0, !!m.on); return true;
+      case 'stand': if (!mine || !Array.isArray(m.ids)) return false; return B.standTroops(m.n, m.ids.slice(0, 128).map(Number), m.cell == null ? -1 : m.cell | 0) > 0;
     }
     // абордаж: по кораблю-цели, сторона — игрока
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;
@@ -487,6 +489,8 @@
     };
     B.setFocus = function(n, s) { send({ t: 'cmd', k: 'focus', n: n, s: s }); var sh = B.ships[n]; if (sh) { sh.focus = s; sh.focusAuto = false; lock(sh); } };
     B.autoShields = function(n) { send({ t: 'cmd', k: 'focus', n: n, auto: 1 }); var sh = B.ships[n]; if (sh) { sh.focusAuto = true; lock(sh); } };
+    // посты десанта: решает сервер, на экране — по кадрам людей (дело «на посту»)
+    B.standTroops = function(n, ids, cell) { send({ t: 'cmd', k: 'stand', n: n, ids: ids.slice(0, 128), cell: cell == null ? -1 : cell }); return ids.length; };
     B.setHold = function(n, t, on) { send({ t: 'cmd', k: 'hold', n: n, to: t, on: !!on }); var sh = B.ships[n]; if (sh) { sh.hold = sh.hold || {}; sh.hold[t] = !!on; lock(sh); } };
     B.canBoard = function(n, t) {
       var l = self.can || [];
@@ -572,7 +576,7 @@
       sh.ctl = o.ow !== 2;
       if (mine) { sh.ai = !!o.ai; sh.guard = !!o.gd; sh.foeT = o.at >= 0 ? o.at : null; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
       sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
-      sh.netTroops = o.tr || null; sh.netGuards = o.gu || null; sh.netMuster = o.mu || 0; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
+      sh.netTroops = o.tr || null; sh.netPosts = o.ps || 0; sh.netGuards = o.gu || null; sh.netMuster = o.mu || 0; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;
       if (o.veh != null && (!sh.vehicles || sh.vehicles.length !== o.veh)) { sh.vehicles = []; for (var vv = 0; vv < o.veh; vv++) sh.vehicles.push('?'); }
       for (var i = 0; i < o.g.length && i < sh.guns.length; i++) {
         var g = sh.guns[i], a = o.g[i];

@@ -56,6 +56,21 @@
     rep_barc: { k: 'kite', every: 1.2 }, cis_stap: { k: 'kite', every: 1.2 }, rep_atrt: { k: 'kite', every: 1.5 }
   };
   var MICRO_END = 3;               // столько секунд без боя — боец возвращается к приказу
+  // Способности бойцов из исследований (ability_* в игре): боец применяет их сам, когда способность
+  // готова и цель подходит; откат — секунды боя (в старой игре — полчаса между ходами).
+  // Сила из игры: граната/фугас/огонь — сторона области (клетки игры), оглушение и спаренный — шанс %,
+  // рывок — дальность (клетки игры); урон — ability_damage
+  var SKILL = {
+    grenade:     { cd: 24, name: 'Граната', dmg: 40 },
+    he:          { cd: 20, name: 'Фугасный снаряд', dmg: 50 },
+    suppression: { cd: 28, name: 'Заградительный огонь', dmg: 25 },
+    stun:        { cd: 30, name: 'Оглушающий выстрел' },
+    headshot:    { cd: 45, name: 'Выстрел в голову' },
+    ap:          { cd: 14, name: 'Бронебойный снаряд' },
+    twin:        { cd: 18, name: 'Спаренный выстрел' },
+    lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 }
+  };
+  var SUPP_T = 6, STUN_T = 5;      // заградительный огонь: залёг (меткость ½, стреляет реже); оглушён — стоит
 
   function rng(seed) { var s = seed >>> 0 || 1; return function() { s += 0x6D2B79F5; var t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function turn(cur, to, step) {
@@ -218,6 +233,12 @@
       a.accB = bo.accuracy || 0; a.evaB = bo.evasion || 0;
     }
     if (Ty.artillery) a.range = Ty.range;       // артиллерия: на всю карту (144)
+    // способности из исследований: [вид, сила, урон]; первая готова не сразу — через 3–11 с
+    if (extra.skills && extra.skills.length) {
+      var self0 = this;
+      a.sk = extra.skills.filter(function(q) { return q && SKILL[q[0]]; }).map(function(q) { return { k: q[0], v: +q[1] || 0, dmg: +q[2] || 0, ready: self0.t + 3 + self0.R() * 8 }; });
+      if (!a.sk.length) a.sk = null;
+    }
     a.hp = extra.hp != null ? Math.min(a.hpMax, extra.hp) : a.hpMax;
     this.agents.push(a); this.used.push(a.id);
     if (this.nextIn.length < this.agents.length) { var ni = new Int32Array(this.agents.length + 256); ni.set(this.nextIn); this.nextIn = ni; }
@@ -800,7 +821,9 @@
       if (a.T.artillery) { this.artillery(a, tg); continue; }
       var aimA = a.T.vehicle && a.size === 2 ? a.turretA : a.aim;
       if (Math.abs(((Math.atan2(tg.y - a.y, tg.x - a.x) - aimA + 9.42) % 6.283) - 3.14) > 0.5) continue;
-      a.cd = a.T.rof * (0.85 + this.R() * 0.3) * (a.rofK || 1);
+      var supp = a.suppT > this.t;                 // под заградительным огнём: залёг
+      a.cd = a.T.rof * (0.85 + this.R() * 0.3) * (a.rofK || 1) * (supp ? 1.5 : 1);
+      if (a.sk && tg.a && this.skill(a, tg)) { a.revealT = this.t; continue; }
       var moving = Math.abs(a.vx) + Math.abs(a.vy) > 0.4, hit, dmg;
       if (tg.s) {
         hit = this.R() < Math.max(0.05, a.T.acc / 100) * (moving ? 0.7 : 1);
@@ -811,7 +834,7 @@
       }
       var b = tg.a;
       var inMul = a.inside >= 0 ? this.structs[a.inside].inMul : 1;
-      var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1);
+      var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1) * (supp ? 0.5 : 1);
       if (b.hero && b.hero.passive.evasion) p *= 1 - b.hero.passive.evasion / 100;
       hit = this.R() < p;
       // джедай отражает выстрелы: часть попаданий уходит обратно
@@ -829,6 +852,86 @@
         if (splash) { this.splash(tg.x, tg.y, splash, dmg * 0.5, a); this.ev.booms.push({ t: this.t, x: tg.x, y: tg.y, r: splash * 0.8 }); }
       }
     }
+  };
+  // ---- способности бойцов (исследования)
+  Ground.prototype.skill = function(a, tg) {
+    var b = tg.a, t = this.t, team = this.ctl(a);
+    for (var i = 0; i < a.sk.length; i++) {
+      var s = a.sk[i], S = SKILL[s.k], ok = false; if (t < s.ready) continue;
+      if (s.k === 'grenade' || s.k === 'he' || s.k === 'suppression') {
+        // по скоплению: в области хотя бы двое врагов (или цель в окопе, бункере)
+        var r = Math.max(1.6, (s.v || 2) * RANGE_K * 0.55);
+        if (s.k === 'grenade' && tg.d > Math.min(a.range, 4 * RANGE_K)) continue;
+        if (this.foesAt(team, tg.x, tg.y, r, s.k === 'he') < 2 && !(b.inside >= 0)) continue;
+        var dm = (s.dmg || S.dmg) * a.dmgK;
+        if (s.k === 'grenade') this.ev.shells.push({ t0: t, t1: t + 0.8, x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: r, dmg: dm, by: a.id, foe: true });
+        else { this.shot(a, tg, true, 0, b.id); this.blast(team, a.id, tg.x, tg.y, r, dm, s.k === 'he', s.k === 'suppression'); }
+        ok = true;
+      } else if (s.k === 'stun') {
+        if (b.stun > 0 || b.hero) continue;
+        this.shot(a, tg, true, 0, b.id);
+        if (this.R() * 100 < (s.v || 10)) { b.stun = Math.max(b.stun, STUN_T); b.tgt = -1; }
+        ok = true;
+      } else if (s.k === 'headshot') {
+        if (b.T.vehicle) continue;
+        var hd = b.hero ? b.hpMax * 0.25 : b.hp + 1;          // одарённый устоит
+        this.shot(a, tg, true, hd, b.id); this.hurt(b, hd, a.id); ok = true;
+      } else if (s.k === 'ap') {
+        if (!b.T.vehicle) continue;
+        var ad = U.damage(a.T, b.T) * a.dmgK * 2;
+        this.shot(a, tg, true, ad, b.id); this.hurt(b, ad, a.id); ok = true;
+      } else if (s.k === 'twin') {
+        var c2 = this.secondFoe(team, b, 3 * RANGE_K); if (!c2) continue;
+        var d1 = U.damage(a.T, b.T) * a.dmgK; this.shot(a, tg, true, d1, b.id); this.hurt(b, d1, a.id);
+        if (this.R() * 100 < (s.v || 50)) { var d2 = U.damage(a.T, c2.T) * a.dmgK; this.shot(a, { x: c2.x, y: c2.y, a: c2 }, true, d2, c2.id); this.hurt(c2, d2, a.id); }
+        ok = true;
+      } else if (s.k === 'lunge') {
+        if (b.air || tg.d > (s.v || 3) * RANGE_K || tg.d < 1.5) continue;
+        var lx = b.x - a.x, ly = b.y - a.y, ll = Math.sqrt(lx * lx + ly * ly) || 1, land = this.nearestOk(a.move, a.size, Math.floor(b.x - lx / ll * 0.9), Math.floor(b.y - ly / ll * 0.9));
+        if (!land) continue;
+        a.x = land[0] + 0.5; a.y = land[1] + 0.5; a.vx = a.vy = 0;
+        var ld = (s.dmg || S.dmg) * a.dmgK; if (b.hero) ld = Math.min(ld, b.hpMax * 0.3);
+        this.ev.shots.push({ t: t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: true, w: 'saber', d: Math.round(ld), ti: b.id, from: a.id, melee: true });
+        this.hurt(b, ld, a.id); ok = true;
+      }
+      if (ok) {
+        s.ready = t + S.cd * (0.9 + this.R() * 0.2);
+        this.ev.fx.push({ t: t, k: 'skill', x: a.x, y: a.y, id: a.id, name: S.name, team: a.team });
+        if (!b.alive) a.tgt = -1;
+        return true;
+      }
+    }
+    return false;
+  };
+  // врагов команды team (пехоты — inf) в круге
+  Ground.prototype.foesAt = function(team, x, y, r, inf) {
+    var n = 0, ag = this.agents;
+    for (var i = 0; i < ag.length; i++) {
+      var e = ag[i]; if (!e.alive || e.air || this.ctl(e) === team || (inf && e.T.vehicle)) continue;
+      var dx = e.x - x, dy = e.y - y; if (dx * dx + dy * dy < r * r) n++;
+    }
+    return n;
+  };
+  // вторая цель спаренного выстрела: живой враг рядом с первой
+  Ground.prototype.secondFoe = function(team, b, r) {
+    var best = null, bd = r * r, ag = this.agents;
+    for (var i = 0; i < ag.length; i++) {
+      var e = ag[i]; if (e === b || !e.alive || e.air || this.ctl(e) === team || !this.canSee(team, e)) continue;
+      var dx = e.x - b.x, dy = e.y - b.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  };
+  // взрыв способности: только по врагам (своих граната бойца не задевает), inf — фугас не берёт технику,
+  // supp — заградительный огонь: кто уцелел, тот залёг
+  Ground.prototype.blast = function(team, by, x, y, r, dmg, inf, supp) {
+    var ag = this.agents;
+    for (var j = 0; j < ag.length; j++) {
+      var e = ag[j]; if (!e.alive || e.air || this.ctl(e) === team || (inf && e.T.vehicle)) continue;
+      var dx = e.x - x, dy = e.y - y, d2 = dx * dx + dy * dy; if (d2 >= r * r) continue;
+      this.hurt(e, dmg * (1 - Math.sqrt(d2) / r * 0.4) * (e.hero ? 0.5 : 1), by);
+      if (supp && e.alive) e.suppT = this.t + SUPP_T;
+    }
+    this.ev.booms.push({ t: this.t, x: x, y: y, r: r * 0.6 });
   };
   Ground.prototype.splash = function(x, y, r, dmg, by) {
     var ag = this.agents;
@@ -852,6 +955,7 @@
     for (var i = sh.length - 1; i >= 0; i--) {
       var s = sh[i]; if (this.t < s.t1) continue;
       var by = this.agents[s.by];
+      if (s.foe) { this.blast(s.team, s.by, s.x1, s.y1, s.r, s.dmg, false, false); sh.splice(i, 1); continue; }   // граната бойца
       this.splash(s.x1, s.y1, s.r, s.dmg, by && by.alive ? by : null);
       this.ev.booms.push({ t: this.t, x: s.x1, y: s.y1, r: s.r, big: true });
       sh.splice(i, 1);
@@ -1238,5 +1342,5 @@
     return s;
   };
 
-  return { Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
+  return { SKILL: SKILL, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
 });

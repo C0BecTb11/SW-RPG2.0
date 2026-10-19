@@ -142,6 +142,7 @@
       hpK: maxHp && ship.hp != null ? Math.max(0.02, Math.min(1, ship.hp / maxHp)) : 1, hpBonus: maxHp && type.max_hp ? maxHp / type.max_hp : 1,
       shK: [sh(ship.shield_fore, ship.bonus_fore), sh(ship.shield_starboard), sh(ship.shield_aft), sh(ship.shield_port)],
       shBonus: type && type.max_shield ? maxSh / type.max_shield : 1, dmgK: dmg,
+      moveB: ship.bonus_move || 0, visB: ship.bonus_vision || 0,             // ход и сонар из исследований (клетки игры)
       roster: roster, vehicles: vehicles, other: other,
       hangar: (craft || []).map(function(c) { return CRAFT[c.ship_type]; }).filter(Boolean),
       crewLost: ship.crew_lost || 0

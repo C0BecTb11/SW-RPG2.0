@@ -175,9 +175,9 @@
       // генератор щитов рассчитан на огонь корабля своего класса: у малых кораблей
       // восстановление и перекачка слабее, иначе их пушки не продавливают щит вовсе
       shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, foeT: null, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
-      vmax: C.move * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
+      vmax: (C.move + (A.moveB || 0)) * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
-      sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)), flash: -99,
+      sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)) + (A.visB || 0) * 1000, flash: -99,
       crew: null, crewOpts: { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
                               roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0,
                               guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null },
@@ -224,6 +224,9 @@
     // bal — поправка по итогам прогонов ИИ против ИИ (раскладка пушек у корпусов разная:
     // где-то стволы стоят кучно и выбиваются разом, где-то бьют только с носа)
     k *= C.bal || 1;
+    // без улучшений — для модернизации на ходу (refit)
+    sh.base = { k: k, hull: sh.hullMax, sh: sh.shMax, vmax: C.move * 9, sens: sh.sens - (A.visB || 0) * 1000, move: C.move };
+    sh.bon = { hp: A.hpBonus || 1, sh: A.shBonus || 1, dmg: A.dmgK || 1, move: A.moveB || 0, vis: A.visB || 0 };
     k *= A.dmgK || 1;                                  // улучшение орудий корабля в игре
     for (g = 0; g < sh.guns.length; g++) if (sh.guns[g].t !== 'pd') sh.guns[g].k = k;
     // корпус и щиты — с улучшениями и тем, что осталось после прошлых боёв
@@ -326,6 +329,18 @@
       sh.foeT = null;
     }
     return this.nearestFoe(sh);
+  };
+  // Модернизация на ходу (верфь в игре): новые множители корпуса, щитов, орудий, хода и датчиков.
+  // Целость корпуса и щитов — в той же доле, что была
+  Battle.prototype.refitShip = function(n, A) {
+    var sh = this.ships[n]; if (!sh || sh.dead || !sh.base) return;
+    var hk = sh.hull / Math.max(1, sh.hullMax), b = sh.base, q;
+    sh.bon = { hp: A.hpBonus || 1, sh: A.shBonus || 1, dmg: A.dmgK || 1, move: A.moveB || 0, vis: A.visB || 0 };
+    sh.hullMax = b.hull * sh.bon.hp; sh.hull = Math.max(1, sh.hullMax * hk);
+    var sk = sh.sh.map(function(v) { return v / Math.max(1, sh.shMax); });
+    sh.shMax = b.sh * sh.bon.sh; for (q = 0; q < 4; q++) sh.sh[q] = sh.shMax * sk[q];
+    for (q = 0; q < sh.guns.length; q++) if (sh.guns[q].t !== 'pd') sh.guns[q].k = b.k * sh.bon.dmg;
+    sh.vmax = (b.move + sh.bon.move) * 9; sh.sens = b.sens + sh.bon.vis * 1000;
   };
   // Держать позицию (игрок отошёл): корабль стоит на месте, к врагу в досягаемости
   // поворачивается бортом с большим числом стволов; никуда не идёт и абордаж не начинает

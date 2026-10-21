@@ -249,6 +249,7 @@
     },
     // кольцо воздействия на разум / страха: расходящееся
     ring: function(c, x, y, k, col) {
+      k = k < 0 ? 0 : k > 1 ? 1 : k;
       c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = col || 'rgba(255,230,160,1)'; c.globalAlpha = 0.8 * (1 - k); c.lineWidth = 0.06;
       c.beginPath(); c.arc(x, y, 0.3 + k * 2.5, 0, TAU); c.stroke(); c.globalAlpha = 0.4 * (1 - k); c.beginPath(); c.arc(x, y, 0.2 + k * 1.6, 0, TAU); c.stroke(); c.restore();
     },
@@ -261,6 +262,7 @@
     },
     // волна толчка: от (x, y) по углу a, k 0..1
     wave: function(c, x, y, a, k) {
+      k = k < 0 ? 0 : k > 1 ? 1 : k;
       c.save(); c.translate(x, y); c.rotate(a); c.globalCompositeOperation = 'lighter';
       c.strokeStyle = 'rgba(200,225,255,' + 0.7 * (1 - k) + ')'; c.lineWidth = 0.1 * (1 - k * 0.5);
       c.beginPath(); c.arc(0, 0, 0.3 + k * 2.2, -0.8, 0.8); c.stroke(); c.restore();

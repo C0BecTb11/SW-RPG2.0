@@ -197,7 +197,8 @@
     if (B) {
       if (G.live) { B.step(dt); G.t = B.t; } else if (!G.ended && G.speed) { B.step(dt * G.speed); G.t = B.t; }
       $('sp-time').textContent = Math.floor(B.t / 60) + ':' + ('0' + Math.floor(B.t % 60)).slice(-2);
-      var d0 = performance.now(); draw(); G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
+      // ошибка в одном кадре не должна останавливать бой: кадр пропускается, цикл живёт
+      var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; } if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
       if (B.over >= 0 && !G.ended) endBattle();
     }
     G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; hud(); }
@@ -526,6 +527,7 @@
     c.save(); c.translate(G.vw / 2 - CAM.x * s, G.vh / 2 - CAM.y * s); c.scale(s, s); c.lineCap = 'round';
     for (var i = 0; i < fx.length; i++) {
       var f = fx[i], age = t - f.t, a = B.agents[f.id];
+      if (age < 0) continue;                                // своё время отстаёт от сервера: эффект ещё не наступил
       if (f.k === 'push' && age < 0.7) H.fx.wave(c, f.x, f.y, a ? a.aim : 0, age / 0.7);
       else if (f.k === 'throw' && age < 1.1 && a) { var k = age / 1.1, kk = k < 0.5 ? k * 2 : (1 - k) * 2, tx = a.x + (f.tx - a.x) * kk, ty = a.y + (f.ty - a.y) * kk; H.fx.blade(c, tx, ty, t, heroLook(a).blade); }
       else if (f.k === 'lightning' && age < 1.6 && a) { var tg = f.tid != null ? B.agents[f.tid] : null; var ex = tg ? tg.x : a.x + Math.cos(a.aim) * 8, ey = tg ? tg.y : a.y + Math.sin(a.aim) * 8; H.fx.lightning(c, a.x + Math.cos(a.aim) * 0.4, a.y + Math.sin(a.aim) * 0.4, ex, ey, (t * 25) | 0, 1 - age / 1.6); H.fx.lightning(c, a.x + Math.cos(a.aim + 0.3) * 0.4, a.y + Math.sin(a.aim + 0.3) * 0.4, ex + 0.6, ey - 0.4, (t * 25 + 9) | 0, 0.7 * (1 - age / 1.6)); }

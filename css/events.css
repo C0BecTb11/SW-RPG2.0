@@ -1,0 +1,173 @@
+/* Ивенты: лобби (game/events.html). Язык игры: тёмные панели, моноширинный шрифт,
+   Республика — синий, КНС — красный, золото — выбор и награды. */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background-color: #05060a; background-image: url('../assets/ui/galaxy-bg-tile.png');
+  font-family: 'Courier New', monospace; color: #cfd8dc; font-size: 12px;
+  padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+}
+button { font-family: inherit; }
+
+/* ---------- верх ---------- */
+.ev-top {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  background: linear-gradient(180deg, rgba(5,6,10,0.97), rgba(5,6,10,0.88)); border-bottom: 1px solid #1c2530;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.ev-back { flex: none; color: #8fa8c4; text-decoration: none; font-size: 11px; padding: 6px 10px; border: 1px solid #2a3644; border-radius: 16px; background: rgba(8,11,17,0.9); }
+.ev-titles { flex: 1; min-width: 0; }
+.ev-kicker { display: block; font-size: 9px; letter-spacing: 2.5px; text-transform: uppercase; color: #d9a940; }
+.ev-top h1 { margin: 1px 0 0; font-size: 17px; font-weight: normal; letter-spacing: 2px; color: #e8d9a8; text-transform: uppercase; }
+.ev-side { flex: none; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #4a90d9; border: 1px solid rgba(74,144,217,0.5); border-radius: 12px; padding: 4px 9px; }
+body.cis .ev-side { color: #ff6e5a; border-color: rgba(217,74,74,0.55); }
+
+.ev-main { max-width: 860px; margin: 0 auto; padding: 12px 16px 0; }
+
+/* ---------- профиль ивентов ---------- */
+.ev-me { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; border: 1px solid #1c2530; border-left: 3px solid #d9a940; border-radius: 10px;
+         background: linear-gradient(180deg, rgba(13,17,25,0.94), rgba(8,11,17,0.94)); }
+.ev-me:empty { display: none; }
+.ev-stat { display: flex; flex-direction: column; gap: 1px; min-width: 64px; }
+.ev-stat b { font-size: 15px; font-weight: normal; color: #e8d9a8; }
+.ev-stat span { font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase; color: #55606c; }
+.ev-titles-row { flex: 1 1 260px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ev-titles-row > span { font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase; color: #55606c; margin-right: 2px; }
+.ev-title { padding: 4px 9px; border: 1px solid #2a3644; border-radius: 12px; background: rgba(8,11,17,0.9); color: #8fa8c4; font-size: 10px; cursor: pointer; }
+.ev-title.on { border-color: rgba(217,169,64,0.75); color: #f0c86a; background: rgba(217,169,64,0.12); }
+.ev-title.none { cursor: default; border-style: dashed; color: #55606c; }
+
+/* ---------- вкладки и фильтры ---------- */
+.ev-tabs { display: flex; gap: 6px; margin: 14px 0 8px; }
+.ev-tabs button, .ev-filters button {
+  padding: 7px 13px; border: 1px solid #2a3644; border-radius: 9px; background: rgba(8,11,17,0.92); color: #8fa8c4; font-size: 11px; cursor: pointer; white-space: nowrap;
+}
+.ev-tabs button.on { border-color: rgba(217,169,64,0.75); color: #e8d9a8; background: rgba(217,169,64,0.12); }
+.ev-tabs button[hidden] { display: none; }
+.ev-filters { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin-bottom: 10px; }
+.ev-filters::-webkit-scrollbar { display: none; }
+.ev-filters button { padding: 5px 10px; font-size: 10px; border-radius: 14px; }
+.ev-filters button.on { border-color: rgba(143,168,196,0.7); color: #e8eef2; }
+.ev-filters[hidden] { display: none; }
+
+/* ---------- загрузка ---------- */
+.ev-load { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px 0; color: #55606c; font-size: 11px; }
+.ev-load span { width: 14px; height: 14px; border: 2px solid #2a3644; border-top-color: #d9a940; border-radius: 50%; animation: ev-spin 0.9s linear infinite; }
+@keyframes ev-spin { to { transform: rotate(360deg); } }
+.ev-empty { padding: 26px 10px; text-align: center; color: #55606c; font-size: 11px; line-height: 1.6; }
+
+/* ---------- раздел ---------- */
+.ev-sec { margin: 16px 0 8px; display: flex; align-items: baseline; gap: 10px; }
+.ev-sec h2 { margin: 0; font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: #d9a940; font-weight: normal; }
+.ev-sec span { font-size: 10px; color: #55606c; }
+
+/* ---------- карточки ---------- */
+.ev-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 720px) { .ev-grid { grid-template-columns: 1fr 1fr; } .ev-card.wide { grid-column: 1 / -1; } }
+.ev-card {
+  position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 12px 14px; overflow: hidden;
+  border: 1px solid #1c2530; border-radius: 11px; background: linear-gradient(180deg, rgba(13,17,25,0.95), rgba(8,11,17,0.95));
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+.ev-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #2a3644; }
+.ev-card.pvp::before { background: linear-gradient(180deg, #4a90d9, #d94a4a); }
+.ev-card.pve.republic::before { background: #4a90d9; }
+.ev-card.pve.cis::before { background: #d94a4a; }
+.ev-card.soon { opacity: 0.62; }
+.ev-card.soon .ev-ribbon { display: block; }
+.ev-ribbon { display: none; position: absolute; top: 12px; right: -30px; transform: rotate(35deg); width: 120px; padding: 3px 0; text-align: center;
+             font-size: 8.5px; letter-spacing: 2px; text-transform: uppercase; color: #05060a; background: rgba(143,168,196,0.75); }
+.ev-head { display: flex; align-items: flex-start; gap: 10px; }
+.ev-ico { flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; border: 1px solid #2a3644; background: radial-gradient(circle at 50% 35%, #18202c, #0a0e15); }
+.ev-ico svg { width: 24px; height: 24px; fill: none; stroke: #8fa8c4; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ev-card.pvp .ev-ico svg { stroke: #e8d9a8; }
+.ev-ico.sith svg { stroke: #ff6e5a; } .ev-ico.jedi svg { stroke: #6fb8ff; }
+.ev-name { flex: 1; min-width: 0; }
+.ev-name b { display: block; font-size: 13px; font-weight: normal; color: #e8eef2; letter-spacing: 0.5px; }
+.ev-name em { display: block; font-style: normal; font-size: 9.5px; color: #55606c; margin-top: 2px; }
+.ev-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.ev-tag { font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border-radius: 6px; border: 1px solid #2a3644; color: #8fa8c4; }
+.ev-tag.pvp { color: #f0c86a; border-color: rgba(217,169,64,0.5); }
+.ev-tag.own { color: #ff9a80; border-color: rgba(255,110,90,0.45); }
+.ev-about { margin: 0; font-size: 11px; line-height: 1.5; color: #9fb0bf; }
+.ev-goal { font-size: 10.5px; line-height: 1.45; color: #e8d9a8; padding: 6px 8px; border-radius: 7px; background: rgba(217,169,64,0.07); border: 1px solid rgba(217,169,64,0.25); }
+.ev-goal b { font-weight: normal; color: #d9a940; letter-spacing: 1px; text-transform: uppercase; font-size: 8.5px; margin-right: 6px; }
+
+/* карты ивента */
+.ev-maps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.ev-map { position: relative; aspect-ratio: 1; border-radius: 7px; overflow: hidden; border: 1px solid #1c2530; background: #0a0e15 center / cover no-repeat; }
+.ev-map span { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 4px 3px; font-size: 8px; line-height: 1.2; color: #e8eef2; text-align: center; background: linear-gradient(180deg, transparent, rgba(5,6,10,0.92)); }
+
+/* роли и уровни */
+.ev-lab { font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase; color: #55606c; margin-bottom: 4px; }
+.ev-roles, .ev-tiers { display: flex; gap: 5px; }
+.ev-roles button, .ev-tiers button {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 7px 8px; text-align: left; cursor: pointer;
+  border: 1px solid #2a3644; border-radius: 9px; background: rgba(5,6,10,0.65); color: #cfd8dc;
+}
+.ev-roles button b, .ev-tiers button b { font-weight: normal; font-size: 11px; color: #e8eef2; }
+.ev-tiers button b { font-size: 10px; letter-spacing: 0; }
+.ev-roles button em, .ev-tiers button em { font-style: normal; font-size: 9px; color: #55606c; line-height: 1.3; }
+.ev-roles button.on, .ev-tiers button.on { border-color: rgba(217,169,64,0.75); background: rgba(217,169,64,0.1); }
+.ev-roles button.on b, .ev-tiers button.on b { color: #f0c86a; }
+.ev-roles button[disabled] { opacity: 0.4; cursor: default; }
+.ev-tiers button .pip { display: inline-block; width: 7px; height: 7px; margin-left: 5px; border-radius: 50%; border: 1px solid #55606c; vertical-align: 1px; }
+.ev-tiers button .pip.got { border-color: #d9a940; background: #d9a940; box-shadow: 0 0 6px rgba(217,169,64,0.6); }
+.ev-reward { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 10px; color: #8fa8c4; }
+.ev-reward b { color: #f0c86a; font-weight: normal; }
+.ev-reward .t { color: #e8d9a8; }
+.ev-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.ev-wait { flex: 1; min-width: 0; font-size: 9.5px; color: #55606c; line-height: 1.4; }
+.ev-wait b { color: #8fa8c4; font-weight: normal; }
+.ev-go { flex: none; padding: 9px 16px; border: 1px solid rgba(217,169,64,0.8); border-radius: 9px; background: linear-gradient(180deg, rgba(217,169,64,0.25), rgba(217,169,64,0.12)); color: #f0c86a;
+         font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+.ev-go:active { transform: translateY(1px); }
+.ev-go[disabled] { opacity: 0.45; cursor: default; }
+.ev-go.ghost { border-color: #2a3644; color: #8fa8c4; background: rgba(8,11,17,0.9); }
+
+/* ---------- история и рейтинг ---------- */
+.ev-rows { display: flex; flex-direction: column; gap: 5px; }
+.ev-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #1c2530; border-radius: 9px; background: rgba(8,11,17,0.92); }
+.ev-row .r { flex: none; width: 46px; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; text-align: center; padding: 4px 0; border-radius: 6px; border: 1px solid #2a3644; color: #8fa8c4; }
+.ev-row .r.win { color: #5fd968; border-color: rgba(95,217,104,0.5); }
+.ev-row .r.loss { color: #ff8a70; border-color: rgba(255,110,90,0.45); }
+.ev-row .m { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ev-row .m b { font-weight: normal; color: #e8eef2; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-row .m em { font-style: normal; font-size: 9.5px; color: #55606c; }
+.ev-row .a { flex: none; text-align: right; font-size: 10px; color: #f0c86a; line-height: 1.4; }
+.ev-row .a em { display: block; font-style: normal; font-size: 9px; color: #55606c; }
+.ev-row.me { border-color: rgba(217,169,64,0.5); }
+.ev-row .n { flex: none; width: 22px; text-align: center; color: #55606c; font-size: 11px; }
+.ev-row .nick.republic { color: #8fc4ff; } .ev-row .nick.cis { color: #ff9a88; }
+
+/* ---------- тест администрации ---------- */
+.ev-dev { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed rgba(217,169,64,0.5); border-radius: 11px; background: rgba(8,11,17,0.92); }
+.ev-dev p { margin: 0; font-size: 10.5px; color: #8fa8c4; line-height: 1.5; }
+.ev-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ev-chips button { padding: 6px 10px; border: 1px solid #2a3644; border-radius: 9px; background: rgba(5,6,10,0.7); color: #8fa8c4; font-size: 10.5px; cursor: pointer; }
+.ev-chips button.on { border-color: rgba(217,169,64,0.75); color: #f0c86a; background: rgba(217,169,64,0.1); }
+
+/* ---------- очередь ---------- */
+.ev-queue {
+  position: fixed; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 60; max-width: 520px; margin: 0 auto;
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid #1c2530; border-left: 3px solid #d9a940; border-radius: 11px;
+  background: linear-gradient(180deg, rgba(13,17,25,0.98), rgba(8,11,17,0.98)); box-shadow: 0 -8px 26px rgba(0,0,0,0.55);
+}
+.ev-queue[hidden] { display: none; }
+.ev-queue.found { border-left-color: #5fd968; }
+.ev-q-spin { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #2a3644; border-top-color: #d9a940; animation: ev-spin 1.1s linear infinite; }
+.ev-queue.found .ev-q-spin { border-color: #5fd968; animation: ev-pulse 1s ease-in-out infinite; }
+@keyframes ev-pulse { 50% { transform: scale(0.8); opacity: 0.6; } }
+.ev-q-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ev-q-tx b { font-weight: normal; color: #e8eef2; font-size: 11.5px; }
+.ev-q-tx em { font-style: normal; color: #8fa8c4; font-size: 9.5px; line-height: 1.4; }
+.ev-q-tx em i { font-style: normal; color: #f0c86a; }
+
+/* ---------- всплывашка ---------- */
+.ev-toast { position: fixed; left: 50%; top: 40%; transform: translateX(-50%) translateY(8px); z-index: 80; max-width: 88vw; padding: 8px 14px; background: rgba(13,17,25,0.96);
+            border: 1px solid #2a3644; border-radius: 18px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
+.ev-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.ev-toast.bad { border-color: rgba(217,74,74,0.7); color: #ffb3b3; }
+.ev-toast.gold { border-color: rgba(217,169,64,0.7); color: #e8d9a8; }
+@media (prefers-reduced-motion: reduce) { .ev-load span, .ev-q-spin { animation: none; } .ev-toast { transition: none; } }

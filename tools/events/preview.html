@@ -1,0 +1,19 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Карты ивентов</title>
+<style>body{margin:0;background:#05060a;color:#cfd8dc;font:12px 'Courier New',monospace}canvas{display:block}</style></head><body>
+<canvas id="c"></canvas>
+<script src="../../shared/rt-planets.js"></script><script src="../../shared/rt-town.js"></script><script src="../../ground/terrain.js"></script>
+<script>
+var id=(/[?&]m=([a-z0-9_]+)/.exec(location.search)||[])[1], px=+((/[?&]px=(\d+)/.exec(location.search)||[])[1]||6);
+fetch('../../shared/events/maps/'+id+'.json').then(r=>r.json()).then(function(j){
+  var N=144,c=document.getElementById('c'); c.width=c.height=N*px; var x=c.getContext('2d');
+  var T=GTerrain.create(j); T.render(x,0,0,N,N,px);
+  if (/clean=1/.test(location.search)) { document.title='ok'; return; }
+  var ev=j.ev; x.lineWidth=2; x.font='bold 13px Courier New';
+  function box(b,col,t){x.strokeStyle=col;x.strokeRect(b[0]*px,b[1]*px,b[2]*px,b[3]*px);if(t){x.fillStyle=col;x.fillText(t,b[0]*px+2,b[1]*px-4);}}
+  box(ev.base,'#6fb8ff','ЛАГЕРЬ');
+  ev.prey.forEach((p,i)=>box([p[0]-2.5,p[1]-2.5,5,5],'#ff6e5a','СТАРТ '+(i+1)));
+  ev.sites.forEach(s=>box([s[0]-2.5,s[1]-2.5,5,5],'#f0c86a',s[2]));
+  ev.exits.forEach(s=>box([s[0]-3,s[1]-3,6,6],'#5fd968',s[2]));
+  document.title='ok';
+});
+</script></body></html>

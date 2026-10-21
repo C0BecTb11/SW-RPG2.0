@@ -80,10 +80,15 @@ GroundRoom.prototype.open = function() {
 
 // Бойцы из базы → движок. Повторный вызов (pull) добавляет новых и убирает ушедших.
 GroundRoom.prototype.applyUnits = function(units) {
-  var B = this.B, self = this, seen = {};
+  var B = this.B, self = this, seen = {}, raid = 0, leave = 0;
   units.forEach(function(u) {
     seen[u.id] = 1;
-    if (self.byUid[u.id] != null) return;
+    if (self.byUid[u.id] != null) {
+      // мародёр: налёт кончился (npc_brains.state = 'leave') — банда уходит с карты
+      var ex = B.agents[self.byUid[u.id]];
+      if (ex && ex.alive && ex.team === 2 && u.brain && u.brain.st === 'leave' && !ex.leave) { ex.leave = true; leave++; }
+      return;
+    }
     var Ty = U.type(u.type); if (!Ty) { self.cfg.log('warn', 'неизвестный тип бойца', { type: u.type }); return; }
     var team = teamOf(u.faction), size = Ty.size, x = u.x, y = u.y;
     if (!B.pass[Ty.move + size][y * N + x]) { var alt = B.nearestOk(Ty.move, size, x, y); if (alt) { x = alt[0]; y = alt[1]; } }
@@ -96,10 +101,16 @@ GroundRoom.prototype.applyUnits = function(units) {
     if (!a) return;
     a.hid = u.hero || null;                      // героя знают панели игры (древо, имя)
     if (a.npc) a.auto = true;
+    if (u.brain && team === 2) {                 // логово и поводок мародёра (npc_brains)
+      a.home = [u.brain.hx, u.brain.hy]; a.leave = u.brain.st === 'leave';
+      if (self.ready && !a.leave) raid++;
+    }
     if (u.training) a.hold = true;
     self.byUid[u.id] = a.id;
     self.lastSync[u.id] = x + ',' + y + ',' + Math.round(a.hp);
   });
+  if (raid) [0, 1].forEach(function(tm) { B.msg(raid > 1 ? 'Банда мародёров у поселения: ' + raid : 'Мародёр у поселения', tm, 'bad'); });
+  if (leave) [0, 1].forEach(function(tm) { B.msg('Мародёры уходят с добычей', tm, 'bad'); });
   // ушедшие (погружены, уничтожены базой, переданы) — убираем без сцены гибели
   Object.keys(this.byUid).forEach(function(uid) {
     if (seen[uid]) return;
@@ -197,7 +208,10 @@ GroundRoom.prototype.sync = function() {
   var B = this.B, rows = [], srows = [], self = this;
   this.syncAt = Date.now();
   Object.keys(this.byUid).forEach(function(uid) {
-    var a = B.agents[self.byUid[uid]]; if (!a || a.removed) return;
+    var a = B.agents[self.byUid[uid]];
+    // мародёр ушёл с карты: строку в базе убирает rt_ground_sync (как погибшего, без засчёта)
+    if (a && a.left) { if (self.lastSync[uid] !== 'left') { self.lastSync[uid] = 'left'; var lc = B.cellOf(a); rows.push({ id: uid, x: lc[0], y: lc[1], hp: 0, fire: false }); } return; }
+    if (!a || a.removed) return;
     var c = B.cellOf(a), hp = a.alive ? Math.max(1, Math.round(a.hp)) : 0, fire = a.alive && B.t - (a.hitT || -99) < 30;
     var key = c[0] + ',' + c[1] + ',' + hp + ',' + (fire ? 1 : 0);
     if (self.lastSync[uid] === key) return;

@@ -17,9 +17,22 @@ const { Gen } = require('../planets/gen.js');
 const MAPS = require('./maps.js');
 
 const T = P.T, N = P.N;
-const VERSION = 1;
+const VERSION = 2;
 const OUT = path.join(__dirname, '../../shared/events/maps');
 const SITE = 5, EXIT = 6, PREY = 5;
+// Облик места задачи (рисует ground/terrain.js, OBJ.evsite): по названию места
+const KIND = {
+  'Алтарь Луны': 'altar', 'Святилище пирамиды': 'altar', 'Обсерватория': 'tower', 'Склеп жрецов': 'crypt', 'Зал голокронов': 'holocron',
+  'Буровая №3': 'drill', 'Диспетчерская': 'terminal', 'Склад взрывчатки': 'crates', 'Насосная': 'pump', 'Реактор рудника': 'reactor',
+  'Клиника': 'medcrates', 'Ратуша': 'terminal', 'Узел связи': 'antenna', 'Космопорт': 'pod', 'Хранилище данных': 'datacore',
+  'Затонувший фрегат': 'wreck', 'Фактория': 'crates', 'Гнездо крикунов': 'nest', 'Маяк на сваях': 'tower', 'Лаборатория': 'reactor',
+  'Келья наставника': 'altar', 'Зал медитаций': 'altar', 'Библиотека': 'holocron', 'Колокольня': 'tower', 'Ворота паломников': 'gate',
+  'Пещера отшельника': 'crypt', 'Разбитый транспорт': 'wreck', 'Маяк контрабандистов': 'tower', 'Сухой колодец': 'well', 'Каменный мост': 'gate',
+  'Спасательная капсула': 'pod', 'Мостик крейсера': 'wreck', 'Склад медикаментов': 'medcrates', 'Бункер связи': 'antenna', 'Эвакопункт': 'medcrates',
+  'Купол оранжереи': 'dome', 'Старый сенат': 'gate', 'Шлюз акведука': 'pump', 'Колокол маяка': 'tower', 'Хранилище архивов': 'datacore'
+};
+// древние места — камень; остальные — металл
+const ANCIENT = { altar: 1, crypt: 1, holocron: 1, gate: 1, well: 1, nest: 1 };
 
 class EventGen extends Gen {
   constructor(id, prof) {
@@ -50,7 +63,7 @@ class EventGen extends Gen {
   targets() {
     const L = this.lay, out = [];
     L.prey.forEach((p, i) => out.push(['старт ' + (i + 1), p[0] + 2, p[1] + 2]));
-    L.sites.forEach(s => out.push([s[2], s[0] + 2, s[1] + 2]));
+    L.sites.forEach(s => out.push([s[2], s[0] + 1, s[1] + 2]));      // середина места занята предметом
     L.exits.forEach(e => out.push([e[2], e[0] + 2, e[1] + 2]));
     return out;
   }
@@ -68,6 +81,21 @@ class EventGen extends Gen {
     const ring = S.slice().sort((p, q) => Math.atan2(p[1] - cy, p[0] - cx) - Math.atan2(q[1] - cy, q[0] - cx));
     for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length]; if (i === ring.length - 1 && opts.open) break; go(p, q, Math.max(2, w - 1), 'side'); }
     E.forEach(e => { const p = S.slice().sort((a, c) => d(a, e) - d(c, e))[0]; go(p, e, 2, 'side'); });
+  }
+  // Предметы мест задач и эвакуации: у места задачи середина (1 клетка) — твёрдая, вокруг —
+  // площадка, где стоит добыча; эвакуация — площадка без препятствий
+  build() {
+    super.build();
+    const L = this.lay;
+    L.sites.forEach((s, i) => {
+      const kind = KIND[s[2]];
+      if (!kind) throw new Error(this.evId + ': нет облика места «' + s[2] + '»');
+      const k = (s[1] + 2) * N + s[0] + 2;
+      this.res[k] = 0; this.t[k] = T.BLOCK; this.m[k] = 18;
+      this.objs.push({ k: 'evsite', s: kind, x: s[0] + SITE / 2, y: s[1] + SITE / 2, r: 3, i: i, old: ANCIENT[kind] ? 1 : 0 });
+    });
+    L.exits.forEach((e, i) => this.objs.push({ k: 'evexit', x: e[0] + EXIT / 2, y: e[1] + EXIT / 2, r: 3, i: i }));
+    return this;
   }
   json() {
     const L = this.lay;

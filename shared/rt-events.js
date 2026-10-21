@@ -8,7 +8,8 @@
  *   H.result           — итог: { winner: роль, why, t, stats }, когда бой кончился (B.over ≥ 0)
  *
  * Охота. Добыча (ситх или 1–2 джедая) выполняет задачи (стоять у места задачи N секунд,
- * прогресс копится) и уходит на эвакуацию (стоять 15 с) — или перебивает всех охотников.
+ * прогресс копится) и вызывает эвакуацию: шаттл подлетает N секунд, потом на площадке надо
+ * простоять 15 с — или перебивает всех охотников. Точку эвакуации видят и охотники.
  * Охотники видят все возможные места задач, но не знают, какие выбраны; когда добыча начинает
  * задачу — тревога у места. Офицер-сенсорщик раз в M секунд даёт импульс: круг, где сейчас
  * добыча (на уровне III — реже и шире). Нет живых сенсорщиков — нет импульсов.
@@ -28,8 +29,9 @@
   // ---------------------------------------------------------------- настройки охот по уровням
   var HUNT = {
     tasks:   [2, 3, 4],             // сколько задач из пяти
-    channel: [20, 24, 28],          // секунд у места задачи
-    extract: 15,                    // секунд на эвакуации
+    channel: [45, 50, 55],          // секунд у места задачи
+    eta:     [60, 70, 80],          // через сколько секунд после вызова садится шаттл
+    extract: 15,                    // секунд на площадке после посадки
     ping:    [45, 55, 65],          // раз в сколько секунд импульс
     pingR:   [12, 16, 20],          // радиус круга импульса, клетки боя
     pingShow: 10,                   // сколько секунд круг на карте
@@ -41,6 +43,8 @@
   };
   // Отряд одного охотника по числу охотников (общая сила растёт медленнее числа игроков)
   var SQUAD = { hunt_sith: { 1: 12, 2: 8, 3: 6, 4: 5 }, hunt_jedi: { 1: 10, 2: 6, 3: 5, 4: 4 } };
+  // одному охотнику на II–III — подкрепление: скрытную добычу в одиночку не взять
+  var SOLO = { hunt_sith: [0, 8, 4], hunt_jedi: [0, 0, 0] };
   var KIT = {
     // [сенсорщик, основной, тяжёлый, снайпер, элита уровня III]
     hunt_sith: { team: 0, prey: 'cis_sith', preyTeam: 1, scan: 'rep_officer', main: 'rep_dc15a', heavy: 'rep_heavy', sniper: 'rep_sniper', elite: 'rep_commando',
@@ -54,10 +58,12 @@
                  passive: { deflect: 30, acc: 4, evasion: 10, hp: 60, vision: 3 }, portraits: ['jedi_01', 'jedi_02', 'jedi_03', 'jedi_04', 'jedi_05', 'jedi_06', 'jedi_07', 'jedi_08'],
                  names: ['Мастер Аэлин Тор', 'Рыцарь Каэд Вэлл', 'Мастер Сорин Дал', 'Рыцарь Иса Мерен', 'Мастер Тэлон Куор', 'Рыцарь Линн Аваро'], word: 'джедай', words: 'джедаи', scanName: 'охотник за головами' }
   };
-  // Прочность добычи: множитель по числу бойцов-охотников (подобран прогоном ботов, tools/events/sim.js)
-  // уровни II–III дают добыче больше сил — прочность чуть ниже
-  var PREY_TIER = { hunt_sith: [1, 0.85, 0.8], hunt_jedi: [1, 0.85, 0.95] };
-  var PREY_HP = { hunt_sith: [1, 0.45, 0.95, 1.55, 1.95], hunt_jedi: [1, 1.05, 2.3, 2.3, 2.8] };
+  // Прочность добычи: множитель по уровню и числу охотников (1–4), подобран прогоном ботов
+  // (tools/events/sim.js). На II–III добыча скрытна — против одного охотника ей нужно меньше прочности.
+  var PREY_HP = {
+    hunt_sith: [[0.61, 1.79, 3.06, 4.25], [0.31, 0.8, 1.53, 2.13], [0.38, 0.89, 1.53, 2.5]],
+    hunt_jedi: [[1.42, 3.9, 3.78, 5.4], [1.05, 2.7, 2.8, 4.5], [0.89, 2.21, 2.38, 3.4]]
+  };
 
   function rng(seed) { var s = (seed >>> 0) || 7; return function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
   function d2(a, x, y) { var dx = a.x - x, dy = a.y - y; return dx * dx + dy * dy; }
@@ -85,7 +91,7 @@
     for (var i = idx.length - 1; i > 0; i--) { var j = Math.floor(R() * (i + 1)), t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
     this.tasks = idx.slice(0, HUNT.tasks[ti]).map(function(i) { var s = ev.sites[i]; return { site: i, x: s[0], y: s[1], name: s[2], need: HUNT.channel[ti], prog: 0, done: false, active: false }; });
     // охотники: лагерь делится на полосы по игрокам
-    var hunters = this.owners('hunter'), n = Math.max(1, hunters.length), per = SQUAD[this.cfg.event][Math.min(4, n)] || 4, base = ev.base, lane = base[2] / n;
+    var hunters = this.owners('hunter'), n = Math.max(1, hunters.length), per = (SQUAD[this.cfg.event][Math.min(4, n)] || 4) + (n === 1 ? SOLO[this.cfg.event][ti] : 0), base = ev.base, lane = base[2] / n;
     var aimH = Math.atan2(ev.prey[1][1] - (base[1] + base[3] / 2), ev.prey[1][0] - (base[0] + base[2] / 2));
     this.hunterUnits = 0;
     hunters.forEach(function(p, k) {
@@ -98,7 +104,7 @@
     });
     // добыча: в одном из трёх стартов (джедаи — рядом друг с другом)
     var prey = this.owners(this.preyRole), st = ev.prey[Math.floor(R() * ev.prey.length)];
-    var hpK = (PREY_HP[this.cfg.event] || [1])[Math.min(4, n)] * PREY_TIER[this.cfg.event][ti] * (prey.length > 1 ? 0.8 : 1);
+    var hpK = PREY_HP[this.cfg.event][ti][Math.min(4, n) - 1] * (prey.length > 1 ? 0.8 : 1);
     var names = K.names.slice(), portr = K.portraits.slice();
     prey.forEach(function(p, k) {
       var nm = names.splice(Math.floor(R() * names.length), 1)[0], pt = portr.splice(Math.floor(R() * portr.length), 1)[0];
@@ -136,19 +142,23 @@
     this.tasks.forEach(function(k) {
       if (k.done) return;
       var on = preys.some(function(a) { return d2(a, k.x, k.y) <= R2 && !(a.stun > 0) && !(a.fear > 0) && !(a.choke >= 0); });
-      if (on && !k.active) { k.active = true; self.alarm = { x: k.x, y: k.y, name: k.name, t: t }; self.msg(self.hunterTeam, 'Тревога: ' + (preys.length > 1 ? 'джедаи' : 'цель') + ' у «' + k.name + '»', 'bad'); }
+      if (on && !k.active) { k.active = true; self.alarm = { x: k.x, y: k.y, name: k.name, t: t, k: k }; self.msg(self.hunterTeam, 'Тревога: ' + (preys.length > 1 ? 'джедаи' : 'цель') + ' у «' + k.name + '»', 'bad'); }
       if (!on && k.active) k.active = false;
+      // тревога держится, пока добыча у места, и ещё 30 с после
+      if (on && self.alarm && self.alarm.k === k) self.alarm.t = t;
       if (on) { k.prog = Math.min(k.need, k.prog + 0.1); if (k.prog >= k.need) { k.done = true; k.active = false; self.msg(self.preyTeam, 'Задача выполнена: ' + k.name, 'gold'); self.msg(self.hunterTeam, 'Задача врага выполнена: ' + k.name, 'bad'); } }
       if (!k.done) allDone = false;
     });
     if (allDone && !this.exit) {
       var ex = this.ev.exits[Math.floor(this.R() * this.ev.exits.length)];
-      this.exit = { x: ex[0], y: ex[1], name: ex[2], t: t };
-      this.msg(this.preyTeam, 'Все задачи выполнены. Эвакуация: «' + ex[2] + '»', 'gold');
-      this.msg(this.hunterTeam, 'Враг идёт на эвакуацию: «' + ex[2] + '». Перехватить!', 'bad');
+      var eta = HUNT.eta[this.ti];
+      this.exit = { x: ex[0], y: ex[1], name: ex[2], t: t, land: t + eta, landed: false };
+      this.msg(this.preyTeam, 'Все задачи выполнены. Шаттл вызван: «' + ex[2] + '», посадка через ' + eta + ' с', 'gold');
+      this.msg(this.hunterTeam, 'Враг вызвал шаттл: «' + ex[2] + '», посадка через ' + eta + ' с. Перехватить!', 'bad');
     }
     if (this.exit) {
-      var E2 = HUNT.exitR * HUNT.exitR, onE = preys.some(function(a) { return d2(a, self.exit.x, self.exit.y) <= E2; });
+      if (!this.exit.landed && t >= this.exit.land) { this.exit.landed = true; this.msg(this.preyTeam, 'Шаттл сел: продержись на площадке ' + HUNT.extract + ' с', 'gold'); this.msg(this.hunterTeam, 'Шаттл врага сел на «' + this.exit.name + '»', 'bad'); }
+      var E2 = HUNT.exitR * HUNT.exitR, onE = this.exit.landed && preys.some(function(a) { return d2(a, self.exit.x, self.exit.y) <= E2; });
       this.exitProg = onE ? this.exitProg + 0.1 : Math.max(0, this.exitProg - 0.2);
       if (this.exitProg >= HUNT.extract) return this.finish(this.preyRole, preys.length > 1 ? 'Джедаи ушли с эвакуацией' : (this.preyRole === 'sith' ? 'Ситх ушёл' : 'Джедай ушёл') + ' на эвакуации');
     }
@@ -192,13 +202,13 @@
               sites: this.ev.sites.map(function(s, i) { var k = self.taskAt(i); return prey ? (k ? [s[0], s[1], s[2], k.done ? 2 : k.active ? 1 : 0, Math.round(k.prog / k.need * 100)] : null) : [s[0], s[1], s[2], k && k.done ? 2 : -1, 0]; }).filter(Boolean),
               tasks: prey ? this.tasks.map(function(k) { return [k.name, Math.round(k.prog / k.need * 100), k.done ? 1 : 0]; }) : null,
               done: this.tasks.filter(function(k) { return k.done; }).length, need: this.tasks.length,
-              exit: this.exit ? [this.exit.x, this.exit.y, this.exit.name, Math.min(100, Math.round(this.exitProg / HUNT.extract * 100))] : null,
+              exit: this.exit ? [this.exit.x, this.exit.y, this.exit.name, Math.min(100, Math.round(this.exitProg / HUNT.extract * 100)), Math.max(0, Math.ceil(this.exit.land - t)), HUNT.eta[this.ti]] : null,
               exits: this.ev.exits.map(function(e) { return [e[0], e[1], e[2]]; }),
               preyN: this.preys().length, huntN: this.hunters().length, over: this.result ? this.result : null };
     if (!prey) {
       if (this.ping && t - this.ping.t < HUNT.pingShow) v.ping = [Math.round(this.ping.x * 10) / 10, Math.round(this.ping.y * 10) / 10, this.ping.r, Math.round((HUNT.pingShow - (t - this.ping.t)) * 10) / 10];
       v.nextPing = this.hunters().some(function(a) { return a.evScan; }) ? Math.max(0, Math.round(this.nextPing - t)) : -1;
-      if (this.alarm && t - this.alarm.t < 30) v.alarm = [this.alarm.x, this.alarm.y, this.alarm.name, Math.round(30 - (t - this.alarm.t))];
+      if (this.alarm && t - this.alarm.t < 30) { var ak = this.alarm.k; v.alarm = [this.alarm.x, this.alarm.y, this.alarm.name, Math.round(30 - (t - this.alarm.t)), ak && ak.active ? 1 : 0, ak ? Math.round(ak.prog / ak.need * 100) : 0]; }
       if (this.seen && t - this.seen.t < 20) v.seen = [Math.round(this.seen.x), Math.round(this.seen.y), Math.round(t - this.seen.t)];
     } else {
       v.nextPing = Math.max(0, Math.round(this.nextPing - t));
@@ -239,7 +249,9 @@
       if (!B.useAbility(team, a.id, ab, A[1] === 'area' ? { x: tg.x, y: tg.y } : { tid: tg.id })) break;
     }
     // куда: драться, уходить или к задаче / эвакуации
-    var goal = this.exit ? [this.exit.x, this.exit.y] : this.nextTask(a, foes);
+    var goal = this.exit ? [this.exit.x, this.exit.y] : this.nextTask(a, foes), near2 = this.exit ? HUNT.exitR - 1 : HUNT.site - 0.8;
+    // шаттл ещё далеко — не стоять на виду у площадки, выйти к посадке
+    if (this.exit && !this.exit.landed && this.exit.land - t > Math.sqrt(d2(a, this.exit.x, this.exit.y)) / Math.max(0.5, a.speed) + 4) goal = null;
     var danger = foes.filter(function(h) { return d2(h, a.x, a.y) < 15 * 15; }).length;
     if (near && nd < 11 && (hpk > 0.4 || nd < 3) && danger <= (this.tier === 3 ? 5 : 4)) {
       if (a.focus !== near.id) { a.focus = near.id; a.goal = null; a.at = true; a.post = false; a.hold = false; }
@@ -249,7 +261,7 @@
     if (near && nd < 14 && hpk <= 0.4) {
       var c = B.away(a, near, 16); if (c) { this.go(a, c[0], c[1]); return; }
     }
-    if (goal) { var gd = Math.sqrt(d2(a, goal[0], goal[1])); if (gd > 1.2) this.go(a, Math.floor(goal[0]), Math.floor(goal[1])); else if (!a.at) { a.goal = null; a.at = true; } }
+    if (goal) { var gd = Math.sqrt(d2(a, goal[0], goal[1])); if (gd > near2) this.go(a, Math.floor(goal[0]), Math.floor(goal[1])); else if (!a.at) { a.goal = null; a.at = true; } }
   };
   Hunt.prototype.strongest = function(list, a, r) { var best = null, bh = -1; list.forEach(function(h) { if (d2(h, a.x, a.y) <= r * r && h.hpMax > bh && !h.hero) { bh = h.hpMax; best = h; } }); return best; };
   Hunt.prototype.nextTask = function(a, foes) {

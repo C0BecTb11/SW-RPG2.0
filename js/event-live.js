@@ -40,7 +40,7 @@
   function start(srv, room, token) {
     window.GD_TOKEN = token;
     window.GD_LIVE = { system: 'ev', room: room, srv: srv, ws: null, tries: 0 };
-    var s = document.createElement('script'); s.src = '../ground/ground.js?v=10'; document.body.appendChild(s);
+    var s = document.createElement('script'); s.src = '../ground/ground.js?v=11'; document.body.appendChild(s);
   }
 
   // ---------------------------------------------------------------- бой открылся
@@ -63,14 +63,15 @@
       var word = e.event === 'hunt_jedi' ? 'джедаи' : 'ситх';
       if (prey) {
         items.push('Задач: <b>' + HUNT.tasks[ti] + '</b>. Встань у места задачи и держись <b>' + HUNT.channel[ti] + ' с</b> — прогресс копится, даже если отойдёшь.');
-        items.push('Когда все задачи выполнены, открывается <b>эвакуация</b>: продержись на ней ' + HUNT.extract + ' с.');
+        items.push('Когда все задачи выполнены, вызывается <b>шаттл</b>: он сядет через ' + HUNT.eta[ti] + ' с, потом продержись на площадке ' + HUNT.extract + ' с. Охотники тоже узнают, куда он летит.');
         items.push('Охотники видят все места задач и получают <b>тревогу</b>, когда ты начинаешь задачу.');
         items.push('Раз в ' + HUNT.ping[ti] + ' с сенсоры охотников показывают им <b>круг</b>, где ты сейчас. Убей сенсорщиков — импульсы прекратятся.');
         if (HUNT.sneak[ti]) items.push('Ты незаметен дальше <b>' + HUNT.sneak[ti] * 3 + ' клеток</b>. Удар и силы выдают тебя на ' + HUNT.reveal + ' с.');
         items.push('Другой путь к победе — перебить всех охотников.');
       } else {
         items.push('Цель — ' + (e.event === 'hunt_jedi' ? 'джедаи' : 'ситх') + '. Найди и уничтожь до эвакуации. Время: <b>' + (e.minutes || 15) + ' мин</b>.');
-        items.push('Места задач видны на карте. Когда враг начинает задачу — <b>тревога</b> у места.');
+        items.push('Места задач видны на карте. Когда враг начинает задачу — <b>тревога</b> у места: держится, пока он там, и показывает, сколько ему осталось.');
+        items.push('Выполнив задачи, враг вызывает <b>шаттл</b> — он сядет через ' + HUNT.eta[ti] + ' с. Успей к площадке.');
         items.push('Сенсорщик отряда раз в <b>' + HUNT.ping[ti] + ' с</b> даёт импульс: круг, где сейчас ' + word + '. Береги сенсорщиков.');
         if (HUNT.sneak[ti]) items.push('Цель видна только ближе <b>' + HUNT.sneak[ti] * 3 + ' клеток</b> — пока не ударит или не применит силу.');
         items.push('Держи дистанцию: клинок бьёт в упор, бластеры — издалека.');
@@ -104,15 +105,15 @@
     var html = '', prey = v.role !== 'hunter';
     if (prey) {
       (v.tasks || []).forEach(function(k) { html += '<span class="ev-pill' + (k[2] ? ' done' : k[1] > 0 ? ' act' : '') + '">' + (k[2] ? '✓ ' : '') + esc(k[0]) + (k[2] ? '' : '<i><u style="width:' + k[1] + '%"></u></i>') + '</span>'; });
-      if (v.exit) html += '<span class="ev-pill exit">⇪ ' + esc(v.exit[2]) + ' <i><u style="width:' + v.exit[3] + '%;background:#5fd968"></u></i></span>';
+      if (v.exit) html += '<span class="ev-pill exit">⇪ ' + esc(v.exit[2]) + (v.exit[4] > 0 ? ' · шаттл через <b>' + v.exit[4] + ' с</b>' : ' <i><u style="width:' + v.exit[3] + '%;background:#5fd968"></u></i>') + '</span>';
       if (v.nextPing >= 0) html += '<span class="ev-pill' + (v.nextPing <= 5 ? ' bad' : '') + '">импульс охотников через <b>' + v.nextPing + ' с</b></span>';
     } else {
       html += '<span class="ev-pill">задач врага <b>' + v.done + '/' + v.need + '</b></span>';
       if (v.nextPing >= 0) html += '<span class="ev-pill' + (v.ping ? ' act' : '') + '">' + (v.ping ? 'импульс на карте' : 'импульс через <b>' + v.nextPing + ' с</b>') + '</span>';
       else html += '<span class="ev-pill bad">сенсорщики погибли</span>';
-      if (v.alarm) html += '<span class="ev-pill bad">тревога: ' + esc(v.alarm[2]) + '</span>';
+      if (v.alarm) html += '<span class="ev-pill bad">тревога: ' + esc(v.alarm[2]) + (v.alarm[4] ? ' · ' + v.alarm[5] + '%' : '') + '</span>';
       if (v.seen) html += '<span class="ev-pill bad">цель видели ' + (v.seen[2] < 1 ? 'сейчас' : v.seen[2] + ' с назад') + '</span>';
-      if (v.exit) html += '<span class="ev-pill bad">эвакуация врага: ' + esc(v.exit[2]) + ' ' + v.exit[3] + '%</span>';
+      if (v.exit) html += '<span class="ev-pill bad">эвакуация врага: ' + esc(v.exit[2]) + (v.exit[4] > 0 ? ' · шаттл через <b>' + v.exit[4] + ' с</b>' : ' ' + v.exit[3] + '%') + '</span>';
     }
     return html;
   }
@@ -135,6 +136,90 @@
     c.fillStyle = col; c.fillText(text, x, y);
   }
   function diamond(c, x, y, r) { c.beginPath(); c.moveTo(x, y - r); c.lineTo(x + r, y); c.lineTo(x, y + r); c.lineTo(x - r, y); c.closePath(); }
+  var NEAR = 6;                                             // с этого масштаба предметы мест видны сами — вместо ромбов подписи
+  function forceCol() { return L.hello && L.hello.ev && L.hello.ev.event === 'hunt_jedi' ? '120,190,255' : '255,72,60'; }
+  function preyTeam() { return L.hello && L.hello.ev && L.hello.ev.event === 'hunt_jedi' ? 0 : 1; }
+  function glow(c, x, y, r, col, a) { if (r <= 0) return; var g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(' + col + ',' + a + ')'); g.addColorStop(1, 'rgba(' + col + ',0)'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
+  // состояние места для своей стороны: 0 — ждёт, 1 — идёт удержание, 2 — выполнено; и прогресс
+  function siteState(v, st) {
+    if (v.role !== 'hunter') return [st[3], st[4]];
+    var al = v.alarm && Math.abs(v.alarm[0] - st[0]) < 0.6 && Math.abs(v.alarm[1] - st[1]) < 0.6 ? v.alarm : null;
+    return st[3] === 2 ? [2, 100] : al && al[4] ? [1, al[5]] : [0, al ? al[5] : 0];
+  }
+  // Шаттл эвакуации сверху: k — 0 (высоко, мелкий, тень далеко) … 1 (сел)
+  function shuttle(c, x, y, s, k, now, landed) {
+    var L0 = 2.6 * s, alt = (1 - k) * (1 - k), sx = x - alt * 9 * s, sy = y - alt * 11 * s, sc = 0.7 + 0.3 * k;
+    // тень на земле — ровно под точкой посадки, растёт и темнеет
+    c.save(); c.translate(x + (1 - k) * 2.5 * s, y + (1 - k) * 3 * s); c.scale(0.6 + 0.4 * k, 0.6 + 0.4 * k);
+    c.fillStyle = 'rgba(0,0,0,' + (0.15 + 0.3 * k).toFixed(3) + ')'; hull(c, L0); c.fill(); c.restore();
+    c.save(); c.translate(sx, sy); c.scale(sc, sc);
+    // двигатели
+    var fl = landed ? 0.35 : 0.8 + 0.2 * Math.sin(now * 30);
+    glow(c, -L0 * 0.55, -L0 * 0.16, L0 * 0.32 * fl, '150,200,255', 0.7); glow(c, -L0 * 0.55, L0 * 0.16, L0 * 0.32 * fl, '150,200,255', 0.7);
+    hull(c, L0); var g = c.createLinearGradient(-L0 * 0.5, -L0 * 0.5, L0 * 0.5, L0 * 0.5); g.addColorStop(0, '#e9e6de'); g.addColorStop(1, '#8d8a84'); c.fillStyle = g; c.fill();
+    c.strokeStyle = 'rgba(40,40,44,0.8)'; c.lineWidth = Math.max(1, s * 0.05); c.stroke();
+    c.strokeStyle = 'rgba(60,60,66,0.6)'; c.lineWidth = Math.max(0.6, s * 0.03); c.beginPath(); c.moveTo(-L0 * 0.4, 0); c.lineTo(L0 * 0.3, 0); c.stroke();
+    c.fillStyle = '#c0453a'; c.fillRect(-L0 * 0.2, -L0 * 0.36, L0 * 0.18, L0 * 0.05); c.fillRect(-L0 * 0.2, L0 * 0.31, L0 * 0.18, L0 * 0.05);
+    c.fillStyle = 'rgba(30,50,70,0.95)'; c.beginPath(); c.ellipse(L0 * 0.36, 0, L0 * 0.1, L0 * 0.07, 0, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(170,220,255,0.6)'; c.beginPath(); c.ellipse(L0 * 0.38, -L0 * 0.02, L0 * 0.04, L0 * 0.025, 0, 0, TAU); c.fill();
+    var bl = Math.sin(now * 6) > 0; c.fillStyle = bl ? '#ff5a4a' : '#5aff7a'; c.beginPath(); c.arc(-L0 * 0.1, -L0 * 0.44, Math.max(1.5, s * 0.07), 0, TAU); c.arc(-L0 * 0.1, L0 * 0.44, Math.max(1.5, s * 0.07), 0, TAU); c.fill();
+    if (landed) { c.fillStyle = 'rgba(40,38,36,0.9)'; c.fillRect(-L0 * 0.62, -L0 * 0.08, L0 * 0.16, L0 * 0.16); c.fillStyle = 'rgba(255,214,130,0.5)'; c.fillRect(-L0 * 0.6, -L0 * 0.06, L0 * 0.12, L0 * 0.12); }
+    c.restore();
+  }
+  // корпус: нос на восток, короткие крылья, хвост с двумя дюзами
+  function hull(c, L0) {
+    c.beginPath(); c.moveTo(L0 * 0.5, 0); c.lineTo(L0 * 0.22, -L0 * 0.14); c.lineTo(-L0 * 0.05, -L0 * 0.16); c.lineTo(-L0 * 0.22, -L0 * 0.48); c.lineTo(-L0 * 0.34, -L0 * 0.48); c.lineTo(-L0 * 0.3, -L0 * 0.2);
+    c.lineTo(-L0 * 0.52, -L0 * 0.2); c.lineTo(-L0 * 0.52, L0 * 0.2); c.lineTo(-L0 * 0.3, L0 * 0.2); c.lineTo(-L0 * 0.34, L0 * 0.48); c.lineTo(-L0 * 0.22, L0 * 0.48); c.lineTo(-L0 * 0.05, L0 * 0.16); c.lineTo(L0 * 0.22, L0 * 0.14); c.closePath();
+  }
+  // Под бойцами: круг, где стоять; удержание Силой; погасшие места; площадка эвакуации и севший шаттл
+  window.GD_UNDER = function(c, s, dpr) {
+    var v = L.v; if (!v || !window.GD || !HUNT) return;
+    var now = performance.now() / 1000, prey = v.role !== 'hunter', fc = forceCol(), B = GD.B, pt = preyTeam();
+    (v.sites || []).forEach(function(st) {
+      var p = GD.toS(st[0], st[1]), ss = siteState(v, st), state = ss[0], R = HUNT.site * s;
+      if (state === 2) {
+        // выполнено: место гаснет — копоть и тлеющие искры
+        var g = c.createRadialGradient(p[0], p[1], 0, p[0], p[1], 2.4 * s); g.addColorStop(0, 'rgba(8,6,6,0.55)'); g.addColorStop(1, 'rgba(8,6,6,0)'); c.fillStyle = g; c.beginPath(); c.arc(p[0], p[1], 2.4 * s, 0, TAU); c.fill();
+        for (var e = 0; e < 5; e++) { var ph = (now * 0.35 + e / 5) % 1, ex = p[0] + Math.sin(e * 2.4 + now * 0.7) * s * 0.6, ey = p[1] - ph * s * 2.2; c.fillStyle = 'rgba(' + (prey ? '255,170,90' : '170,170,180') + ',' + (0.6 * (1 - ph)).toFixed(3) + ')'; c.beginPath(); c.arc(ex, ey, Math.max(1, s * 0.07 * (1 - ph * 0.5)), 0, TAU); c.fill(); }
+        return;
+      }
+      if (s >= NEAR && state === 0) { c.strokeStyle = prey ? 'rgba(240,200,106,0.55)' : 'rgba(143,168,196,0.35)'; c.lineWidth = 1.5; c.setLineDash([5, 6]); c.lineDashOffset = -now * 6; c.beginPath(); c.arc(p[0], p[1], R, 0, TAU); c.stroke(); c.setLineDash([]); c.lineDashOffset = 0; }
+      if (state !== 1) return;
+      // удержание: вращаются кольца рун, свет столбом, искры стягиваются к середине, нити к герою
+      var pulse = 0.5 + 0.5 * Math.sin(now * 5);
+      c.save(); c.translate(p[0], p[1]);
+      c.globalCompositeOperation = 'lighter';
+      glow(c, 0, 0, R * 1.2, fc, 0.1 + 0.06 * pulse);
+      c.rotate(now * 0.9); c.strokeStyle = 'rgba(' + fc + ',0.75)'; c.lineWidth = Math.max(1.2, s * 0.08); c.setLineDash([s * 0.5, s * 0.3]); c.beginPath(); c.arc(0, 0, R * 0.78, 0, TAU); c.stroke();
+      c.rotate(-now * 2.1); c.lineWidth = Math.max(1, s * 0.05); c.setLineDash([s * 0.18, s * 0.22]); c.beginPath(); c.arc(0, 0, R * 0.55, 0, TAU); c.stroke(); c.setLineDash([]);
+      c.restore();
+      c.save(); c.globalCompositeOperation = 'lighter';
+      for (var i = 0; i < 14; i++) { var f = (now * 0.6 + i / 14) % 1, a = i * 2.39996 + now * 1.4 * (i % 2 ? 1 : -1), r = R * (1.15 - f), px = p[0] + Math.cos(a) * r, py = p[1] + Math.sin(a) * r; c.fillStyle = 'rgba(' + fc + ',' + (0.85 * f).toFixed(3) + ')'; c.beginPath(); c.arc(px, py, Math.max(1, s * 0.09 * (0.4 + f)), 0, TAU); c.fill(); }
+      var bh = s * 4.2, bw = s * (0.35 + 0.1 * pulse), bg = c.createLinearGradient(0, p[1], 0, p[1] - bh); bg.addColorStop(0, 'rgba(' + fc + ',0.4)'); bg.addColorStop(1, 'rgba(' + fc + ',0)'); c.fillStyle = bg; c.fillRect(p[0] - bw / 2, p[1] - bh, bw, bh);
+      glow(c, p[0], p[1], s * 0.6, '255,255,255', 0.16 + 0.12 * pulse);
+      // нити Силы от видимых героев рядом
+      if (B) B.agents.forEach(function(a) {
+        if (!a || !a.alive || !a.hero || a.team !== pt || a.vis === false) return;
+        var dx = a.x - st[0], dy = a.y - st[1]; if (dx * dx + dy * dy > HUNT.site * HUNT.site * 1.2) return;
+        var hp = GD.toS(a.x, a.y); c.strokeStyle = 'rgba(' + fc + ',0.7)'; c.lineWidth = Math.max(1, s * 0.06); c.beginPath(); c.moveTo(hp[0], hp[1]);
+        for (var q = 1; q <= 8; q++) { var k = q / 8, w = Math.sin(k * Math.PI) * Math.sin(now * 12 + q * 1.7) * s * 0.18; c.lineTo(hp[0] + (p[0] - hp[0]) * k - dy * w / Math.max(0.3, Math.sqrt(dx * dx + dy * dy)), hp[1] + (p[1] - hp[1]) * k + dx * w / Math.max(0.3, Math.sqrt(dx * dx + dy * dy))); }
+        c.stroke();
+      });
+      c.restore();
+      // прогресс по кругу
+      if (ss[1] > 0) { c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = Math.max(3, s * 0.2); c.beginPath(); c.arc(p[0], p[1], R + s * 0.25, 0, TAU); c.stroke(); c.strokeStyle = 'rgba(' + fc + ',0.95)'; c.lineWidth = Math.max(2, s * 0.13); c.beginPath(); c.arc(p[0], p[1], R + s * 0.25, -Math.PI / 2, -Math.PI / 2 + TAU * ss[1] / 100); c.stroke(); }
+    });
+    // эвакуация: огни площадки бегут по кругу; шаттл сел — стоит на площадке
+    if (v.exit) {
+      var ep = GD.toS(v.exit[0], v.exit[1]), er = 2.45 * s, col = prey ? '120,255,150' : '255,110,90';
+      for (var j = 0; j < 8; j++) { var on = Math.floor(now * 6) % 8 === j, ba = j / 8 * TAU; glow(c, ep[0] + Math.cos(ba) * er, ep[1] + Math.sin(ba) * er, s * (on ? 0.9 : 0.4), col, on ? 0.9 : 0.35); }
+      if (v.exit[4] <= 0) {
+        shuttle(c, ep[0], ep[1], s, 1, now, true);
+        var pr = v.exit[3] / 100; c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = Math.max(3, s * 0.2); c.beginPath(); c.arc(ep[0], ep[1], HUNT.exitR * s, 0, TAU); c.stroke();
+        if (pr > 0) { c.strokeStyle = 'rgba(' + col + ',0.95)'; c.lineWidth = Math.max(2, s * 0.13); c.beginPath(); c.arc(ep[0], ep[1], HUNT.exitR * s, -Math.PI / 2, -Math.PI / 2 + TAU * pr); c.stroke(); }
+      }
+    }
+  };
   window.GD_DRAW = function(c, s, dpr) {
     var v = L.v; if (!v || !window.GD) return;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -149,24 +234,33 @@
     }
     // места задач
     (v.sites || []).forEach(function(st) {
-      var p = GD.toS(st[0], st[1]), state = st[3], isAlarm = v.alarm && Math.abs(v.alarm[0] - st[0]) < 0.6 && Math.abs(v.alarm[1] - st[1]) < 0.6;
+      var p = GD.toS(st[0], st[1]), ss = siteState(v, st), state = ss[0], isAlarm = v.alarm && Math.abs(v.alarm[0] - st[0]) < 0.6 && Math.abs(v.alarm[1] - st[1]) < 0.6;
       var col = prey ? (state === 2 ? '95,217,104' : state === 1 ? '240,200,106' : '217,169,64') : (state === 2 ? '110,120,130' : isAlarm ? '255,110,90' : '143,168,196');
+      var mark = state === 2 ? (prey ? '✓' : '×') : prey ? '!' : '?', prog = state !== 2 && ss[1] > 0 ? ' ' + ss[1] + '%' : '';
+      if (s >= NEAR) {
+        // крупно: предмет виден сам — над ним подпись со знаком и прогрессом
+        var ly = p[1] - 2.6 * s - 10;
+        if (isAlarm && state !== 2) { c.strokeStyle = 'rgba(255,110,90,' + (0.3 + 0.6 * pulse).toFixed(2) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], 2.7 * s + pulse * 6, 0, TAU); c.stroke(); }
+        label(c, mark + ' ' + st[2].toUpperCase() + prog, p[0], ly, 'rgba(' + col + ',1)');
+        return;
+      }
       c.fillStyle = 'rgba(' + col + ',0.16)'; diamond(c, p[0], p[1], R); c.fill();
       c.strokeStyle = 'rgba(' + col + ',0.95)'; c.lineWidth = 2; diamond(c, p[0], p[1], R); c.stroke();
-      if (prey && state !== 2 && st[4] > 0) { c.strokeStyle = 'rgba(240,200,106,0.95)'; c.lineWidth = 3; c.beginPath(); c.arc(p[0], p[1], R + 5, -Math.PI / 2, -Math.PI / 2 + TAU * st[4] / 100); c.stroke(); }
+      if (state !== 2 && ss[1] > 0) { c.strokeStyle = 'rgba(' + (prey ? '240,200,106' : '255,110,90') + ',0.95)'; c.lineWidth = 3; c.beginPath(); c.arc(p[0], p[1], R + 5, -Math.PI / 2, -Math.PI / 2 + TAU * ss[1] / 100); c.stroke(); }
       if (isAlarm) { c.strokeStyle = 'rgba(255,110,90,' + (0.3 + 0.6 * pulse).toFixed(2) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], R + 6 + pulse * 6, 0, TAU); c.stroke(); }
       c.font = 'bold ' + Math.round(Math.max(9, R * 0.9)) + 'px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillStyle = 'rgba(' + col + ',1)'; c.fillText(state === 2 ? (prey ? '✓' : '×') : prey ? '!' : '?', p[0], p[1] + 0.5);
-      if (s >= 3.2) label(c, st[2].toUpperCase() + (prey && state !== 2 && st[4] > 0 ? ' ' + st[4] + '%' : ''), p[0], p[1] + R + 12, 'rgba(' + col + ',1)');
+      c.fillStyle = 'rgba(' + col + ',1)'; c.fillText(mark, p[0], p[1] + 0.5);
+      if (s >= 3.2) label(c, st[2].toUpperCase() + prog, p[0], p[1] + R + 12, 'rgba(' + col + ',1)');
     });
     // эвакуация
-    if (prey && !v.exit) (v.exits || []).forEach(function(e) { var p = GD.toS(e[0], e[1]), w = 6 * s; c.strokeStyle = 'rgba(95,217,104,0.35)'; c.lineWidth = 1; c.setLineDash([4, 4]); c.strokeRect(p[0] - w / 2, p[1] - w / 2, w, w); c.setLineDash([]); if (s >= 4) label(c, e[2], p[0], p[1] + w / 2 + 9, 'rgba(143,232,154,0.6)'); });
+    if (prey && !v.exit) (v.exits || []).forEach(function(e) { var p = GD.toS(e[0], e[1]), r = 2.6 * s; if (s < NEAR) { c.strokeStyle = 'rgba(95,217,104,0.4)'; c.lineWidth = 1; c.setLineDash([4, 4]); c.beginPath(); c.arc(p[0], p[1], r, 0, TAU); c.stroke(); c.setLineDash([]); } if (s >= 4) label(c, '⇪ ' + e[2], p[0], p[1] + r + 9, 'rgba(143,232,154,0.65)'); });
     if (v.exit) {
-      var ep = GD.toS(v.exit[0], v.exit[1]), ew = 6 * s, col2 = prey ? '95,217,104' : '255,110,90';
-      c.fillStyle = 'rgba(' + col2 + ',' + (0.08 + 0.08 * pulse).toFixed(3) + ')'; c.fillRect(ep[0] - ew / 2, ep[1] - ew / 2, ew, ew);
-      c.strokeStyle = 'rgba(' + col2 + ',0.95)'; c.lineWidth = 2; c.strokeRect(ep[0] - ew / 2, ep[1] - ew / 2, ew, ew);
-      if (v.exit[3] > 0) { c.fillStyle = 'rgba(' + col2 + ',0.9)'; c.fillRect(ep[0] - ew / 2, ep[1] + ew / 2 + 3, ew * v.exit[3] / 100, 3); }
-      label(c, (prey ? 'ЭВАКУАЦИЯ · ' : 'ЭВАКУАЦИЯ ВРАГА · ') + v.exit[2].toUpperCase(), ep[0], ep[1] - ew / 2 - 10, prey ? '#8fe89a' : '#ff9a80');
+      var ep = GD.toS(v.exit[0], v.exit[1]), er = 2.6 * s, col2 = prey ? '95,217,104' : '255,110,90', eta = v.exit[4] || 0, etaAll = v.exit[5] || 60;
+      if (s < NEAR) { c.fillStyle = 'rgba(' + col2 + ',' + (0.08 + 0.08 * pulse).toFixed(3) + ')'; c.beginPath(); c.arc(ep[0], ep[1], er, 0, TAU); c.fill(); c.strokeStyle = 'rgba(' + col2 + ',0.95)'; c.lineWidth = 2; c.stroke(); }
+      // шаттл в воздухе: снижается к площадке, тень растёт (севший рисуется под бойцами)
+      if (eta > 0) { var k = Math.max(0, Math.min(1, 1 - (eta - (Date.now() - L.vAt) / 1000) / etaAll)); shuttle(c, ep[0], ep[1], s, k, now, false); }
+      if (s < NEAR && v.exit[3] > 0) { c.fillStyle = 'rgba(' + col2 + ',0.9)'; c.fillRect(ep[0] - er, ep[1] + er + 3, er * 2 * v.exit[3] / 100, 3); }
+      label(c, (prey ? 'ЭВАКУАЦИЯ · ' : 'ЭВАКУАЦИЯ ВРАГА · ') + v.exit[2].toUpperCase() + (eta > 0 ? ' · ШАТТЛ ЧЕРЕЗ ' + eta + ' С' : v.exit[3] > 0 ? ' · ' + v.exit[3] + '%' : ' · ШАТТЛ СЕЛ'), ep[0], ep[1] - er - 12, prey ? '#8fe89a' : '#ff9a80');
     }
     // где цель видели
     if (v.seen && v.seen[2] >= 1) {
@@ -179,7 +273,7 @@
   window.GD_MINI = function(c, x0, y0, k) {
     var v = L.v; if (!v) return;
     (v.sites || []).forEach(function(st) { c.fillStyle = st[3] === 2 ? '#5fd968' : v.role !== 'hunter' ? '#f0c86a' : '#8fa8c4'; c.fillRect(x0 + st[0] * k - 2, y0 + st[1] * k - 2, 4, 4); });
-    if (v.exit) { c.strokeStyle = v.role !== 'hunter' ? '#5fd968' : '#ff6e5a'; c.lineWidth = 1.5; c.strokeRect(x0 + (v.exit[0] - 3) * k, y0 + (v.exit[1] - 3) * k, 6 * k, 6 * k); }
+    if (v.exit) { c.strokeStyle = v.role !== 'hunter' ? '#5fd968' : '#ff6e5a'; c.lineWidth = 1.5; c.beginPath(); c.arc(x0 + v.exit[0] * k, y0 + v.exit[1] * k, Math.max(3, 3 * k), 0, TAU); c.stroke(); }
     if (v.ping) { c.strokeStyle = 'rgba(255,110,90,0.9)'; c.lineWidth = 1; c.beginPath(); c.arc(x0 + v.ping[0] * k, y0 + v.ping[1] * k, v.ping[2] * k, 0, TAU); c.stroke(); }
   };
 

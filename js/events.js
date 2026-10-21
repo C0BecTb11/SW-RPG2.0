@@ -100,7 +100,7 @@
       '<div class="ev-name"><b>' + esc(E.title) + '</b><em>' + esc(E.place) + '</em><div class="ev-tags">' + tags + '</div></div></div>';
     html += '<p class="ev-about">' + esc(E.about) + '</p>';
     if (!ready) return html + '</article>';
-    if (E.maps.length) html += '<div class="ev-maps">' + E.maps.map(function(m) { return '<div class="ev-map" style="background-image:url(../assets/events/' + m + '.jpg)"><span>' + esc(S.maps[m] || m) + '</span></div>'; }).join('') + '</div>';
+    if (E.maps.length) html += '<div class="ev-maps">' + E.maps.map(function(m) { return '<div class="ev-map" style="background-image:url(../assets/events/' + m + '.jpg?v=2)"><span>' + esc(S.maps[m] || m) + '</span></div>'; }).join('') + '</div>';
     if (E.goal && E.goal[side]) html += '<div class="ev-goal"><b>Твоя задача</b>' + esc(E.goal[side]) + '</div>';
     if (myRoles.length > 1 || E.roles.length > 1) {
       html += '<div><div class="ev-lab">Роль</div><div class="ev-roles">';

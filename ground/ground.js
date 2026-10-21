@@ -216,6 +216,8 @@
     if (G.layers.zones) drawZones(c, s);
     if (G.live) drawBuildings(c, s, vis);
     drawStructs(c, s, vis);
+    // слой сценария под бойцами (места задач ивента и т. п.)
+    if (window.GD_UNDER) { c.save(); GD_UNDER(c, s, dpr, t); c.restore(); c.setTransform(dpr, 0, 0, dpr, 0, 0); }
     drawDead(c, s, vis);
     drawShells(c, s, t);
     drawUnits(c, s, vis, t);
@@ -236,7 +238,7 @@
     try {
       var cnt = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
       for (var i = 0; i < cnt; i++) {
-        var w = new Worker('../ground/terrain-worker.js?v=2');
+        var w = new Worker('../ground/terrain-worker.js?v=3');
         w.onmessage = function(e) {
           var m = e.data; if (m.k !== 'chunk') return;
           delete TW.pending[m.key]; TW.n--;

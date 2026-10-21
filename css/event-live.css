@@ -1,0 +1,54 @@
+/* Бой ивента (game/event-battle.html) — поверх space.css и ground.css: худ ивента. */
+body.event .sp-top { border-left-color: #d9a940; }
+body.event.cisside .sp-side { color: #d94a4a; }
+.ev-glyph { display: grid; place-items: center; background: radial-gradient(circle at 50% 35%, #2a2214, #0e0b06) !important; box-shadow: 0 0 0 1px rgba(217,169,64,0.5) !important; }
+.ev-glyph svg { width: 11px; height: 11px; fill: none; stroke: #f0c86a; stroke-width: 2; stroke-linecap: round; }
+.ev-timer { flex: none; font-size: 13px; color: #e8d9a8; letter-spacing: 1px; padding: 2px 8px; border: 1px solid rgba(217,169,64,0.45); border-radius: 8px; background: rgba(217,169,64,0.07); }
+.ev-timer.low { color: #ff8a70; border-color: rgba(255,110,90,0.6); background: rgba(255,110,90,0.08); animation: ev-blink 1s steps(2) infinite; }
+@keyframes ev-blink { 50% { opacity: 0.6; } }
+.ev-line { flex-wrap: wrap; gap: 4px 6px; font-size: 10px; color: #8fa8c4; }
+.ev-line:empty { display: none; }
+.ev-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid #2a3644; border-radius: 10px; background: rgba(5,6,10,0.6); white-space: nowrap; }
+.ev-pill b { color: #e8d9a8; font-weight: normal; }
+.ev-pill i { display: inline-block; width: 34px; height: 3px; background: #141a22; border-radius: 2px; overflow: hidden; }
+.ev-pill i u { display: block; height: 100%; background: #d9a940; }
+.ev-pill.done { border-color: rgba(95,217,104,0.5); color: #5fd968; }
+.ev-pill.done i u { background: #5fd968; }
+.ev-pill.act { border-color: rgba(217,169,64,0.8); color: #f0c86a; }
+.ev-pill.bad { border-color: rgba(255,110,90,0.6); color: #ff9a80; }
+.ev-pill.exit { border-color: rgba(95,217,104,0.7); color: #8fe89a; }
+#sp-stat .ev-strip { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-bottom: 5px; font-size: 10px; }
+#sp-stat .ev-strip:empty { display: none; }
+
+/* итог */
+.ev-end .sp-end-card { width: min(360px, 92vw); }
+.ev-end-mark { width: 54px; height: 54px; margin: 6px auto 2px; border-radius: 50%; display: grid; place-items: center; border: 1px solid rgba(217,169,64,0.6); background: radial-gradient(circle at 50% 35%, #2a2214, #0b0906); }
+.ev-end-mark svg { width: 30px; height: 30px; fill: none; stroke: #f0c86a; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ev-end.loss .ev-end-mark { border-color: rgba(255,110,90,0.55); background: radial-gradient(circle at 50% 35%, #2a1410, #0b0606); }
+.ev-end.loss .ev-end-mark svg { stroke: #ff8a70; }
+.ev-end.loss .sp-end-card { border-left-color: #d94a4a; }
+.ev-end.win .sp-end-card { border-left-color: #5fd968; }
+.ev-end-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 10px; }
+.ev-end-stats div { padding: 6px 2px; border: 1px solid #1c2530; border-radius: 8px; background: rgba(5,6,10,0.55); }
+.ev-end-stats b { display: block; font-size: 14px; font-weight: normal; color: #e8d9a8; }
+.ev-end-stats span { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+.ev-end-award { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(217,169,64,0.35); background: rgba(217,169,64,0.06); font-size: 11px; line-height: 1.55; color: #e8d9a8; }
+.ev-end-award:empty { display: none; }
+.ev-end-award em { font-style: normal; color: #8fa8c4; font-size: 10px; }
+.ev-end-award .ttl { display: block; margin-top: 4px; color: #f0c86a; letter-spacing: 0.5px; }
+a.sp-btn { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* брифинг */
+.ev-brief .sp-end-card { width: min(380px, 92vw); text-align: left; max-height: 86vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.ev-brief .sp-end-card h2 { text-align: left; }
+.ev-brief-list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ev-brief-list li { position: relative; padding-left: 16px; font-size: 10.5px; line-height: 1.5; color: #9fb0bf; }
+.ev-brief-list li::before { content: '◆'; position: absolute; left: 0; top: 0; color: #d9a940; font-size: 8px; line-height: 1.9; }
+.ev-brief-list li b { color: #e8d9a8; font-weight: normal; }
+.ev-brief-who { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
+.ev-brief-who span { padding: 3px 8px; border: 1px solid #2a3644; border-radius: 10px; font-size: 9.5px; color: #8fa8c4; }
+.ev-brief-who span.me { border-color: rgba(217,169,64,0.7); color: #f0c86a; }
+.ev-brief-who span.bot { border-style: dashed; color: #55606c; }
+@media (prefers-reduced-motion: reduce) { .ev-timer.low { animation: none; } }
+/* поля захвата и районов экрана наземки в ивенте не нужны */
+body.event #gd-cap, body.event #gd-dist { display: none !important; }

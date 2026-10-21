@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
+<title>Ивенты — Star Wars: Global Conflict</title>
+<link rel="stylesheet" href="../css/shared-ui.css">
+<link rel="stylesheet" href="../css/events.css?v=1">
+</head>
+<body>
+
+<header class="ev-top">
+  <a class="ev-back" href="galaxy-map.html">← Галактика</a>
+  <div class="ev-titles">
+    <span class="ev-kicker">Особые операции</span>
+    <h1>Ивенты</h1>
+  </div>
+  <span class="ev-side" id="ev-side">—</span>
+</header>
+
+<main class="ev-main">
+  <section class="ev-me" id="ev-me"></section>
+
+  <nav class="ev-tabs" id="ev-tabs">
+    <button type="button" data-tab="list" class="on">Ивенты</button>
+    <button type="button" data-tab="hist">История</button>
+    <button type="button" data-tab="rate">Рейтинг</button>
+    <button type="button" data-tab="dev" id="ev-tab-dev" hidden>Тест</button>
+  </nav>
+
+  <div class="ev-filters" id="ev-filters">
+    <button type="button" data-f="all" class="on">Все</button>
+    <button type="button" data-f="pvp">Против игроков</button>
+    <button type="button" data-f="pve">Против бота</button>
+    <button type="button" data-f="ground">Наземные</button>
+    <button type="button" data-f="space">Космос</button>
+  </div>
+
+  <div id="ev-body"><div class="ev-load"><span></span>Загружаю ивенты…</div></div>
+</main>
+
+<div class="ev-queue" id="ev-queue" hidden></div>
+<div class="ev-toast" id="ev-toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/supabase-client.js"></script>
+<script src="../shared/rt-events-cat.js?v=1"></script>
+<script src="../js/events.js?v=1"></script>
+</body>
+</html>

@@ -55,7 +55,7 @@
         '</div>' +
         '<div class="dv-tabs">' +
           '<button type="button" data-tab="res">Ресурсы</button><button type="button" data-tab="army">Войска</button>' +
-          '<button type="button" data-tab="misc">Прочее</button><button type="button" data-tab="log">Журнал</button>' +
+          '<button type="button" data-tab="misc">Прочее</button><button type="button" data-tab="ev">Ивенты</button><button type="button" data-tab="log">Журнал</button>' +
         '</div>' +
         '<div class="dv-body"></div>' +
         '<div class="dv-status"></div>' +
@@ -119,6 +119,16 @@
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="research">Открыть все исследования фракции</button></div>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="tutorial">Засчитать текущий шаг обучения</button></div>' +
         '<p class="dv-note">Шаг обучения засчитывается, награду игрок забирает сам — так выдаются корабль и бойцы шага.</p></section>';
+    } else if (tab === 'ev') {
+      // тест ивентов: бой без очереди, свои роль и уровень, пустые роли — боты; награда не начисляется
+      h += '<section><h4>Тест ивентов</h4>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_sith:hunter">Охота на ситха — охотником</button></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_sith:sith">Охота на ситха — ситхом</button></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_jedi:hunter">Охота на джедаев — охотником</button></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_jedi:jedi">Охота на джедаев — джедаем</button></div>' +
+        '<div class="dv-lbl">Уровень</div><div class="dv-chips">' + [1, 2, 3].map(function(n) { return '<button type="button" class="dv-chip' + ((S.evTier || 2) === n ? ' on' : '') + '" data-act="evtier" data-v="' + n + '">' + ['I Новобранец', 'II Ветеран', 'III Легенда'][n - 1] + '</button>'; }).join('') + '</div>' +
+        '<p class="dv-note">Карта — случайная, остальные роли — боты (охотников-ботов — двое). Больше настроек и журнал матчей — во вкладке «Тест» в лобби ивентов.</p>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evlobby">Лобби ивентов</button></div></section>';
     } else {
       h += '<section><h4>Последние действия</h4><div class="dv-log">Загрузка…</div></section>';
       rpc('dev_recent', { p_limit: 40 }).then(function(rows) {
@@ -131,7 +141,7 @@
     }
     $('.dv-body').innerHTML = h;
   }
-  var ACT = { credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения' };
+  var ACT = { event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения' };
   function brief(d) { if (!d) return ''; var o = []; for (var k in d) if (d.hasOwnProperty(k) && d[k] !== 0) o.push(k + ' ' + d[k]); return o.join(', '); }
   function num(id, lo, hi) { var v = parseInt($(id).value, 10); if (!isFinite(v) || v < lo || v > hi) throw new Error('Число от ' + fmt(lo) + ' до ' + fmt(hi)); return v; }
 
@@ -162,6 +172,16 @@
         rpc('dev_research_all', { p_user: S.user }).then(function(n) { say(p.nick + ': открыто исследований — ' + n); }, fail);
       } else if (a === 'tutorial') {
         rpc('dev_tutorial_done', { p_user: S.user }).then(function(n) { say(p.nick + ': шаг обучения ' + n + ' засчитан'); }, fail);
+      } else if (a === 'evtier') {
+        S.evTier = +b.getAttribute('data-v'); render();
+      } else if (a === 'evtest') {
+        // бой ивента без очереди: я — в роли, остальные — боты
+        var ev = b.getAttribute('data-v').split(':'); b.disabled = true; say('Готовлю тест…');
+        rpc('dev_event_start', { p_event: ev[0], p_tier: S.evTier || 2, p_role: ev[1], p_map: null, p_bots: 2 }).then(function(r) {
+          if (r && r.match) location.href = '../game/event-battle.html?m=' + encodeURIComponent(r.match.id); else { b.disabled = false; say('Тест не создан', true); }
+        }, function(err) { b.disabled = false; fail(err); });
+      } else if (a === 'evlobby') {
+        location.href = '../game/events.html';
       }
     } catch (err) { fail(err); }
   }

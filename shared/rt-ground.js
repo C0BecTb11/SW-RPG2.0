@@ -158,14 +158,22 @@
   };
 
   // ---------------------------------------------------------------- бой
+  // Карта ивента: слои как есть, «город» пустой и за краем карты (площади и стен нет)
+  function noTownMap(json) {
+    var map = P.load(json), town = { level: 0, name: json.name || '', k: 0, wall: null, gates: [], towers: [], districts: [], blocks: [], square: [-100, -100, 0, 0], cx: -96, cy: -96, look: TOWN.look(json.id) };
+    var out = { id: json.id, v: json.v, w: map.w, h: map.h, seed: json.seed, town: [-104, -104, 8, 8], t: map.t, e: map.e, m: map.m, objs: json.objs || [], paths: json.paths || [], name: json.name, about: json.about, look: json.look, zones: { deploy: [], slots: [] }, settle: town, ev: json.ev || null };
+    return { map: out, town: town };
+  }
   function Ground(mapJson, opts) {
     opts = opts || {};
     var self = this;
     // поселение: город накладывается на карту (стены, ворота, кварталы) по уровню и районам из игры
-    var ap = TOWN.apply(mapJson, opts.settle || { level: 1, districts: [] });
+    // ивент (opts.noTown): своя выдуманная карта без города — ни стен, ни площади, ни захвата
+    this.noTown = !!opts.noTown;
+    var ap = this.noTown ? noTownMap(mapJson) : TOWN.apply(mapJson, opts.settle || { level: 1, districts: [] });
     this.mapJson = ap.map; this.settle = ap.town;
     this.map = P.load(ap.map);
-    this.id = mapJson.id; this.town = mapJson.town || P.GEO.town; this.zones = mapJson.zones || { deploy: [], slots: [] };
+    this.id = mapJson.id; this.town = this.noTown ? ap.map.town : mapJson.town || P.GEO.town; this.zones = this.noTown ? ap.map.zones : mapJson.zones || { deploy: [], slots: [] };
     this.R = rng(opts.seed || 7);
     this.t = 0; this.acc = 0; this.over = -1; this.why = '';
     this.agents = []; this.used = [];
@@ -178,7 +186,7 @@
     this.capExternal = !!opts.capExternal;   // в игре прогресс захвата и исход считает база (capture_tick)
     this.cap = { prog: 0, rate: 0, status: 'stalled', cnt: [0, 0] };
     this.structs = [];
-    this.weather = P.WEATHER[this.id] ? P.WEATHER[this.id][1] : 0;
+    this.weather = opts.weather != null ? opts.weather : P.WEATHER[this.id] ? P.WEATHER[this.id][1] : 0;
     // проходимость по роду войск и размеру; цена клетки = 1/скорость
     this.pass = {}; this.costOf = {};
     var m = this.map, n = N * N, k;
@@ -367,9 +375,9 @@
     if (!sn) return true;
     if (sn[c] !== 2) return false;
     // скрытный разведчик: виден только вблизи (stealth_range) или после выстрела; маскировочная сеть — 3 клетки
-    var st = b.T.stealth ? b.T.stealth * RANGE_K : 0;
+    var st = (b.sneak || b.T.stealth) ? (b.sneak || b.T.stealth) * RANGE_K : 0;
     if (b.inside >= 0 && this.structs[b.inside].kind === 'camo') st = Math.max(st, 3 * RANGE_K);
-    if (st && this.t - b.revealT > 120) { if (this.nearestOwn(team, b.x, b.y, st) < 0 && !this.radarSees(team, b.x, b.y)) return false; }
+    if (st && this.t - b.revealT > (b.revealFor || 120)) { if (this.nearestOwn(team, b.x, b.y, st) < 0 && !this.radarSees(team, b.x, b.y)) return false; }
     return true;
   };
   // постройку видели, если открыта хоть одна её клетка (луч обзора упирается в ближнюю сторону)
@@ -403,6 +411,7 @@
     for (i = 0; i < this.districts.length; i++) { var dd = this.districts[i]; if (dd.id === 'comms' && dd.by >= 0 && dd.by <= 1) this.reveal(dd.by, this.sx + SQUARE / 2, this.sy + SQUARE / 2, 8 * RANGE_K); }
     for (i = 0; i < this.structs.length; i++) { var st = this.structs[i]; if (st.dead || st.team > 1) continue; if (st.kind === 'radar' || st.kind === 'turret') this.reveal(st.team, st.x + st.w / 2, st.y + st.h / 2, (st.radius || 3) * RANGE_K); }
     // полоса вторжения всегда видна хозяину планеты
+    if (this.noTown) return;
     var sd = this.seen[this.def];
     for (k = (N - P.GEO.strip) * N; k < N * N; k++) sd[k] = 2;
   };
@@ -1001,7 +1010,7 @@
     a.cd = a.T.rof;
     this.heroAct(a, 'slash', SLASH, { tid: tg.a.id });
   };
-  Ground.prototype.heroAct = function(a, act, dur, data) { var h = a.hero; h.act = act; h.actT = dur; h.actDur = dur; h.k = 0; h.data = data || null; a.mv = 0; this.ev.fx.push({ t: this.t, k: act, x: a.x, y: a.y, id: a.id, tid: data && data.tid, tx: data && data.x, ty: data && data.y }); };
+  Ground.prototype.heroAct = function(a, act, dur, data) { var h = a.hero; a.revealT = this.t; h.act = act; h.actT = dur; h.actDur = dur; h.k = 0; h.data = data || null; a.mv = 0; this.ev.fx.push({ t: this.t, k: act, x: a.x, y: a.y, id: a.id, tid: data && data.tid, tx: data && data.x, ty: data && data.y }); };
   Ground.prototype.heroActEnd = function(a) {
     var h = a.hero, d = h.data || {}, b = d.tid != null ? this.agents[d.tid] : null, act = h.act;
     h.act = 'idle'; h.k = 0;
@@ -1188,6 +1197,7 @@
   };
   Ground.prototype.ai = function() {
     var ag = this.agents, sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, self = this;
+    if (this.noTown) { if (this.onAI) this.onAI(); return; }      // ивент: ботов ведёт сценарий
     for (var tm = 0; tm < 2; tm++) {
       var teamAuto = this.teams[tm].auto, ids = [];
       for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive || this.ctl(a) !== tm || (a.T.artillery && tm !== this.att)) continue; if (!teamAuto && !a.auto && !a.npc) continue; if (a.mind && a.mind.until > this.t) continue; ids.push(i); }
@@ -1396,6 +1406,7 @@
     return made;
   };
   Ground.prototype.capture = function(dt) {
+    if (this.noTown) return;                 // ивент: исход решает его сценарий (shared/rt-events.js)
     this.districtsStep(dt);
     // полигон: враг у стен — жители берутся за оружие (в игре — raise_militia по своим правилам)
     if (this.militiaAuto && this.militiaT < 0) {

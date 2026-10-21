@@ -20,6 +20,7 @@ var SWRT = require('../shared/rt-core.js');
 var Space = require('./space-room.js');
 var Ground = require('./ground-room.js');
 var Sys = require('./system-room.js');
+var Ev = require('./event-room.js');
 
 var CFG = {
   port: +(process.env.PORT || 8080),
@@ -113,6 +114,7 @@ var SPACE_MAX = 8;          // космический бой с экипажам
 
 var GROUND_MAX = 12;        // живых планет на сервер
 var SYSTEM_MAX = 10;        // живых орбит на сервер
+var EVENT_MAX = 12;         // боёв ивентов на сервер
 
 function getRoom(name, cfg) {
   var gp = Ground.parse(name);
@@ -139,6 +141,19 @@ function getRoom(name, cfg) {
     ROOMS.set(so.key, q);
     log('info', 'комната орбиты создана', { room: so.key });
     return q;
+  }
+  var ep = Ev.parse(name);
+  if (ep) {
+    var w = ROOMS.get(ep.key);
+    if (w && !w.closed) return w;
+    if (w && w.closed) return null;                  // бой ивента кончился — заново не открывается
+    var ne = 0; ROOMS.forEach(function(x) { if (x.kind === 'event' && !x.closed) ne++; });
+    if (ne >= EVENT_MAX) return null;
+    if (!CFG.dev && /^dev-/.test(ep.match)) return null;
+    w = new Ev.EventRoom(ep.key, ep.match, { rpc: rpc, key: CFG.key, log: log, dev: CFG.dev });
+    ROOMS.set(ep.key, w);
+    log('info', 'комната ивента создана', { room: ep.key });
+    return w;
   }
   var sp = Space.parse(name);
   // космическая комната — по коду: бой задаёт тот, кто её создал
@@ -170,7 +185,12 @@ var tickN = 0, nextAt = Date.now() + TICK_MS, late = 0;
 function loop() {
   var t0 = SWRT.now();
   ROOMS.forEach(function(r, name) {
-    if (r.kind === 'ground' || r.kind === 'system') {
+    if (r.kind === 'event') {
+      // бой ивента: живёт до итога и ещё полторы минуты; закрытый остаётся в списке,
+      // чтобы тот же матч не открылся заново (убирается через 10 минут)
+      if (r.closed) { if (!r.goneAt) r.goneAt = Date.now(); if (Date.now() - r.goneAt > 10 * 60e3) ROOMS.delete(name); return; }
+      if (r.shouldClose()) { r.close('end'); return; }
+    } else if (r.kind === 'ground' || r.kind === 'system') {
       // планета и орбита живут и без игроков, пока идёт бой; закрываются после тишины
       if (r.closed) { ROOMS.delete(name); return; }
       if (r.shouldClose()) { r.close('quiet'); ROOMS.delete(name); return; }
@@ -183,7 +203,7 @@ function loop() {
     catch (e) { log('error', 'ошибка в такте', { room: name, err: String(e && e.stack || e).slice(0, 400) }); }
     r.ms.push(SWRT.now() - a);
     if (r.ms.length > 600) r.ms.shift();
-    if (r.kind !== 'space' && r.kind !== 'ground' && r.kind !== 'system' && r.battle.tick % 10 === 0) {
+    if (r.kind !== 'space' && r.kind !== 'ground' && r.kind !== 'system' && r.kind !== 'event' && r.battle.tick % 10 === 0) {
       var st = r.statFor({ srvMs: Math.round((SWRT.now() - a) * 100) / 100, cpu: CPU.pct, ver: VERSION });
       for (var i = 0; i < r.clients.length; i++) r.send(r.clients[i], st);
     }
@@ -215,7 +235,7 @@ function health() {
   var rooms = [];
   var busy = 0;   // идущие космические бои; прототипы перезапуску не мешают
   ROOMS.forEach(function(r, name) {
-    if (r.kind === 'space' || r.kind === 'ground' || r.kind === 'system') { busy += r.busy(); var inf = r.info(); inf.tickP50 = pct(r.ms, 0.5); inf.tickP95 = pct(r.ms, 0.95); rooms.push(inf); return; }
+    if (r.kind === 'space' || r.kind === 'ground' || r.kind === 'system' || r.kind === 'event') { if (r.closed && r.kind === 'event') return; busy += r.busy(); var inf = r.info(); inf.tickP50 = pct(r.ms, 0.5); inf.tickP95 = pct(r.ms, 0.95); rooms.push(inf); return; }
     var c = r.battle.counts();
     rooms.push({ room: name, clients: r.clients.length, troops: c.total, squads: c.squads[0] + c.squads[1],
                  singles: c.singles, lod: r.battle.lod, tickP50: pct(r.ms, 0.5), tickP95: pct(r.ms, 0.95),
@@ -254,7 +274,7 @@ server.on('upgrade', function(req, sock, head) {
             send: function(buf) {
               // медленный игрок: не копим очередь — пропускаем такт и потом шлём бой заново
               if (ws.bufferedAmount > 2 * 1048576) { c.resync = true; return; }
-              if (c.resync && c.room && c.room.kind !== 'space' && c.room.kind !== 'ground' && c.room.kind !== 'system') { c.resync = false; ws.send(SWRT.encodeInit(c.room.battle, c.side, c.room.extra)); return; }
+              if (c.resync && c.room && c.room.kind !== 'space' && c.room.kind !== 'ground' && c.room.kind !== 'system' && c.room.kind !== 'event') { c.resync = false; ws.send(SWRT.encodeInit(c.room.battle, c.side, c.room.extra)); return; }
               ws.send(buf);
             } };
   CLIENTS.add(c);
@@ -276,11 +296,11 @@ server.on('upgrade', function(req, sock, head) {
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
         var r = getRoom(String(m.room || 'p500').slice(0, 40), m.cfg);
-        if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : 'нет такого боя' })); ws.close(4004); return; }
+        if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : Ev.parse(String(m.room || '')) ? 'Бой ивента уже окончен или сервер занят' : 'нет такого боя' })); ws.close(4004); return; }
         if (r.kind === 'space') {
           c.side = -1;
           if (!r.join(c, m.side)) return;
-        } else if (r.kind === 'ground' || r.kind === 'system') {
+        } else if (r.kind === 'ground' || r.kind === 'system' || r.kind === 'event') {
           if (!r.join(c)) return;
         } else r.join(c);
         c.room = r;

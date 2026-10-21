@@ -54,7 +54,7 @@
     LIVE.ws = ws; G.closing = false;
     ws.onopen = function() {
       Promise.resolve(window.GD_TOKEN ? window.GD_TOKEN() : 'dev').then(function(token) {
-        var auth = { t: 'auth', token: token || 'dev', room: 'gr:' + LIVE.system };
+        var auth = { t: 'auth', token: token || 'dev', room: LIVE.room || 'gr:' + LIVE.system };
         if (/[?&]side=(0|1)/.test(location.search)) auth.side = +/[?&]side=(0|1)/.exec(location.search)[1];
         ws.send(JSON.stringify(auth));
       });
@@ -65,6 +65,7 @@
       if (m.t === 'error') { loading(false); toast(m.msg || 'Ошибка связи', 'bad'); G.closing = true; return; }
       if (m.t === 'reset') { toast(m.msg || 'Планета изменилась', 'gold'); G.B = null; return; }
       if (m.t === 'note') { toast(m.msg, m.kind || 'gold'); return; }
+      if (m.t === 'ev' || m.t === 'evend') { if (window.GD_ON_EV) window.GD_ON_EV(m); return; }     // ивент: худ и итог (js/event-live.js)
       if (G.B && G.B.onText) G.B.onText(m);
     };
     ws.onclose = function() {
@@ -77,19 +78,21 @@
   function onHello(h, ws) {
     G.planet = h.system; G.side = h.side;
     var B = new NET.Mirror(h, h.side, function(s) { if (ws.readyState === 1) ws.send(s); });
+    B.noTown = h.kind === 'event';                   // ивент: своя карта без города
     B.buildings = h.buildings || []; B.plots = h.plots || []; B.zones = { deploy: (h.zones || []).map(function(z) { return [z.x, z.y, z.size]; }), slots: (h.plots || []).map(function(p) { return [p.x, p.y]; }) };
     G.B = B; G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; FOG_T = -1; G.t = 0;
     document.body.classList.toggle('cisside', G.side === 1);
     $('sp-side').textContent = G.side === 0 ? 'Республика' : 'КНС';
-    $('gd-planet').textContent = h.name || h.system; $('gd-globe').style.backgroundImage = 'url(../assets/planets/' + h.system + '.png)';
-    var att = h.att === G.side; $('gd-goal').textContent = att ? 'Штурм: занять площадь города' : 'Оборона: удержать площадь'; $('gd-goal').className = 'gd-goal' + (att ? ' att' : '');
+    $('gd-planet').textContent = h.name || h.system;
+    var att = h.att === G.side;
+    if (!B.noTown) { $('gd-globe').style.backgroundImage = 'url(../assets/planets/' + h.system + '.png)'; $('gd-goal').textContent = att ? 'Штурм: занять площадь города' : 'Оборона: удержать площадь'; $('gd-goal').className = 'gd-goal' + (att ? ' att' : ''); }
     $('gd-poly-b').hidden = true;
     if (!G.ter || G.terFor !== h.system + '/' + (h.map.settle && h.map.settle.level)) {
       G.ter = window.GTerrain.create(h.map); G.ter.cacheMax = 220; workersStart(h.map); G.terFor = h.system + '/' + (h.map.settle && h.map.settle.level);
       G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
       G.ter.render(G.base.getContext('2d'), 0, 0, N, N, 4);
     }
-    if (!G.camSet) { var tw = B.town; CAM.x = tw[0] + tw[2] / 2; CAM.y = att ? N - 20 : tw[1] + tw[3] / 2; CAM.s = Math.max(6, Math.min(G.vw, G.vh) / 40); G.camSet = true; }
+    if (!G.camSet && !B.noTown) { var tw = B.town; CAM.x = tw[0] + tw[2] / 2; CAM.y = att ? N - 20 : tw[1] + tw[3] / 2; CAM.s = Math.max(6, Math.min(G.vw, G.vh) / 40); G.camSet = true; }
     loading(false); hud();
     if (window.GD_ON_HELLO) window.GD_ON_HELLO(h, B);
   }
@@ -283,6 +286,7 @@
   }
   function drawZones(c, s) {
     var B = G.B, z = B.zones, tw = B.town, fs = Math.max(9, Math.min(12, s * 1.1));
+    if (B.noTown) return;                            // ивент: разметку рисует его худ (GD_DRAW)
     // полоса вторжения — только нападающему: туда он высаживает десант (хозяину планеты она ни к чему)
     if (G.side === B.att) {
       var a = toS(0, N - P.GEO.strip);
@@ -587,7 +591,8 @@
     c.save(); c.globalAlpha = 0.9;
     c.drawImage(G.base, x0, y0, W, W);
     c.drawImage(FOG, x0, y0, W, W);
-    var tw = B.town; c.strokeStyle = 'rgba(217,169,64,0.7)'; c.lineWidth = 1; c.strokeRect(x0 + tw[0] * k, y0 + tw[1] * k, tw[2] * k, tw[3] * k);
+    var tw = B.town; if (!B.noTown) { c.strokeStyle = 'rgba(217,169,64,0.7)'; c.lineWidth = 1; c.strokeRect(x0 + tw[0] * k, y0 + tw[1] * k, tw[2] * k, tw[3] * k); }
+    if (window.GD_MINI) GD_MINI(c, x0, y0, k);
     for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; c.fillStyle = 'rgb(' + TEAMC[B.ctl(a)] + ')'; c.fillRect(x0 + a.x * k - 1, y0 + a.y * k - 1, a.size === 2 ? 3 : 2, a.size === 2 ? 3 : 2); }
     var a0 = toW(0, 0), b0 = toW(G.vw, G.vh); c.strokeStyle = 'rgba(255,255,255,0.7)'; c.strokeRect(x0 + a0[0] * k, y0 + a0[1] * k, (b0[0] - a0[0]) * k, (b0[1] - a0[1]) * k);
     c.strokeStyle = '#1c2530'; c.strokeRect(x0 - 0.5, y0 - 0.5, W + 1, W + 1);
@@ -614,7 +619,7 @@
       : sel.length ? 'Выбрано <b>' + sel.length + '</b> · касание земли — идти, врага — атаковать'
       : 'Коснись своего бойца, чтобы выбрать · долгое нажатие — рамка';
     // в игре верхней панели нет — захват площади одной строкой в полосе
-    var capLine = window.GD_COMPACT ? '<div class="sp-bd-strip gd-capline' + ((cp.status === 'capturing' && !mineAtt) || (cp.status === 'reverting' && mineAtt) ? ' bad' : '') + '"><span>Площадь: <b>' + stName + '</b></span><i><b style="width:' + (cp.prog / B.capNeed * 100).toFixed(1) + '%"></b></i><span><b>' + Math.round(cp.prog / B.capNeed * 100) + '%</b></span></div>' : '';
+    var capLine = window.GD_EV_LINE ? GD_EV_LINE() : window.GD_COMPACT ? '<div class="sp-bd-strip gd-capline' + ((cp.status === 'capturing' && !mineAtt) || (cp.status === 'reverting' && mineAtt) ? ' bad' : '') + '"><span>Площадь: <b>' + stName + '</b></span><i><b style="width:' + (cp.prog / B.capNeed * 100).toFixed(1) + '%"></b></i><span><b>' + Math.round(cp.prog / B.capNeed * 100) + '%</b></span></div>' : '';
     $('sp-stat').innerHTML = capLine + '<div class="sp-bd-strip' + (cp.status === 'capturing' && !mineAtt ? ' bad' : '') + '">' + stat + '<span class="gd-tip">' + tip + '</span></div>';
     dockTabs([['units', 'Войска', B.teams[G.side].squads.length ? '<em class="dot"></em>' : ''], ['act', 'Приказы']]);
     $('gd-all').classList.toggle('on', G.usel.length > 0); $('gd-all').textContent = G.usel.length ? 'Снять' : 'Все свои';
@@ -679,6 +684,7 @@
   function takeMsgs() { var ms = G.B.ev.msgs; for (var i = 0; i < ms.length; i++) { var m = ms[i]; if (m.seq <= G.msgSeq) continue; G.msgSeq = m.seq; if (m.team === G.side) toast(m.text, m.kind); } }
   function endBattle() {
     G.ended = true; var B = G.B, win = B.over === G.side;
+    if (window.GD_ON_END) { window.GD_ON_END(win, B.why); return; }
     $('sp-end-title').textContent = win ? 'Победа' : 'Поражение';
     $('sp-end-text').textContent = B.why + '. Своих осталось ' + B.alive(G.side) + ', врагов ' + B.alive(1 - G.side) + '. Бой длился ' + Math.round(B.t / 60) + ' мин.';
     $('sp-end').hidden = false;

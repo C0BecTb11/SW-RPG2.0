@@ -1010,7 +1010,7 @@
     a.cd = a.T.rof;
     this.heroAct(a, 'slash', SLASH, { tid: tg.a.id });
   };
-  Ground.prototype.heroAct = function(a, act, dur, data) { var h = a.hero; a.revealT = this.t; h.act = act; h.actT = dur; h.actDur = dur; h.k = 0; h.data = data || null; a.mv = 0; this.ev.fx.push({ t: this.t, k: act, x: a.x, y: a.y, id: a.id, tid: data && data.tid, tx: data && data.x, ty: data && data.y }); };
+  Ground.prototype.heroAct = function(a, act, dur, data) { var h = a.hero; if (a.sneak) a.revealT = this.t; h.act = act; h.actT = dur; h.actDur = dur; h.k = 0; h.data = data || null; a.mv = 0; this.ev.fx.push({ t: this.t, k: act, x: a.x, y: a.y, id: a.id, tid: data && data.tid, tx: data && data.x, ty: data && data.y }); };
   Ground.prototype.heroActEnd = function(a) {
     var h = a.hero, d = h.data || {}, b = d.tid != null ? this.agents[d.tid] : null, act = h.act;
     h.act = 'idle'; h.k = 0;

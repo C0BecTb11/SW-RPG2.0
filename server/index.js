@@ -188,7 +188,7 @@ function loop() {
     if (r.kind === 'event') {
       // бой ивента: живёт до итога и ещё полторы минуты; закрытый остаётся в списке,
       // чтобы тот же матч не открылся заново (убирается через 10 минут)
-      if (r.closed) { if (!r.goneAt) r.goneAt = Date.now(); if (Date.now() - r.goneAt > 10 * 60e3) ROOMS.delete(name); return; }
+      if (r.closed) { if (!r.goneAt) r.goneAt = Date.now(); if (Date.now() - r.goneAt > (r.failed ? 30e3 : 10 * 60e3)) ROOMS.delete(name); return; }
       if (r.shouldClose()) { r.close('end'); return; }
     } else if (r.kind === 'ground' || r.kind === 'system') {
       // планета и орбита живут и без игроков, пока идёт бой; закрываются после тишины

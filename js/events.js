@@ -183,7 +183,9 @@
       var E = CAT.BY[st.match.event] || { title: '' }, mine = (st.match.players || []).filter(function(p) { return p.user === S.uid; })[0], role = mine && CAT.role(st.match.event, mine.role);
       el.hidden = false; el.className = 'ev-queue found';
       el.innerHTML = '<i class="ev-q-spin"></i><div class="ev-q-tx"><b>Бой найден: ' + esc(E.title) + '</b><em>' + esc(S.maps[st.match.map] || st.match.map) + ' · ' + ['I', 'II', 'III'][st.match.tier - 1] + (role ? ' · ты — <i>' + esc(role.name.toLowerCase()) + '</i>' : '') + (st.match.test ? ' · тест' : '') + '</em></div><button type="button" class="ev-go" id="ev-q-go">В бой</button>';
-      clearTimeout(S.goT); S.goT = setTimeout(function() { go(st.match.id); }, 2500);
+      // сам переводим в бой один раз на матч: вернулся из боя — остаётся кнопка
+      var key = 'ev-go-' + st.match.id, once = false; try { once = !!sessionStorage.getItem(key); sessionStorage.setItem(key, '1'); } catch (e) {}
+      clearTimeout(S.goT); if (!once) S.goT = setTimeout(function() { go(st.match.id); }, 2500);
       return;
     }
     clearTimeout(S.goT);

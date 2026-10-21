@@ -40,7 +40,7 @@
     exitR:   3.2
   };
   // Отряд одного охотника по числу охотников (общая сила растёт медленнее числа игроков)
-  var SQUAD = { hunt_sith: { 1: 12, 2: 8, 3: 6, 4: 5 }, hunt_jedi: { 1: 10, 2: 7, 3: 5, 4: 4 } };
+  var SQUAD = { hunt_sith: { 1: 12, 2: 8, 3: 6, 4: 5 }, hunt_jedi: { 1: 10, 2: 6, 3: 5, 4: 4 } };
   var KIT = {
     // [сенсорщик, основной, тяжёлый, снайпер, элита уровня III]
     hunt_sith: { team: 0, prey: 'cis_sith', preyTeam: 1, scan: 'rep_officer', main: 'rep_dc15a', heavy: 'rep_heavy', sniper: 'rep_sniper', elite: 'rep_commando',
@@ -56,8 +56,8 @@
   };
   // Прочность добычи: множитель по числу бойцов-охотников (подобран прогоном ботов, tools/events/sim.js)
   // уровни II–III дают добыче больше сил — прочность чуть ниже
-  var PREY_TIER = [1, 0.85, 0.8];
-  var PREY_HP = { hunt_sith: [1, 0.45, 0.95, 1.55, 1.95], hunt_jedi: [1, 1, 1.6, 1.75, 2.1] };
+  var PREY_TIER = { hunt_sith: [1, 0.85, 0.8], hunt_jedi: [1, 0.85, 0.95] };
+  var PREY_HP = { hunt_sith: [1, 0.45, 0.95, 1.55, 1.95], hunt_jedi: [1, 1.05, 2.3, 2.3, 2.8] };
 
   function rng(seed) { var s = (seed >>> 0) || 7; return function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
   function d2(a, x, y) { var dx = a.x - x, dy = a.y - y; return dx * dx + dy * dy; }
@@ -98,7 +98,7 @@
     });
     // добыча: в одном из трёх стартов (джедаи — рядом друг с другом)
     var prey = this.owners(this.preyRole), st = ev.prey[Math.floor(R() * ev.prey.length)];
-    var hpK = (PREY_HP[this.cfg.event] || [1])[Math.min(4, n)] * PREY_TIER[ti] * (prey.length > 1 ? 0.8 : 1);
+    var hpK = (PREY_HP[this.cfg.event] || [1])[Math.min(4, n)] * PREY_TIER[this.cfg.event][ti] * (prey.length > 1 ? 0.8 : 1);
     var names = K.names.slice(), portr = K.portraits.slice();
     prey.forEach(function(p, k) {
       var nm = names.splice(Math.floor(R() * names.length), 1)[0], pt = portr.splice(Math.floor(R() * portr.length), 1)[0];

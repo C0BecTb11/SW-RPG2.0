@@ -326,8 +326,8 @@ module.exports = {
       // затопленные площади
       for (let i = 0; i < 5; i++) g.blob(g.irnd(14, 130), g.irnd(20, 116), g.irnd(30, 80), (x, y) => g.paint(x, y, T.WATER, 0));
       // мостки через каналы
-      for (let y = 28; y < 124; y += 22) for (let x = 8; x < N - 8; x += 16) g.rect(x, y - 1, 2, 5, (i, j) => { if (g.t[j * N + i] === T.WATER) g.paint(i, j, T.BRIDGE, 0); });
-      for (let x = 22; x < 130; x += 24) for (let y = 16; y < 124; y += 18) g.rect(x - 1, y, 5, 2, (i, j) => { if (g.t[j * N + i] === T.WATER) g.paint(i, j, T.BRIDGE, 0); });
+      for (let y = 28; y < 124; y += 22) for (let x = 6; x < N - 6; x += 11) g.rect(x, y - 1, 3, 5, (i, j) => { if (g.t[j * N + i] === T.WATER) g.paint(i, j, T.BRIDGE, 0); });
+      for (let x = 22; x < 130; x += 24) for (let y = 14; y < 126; y += 11) g.rect(x - 1, y, 5, 3, (i, j) => { if (g.t[j * N + i] === T.WATER) g.paint(i, j, T.BRIDGE, 0); });
       // дома и купола
       g.place(20, 1200, inner, (x, y) => {
         const w = g.irnd(4, 8), h = g.irnd(4, 7), x0 = Math.round(x), y0 = Math.round(y), cells = [];

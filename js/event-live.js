@@ -91,7 +91,7 @@
       top();
       if (!L.camSet) camToMine();
       if (m.v.over && !L.endShown) showEnd(m.v.over, null);
-    } else if (m.t === 'evend') { L.end = m; showEnd(m.result || {}, m.awards, m.aborted); }
+    } else if (m.t === 'evend') { L.end = m; showEnd(m.result || {}, m.awards, m.aborted, m); }
   };
   function left() { var v = L.v; if (!v) return 0; return v.over ? v.left : Math.max(0, v.left - (Date.now() - L.vAt) / 1000); }
   function top() {
@@ -186,7 +186,8 @@
   // ---------------------------------------------------------------- итог
   window.GD_ON_END = function(win, why) { if (!L.endShown) showEnd(L.v && L.v.over ? L.v.over : { why: why, winner: win ? myRole() : '' }, null); };
   function myRole() { return L.hello && L.hello.ev ? L.hello.ev.role : ''; }
-  function showEnd(res, aw, aborted) {
+  function showEnd(res, aw, aborted, m) {
+    m = m || L.end || {};
     var e = L.hello && L.hello.ev || {}, won = !aborted && res.winner === e.role;
     L.endShown = true;
     var el = $('ev-end');
@@ -195,16 +196,19 @@
     $('ev-end-mark').innerHTML = glyph(e.role === 'hunter' ? 'hunter' : e.role);
     $('ev-end-title').textContent = aborted ? 'Бой отменён' : won ? 'Победа' : 'Поражение';
     $('ev-end-why').textContent = res.why || '';
-    var mine = 0; if (res.stats && L.hello) Object.keys(res.stats).forEach(function(k) { if (k === (window.GD && GD.B && GD.B.agents.filter(function(a) { return a && a.team === GD.side && a.owner; })[0] || {}).owner) mine = res.stats[k].kills; });
+    var mine = m.me ? m.me.kills : 0;
     $('ev-end-stats').innerHTML = aborted ? '' : '<div><b>' + fmtT(res.t || 0) + '</b><span>длился</span></div><div><b>' + (res.tasks != null ? res.tasks + '/' + res.need : '—') + '</b><span>задач</span></div><div><b>' + mine + '</b><span>твоих убийств</span></div>';
     var a = $('ev-end-award');
     if (aw) {
       var res2 = Object.keys(aw.res || {}).map(function(k) { return aw.res[k] + ' ' + CAT.RES_NAME[k]; }).join(', ');
       a.innerHTML = (aw.credits > 0 ? '+' + fmtN(aw.credits) + ' кредитов' : 'Без награды') + (res2 ? '<br><em>на склад: ' + esc(res2) + '</em>' : '') + (aw.points ? '<br><em>+' + aw.points + ' очков рейтинга</em>' : '') +
         (aw.title ? '<span class="ttl">Новый титул: «' + esc(aw.title) + '»</span>' : '') + (aw.won ? '<span class="ttl" style="color:#e8d9a8">Трофей уровня ' + ['I', 'II', 'III'][(e.tier || 1) - 1] + '</span>' : '');
-    } else if (e.test) a.innerHTML = '<em>Тестовый бой — награда не начисляется</em>';
-    else if (!aborted && L.end) a.innerHTML = '<em>Награда начислена — подробности в «Истории» ивентов</em>';
-    else a.innerHTML = aborted ? '' : '<em>Подсчёт награды…</em>';
+    } else if (e.test || m.test) a.innerHTML = '<em>Тестовый бой — награда не начисляется</em>';
+    else if (aborted) a.innerHTML = '<em>Бой отменён — награды нет</em>';
+    else if (L.end && m.saved === false) a.innerHTML = '<em>Итог не удалось записать — сообщи администрации, награду начислят вручную</em>';
+    else if (L.end && res.forfeit && (res.t || 0) < 180) a.innerHTML = '<em>Соперник ушёл слишком рано — бой без награды</em>';
+    else if (L.end) a.innerHTML = '<em>Награда — в «Истории» ивентов</em>';
+    else a.innerHTML = '<em>Подсчёт награды…</em>';
     el.hidden = false;
   }
   $('ev-end-look').onclick = function() { $('ev-end').hidden = true; };

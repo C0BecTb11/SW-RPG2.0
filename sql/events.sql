@@ -35,6 +35,7 @@ create table if not exists public.event_matches (
   started_at timestamptz, ended_at timestamptz,
   result jsonb, winner text
 );
+alter table public.event_matches add column if not exists beat_at timestamptz;     -- сердцебиение комнаты боя
 create index if not exists event_matches_status on public.event_matches (status, created_at);
 create table if not exists public.event_queue (
   id bigserial primary key,
@@ -147,7 +148,7 @@ begin
    where status = 'forming' and created_at < now() - interval '3 minutes';
   get diagnostics n = row_count;
   update event_matches set status = 'aborted', ended_at = now(), result = coalesce(result, '{}'::jsonb) || jsonb_build_object('why', 'бой не завершён')
-   where status = 'live' and started_at < now() - interval '45 minutes';
+   where status = 'live' and (started_at < now() - interval '45 minutes' or coalesce(beat_at, started_at) < now() - interval '2 minutes');
   update event_queue set state = 'expired', left_at = now() where state = 'waiting' and joined_at < now() - interval '30 minutes';
   return n;
 end;
@@ -244,6 +245,7 @@ declare v_me uuid := auth.uid(); v_side text; v_nick text; e record; r jsonb;
 begin
   if v_me is null then raise exception 'Нужно войти'; end if;
   select faction, nickname into v_side, v_nick from profiles where id = v_me;
+  if v_side is null then raise exception 'Сначала выбери сторону'; end if;
   select * into e from event_catalog where id = p_event;
   if not found or not e.ready then raise exception 'Этот ивент ещё не открыт'; end if;
   if p_tier not between 1 and 3 then raise exception 'Нет такого уровня'; end if;
@@ -289,9 +291,10 @@ create or replace function public.event_rating(p_side text default null)
  language sql stable security definer set search_path to 'public', 'pg_temp'
 as $function$
   select coalesce(jsonb_agg(jsonb_build_object('nick', pr.nickname, 'side', pr.faction, 'points', e.points, 'wins', e.wins, 'games', e.games, 'title', e.title, 'me', e.user_id = auth.uid()) order by e.points desc, e.wins desc), '[]'::jsonb)
-  from (select * from event_profile where games > 0 order by points desc, wins desc limit 50) e
-  join profiles pr on pr.id = e.user_id
-  where p_side is null or pr.faction = p_side;
+  from (select ep.* from event_profile ep join profiles p2 on p2.id = ep.user_id
+        where ep.games > 0 and (p_side is null or p2.faction = p_side)
+        order by ep.points desc, ep.wins desc limit 50) e
+  join profiles pr on pr.id = e.user_id;
 $function$;
 
 create or replace function public.event_title_set(p_title text)
@@ -367,7 +370,10 @@ begin
   select * into m from event_matches where id = p_match for update;
   if not found then raise exception 'нет такого матча'; end if;
   if m.status not in ('forming', 'live') then raise exception 'матч уже %', m.status; end if;
-  if m.status = 'forming' then update event_matches set status = 'live', started_at = now() where id = p_match; end if;
+  -- идущий матч без сердцебиения больше полутора минут не открывается заново (бой не восстановить)
+  if m.status = 'live' and coalesce(m.beat_at, m.started_at) < now() - interval '90 seconds' then raise exception 'матч уже идёт'; end if;
+  if m.status = 'forming' then update event_matches set status = 'live', started_at = now(), beat_at = now() where id = p_match;
+  else update event_matches set beat_at = now() where id = p_match; end if;
   select * into e from event_catalog where id = m.event_id;
   return jsonb_build_object('id', m.id, 'event', m.event_id, 'tier', m.tier, 'map', m.map, 'players', m.players, 'test', m.test, 'seed', m.seed,
                             'created_by', m.created_by, 'minutes', e.minutes);
@@ -380,20 +386,26 @@ create or replace function public.rt_event_finish(p_key text, p_match uuid, p_re
  language plpgsql security definer set search_path to 'public', 'pg_temp'
 as $function$
 declare
-  m event_matches; e record; tr record; p jsonb; v_user uuid; v_won boolean; v_share numeric; v_t integer;
+  m event_matches; e record; tr record; p jsonb; v_user uuid; v_won boolean; v_share numeric; v_t integer; v_present jsonb; v_void boolean;
   v_cr integer; v_res jsonb; v_planet text; v_fit integer; v_left integer; k text; v_amt integer; v_pts integer; v_title text; out_ jsonb := '[]'::jsonb;
 begin
   perform rt_need_key(p_key);
   select * into m from event_matches where id = p_match for update;
   if not found then raise exception 'нет такого матча'; end if;
   if m.status = 'done' then return jsonb_build_object('ok', true, 'again', true); end if;
+  if m.status <> 'live' then raise exception 'матч не идёт: %', m.status; end if;
   select * into e from event_catalog where id = m.event_id;
   select * into tr from event_tiers where n = m.tier;
   v_t := coalesce((p_result->>'t')::integer, 0);
+  v_present := p_result->'present';                                              -- кто из людей входил в бой
+  v_void := coalesce((p_result->>'forfeit')::boolean, false) and v_t < 180;       -- соперник ушёл в первые 3 минуты — без наград
   update event_matches set status = 'done', ended_at = now(), result = p_result, winner = p_result->>'winner' where id = p_match;
   if m.test then return jsonb_build_object('ok', true, 'test', true); end if;
   for p in select * from jsonb_array_elements(m.players) loop
     continue when coalesce((p->>'bot')::boolean, false) or (p->>'user') !~ '^[0-9a-f-]{36}$';
+    -- не входил в бой — ни награды, ни боя в счёт
+    continue when jsonb_typeof(v_present) = 'array' and not (v_present ? (p->>'user'));
+    continue when v_void;
     v_user := (p->>'user')::uuid;
     v_won := (p->>'role') = (p_result->>'winner');
     v_share := case when v_won then 1 when v_t >= 180 then 0.25 else 0 end;
@@ -428,6 +440,16 @@ begin
 end;
 $function$;
 
+create or replace function public.rt_event_beat(p_key text, p_match uuid)
+ returns void
+ language plpgsql security definer set search_path to 'public', 'pg_temp'
+as $function$
+begin
+  perform rt_need_key(p_key);
+  update event_matches set beat_at = now() where id = p_match and status = 'live';
+end;
+$function$;
+
 create or replace function public.rt_event_abort(p_key text, p_match uuid, p_why text)
  returns jsonb
  language plpgsql security definer set search_path to 'public', 'pg_temp'
@@ -442,8 +464,8 @@ $function$;
 
 -- ---------------------------------------------------------------- права
 revoke all on function public.event_my_match(uuid), public.event_expire(), public.event_match_try(text, integer) from public, anon, authenticated;
-revoke all on function public.rt_event_open(text, uuid), public.rt_event_finish(text, uuid, jsonb), public.rt_event_abort(text, uuid, text) from public, authenticated;
-grant execute on function public.rt_event_open(text, uuid), public.rt_event_finish(text, uuid, jsonb), public.rt_event_abort(text, uuid, text) to anon;
+revoke all on function public.rt_event_open(text, uuid), public.rt_event_finish(text, uuid, jsonb), public.rt_event_abort(text, uuid, text), public.rt_event_beat(text, uuid) from public, authenticated;
+grant execute on function public.rt_event_open(text, uuid), public.rt_event_finish(text, uuid, jsonb), public.rt_event_abort(text, uuid, text), public.rt_event_beat(text, uuid) to anon;
 revoke all on function public.event_status(), public.event_list(), public.event_join(text, integer, text), public.event_leave(), public.event_history(integer),
                        public.event_rating(text), public.event_title_set(text), public.dev_event_start(text, integer, text, text, integer), public.dev_event_recent(integer) from public, anon;
 grant execute on function public.event_status(), public.event_list(), public.event_join(text, integer, text), public.event_leave(), public.event_history(integer),

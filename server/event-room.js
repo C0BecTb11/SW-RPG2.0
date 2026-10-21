@@ -27,10 +27,16 @@ function EventRoom(name, match, cfg) {
   this.clients = []; this.waiting = []; this.ready = false; this.closed = false; this.failed = null;
   this.ms = []; this.bytes = 0; this.bytesRate = 0; this.rateAt = Date.now(); this.tickN = 0;
   this.battle = { tick: 0 }; this.created = Date.now(); this.emptySince = Date.now();
-  this.roleSeen = {}; this.endAt = 0; this.awards = null; this.finishing = false;
+  this.roleSeen = {}; this.endAt = 0; this.awards = null; this.finishing = false; this.saved = false;
+  this.present = {}; this.beatAt = Date.now();          // кто из людей входил в бой; сердцебиение матча в базе
   var self = this;
   this.open().then(function() { self.ready = true; self.waiting.forEach(function(c) { self.admit(c); }); self.waiting = []; },
-                   function(e) { self.failed = e.message || String(e); self.cfg.log('error', 'ивент не открылся', { room: name, err: self.failed }); self.waiting.forEach(function(c) { self.err(c, 'Ивент не открылся: ' + self.failed, 4007); }); self.waiting = []; self.closed = true; });
+                   function(e) {
+                     self.failed = e.message || String(e); self.cfg.log('error', 'ивент не открылся', { room: name, err: self.failed });
+                     self.waiting.forEach(function(c) { self.err(c, 'Ивент не открылся: ' + self.failed, 4007); }); self.waiting = []; self.closed = true;
+                     // база уже пометила матч «идёт» — отменяем, чтобы игроки не застряли
+                     if (self.match && !(self.cfg.dev && /^dev-/.test(self.matchId))) self.rpc('rt_event_abort', { p_match: self.matchId, p_why: 'сервер не открыл бой: ' + self.failed }).catch(function() {});
+                   });
 }
 EventRoom.prototype.rpc = function(fn, args) { args = args || {}; args.p_key = this.cfg.key; return this.cfg.rpc(fn, args); };
 EventRoom.prototype.err = function(c, msg, code) { try { c.ws.send(JSON.stringify({ t: 'error', msg: msg })); c.ws.close(code || 4007); } catch (e) {} };
@@ -53,6 +59,7 @@ EventRoom.prototype.open = function() {
   var get = this.cfg.dev && /^dev-/.test(this.matchId) ? devMatch(this.matchId) : this.rpc('rt_event_open', { p_match: this.matchId });
   return get.then(function(m) {
     if (!m || !m.event || !m.map) throw new Error('база не вернула матч');
+    self.match = m;
     var E = CAT.BY[m.event]; if (!E || !E.ready) throw new Error('ивент не готов: ' + m.event);
     if (E.maps.indexOf(m.map) < 0 || !fs.existsSync(mapPath(m.map))) throw new Error('нет карты ' + m.map);
     self.match = m; self.E = E;
@@ -94,7 +101,7 @@ EventRoom.prototype.admit = function(c) {
   c.side = teamOf(role ? role.side : p.side); c.role = p.role;
   c.viewer = new Net.Viewer(B, c.side, c.who.user === 'dev' && this.cfg.dev ? 'dev' : c.who.user, { ownerCheck: true });
   this.clients.push(c);
-  this.roleSeen[p.role] = Date.now();
+  this.roleSeen[p.role] = Date.now(); this.present[c.who.user] = 1;
   var E = this.E;
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'event', system: this.mapInfo.id, name: this.mapInfo.name, side: c.side, att: B.att, T: Math.round(B.t * 100) / 100, capNeed: 1,
@@ -104,11 +111,20 @@ EventRoom.prototype.admit = function(c) {
           players: this.match.players.map(function(q) { return { role: q.role, nick: q.bot ? 'бот' : q.nick || '', bot: !!q.bot, me: q.user === c.who.user }; }) }
   }));
   this.send(c, JSON.stringify({ t: 'ev', v: this.H.view(c.side) }));
-  if (this.H.result) this.send(c, JSON.stringify({ t: 'evend', result: this.H.result, awards: this.awards }));
+  if (this.H.result && this.endMsg) this.send(c, this.endMsg(c), true);
   this.cfg.log('info', 'игрок в ивенте', { room: this.name, user: c.who.user, role: p.role, side: c.side });
 };
-EventRoom.prototype.leave = function(c) { var i = this.clients.indexOf(c); if (i >= 0) this.clients.splice(i, 1); if (c.role) this.roleSeen[c.role] = Date.now(); };
-EventRoom.prototype.send = function(c, s) { this.bytes += s.length; c.bytes = (c.bytes || 0) + s.length; try { c.send(s); } catch (e) {} };
+EventRoom.prototype.leave = function(c) {
+  var i = this.clients.indexOf(c); if (i >= 0) this.clients.splice(i, 1);
+  var w = this.waiting.indexOf(c); if (w >= 0) this.waiting.splice(w, 1);           // ушёл, пока бой открывался
+  if (c.role) this.roleSeen[c.role] = Date.now();
+};
+// Медленный игрок: кадры пропускаем и потом шлём бой заново (viewer.lost); итог — дошлём, как освободится
+EventRoom.prototype.send = function(c, s, keep) {
+  if (c.ws.bufferedAmount > 1048576) { if (c.viewer) c.viewer.lost(); if (keep) c.pending = s; return; }
+  this.bytes += s.length; c.bytes = (c.bytes || 0) + s.length;
+  try { c.ws.send(s); } catch (e) {}
+};
 EventRoom.prototype.command = function(c, m) { if (!c.viewer || !this.ready || this.H.result) return; if (m.t === 'cmd') c.viewer.command(m); };
 
 // ---- такт
@@ -119,11 +135,17 @@ EventRoom.prototype.step = function() {
   this.tickN++; this.battle.tick = this.tickN;
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
+    if (c.pending && c.ws.bufferedAmount < 262144) { var pd = c.pending; c.pending = null; this.send(c, pd, true); }
     if (this.tickN % Net.FRAME_EVERY === 0) this.send(c, c.viewer.frame(this.tickN));
     if (this.tickN % 5 === 0) this.send(c, JSON.stringify({ t: 'ev', v: H.view(c.side) }));
   }
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }
   if (H.result && !this.finishing) this.finish();
+  // сердцебиение матча: база отменяет «идущие» матчи без него (сервер упал, комната пропала)
+  if (!H.result && now - this.beatAt > 30e3 && !(this.cfg.dev && /^dev-/.test(this.matchId))) {
+    this.beatAt = now; var self0 = this;
+    this.rpc('rt_event_beat', { p_match: this.matchId }).catch(function(e) { self0.cfg.log('warn', 'rt_event_beat', { room: self0.name, err: e.message }); });
+  }
   // никто из людей так и не вошёл
   if (!H.result && !Object.keys(this.roleSeen).length && now - this.created > START_WAIT) this.abort('игроки не вошли в бой');
 };
@@ -133,24 +155,36 @@ EventRoom.prototype.forfeit = function(now) {
   var self = this, here = {}, roles = {};
   this.clients.forEach(function(c) { if (c.role) here[c.role] = 1; });
   this.humans.forEach(function(p) { roles[p.role] = 1; });
-  var gone = Object.keys(roles).filter(function(r) { return !here[r] && now - (self.roleSeen[r] || self.created) > LEAVE_LOSE; });
+  var never = Object.keys(roles).filter(function(r) { return !self.roleSeen[r]; });
+  if (never.length && now - this.created > START_WAIT) { this.abort('не все игроки вошли в бой'); return; }
+  var gone = Object.keys(roles).filter(function(r) { return self.roleSeen[r] && !here[r] && now - self.roleSeen[r] > LEAVE_LOSE; });
   if (!gone.length) return;
   if (gone.length === Object.keys(roles).length) { this.abort('все игроки покинули бой'); return; }
   var win = Object.keys(roles).filter(function(r) { return gone.indexOf(r) < 0; })[0];
-  this.H.finish(win, 'Соперник покинул бой');
+  this.H.finish(win, 'Соперник покинул бой'); this.H.result.forfeit = true;
 };
 EventRoom.prototype.finish = function() {
   var self = this, H = this.H;
   this.finishing = true; this.endAt = Date.now();
-  var res = { winner: H.result.winner, why: H.result.why, t: H.result.t, tasks: H.result.tasks, need: H.result.need, stats: H.result.stats };
-  this.cfg.log('info', 'ивент окончен', { room: this.name, winner: res.winner, why: res.why, t: res.t });
-  var done = function(aw) {
-    self.awards = aw || null;
-    self.clients.forEach(function(c) { self.send(c, JSON.stringify({ t: 'evend', result: res, awards: self.awardFor(c) })); });
+  var res = { winner: H.result.winner, why: H.result.why, t: H.result.t, tasks: H.result.tasks, need: H.result.need, stats: H.result.stats, forfeit: !!H.result.forfeit, present: Object.keys(this.present) };
+  this.cfg.log('info', 'ивент окончен', { room: this.name, winner: res.winner, why: res.why, t: res.t, forfeit: res.forfeit });
+  // игроку — общий итог без чужих данных, своя награда и свои убийства
+  this.endMsg = function(c) {
+    var me = c.who && res.stats[c.who.user] || { kills: 0, lost: 0 };
+    return JSON.stringify({ t: 'evend', result: { winner: res.winner, why: res.why, t: res.t, tasks: res.tasks, need: res.need, forfeit: res.forfeit }, me: me, awards: self.awardFor(c), saved: self.saved, test: !!self.match.test });
   };
-  if (this.cfg.dev && /^dev-/.test(this.matchId)) { done(null); return; }
-  this.rpc('rt_event_finish', { p_match: this.matchId, p_result: res }).then(function(r) { done(r && r.awards || null); },
-    function(e) { self.cfg.log('error', 'rt_event_finish', { room: self.name, err: e.message }); done(null); });
+  var done = function(aw, saved) {
+    self.awards = aw || null; self.saved = !!saved;
+    self.clients.forEach(function(c) { self.send(c, self.endMsg(c), true); });
+  };
+  if (this.cfg.dev && /^dev-/.test(this.matchId)) { done(null, true); return; }
+  // запись итога: три попытки (сеть до базы может моргнуть)
+  var tries = 0;
+  (function save() {
+    tries++;
+    self.rpc('rt_event_finish', { p_match: self.matchId, p_result: res }).then(function(r) { done(r && r.awards || null, true); },
+      function(e) { self.cfg.log('error', 'rt_event_finish', { room: self.name, err: e.message, try: tries }); if (tries < 3) setTimeout(save, 4000 * tries); else done(null, false); });
+  })();
 };
 EventRoom.prototype.awardFor = function(c) {
   if (!this.awards || !c.who) return null;
@@ -161,7 +195,7 @@ EventRoom.prototype.abort = function(why) {
   if (this.closed) return;
   var self = this;
   this.cfg.log('warn', 'ивент отменён', { room: this.name, why: why });
-  this.clients.forEach(function(c) { self.send(c, JSON.stringify({ t: 'evend', aborted: true, result: { why: 'Бой отменён: ' + why } })); });
+  this.clients.forEach(function(c) { self.send(c, JSON.stringify({ t: 'evend', aborted: true, result: { why: 'Бой отменён: ' + why } }), true); });
   this.closed = true;
   if (!(this.cfg.dev && /^dev-/.test(this.matchId))) this.rpc('rt_event_abort', { p_match: this.matchId, p_why: why }).catch(function(e) { self.cfg.log('error', 'rt_event_abort', { err: e.message }); });
 };

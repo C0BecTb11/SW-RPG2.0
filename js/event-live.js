@@ -73,7 +73,7 @@
         items.push('Места задач видны на карте. Когда враг начинает задачу — <b>тревога</b> у места: держится, пока он там, и показывает, сколько ему осталось.');
         items.push('Выполнив задачи, враг вызывает <b>шаттл</b> — он сядет через ' + HUNT.eta[ti] + ' с. Успей к площадке.');
         items.push('Сенсорщик отряда раз в <b>' + HUNT.ping[ti] + ' с</b> даёт импульс: круг, где сейчас ' + word + '. Береги сенсорщиков.');
-        if (HUNT.sneak[ti]) items.push('Цель видна только ближе <b>' + HUNT.sneak[ti] * 3 + ' клеток</b> — пока не ударит или не применит силу.');
+        if (HUNT.sneak[ti]) items.push('Цель скрытна: видна только ближе <b>' + HUNT.sneak[ti] * 3 + ' клеток</b> к твоим бойцам — это <b>голубая зона</b> вокруг них. Удар или сила выдают цель на ' + HUNT.reveal + ' с. Туман рассеивается дальше, но скрытую цель в нём не видно.');
         items.push('Держи дистанцию: клинок бьёт в упор, бластеры — издалека.');
       }
     }
@@ -109,6 +109,8 @@
       if (v.nextPing >= 0) html += '<span class="ev-pill' + (v.nextPing <= 5 ? ' bad' : '') + '">импульс охотников через <b>' + v.nextPing + ' с</b></span>';
     } else {
       html += '<span class="ev-pill">задач врага <b>' + v.done + '/' + v.need + '</b></span>';
+      var sn = HUNT && HUNT.sneak[(v.tier || 1) - 1];
+      if (sn) html += '<span class="ev-pill zone">цель скрыта · видна в голубой зоне — ближе <b>' + sn * 3 + ' кл.</b></span>';
       if (v.nextPing >= 0) html += '<span class="ev-pill' + (v.ping ? ' act' : '') + '">' + (v.ping ? 'импульс на карте' : 'импульс через <b>' + v.nextPing + ' с</b>') + '</span>';
       else html += '<span class="ev-pill bad">сенсорщики погибли</span>';
       if (v.alarm) html += '<span class="ev-pill bad">тревога: ' + esc(v.alarm[2]) + (v.alarm[4] ? ' · ' + v.alarm[5] + '%' : '') + '</span>';
@@ -171,9 +173,40 @@
     c.beginPath(); c.moveTo(L0 * 0.5, 0); c.lineTo(L0 * 0.22, -L0 * 0.14); c.lineTo(-L0 * 0.05, -L0 * 0.16); c.lineTo(-L0 * 0.22, -L0 * 0.48); c.lineTo(-L0 * 0.34, -L0 * 0.48); c.lineTo(-L0 * 0.3, -L0 * 0.2);
     c.lineTo(-L0 * 0.52, -L0 * 0.2); c.lineTo(-L0 * 0.52, L0 * 0.2); c.lineTo(-L0 * 0.3, L0 * 0.2); c.lineTo(-L0 * 0.34, L0 * 0.48); c.lineTo(-L0 * 0.22, L0 * 0.48); c.lineTo(-L0 * 0.05, L0 * 0.16); c.lineTo(L0 * 0.22, L0 * 0.14); c.closePath();
   }
+  // Зона обнаружения скрытой цели (охотники, уровни II–III): объединение кругов вокруг своих бойцов —
+  // тонкая кромка и лёгкая заливка. Круги рисуются в запасной холст, кромка — вычитанием меньших.
+  var ZONE = { fill: null, edge: null };
+  function zoneCanvas(k, w, h) { var cv = ZONE[k]; if (!cv) cv = ZONE[k] = document.createElement('canvas'); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } return cv; }
+  function detectZone(c, s, dpr, v) {
+    var sneak = HUNT.sneak[(v.tier || 1) - 1] || 0; if (!sneak || v.role !== 'hunter') return;
+    var B = GD.B, r = sneak * 3 * s, w = c.canvas.width, h = c.canvas.height, pts = [];
+    B.agents.forEach(function(a) { if (a && a.alive && a.team === GD.side) pts.push(GD.toS(a.x, a.y)); });
+    if (!pts.length || r < 6) return;
+    var f = zoneCanvas('fill', w, h), fx = f.getContext('2d'), e = zoneCanvas('edge', w, h), ex = e.getContext('2d');
+    fx.setTransform(1, 0, 0, 1, 0, 0); fx.clearRect(0, 0, w, h); fx.setTransform(dpr, 0, 0, dpr, 0, 0); fx.fillStyle = '#fff';
+    pts.forEach(function(p) { fx.beginPath(); fx.arc(p[0], p[1], r, 0, TAU); fx.fill(); });
+    ex.setTransform(1, 0, 0, 1, 0, 0); ex.globalCompositeOperation = 'source-over'; ex.clearRect(0, 0, w, h); ex.drawImage(f, 0, 0);
+    ex.globalCompositeOperation = 'destination-out'; ex.setTransform(dpr, 0, 0, dpr, 0, 0);
+    pts.forEach(function(p) { ex.beginPath(); ex.arc(p[0], p[1], Math.max(1, r - 1.6), 0, TAU); ex.fill(); });
+    ex.globalCompositeOperation = 'source-over';
+    c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+    // заливка и кромка — цветом сенсоров охотников
+    c.globalAlpha = 0.06; c.drawImage(tint(f, '143,200,255'), 0, 0);
+    c.globalAlpha = 0.55; c.drawImage(tint(e, '143,200,255'), 0, 0);
+    c.restore();
+  }
+  var TINT = {};
+  function tint(src, col) {
+    var t = TINT[col]; if (!t) t = TINT[col] = document.createElement('canvas');
+    if (t.width !== src.width || t.height !== src.height) { t.width = src.width; t.height = src.height; }
+    var x = t.getContext('2d'); x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, t.width, t.height); x.drawImage(src, 0, 0);
+    x.globalCompositeOperation = 'source-in'; x.fillStyle = 'rgb(' + col + ')'; x.fillRect(0, 0, t.width, t.height); x.globalCompositeOperation = 'source-over';
+    return t;
+  }
   // Под бойцами: круг, где стоять; удержание Силой; погасшие места; площадка эвакуации и севший шаттл
   window.GD_UNDER = function(c, s, dpr) {
     var v = L.v; if (!v || !window.GD || !HUNT) return;
+    detectZone(c, s, dpr, v);
     var now = performance.now() / 1000, prey = v.role !== 'hunter', fc = forceCol(), B = GD.B, pt = preyTeam();
     (v.sites || []).forEach(function(st) {
       var p = GD.toS(st[0], st[1]), ss = siteState(v, st), state = ss[0], R = HUNT.site * s;

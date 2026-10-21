@@ -55,6 +55,11 @@
     cis_b2: { k: 'push', near: 4, every: 1.3 },
     rep_barc: { k: 'kite', every: 1.2 }, cis_stap: { k: 'kite', every: 1.2 }, rep_atrt: { k: 'kite', every: 1.5 }
   };
+  // Мародёры (команда 2, как npc_marauder_act в игре, расстояния — в клетках боя): грабят постройки
+  // (кроме турелей, башен и ворот), охотятся на видимых врагов у логова, на толпу без злости не лезут,
+  // раненые отходят, остальное время слоняются у города вне выстрела обороны; по концу налёта уходят с карты.
+  var LOOT = { extractor: 1, cantina: 1, radar: 1, jammer: 1, camo: 1, trench: 1, bunker: 1 };
+  var RAID = { hard: 40, hunt: 36, wary: 21, pack: 12, low: 0.35, flee: 15, loot: 24, ring: [6, 12], every: 120, leaveT: 90 };
   var MICRO_END = 3;               // столько секунд без боя — боец возвращается к приказу
   // Способности бойцов из исследований (ability_* в игре): боец применяет их сам, когда способность
   // готова и цель подходит; откат — секунды боя (в старой игре — полчаса между ходами).
@@ -189,7 +194,7 @@
     // сетка клеток для соседей
     this.cellHead = new Int32Array(n).fill(-1); this.nextIn = new Int32Array(256);
     // туман: 0 — не видели, 1 — видели, 2 — видно сейчас
-    this.seen = [new Uint8Array(n), new Uint8Array(n)];
+    this.seen = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];     // третий — банда мародёров
     this.fogT = 0; this.aiT = 0; this.capT = 0; this.sqT = 0;
     this.flows = new Flows(this); this.claim = {};
     this.sx = this.town[0] + (this.town[2] >> 1) - (SQUARE >> 1); this.sy = this.town[1] + (this.town[3] >> 1) - (SQUARE >> 1);
@@ -357,14 +362,21 @@
   // ---- обзор
   Ground.prototype.canSee = function(team, b) {
     if (b.team === team) return true;
-    if (b.air) return this.seen[team][clamp(Math.floor(b.y), 0, N - 1) * N + clamp(Math.floor(b.x), 0, N - 1)] === 2;
-    var c = clamp(Math.floor(b.y), 0, N - 1) * N + clamp(Math.floor(b.x), 0, N - 1);
-    if (this.seen[team][c] !== 2) return false;
+    if (b.air) return !this.seen[team] || this.seen[team][clamp(Math.floor(b.y), 0, N - 1) * N + clamp(Math.floor(b.x), 0, N - 1)] === 2;
+    var c = clamp(Math.floor(b.y), 0, N - 1) * N + clamp(Math.floor(b.x), 0, N - 1), sn = this.seen[team];
+    if (!sn) return true;
+    if (sn[c] !== 2) return false;
     // скрытный разведчик: виден только вблизи (stealth_range) или после выстрела; маскировочная сеть — 3 клетки
     var st = b.T.stealth ? b.T.stealth * RANGE_K : 0;
     if (b.inside >= 0 && this.structs[b.inside].kind === 'camo') st = Math.max(st, 3 * RANGE_K);
     if (st && this.t - b.revealT > 120) { if (this.nearestOwn(team, b.x, b.y, st) < 0 && !this.radarSees(team, b.x, b.y)) return false; }
     return true;
+  };
+  // постройку видели, если открыта хоть одна её клетка (луч обзора упирается в ближнюю сторону)
+  Ground.prototype.structSeen = function(team, st) {
+    var sn = this.seen[team]; if (!sn) return true;
+    for (var y = st.y; y < st.y + st.h; y++) for (var x = st.x; x < st.x + st.w; x++) if (x >= 0 && y >= 0 && x < N && y < N && sn[y * N + x] >= 1) return true;
+    return false;
   };
   Ground.prototype.radarSees = function(team, x, y) {
     for (var i = 0; i < this.structs.length; i++) { var s = this.structs[i]; if (s.dead || s.team !== team || s.kind !== 'radar') continue; var dx = s.x + 1 - x, dy = s.y + 1 - y; if (dx * dx + dy * dy <= s.radius * s.radius * RANGE_K * RANGE_K) return true; }
@@ -377,10 +389,10 @@
   };
   Ground.prototype.fog = function() {
     var ag = this.agents, i, k;
-    for (var tm = 0; tm < 2; tm++) { var s = this.seen[tm]; for (k = 0; k < s.length; k++) if (s[k] === 2) s[k] = 1; }
+    for (var tm = 0; tm < this.seen.length; tm++) { var s = this.seen[tm]; for (k = 0; k < s.length; k++) if (s[k] === 2) s[k] = 1; }
     var jam = this.structs.filter(function(s) { return !s.dead && s.kind === 'jammer'; });
     for (i = 0; i < ag.length; i++) {
-      var a = ag[i]; if (!a.alive || a.team > 1) continue;
+      var a = ag[i]; if (!a.alive || !this.seen[a.team]) continue;
       var r = a.vision - this.weather * RANGE_K;
       // глушилка врага: обзор режется до 2 клеток
       for (var j = 0; j < jam.length; j++) { var jm = jam[j]; if (jm.team === a.team) continue; var jdx = jm.x + 1 - a.x, jdy = jm.y + 1 - a.y; if (jdx * jdx + jdy * jdy <= jm.radius * jm.radius * RANGE_K * RANGE_K) r = Math.min(r, 2 * RANGE_K); }
@@ -492,10 +504,10 @@
     // постройки врага (турели, радар, глушилка) — техника и артиллерия
     if (a.T.cls !== 'infantry' || true) for (i = 0; i < this.structs.length; i++) {
       var st = this.structs[i]; if (st.dead || st.team === team || st.team === 2) continue;
-      if (st.kind !== 'turret' && st.kind !== 'radar' && st.kind !== 'jammer' && a.T.cls === 'infantry') continue;
+      if (team === 2 ? !LOOT[st.kind] : (st.kind !== 'turret' && st.kind !== 'radar' && st.kind !== 'jammer' && a.T.cls === 'infantry')) continue;
       var sdx = st.x + st.w / 2 - a.x, sdy = st.y + st.h / 2 - a.y, sd = sdx * sdx + sdy * sdy;
       if (sd > a.range * a.range) continue;
-      if (this.seen[team][st.y * N + st.x] < 1) continue;
+      if (!this.structSeen(team, st)) continue;
       cand.push(sd * (st.kind === 'turret' || st.kind === 'tower' ? 1.2 : st.kind === 'gate' ? 1.5 : 2.5), 100000 + i);
     }
     // ближайшие (по весу) — проверка видимости и линии огня
@@ -1182,6 +1194,7 @@
       if (!ids.length) continue;
       if (tm === this.att) this.aiAttack(tm, ids); else this.aiDefend(tm, ids);
     }
+    this.aiRaid();
   };
   Ground.prototype.aiAttack = function(tm, ids) {
     var ag = this.agents, sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, L = this.lanes(), groups = [[], [], []], toSq = [];
@@ -1238,6 +1251,110 @@
       if (a.sortie && a.tgt < 0 && (a.at || !a.goal)) { a.sortie = false; this.goCell(a, a.dpost.x, a.dpost.y, this.qkey(a, a.dpost.x, a.dpost.y)); continue; }
       if (!a.sortie && a.at && !a.hold) { var c = this.cellOf(a); a.goal = [c[0], c[1]]; a.hold = true; }
     }
+  };
+  // ---- мародёры
+  Ground.prototype.aiRaid = function() {
+    var ag = this.agents, ids = [], foes = [], i;
+    for (i = 0; i < ag.length; i++) { var a = ag[i]; if (a.alive && !a.gone && a.team === 2 && a.npc && this.ctl(a) === 2) ids.push(i); }
+    if (!ids.length) return;
+    // кого банда знает: видит кто-то из своих (общий обзор банды)
+    for (i = 0; i < ag.length; i++) { var b = ag[i]; if (b.alive && !b.gone && this.ctl(b) !== 2 && !b.air && this.canSee(2, b)) foes.push(b); }
+    var taken = {};
+    for (i = 0; i < ids.length; i++) this.raider(ag[ids[i]], foes, ids, taken);
+  };
+  Ground.prototype.raider = function(a, foes, ids, taken) {
+    var ag = this.agents, home = a.home || (a.home = [Math.floor(a.x), Math.floor(a.y)]), self = this, i;
+    var hd = function(x, y) { return Math.max(Math.abs(x - home[0]), Math.abs(y - home[1])); };
+    var go = function(c, run) { if (!c) return false; if (!a.goal || a.at || a.goal[0] !== c[0] || a.goal[1] !== c[1]) self.goCell(a, c[0], c[1]); a.post = !!run; a.hold = false; a.focus = -1; return true; };
+    if (a.leave) { this.raidLeave(a); return; }
+    var low = a.hp <= a.hpMax * RAID.low, aggro = this.t - (a.hitT == null ? -99 : a.hitT) < 60;
+    var near = null, nd = 1e9;
+    for (i = 0; i < foes.length; i++) { var f = foes[i], dx = f.x - a.x, dy = f.y - a.y, d = Math.sqrt(dx * dx + dy * dy); if (d < nd) { nd = d; near = f; } }
+    // ранен и враг рядом — отход подальше от врага, в сторону логова
+    if (low && near && nd <= RAID.flee) {
+      var c = this.away(a, near, RAID.flee + 4);
+      if (c && hd(c[0], c[1]) <= RAID.hard) { go(c, true); return; }
+      if (hd(Math.floor(a.x), Math.floor(a.y)) > 2 && go(this.freeNear(a, home[0], home[1], 3) || home.slice(), true)) return;
+      return;                                           // загнан в угол — отстреливается
+    }
+    if (!low && near && nd <= RAID.hunt) {
+      // без злости на толпу не лезем: враг достаёт — отходим из-под огня, иначе выжидаем
+      if (!aggro) {
+        var nf = 0, na = 1, reach = null;
+        for (i = 0; i < foes.length; i++) { var g = foes[i], gd = Math.sqrt((g.x - a.x) * (g.x - a.x) + (g.y - a.y) * (g.y - a.y)); if (gd <= RAID.wary) nf++; if (gd <= g.range + 2 && !reach) reach = g; }
+        for (i = 0; i < ids.length; i++) { var m = ag[ids[i]]; if (m !== a && Math.abs(m.x - a.x) <= RAID.pack && Math.abs(m.y - a.y) <= RAID.pack) na++; }
+        if (nf > na + 1) {
+          if (reach) { var w = this.away(a, reach, reach.range + 4); if (w && hd(w[0], w[1]) <= RAID.hard) { go(w, true); return; } }
+          if (a.focus >= 0 || !a.at) { var hc = this.cellOf(a); a.goal = [hc[0], hc[1]]; a.at = true; a.focus = -1; a.post = false; }
+          return;
+        }
+      }
+      if (hd(Math.floor(near.x), Math.floor(near.y)) <= RAID.hard) {
+        if (a.focus !== near.id) { a.focus = near.id; a.goal = null; a.at = true; a.post = false; a.hold = false; }
+        return;
+      }
+    }
+    if (a.focus >= 0) { a.focus = -1; a.at = true; a.goal = null; }
+    // раненый без драки — к логову, там отлёживается
+    if (low) { if (hd(Math.floor(a.x), Math.floor(a.y)) > 2) go(this.freeNear(a, home[0], home[1], 3) || home.slice(), false); return; }
+    // грабёж: ближайшая чужая постройка в пределах поводка
+    var lt = null, ld = RAID.loot * RAID.loot;
+    for (i = 0; i < this.structs.length; i++) {
+      var s = this.structs[i]; if (s.dead || s.team === 2 || !LOOT[s.kind]) continue;
+      var sx = s.x + s.w / 2, sy = s.y + s.h / 2, sd = (sx - a.x) * (sx - a.x) + (sy - a.y) * (sy - a.y);
+      if (sd < ld && hd(Math.floor(sx), Math.floor(sy)) <= RAID.hard && (s.kind !== 'camo' || sd <= 9 * RANGE_K * RANGE_K)) { ld = sd; lt = { x: sx, y: sy, d: Math.sqrt(sd), s: s }; }
+    }
+    if (lt) {
+      if (lt.d > a.range * 0.85) { var kk = Math.max(0, 1 - a.range * 0.7 / lt.d); go(this.spotNear(a, Math.floor(a.x + (lt.x - a.x) * kk), Math.floor(a.y + (lt.y - a.y) * kk), taken), false); }
+      else {
+        if (!a.at) { var lc = this.cellOf(a); a.goal = [lc[0], lc[1]]; a.at = true; }
+        // хозяину — раз в полминуты на постройку (в игре — сводка «Мародёры грабят»)
+        if (lt.s.team <= 1 && this.t - (lt.s.lootT == null ? -99 : lt.s.lootT) > 30) { lt.s.lootT = this.t; this.msg('Мародёры грабят: ' + U.ST[lt.s.kind][0].toLowerCase(), lt.s.team, 'bad'); }
+      }
+      return;
+    }
+    // слоняться у города вне выстрела обороны; точка общая на банду, меняется раз в ~2 минуты
+    var p = this.lurkPoint(a, home, foes);
+    if (!p) return;
+    if (a.lurk === p.k && a.goal && (!a.at || Math.abs(a.goal[0] - p.x) + Math.abs(a.goal[1] - p.y) < 6)) return;
+    var spot = this.spotNear(a, p.x, p.y, taken);
+    if (spot) { this.mark(taken, spot[0], spot[1], a); a.lurk = p.k; go(spot, false); }
+  };
+  function hash4(a, b, c, d) { var h = 2166136261; [a, b, c, d].forEach(function(v) { h ^= (v | 0) + 0x9e3779b9; h = Math.imul(h, 16777619); h ^= h >>> 13; }); return (h >>> 0) % 100000; }
+  Ground.prototype.lurkPoint = function(a, home, foes) {
+    var key = home[0] * 1000 + home[1], b = Math.floor((this.t + key % RAID.every) / RAID.every), c = (this._lurk || (this._lurk = {}))[key];
+    if (c && c.b === b) return c.p;
+    var sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, lo = SQUARE / 2 + a.range + RAID.ring[0], hi = SQUARE / 2 + a.range + RAID.ring[1];
+    var foot = this.pass.foot1, band = N - P.GEO.strip - 4, best = null, bs = 1e18, i;
+    var guns = [];
+    for (i = 0; i < foes.length; i++) guns.push([foes[i].x, foes[i].y, foes[i].range + 2]);
+    for (i = 0; i < this.structs.length; i++) { var s = this.structs[i]; if (!s.dead && s.team !== 2 && (s.kind === 'turret' || s.kind === 'tower')) guns.push([s.x + s.w / 2, s.y + s.h / 2, s.radius * RANGE_K + 3]); }
+    for (var y = Math.max(2, Math.floor(sqy - hi)); y <= Math.min(band, Math.ceil(sqy + hi)); y += 2) {
+      for (var x = Math.max(2, Math.floor(sqx - hi)); x <= Math.min(N - 3, Math.ceil(sqx + hi)); x += 2) {
+        var r = Math.max(Math.abs(x + 0.5 - sqx), Math.abs(y + 0.5 - sqy));
+        if (r < lo || r > hi || !foot[y * N + x] || Math.max(Math.abs(x - home[0]), Math.abs(y - home[1])) > RAID.hard) continue;
+        var th = 0;
+        for (i = 0; i < guns.length; i++) { var gx = guns[i][0] - x, gy = guns[i][1] - y; if (gx * gx + gy * gy <= guns[i][2] * guns[i][2]) th++; }
+        var sc = th * 1e6 + hash4(key, b, x, y);
+        if (sc < bs) { bs = sc; best = { x: x, y: y, k: key + ':' + b + ':' + x + ':' + y }; }
+      }
+    }
+    this._lurk[key] = { b: b, p: best };
+    return best;
+  };
+  // Налёт кончился: банда уходит с карты к ближнему краю (прочь от города) и исчезает
+  Ground.prototype.raidLeave = function(a) {
+    if (a.leaveT == null) a.leaveT = this.t;
+    var x = Math.floor(a.x), y = Math.floor(a.y), edge = Math.min(x, y, N - 1 - x, N - 1 - y);
+    if (edge <= 3 || this.t - a.leaveT > RAID.leaveT) { a.alive = false; a.gone = true; a.removed = true; a.left = true; a.diedAt = this.t - 100; return; }
+    if (a.goal && !a.at && a.post) return;
+    var sqx = this.sx + SQUARE / 2, sqy = this.sy + SQUARE / 2, dx = a.x - sqx, dy = a.y - sqy;
+    if (dy > 0) dy = 0;                                // не через полосу вторжения внизу — вбок или вверх
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) dx = a.x < N / 2 ? -1 : 1;
+    var k = Math.min(dx > 0 ? (N - 3 - a.x) / dx : dx < 0 ? (2 - a.x) / dx : 1e9, dy > 0 ? (N - 3 - a.y) / dy : dy < 0 ? (2 - a.y) / dy : 1e9);
+    var tx = Math.round(a.x + dx * k), ty = Math.round(a.y + dy * k), c = this.nearestOk(a.move, a.size, clamp(tx, 2, N - 3), clamp(ty, 2, N - 3));
+    if (!c) { a.leaveT = -1e9; return; }
+    this.goCell(a, c[0], c[1]); a.post = true; a.hold = false; a.focus = -1;
   };
   // ---- захват площади: как capture_tick в игре, перевес даёт +1/с, равенство — спор
   // ---- районы города: кто держит (больше бойцов внутри; при равенстве — прежний), их действие

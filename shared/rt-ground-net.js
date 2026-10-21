@@ -22,7 +22,9 @@
   'use strict';
   var N = P.N, TAU = Math.PI * 2;
   var FRAME_EVERY = 2, SLOW_EVERY = 10, FULL_EVERY = 100;   // в тактах сервера (0,1 с)
-  var DELAY = 0.25;                                         // запаздывание отрисовки, с
+  var DELAY = 0.25;                                         // запаздывание отрисовки по умолчанию, с (дальше — по сети)
+  var STEP = FRAME_EVERY * 0.1;                             // между кадрами, с
+  var KEYS = 6;                                             // сколько положений бойца держит экран
   var ACTS = ['idle', 'run', 'slash', 'deflect', 'push', 'throw', 'dash', 'lightning', 'choke', 'mind', 'heal', 'barrier'];
   var ACT_N = {}; ACTS.forEach(function(a, i) { ACT_N[a] = i; });
   function r2(x) { return Math.round(x * 100) / 100; }
@@ -181,6 +183,7 @@
     this.seen = [new Uint8Array(N * N), new Uint8Array(N * N)]; this.fogN = 0;
     this.ev = { shots: [], booms: [], fx: [], msgs: [], deaths: [], shells: [] };
     this.t = hello.T || 0; this.srvT = this.t; this.at = Date.now(); this.over = -1; this.why = '';
+    this.offs = []; this.lag = DELAY;                       // сдвиг «часы − время сервера» по последним кадрам
     this.cnt = [0, 0]; this.seq = 0; this.pass = null;
   }
   Mirror.prototype.ctl = function(a) { return a.mind && a.mind.until > this.t ? a.mind.by : a.team; };
@@ -211,6 +214,13 @@
   Mirror.prototype.frame = function(f) {
     var i, self = this;
     this.srvT = f.T; this.at = Date.now();
+    // Сколько отставать: кадры идут раз в STEP с задержкой и разбросом сети. Самый быстрый кадр
+    // за 4 с — опора; отставание = шаг кадров + разброс, чтобы между двумя известными
+    // положениями было всегда (иначе боец то стоит, то прыгает).
+    var wall = this.at / 1000, o = wall - f.T, offs = this.offs;
+    offs.push([wall, o]); while (offs.length && wall - offs[0][0] > 4) offs.shift();
+    var lo = Infinity, hi = -Infinity; for (i = 0; i < offs.length; i++) { lo = Math.min(lo, offs[i][1]); hi = Math.max(hi, offs[i][1]); }
+    this.base = lo; this.lag = STEP + Math.min(0.35, Math.max(0.03, hi - lo)) + 0.02;
     if (f.new) for (i = 0; i < f.new.length; i++) {
       var n = f.new[i], a = this.agents[n.id];
       while (this.agents.length < n.id) this.agents.push({ id: this.agents.length, alive: false, gone: true, T: U.type('rep_dc15a'), team: 0, x: 0, y: 0, hp: 0, hpMax: 1, size: 1 });   // без дыр в списке
@@ -219,15 +229,24 @@
         a = { id: n.id, tid: n.tid, T: Ty, team: n.team, uid: n.uid, name: n.name, hpMax: n.hpMax, owner: n.owner, npc: n.npc, size: n.size || Ty.size,
               x: 0, y: 0, aim: 0, legs: 0, mv: 0, phase: Math.random() * TAU, hp: n.hpMax, alive: true, gone: false, diedAt: 0, air: Ty.air, fly: Ty.move === 'air',
               inside: -1, stun: 0, fear: 0, hold: false, at: true, goal: null, post: false, sq: 0, tgt: -1, focus: -1, barrier: 0, mind: null, turretA: 0,
-              hero: n.hero ? { act: 'idle', k: 0, actT: 0, cds: {}, abil: n.hero.abil || [], portrait: n.hero.portrait, hid: n.hero.hid || null } : null, k0: null, k1: null, vis: false, seenT: 0 };
+              hero: n.hero ? { act: 'idle', k: 0, actT: 0, cds: {}, abil: n.hero.abil || [], portrait: n.hero.portrait, hid: n.hero.hid || null } : null, ks: null, vis: false, seenT: 0 };
         this.agents[n.id] = a;
       } else { a.name = n.name; a.hpMax = n.hpMax; a.owner = n.owner; a.uid = n.uid; }
     }
     var now = f.T;
     for (i = 0; i < f.n.length; i++) {
       var u = f.n[i], b = this.agents[u[0]]; if (!b) continue;
-      b.k0 = b.k1 || { x: u[1], y: u[2], T: now - FRAME_EVERY * 0.1 }; b.k1 = { x: u[1], y: u[2], T: now };
-      if (!b.vis) { b.x = u[1]; b.y = u[2]; b.k0 = b.k1; }
+      // положения по времени сервера; стоящего сервер не повторяет — если он молчал, значит стоял
+      // на прежнем месте до прошлого кадра (иначе первый шаг после стоянки был бы прыжком)
+      if (!b.vis || !b.ks || !b.ks.length) { b.ks = [{ x: u[1], y: u[2], T: now }]; b.x = u[1]; b.y = u[2]; }
+      else {
+        var lk = b.ks[b.ks.length - 1];
+        if (now > lk.T) {
+          if (now - lk.T > STEP * 1.5) b.ks.push({ x: lk.x, y: lk.y, T: now - STEP });
+          b.ks.push({ x: u[1], y: u[2], T: now });
+          if (b.ks.length > KEYS) b.ks.splice(0, b.ks.length - KEYS);
+        }
+      }
       b.aim = u[3]; b.mv = u[4]; b.hp = u[5]; var fl = u[6];
       b.inside = fl & 1 ? 0 : -1; b.stun = fl & 2 ? 1 : 0; b.fear = fl & 4 ? 1 : 0; b.hold = !!(fl & 8); b.at = !!(fl & 16); b.barrier = fl & 32 ? now + 1 : 0;
       b.mind = fl & 64 ? { until: now + 1, by: 1 - b.team } : null; b.post = !!(fl & 128);
@@ -261,17 +280,21 @@
     if (f.over != null) { this.over = f.over; this.why = f.why || ''; }
     while (this.ev.shots.length > 600) this.ev.shots.shift();
   };
-  // Плавное движение: своё время отстаёт от сервера на DELAY; враг, пропавший из виду, скрывается
+  // Плавное движение: своё время отстаёт от сервера на lag (по сети); положение — между двумя
+  // известными, окружающими это время; враг, пропавший из виду, скрывается
   Mirror.prototype.step = function(dt) {
-    var target = this.srvT + (Date.now() - this.at) / 1000 - DELAY;
-    this.t += dt; if (Math.abs(this.t - target) > 0.5) this.t = target; else this.t += (target - this.t) * 0.1;
+    var target = this.base != null ? Date.now() / 1000 - this.base - this.lag : this.srvT + (Date.now() - this.at) / 1000 - DELAY;
+    this.t += dt; if (Math.abs(this.t - target) > 0.5) this.t = target; else this.t += (target - this.t) * 0.08;
     var t = this.t, ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (!a) continue;
       if (!a.alive) { if (!a.gone && t - a.diedAt > 40) a.gone = true; continue; }
-      if (a.k0 && a.k1) {
-        var k = a.k1.T > a.k0.T ? (t - a.k0.T) / (a.k1.T - a.k0.T) : 1; k = Math.max(0, Math.min(1, k));
-        var nx = a.k0.x + (a.k1.x - a.k0.x) * k, ny = a.k0.y + (a.k1.y - a.k0.y) * k;
+      var ks = a.ks;
+      if (ks && ks.length) {
+        var j = ks.length - 1; while (j > 0 && ks[j].T > t) j--;
+        var p0 = ks[j], p1 = ks[j + 1] || p0, k = p1.T > p0.T ? Math.max(0, Math.min(1, (t - p0.T) / (p1.T - p0.T))) : 1;
+        if (t < p0.T) k = 0;
+        var nx = p0.x + (p1.x - p0.x) * k, ny = p0.y + (p1.y - p0.y) * k;
         if (a.mv) { a.phase = (a.phase + dt * (a.T.vehicle ? 5 : 7)) % TAU; var ddx = nx - a.x, ddy = ny - a.y; if (ddx * ddx + ddy * ddy > 1e-6) a.legs = Math.atan2(ddy, ddx); }
         a.x = nx; a.y = ny;
       }

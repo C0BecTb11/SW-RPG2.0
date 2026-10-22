@@ -25,6 +25,9 @@
   var DELAY = 0.25;                                         // запаздывание отрисовки по умолчанию, с (дальше — по сети)
   var STEP = FRAME_EVERY * 0.1;                             // между кадрами, с
   var KEYS = 6;                                             // сколько положений бойца держит экран
+  var LOCK = 900;                                           // мс: свой приказ важнее кадров, что уже в пути
+  // Часы экрана — монотонные (performance.now): перевод системных часов не сбивает сглаживание
+  function clock() { return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); }
   var ACTS = ['idle', 'run', 'slash', 'deflect', 'push', 'throw', 'dash', 'lightning', 'choke', 'mind', 'heal', 'barrier'];
   var ACT_N = {}; ACTS.forEach(function(a, i) { ACT_N[a] = i; });
   function r2(x) { return Math.round(x * 100) / 100; }
@@ -77,7 +80,9 @@
         this.shown[a.id] = 0;
         continue;
       }
-      if (!this.known[a.id] || full) { this.known[a.id] = 1; nw.push(this.intro(a)); }
+      // описание бойца — новому, после потери кадров (this.full) и когда оно изменилось (раз в 10 с сверка)
+      if (!this.known[a.id] || this.full) { var it = this.intro(a); this.known[a.id] = JSON.stringify(it); nw.push(it); }
+      else if (full) { var it2 = this.intro(a), k2 = JSON.stringify(it2); if (k2 !== this.known[a.id]) { this.known[a.id] = k2; nw.push(it2); } }
       var aux = a.T.vehicle && a.size === 2 ? r2(a.turretA) : a.hero ? [ACT_N[a.hero.actT > 0 ? a.hero.act : 'idle'] || 0, r2(a.hero.k || 0)] : 0;
       var row = [a.id, r2(a.x), r2(a.y), r2(a.aim), a.mv > 0.3 ? 1 : 0, Math.round(a.hp), this.flags(a), aux];
       // свои: куда идёт (клетка приказа) и что прикрывает — для линий хода и карточки
@@ -182,7 +187,7 @@
     this.teams = [{ squads: [] }, { squads: [] }, { squads: [] }];
     this.seen = [new Uint8Array(N * N), new Uint8Array(N * N)]; this.fogN = 0;
     this.ev = { shots: [], booms: [], fx: [], msgs: [], deaths: [], shells: [] };
-    this.t = hello.T || 0; this.srvT = this.t; this.at = Date.now(); this.over = -1; this.why = '';
+    this.t = hello.T || 0; this.srvT = this.t; this.at = clock(); this.over = -1; this.why = '';
     this.offs = []; this.lag = DELAY;                       // сдвиг «часы − время сервера» по последним кадрам
     this.cnt = [0, 0]; this.seq = 0; this.pass = null;
   }
@@ -198,10 +203,10 @@
   Mirror.prototype.alive = function(team) { return this.cnt[team] || 0; };
   Mirror.prototype.squadOf = function(team, id) { var sqs = this.teams[team].squads; for (var i = 0; i < sqs.length; i++) if (sqs[i].id === id) return sqs[i]; return null; };
   Mirror.prototype.cmd = function(k, o) { o = o || {}; o.t = 'cmd'; o.k = k; this.send(JSON.stringify(o)); };
-  Mirror.prototype.orderMove = function(team, ids, x, y) { var self = this, now = Date.now(); ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.goal = [x, y]; a.at = false; a.post = true; a.hold = false; a.focus = -1; a.ordT = now; } }); this.cmd('move', { ids: ids, x: x, y: y }); return ids.length; };
-  Mirror.prototype.orderAttack = function(team, ids, tid) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.focus = tid; a.hold = false; } }); this.cmd('attack', { ids: ids, tid: tid }); return ids.length; };
-  Mirror.prototype.orderHold = function(team, ids) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = true; a.at = true; a.post = true; } }); this.cmd('hold', { ids: ids }); return ids.length; };
-  Mirror.prototype.orderStop = function(team, ids) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = false; a.at = true; a.post = false; a.goal = null; a.focus = -1; } }); this.cmd('stop', { ids: ids }); return ids.length; };
+  Mirror.prototype.orderMove = function(team, ids, x, y) { var self = this, now = Date.now(), lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.goal = [x, y]; a.at = false; a.post = true; a.hold = false; a.focus = -1; a.ordT = now; a.lockT = lk; } }); this.cmd('move', { ids: ids, x: x, y: y }); return ids.length; };
+  Mirror.prototype.orderAttack = function(team, ids, tid) { var self = this, lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.focus = tid; a.hold = false; a.lockT = lk; } }); this.cmd('attack', { ids: ids, tid: tid }); return ids.length; };
+  Mirror.prototype.orderHold = function(team, ids) { var self = this, lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = true; a.at = true; a.post = true; a.lockT = lk; } }); this.cmd('hold', { ids: ids }); return ids.length; };
+  Mirror.prototype.orderStop = function(team, ids) { var self = this, lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = false; a.at = true; a.post = false; a.goal = null; a.focus = -1; a.lockT = lk; } }); this.cmd('stop', { ids: ids }); return ids.length; };
   Mirror.prototype.setAuto = function(team, ids, on) { this.cmd('auto', { ids: ids, on: !!on }); };
   Mirror.prototype.assign = function(team, ids, sq) { this.cmd('assign', { ids: ids, sq: sq }); return sq; };
   Mirror.prototype.useAbility = function(team, id, ab, tgt) { this.cmd('ability', { id: id, ab: ab, tgt: tgt }); return null; };
@@ -213,7 +218,7 @@
   };
   Mirror.prototype.frame = function(f) {
     var i, self = this;
-    this.srvT = f.T; this.at = Date.now();
+    this.srvT = f.T; this.at = clock();
     // Сколько отставать: кадры идут раз в STEP с задержкой и разбросом сети. Самый быстрый кадр
     // за 4 с — опора; отставание = шаг кадров + разброс, чтобы между двумя известными
     // положениями было всегда (иначе боец то стоит, то прыгает).
@@ -248,18 +253,23 @@
         }
       }
       b.aim = u[3]; b.mv = u[4]; b.hp = u[5]; var fl = u[6];
-      b.inside = fl & 1 ? 0 : -1; b.stun = fl & 2 ? 1 : 0; b.fear = fl & 4 ? 1 : 0; b.hold = !!(fl & 8); b.at = !!(fl & 16); b.barrier = fl & 32 ? now + 1 : 0;
-      b.mind = fl & 64 ? { until: now + 1, by: fl & 256 ? 1 : fl & 512 ? 0 : (b.team === 0 ? 1 : 0) } : null;   // кто управляет: 256 — КНС, 512 — Республика (старый сервер — без бита) b.post = !!(fl & 128);
+      // свой свежий приказ важнее кадров, что уже летели: 0,9 с не трогать цель и стояние
+      var locked = b.lockT && clock() < b.lockT;
+      b.inside = fl & 1 ? 0 : -1; b.stun = fl & 2 ? 1 : 0; b.fear = fl & 4 ? 1 : 0; if (!locked) { b.hold = !!(fl & 8); b.at = !!(fl & 16); } b.barrier = fl & 32 ? now + 1 : 0;
+      // кто управляет внушённым: 256 — КНС, 512 — Республика (старый сервер — без бита)
+      b.mind = fl & 64 ? { until: now + 1, by: fl & 256 ? 1 : fl & 512 ? 0 : (b.team === 0 ? 1 : 0) } : null;
+      if (!locked) b.post = !!(fl & 128);
       if (b.T.vehicle && b.size === 2) b.turretA = +u[7] || 0;
       else if (b.hero && Array.isArray(u[7])) { b.hero.act = ACTS[u[7][0]] || 'idle'; b.hero.k = u[7][1]; b.hero.actT = b.hero.act === 'idle' ? 0 : 1; }
       if (u.length > 8) {
         // клетка приказа своего бойца — с сервера (на экране приказ ставился в точку касания)
-        if (u[8] >= 0) { b.goal = [u[8] % N, Math.floor(u[8] / N)]; if (!b.ordT) b.ordT = Date.now(); } else { b.goal = null; b.ordT = 0; }
+        if (!locked) { if (u[8] >= 0) { b.goal = [u[8] % N, Math.floor(u[8] / N)]; if (!b.ordT) b.ordT = Date.now(); } else { b.goal = null; b.ordT = 0; } }
         b.inside = u[9] >= 0 ? u[9] : -1;
       }
       b.vis = true; b.seenT = now; b.alive = true;
     }
-    if (f.gone) for (i = 0; i < f.gone.length; i++) { var g = this.agents[f.gone[i]]; if (g && g.alive) { g.alive = false; g.diedAt = now; g.vis = false; } }
+    // гибель — когда время экрана до неё дойдёт (экран отстаёт): иначе боец пропадает раньше, чем в него попали
+    if (f.gone) for (i = 0; i < f.gone.length; i++) { var g = this.agents[f.gone[i]]; if (g && g.alive && g.dieT == null) { g.dieT = now; g.dieHide = true; } }
     if (f.hide) for (i = 0; i < f.hide.length; i++) { var hd = this.agents[f.hide[i]]; if (hd) hd.vis = false; }
     if (f.ev) {
       var e = f.ev;
@@ -268,7 +278,7 @@
       if (e.x) e.x.forEach(function(q) { self.ev.fx.push(q); });
       if (e.sh) e.sh.forEach(function(q) { self.ev.shells.push({ t0: q[0], t1: q[1], x0: q[2], y0: q[3], x1: q[4], y1: q[5], r: q[6] }); });
       if (e.m) e.m.forEach(function(q) { self.ev.msgs.push({ seq: ++self.seq, t: now, text: q[1], kind: q[2], team: self.side }); });
-      if (e.d) e.d.forEach(function(id) { var d = self.agents[id]; if (d && d.alive) { d.alive = false; d.diedAt = now; } self.ev.deaths.push({ t: now, id: id }); });
+      if (e.d) e.d.forEach(function(id) { var d = self.agents[id]; if (d && d.alive && d.dieT == null) d.dieT = now; self.ev.deaths.push({ t: now, id: id }); });
     }
     if (f.stNew) for (i = 0; i < f.stNew.length; i++) { var ns = f.stNew[i]; this.structs[ns.i] = ns; }
     if (f.st) for (i = 0; i < f.st.length; i++) { var s = this.structs[f.st[i][0]]; if (s) { s.hp = f.st[i][1]; s.dead = !!f.st[i][2]; } }
@@ -283,11 +293,13 @@
   // Плавное движение: своё время отстаёт от сервера на lag (по сети); положение — между двумя
   // известными, окружающими это время; враг, пропавший из виду, скрывается
   Mirror.prototype.step = function(dt) {
-    var target = this.base != null ? Date.now() / 1000 - this.base - this.lag : this.srvT + (Date.now() - this.at) / 1000 - DELAY;
+    var target = this.base != null ? clock() / 1000 - this.base - this.lag : this.srvT + (clock() - this.at) / 1000 - DELAY;
     this.t += dt; if (Math.abs(this.t - target) > 0.5) this.t = target; else this.t += (target - this.t) * 0.08;
+    if (this.t > this.srvT + 0.05) this.t = this.srvT + 0.05;      // не забегать вперёд последнего кадра (сеть встала)
     var t = this.t, ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (!a) continue;
+      if (a.dieT != null && a.alive && t >= a.dieT) { a.alive = false; a.diedAt = a.dieT; if (a.dieHide) a.vis = false; a.dieT = null; a.dieHide = false; }
       if (!a.alive) { if (!a.gone && t - a.diedAt > 40) a.gone = true; continue; }
       var ks = a.ks;
       if (ks && ks.length) {
@@ -305,6 +317,7 @@
     while (this.ev.deaths.length && t - this.ev.deaths[0].t > 5) this.ev.deaths.shift();
     while (this.ev.fx.length && t - this.ev.fx[0].t > 15) this.ev.fx.shift();
     while (this.ev.shells.length && t - this.ev.shells[0].t1 > 2) this.ev.shells.shift();
+    if (this.ev.msgs.length > 60) this.ev.msgs.splice(0, this.ev.msgs.length - 60);
   };
 
   return { Viewer: Viewer, Mirror: Mirror, structRow: structRow, rle: rle, unrle: unrle, DELAY: DELAY, FRAME_EVERY: FRAME_EVERY };

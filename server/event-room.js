@@ -7,6 +7,8 @@
 'use strict';
 
 var fs = require('fs');
+// Очередь на отправку игроку: больше — кадры пропускаются, потом бой целиком (медленная связь не копит минуты задержки)
+var BUF_MAX = 131072;
 var path = require('path');
 var P = require('../shared/rt-planets.js');
 var GR = require('../shared/rt-ground.js');
@@ -121,7 +123,7 @@ EventRoom.prototype.leave = function(c) {
 };
 // Медленный игрок: кадры пропускаем и потом шлём бой заново (viewer.lost); итог — дошлём, как освободится
 EventRoom.prototype.send = function(c, s, keep) {
-  if (c.ws.bufferedAmount > 1048576) { if (c.viewer) c.viewer.lost(); if (keep) c.pending = s; return; }
+  if (c.ws.bufferedAmount > BUF_MAX) { if (c.viewer) c.viewer.lost(); if (keep) c.pending = s; return; }
   this.bytes += s.length; c.bytes = (c.bytes || 0) + s.length;
   try { c.ws.send(s); } catch (e) {}
 };
@@ -135,7 +137,7 @@ EventRoom.prototype.step = function() {
   this.tickN++; this.battle.tick = this.tickN;
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
-    if (c.pending && c.ws.bufferedAmount < 262144) { var pd = c.pending; c.pending = null; this.send(c, pd, true); }
+    if (c.pending && c.ws.bufferedAmount < BUF_MAX / 2) { var pd = c.pending; c.pending = null; this.send(c, pd, true); }
     if (this.tickN % Net.FRAME_EVERY === 0) this.send(c, c.viewer.frame(this.tickN));
     if (this.tickN % 5 === 0) this.send(c, JSON.stringify({ t: 'ev', v: H.view(c.side) }));
   }

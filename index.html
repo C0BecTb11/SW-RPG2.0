@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Star Wars: Global Conflict</title>
+<meta name="theme-color" content="#05060a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/app/icon-192.png">
 <link rel="stylesheet" href="css/auth.css">
 <link rel="stylesheet" href="css/banner.css">
 <style>
@@ -67,13 +70,38 @@
       linksEl.innerHTML =
         '<a href="auth.html">Войти / Зарегистрироваться</a>';
     }
-    // телефон на Android и игра открыта в браузере — предложить приложение (весь экран, иконка)
-    var ua = navigator.userAgent || '';
-    if (/Android/i.test(ua) && ua.indexOf('SWGC-App') < 0) {
-      linksEl.insertAdjacentHTML('beforeend',
-        '<a class="secondary" href="https://github.com/C0BecTb11/SW-RPG2.0/releases/download/app/sw-global-conflict.apk">Приложение для Android</a>');
-    }
+    linksReady = true; installUi();
   });
+
+  // Установка на телефон. Chrome сам собирает приложение из сайта (иконка, весь экран) —
+  // кнопка появляется, когда Chrome готов. Запасной путь для Android — файл APK.
+  // Уже открыто как приложение (наше APK или установленное из Chrome) — ничего не предлагаем.
+  var linksReady = false, installEv = null;
+  function inApp() {
+    var ua = navigator.userAgent || '';
+    if (ua.indexOf('SWGC-App') >= 0) return true;
+    try { return matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; }
+  }
+  function installUi() {
+    if (!linksReady || inApp()) return;
+    if (installEv && !document.getElementById('install-app')) {
+      var apk = document.getElementById('apk-app'), html = '<a href="#" id="install-app" class="secondary">Установить на телефон</a>';
+      if (apk) apk.insertAdjacentHTML('beforebegin', html); else linksEl.insertAdjacentHTML('beforeend', html);
+      document.getElementById('install-app').addEventListener('click', function(e) {
+        e.preventDefault();
+        if (!installEv) return;
+        installEv.prompt();
+        installEv.userChoice.then(function(r) { if (r && r.outcome === 'accepted') { var b = document.getElementById('install-app'); if (b) b.remove(); } });
+        installEv = null;
+      });
+    }
+    if (/Android/i.test(navigator.userAgent || '') && !document.getElementById('apk-app')) {
+      linksEl.insertAdjacentHTML('beforeend',
+        '<a class="secondary" id="apk-app" href="https://github.com/C0BecTb11/SW-RPG2.0/releases/download/app/sw-global-conflict.apk">Файл APK для Android</a>');
+    }
+  }
+  window.addEventListener('beforeinstallprompt', function(e) { e.preventDefault(); installEv = e; installUi(); });
+  window.addEventListener('appinstalled', function() { var b = document.getElementById('install-app'); if (b) b.remove(); });
 </script>
 </body>
 </html>

@@ -2710,13 +2710,23 @@
     var el = $('sp-tabs'); if (el.innerHTML !== html) el.innerHTML = html;
   }
   var SHEET_T = { ship: 'Корабль', guns: 'Орудия', obj: 'Цели', act: 'Действия' };
+  // Нижняя кромка всего, что висит сверху: на странице орбиты верхней панели нет — мерить и кнопки
+  function topEdge() {
+    var y = 0;
+    ['sp-top', 'sp-back', 'credits-bar', 'build-toggle', 'sp-tr', 'sp-tl'].forEach(function(id) {
+      var e = document.getElementById(id); if (!e) return;
+      var r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.top < window.innerHeight * 0.45) y = Math.max(y, r.bottom);
+    });
+    return y;
+  }
   function sheetShow(guns) {
     var on = !!G.sheet, el = $('sp-sheet');
     el.hidden = !on;
     if (!on) return;
     // шторка — не выше верхней панели: её шапка и первые кнопки всегда на экране
-    var room = $('sp-bottom').getBoundingClientRect().top - $('sp-top').getBoundingClientRect().bottom - 14;
-    el.style.maxHeight = Math.max(110, Math.min(440, room, window.innerHeight * 0.6)) + 'px';
+    var room = $('sp-bottom').getBoundingClientRect().top - topEdge() - 14;
+    // не выше 2/3 места между верхом и низом: над шторкой всегда остаётся космос для касаний
+    el.style.maxHeight = Math.max(Math.min(110, room), Math.min(440, room * 0.66, window.innerHeight * 0.6)) + 'px';
     $('sp-sheet-t').textContent = SHEET_T[G.sheet] || '';
     $('sp-gunsbox').hidden = !guns; $('sp-ship').hidden = !!guns;
   }
@@ -2879,16 +2889,17 @@
     });
     $('sp-move').onclick = function() {
       var sh = G.B && G.B.ships[G.sel]; if (!sh || sh.dead || !ctl(sh)) return;
-      if (sh.guard) { G.B.order(G.sel, 'hold'); toast('Курс снова твой: коснись космоса — ход, удержи — разворот', 'gold'); }
+      // курс задают касанием космоса — шторка не должна его закрывать
+      if (sh.guard) { G.B.order(G.sel, 'hold'); G.sheet = ''; toast('Курс снова твой: коснись космоса — ход, удержи — разворот', 'gold'); }
       else if (!sh.ai) { G.B.order(G.sel, null); toast('Корабль ведёт сам: дистанция и борт к врагу', 'gold'); }
-      else { G.B.order(G.sel, 'hold'); toast('Курс твой: коснись космоса — ход, удержи — разворот', 'gold'); }
+      else { G.B.order(G.sel, 'hold'); G.sheet = ''; toast('Курс твой: коснись космоса — ход, удержи — разворот', 'gold'); }
       hud();
     };
     if ($('sp-grp')) $('sp-grp').onclick = function() {
       if (!G.B || G.mode !== 'space') return;
       if (G.grpMode) { grpOff(); toast('Группа снята — приказы одному кораблю', 'gold'); return; }
       if (ownShips().length < 2) { toast('Своих кораблей здесь меньше двух — группа не нужна', 'bad'); return; }
-      grpStart([]);
+      grpStart([]); G.sheet = '';
       toast('Группа: коснись своих кораблей — добавить или убрать («Все» — весь флот). Космос — курс строем, враг — атака всеми', 'gold');
       hud();
     };

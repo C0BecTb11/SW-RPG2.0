@@ -7,7 +7,7 @@ html, body { background-color: #05060a; background-image: url('../assets/ui/gala
 #ship-hud { z-index: 2050; }
 #ship-hud .sc-ap-row, #ship-hud #sc-tab-actions, #ship-hud #sc-tab-shields, #ship-hud #sc-props, #ship-hud #sc-hint { display: none !important; }
 /* правый верх занят панелью кредитов — звук и графика под ней, часы боя не нужны */
-#sp-tr { top: calc(54px + env(safe-area-inset-top, 0px)); left: 12px; right: auto; }   /* справа под кредитами — трекер обучения */
+#sp-tr { top: calc(96px + env(safe-area-inset-top, 0px)); left: 12px; right: auto; }   /* под «Галактика» и «Строительство» — иначе звук и графика под кнопкой */   /* справа под кредитами — трекер обучения */
 #sp-clock { display: none; }
 .sl-row .sp-chip em { font-style: normal; color: #55606c; font-size: 9px; margin-left: 4px; }
 /* очередь верфи и переключатель режима стройки — над нижней панелью нового экрана */

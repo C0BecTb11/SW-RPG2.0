@@ -182,10 +182,20 @@
   function resize() {
     G.dpr = Math.min(window.devicePixelRatio || 1, GFX.Q().dpr); G.vw = window.innerWidth; G.vh = window.innerHeight;
     cv.width = Math.round(G.vw * G.dpr); cv.height = Math.round(G.vh * G.dpr); cv.style.width = G.vw + 'px'; cv.style.height = G.vh + 'px';
+    viewCentre();
   }
-  function toS(x, y) { return [(x - CAM.x) * CAM.s + G.vw / 2, (y - CAM.y) * CAM.s + G.vh / 2]; }
-  function toW(px, py) { return [(px - G.vw / 2) / CAM.s + CAM.x, (py - G.vh / 2) / CAM.s + CAM.y]; }
-  function zoomAt(px, py, k) { var w = toW(px, py), s = Math.max(2.5, Math.min(64, CAM.s * k)); CAM.s = s; CAM.x = w[0] - (px - G.vw / 2) / s; CAM.y = w[1] - (py - G.vh / 2) / s; clampCam(); }
+  // Середина поля на экране. Телефон боком: панели — колонкой слева (ground.css), поле — справа,
+  // и камера смотрит в середину свободной части, а не под панели.
+  var LAND = window.matchMedia ? window.matchMedia('(orientation: landscape) and (max-height: 500px)') : null;
+  function viewCentre() {
+    G.cxs = G.vw / 2; G.dockLeft = false;
+    if (!LAND || !LAND.matches) return;
+    var r = $('sp-bottom').getBoundingClientRect();
+    if (r.width && r.right < G.vw * 0.7) { G.cxs = (r.right + G.vw) / 2; G.dockLeft = true; }
+  }
+  function toS(x, y) { return [(x - CAM.x) * CAM.s + G.cxs, (y - CAM.y) * CAM.s + G.vh / 2]; }
+  function toW(px, py) { return [(px - G.cxs) / CAM.s + CAM.x, (py - G.vh / 2) / CAM.s + CAM.y]; }
+  function zoomAt(px, py, k) { var w = toW(px, py), s = Math.max(2.5, Math.min(64, CAM.s * k)); CAM.s = s; CAM.x = w[0] - (px - G.cxs) / s; CAM.y = w[1] - (py - G.vh / 2) / s; clampCam(); }
   function clampCam() { var m = 30 / CAM.s; CAM.x = Math.max(-m, Math.min(N + m, CAM.x)); CAM.y = Math.max(-m, Math.min(N + m, CAM.y)); }
   function fitAll() { CAM.s = Math.max(2.5, Math.min(G.vw, G.vh - 220) / N); CAM.x = N / 2; CAM.y = N / 2; }
 
@@ -197,6 +207,7 @@
   }
   function frameBody(now) {
     var dt = Math.min(0.1, (now - (G.last || now)) / 1000); G.last = now;
+    G.vcT = (G.vcT || 0) + dt; if (G.vcT > 0.5) { G.vcT = 0; viewCentre(); }
     G.fpsN++; if (now - G.fpsT > 1000) { G.fps = G.fpsN; G.fpsN = 0; G.fpsT = now; $('sp-fps').textContent = G.fps; }
     var B = G.B;
     if (B) {
@@ -531,7 +542,7 @@
   }
   function drawFx(c, s, t) {
     var fx = G.B.ev.fx, B = G.B;
-    c.save(); c.translate(G.vw / 2 - CAM.x * s, G.vh / 2 - CAM.y * s); c.scale(s, s); c.lineCap = 'round';
+    c.save(); c.translate(G.cxs - CAM.x * s, G.vh / 2 - CAM.y * s); c.scale(s, s); c.lineCap = 'round';
     for (var i = 0; i < fx.length; i++) {
       var f = fx[i], age = t - f.t, a = B.agents[f.id];
       if (age < 0) continue;                                // своё время отстаёт от сервера: эффект ещё не наступил
@@ -596,6 +607,7 @@
   }
   function drawMini(c) {
     var abb = $('gd-abbar'), btop = $('sp-bottom').getBoundingClientRect().top; if (abb && !abb.hidden) btop = Math.min(btop, abb.getBoundingClientRect().top);
+    if (G.dockLeft) btop = G.vh;                         // панели слева — мини-карта в правом нижнем углу
     var B = G.B, W = Math.min(120, G.vw * 0.3), x0 = G.vw - W - 10, y0 = btop - W - 10, k = W / N;
     if (!GFX.get('mini')) return;
     c.save(); c.globalAlpha = 0.9;
@@ -704,11 +716,21 @@
     var el = $('sp-tabs'); if (el.innerHTML !== html) el.innerHTML = html;
   }
   var SHEET_T = { units: 'Войска', act: 'Приказы' };
+  // Нижняя кромка всего, что висит сверху (панель боя, «Галактика», кредиты, «Строительство», кнопки справа):
+  // на странице планеты верхней панели нет, и мерить только её — значит отдать шторке весь экран
+  function topEdge() {
+    var y = 0;
+    ['sp-top', 'sp-back', 'credits-bar', 'build-toggle', 'sp-tr', 'sp-tl'].forEach(function(id) {
+      var e = document.getElementById(id); if (!e) return;
+      var r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.top < window.innerHeight * 0.45) y = Math.max(y, r.bottom);
+    });
+    return y;
+  }
   function sheetShow() {
     var on = !!G.sheet, el = $('sp-sheet'); el.hidden = !on; if (!on) return;
-    var room = $('sp-bottom').getBoundingClientRect().top - $('sp-top').getBoundingClientRect().bottom - 14;
+    var room = $('sp-bottom').getBoundingClientRect().top - topEdge() - 14;
     // шторка не закрывает поле целиком: над ней остаётся не меньше трети места под карту
-    el.style.maxHeight = Math.max(110, Math.min(440, room * 0.66, window.innerHeight * 0.6)) + 'px';
+    el.style.maxHeight = Math.max(Math.min(110, room), Math.min(440, room * 0.66, window.innerHeight * 0.6)) + 'px';
     $('sp-sheet-t').textContent = SHEET_T[G.sheet] || '';
   }
   var toastT = 0;

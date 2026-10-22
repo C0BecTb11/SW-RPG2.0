@@ -28,8 +28,8 @@
   "sha": "c82bbf4f47df"
  },
  "ground/ground.js": {
-  "v": "18",
-  "sha": "64ed19e4d798"
+  "v": "19",
+  "sha": "dc60df109d6b"
  },
  "ground/preview.css": {
   "v": "1",
@@ -68,8 +68,8 @@
   "sha": "23422c935c94"
  },
  "js/event-live.js": {
-  "v": "11",
-  "sha": "ca4cb3e6c710"
+  "v": "12",
+  "sha": "68ee1fe624b6"
  },
  "js/events-entry.js": {
   "v": "1",
@@ -84,8 +84,8 @@
   "sha": "18a1ca0095c5"
  },
  "js/ground-live.js": {
-  "v": "15",
-  "sha": "d52429c307f1"
+  "v": "16",
+  "sha": "a96fa3efe41b"
  },
  "js/planets.js": {
   "v": "4",
@@ -104,8 +104,8 @@
   "sha": "29d5a10e48f5"
  },
  "js/space-live.js": {
-  "v": "14",
-  "sha": "2f4455d7c1bd"
+  "v": "15",
+  "sha": "7b919c7ec0ec"
  },
  "proto/proto.css": {
   "v": "5",
@@ -224,7 +224,7 @@
   "sha": "0abcdaaacd8e"
  },
  "space/space.js": {
-  "v": "32",
-  "sha": "8274eed2fac0"
+  "v": "33",
+  "sha": "8b361e54b674"
  }
 }

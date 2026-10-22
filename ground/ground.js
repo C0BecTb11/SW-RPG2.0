@@ -87,10 +87,14 @@
   function retryLive(ms) { clearTimeout(LIVE.retryT); LIVE.retryT = setTimeout(function() { LIVE.retryT = 0; connectLive(); }, ms); }
   function liveDown() { return !LIVE.ws || LIVE.ws.readyState > 1; }
   // Связь умерла молча (тоннель, лифт: сокет «открыт», кадров нет) — бросить сокет и переподключиться.
-  // Кадры идут 5 раз в секунду: 5 с тишины при открытой вкладке — точно обрыв.
+  // Кадры идут 5 раз в секунду: 8 с тишины при открытой вкладке — обрыв. Но если сама проверка
+  // опоздала (слабый телефон надолго занят кадром), кадры просто ещё лежат в очереди — не рвать:
+  // иначе тяжёлое переподключение снова занимает телефон, и связь рвётся по кругу.
   function liveWatch() {
+    var now = Date.now(), late = LIVE.watchT && now - LIVE.watchT > 2500; LIVE.watchT = now;
     if (!G.live || G.closing || !LIVE.ws || LIVE.ws.readyState !== 1 || !LIVE.lastMsg) return;
-    if (document.visibilityState === 'hidden' || Date.now() - LIVE.lastMsg < 5000) return;
+    if (late) { LIVE.lastMsg = Math.max(LIVE.lastMsg, now - 4000); return; }
+    if (document.visibilityState === 'hidden' || now - LIVE.lastMsg < 8000) return;
     var dead = LIVE.ws; LIVE.ws = null; LIVE.lastMsg = 0;
     dead.onclose = null; dead.onmessage = null; try { dead.close(); } catch (e) {}
     LIVE.tries++; toast('Нет связи с сервером боёв — переподключение…', 'bad'); retryLive(300);
@@ -292,22 +296,30 @@
   // Грубая подложка всей карты (4 точки на клетку). Холст «для частого чтения» живёт в обычной
   // памяти, а не в видеокарте: слабый телефон под нагрузкой сбрасывает холсты видеокарты, и вместо
   // земли и мини-карты оставалась чернота.
+  // Точки подложки храним и копией в памяти: если браузер сбросит холст, вернуть их — миллисекунды,
+  // а перерисовка всей карты на слабом телефоне — секунды.
   function makeBase() {
     G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
     var bx = G.base.getContext('2d', { willReadFrequently: true });
     G.ter.render(bx, 0, 0, N, N, 4);
+    try { G.baseImg = bx.getImageData(0, 0, N * 4, N * 4); } catch (e) { G.baseImg = null; }
+  }
+  function restoreBase() {
+    if (!G.baseImg || G.baseImg.width !== N * 4) { makeBase(); return; }
+    G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
+    G.base.getContext('2d', { willReadFrequently: true }).putImageData(G.baseImg, 0, 0);
   }
   function baseOk() {
     try { return G.base.getContext('2d').getImageData(N * 2, N * 2, 1, 1).data[3] > 0; } catch (e) { return false; }
   }
-  // Браузер сбросил картинки: перепечь подложку, забыть куски местности, туман и кружки — всё нарисуется заново
+  // Браузер сбросил картинки: вернуть подложку из копии, туман и кружки нарисуются заново.
+  // Куски местности (картинки потоков) не трогаем — они переживают сброс, а перерисовка всех
+  // кусков на слабом телефоне сама по себе тяжела. Случай отмечаем в журнале ошибок — видно, как часто.
   function gfxLost() {
     if (!G.ter) return;
-    makeBase();
-    var cc = G.ter.cache, old = []; G.ter.cache = {};
-    Object.keys(cc).forEach(function(k) { if (cc[k].close) old.push(cc[k]); });
-    if (old.length) setTimeout(function() { old.forEach(function(b) { try { b.close(); } catch (e) {} }); }, 2000);
+    restoreBase();
     FOG = null; FOG_T = -1; DISC = {};
+    if (window.errReport) errReport(new Error('холст подложки сброшен браузером'), 'ground.base');
   }
   cv.addEventListener('contextrestored', function() { try { gfxLost(); } catch (e) { if (window.errReport) errReport(e, 'ground.restore'); } });
   // Лишние куски — из кэша, самые давние первыми. Кусок, нарисованный за последние полторы

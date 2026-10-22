@@ -113,8 +113,7 @@
     $('gd-poly-b').hidden = true;
     if (!G.ter || G.terFor !== h.system + '/' + (h.map.settle && h.map.settle.level)) {
       G.ter = window.GTerrain.create(h.map); G.ter.cacheMax = 220; workersStart(h.map); G.terFor = h.system + '/' + (h.map.settle && h.map.settle.level);
-      G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
-      G.ter.render(G.base.getContext('2d'), 0, 0, N, N, 4);
+      makeBase();
     }
     if (!G.camSet && !B.noTown) { var tw = B.town; CAM.x = tw[0] + tw[2] / 2; CAM.y = att ? N - 20 : tw[1] + tw[3] / 2; CAM.s = Math.max(6, Math.min(G.vw, G.vh) / 40); G.camSet = true; }
     loading(false); hud();
@@ -175,8 +174,7 @@
         G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
         // местность — с наложенным городом (стены, кварталы), как в движке
         G.ter = window.GTerrain.create(G.B.mapJson); G.ter.cacheMax = 220; workersStart(G.B.mapJson);
-        G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
-        G.ter.render(G.base.getContext('2d'), 0, 0, N, N, 4);
+        makeBase();
         $('sp-end').hidden = true;
         try { history.replaceState(null, '', '?p=' + planet); } catch (e) {}
         var tw = G.B.town; CAM.x = tw[0] + tw[2] / 2; CAM.y = G.side === G.B.att ? N - 20 : tw[1] + tw[3] + 2; CAM.s = Math.max(6, Math.min(G.vw, G.vh) / 40);
@@ -243,7 +241,7 @@
     }
     G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; try { hud(); } catch (err) { if (!G.hudErr || now - G.hudErr > 5000) { G.hudErr = now; console.error('Панель не обновилась:', err); } if (window.errReport) errReport(err, 'ground.hud'); } }
     // раз в 5 с: листы картинок на месте? (браузер телефона может их сбросить — тогда перепечь)
-    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && F.check && !F.check(ATLAS)) || (VAT && V.check && !V.check(VAT))) { ATLAS = null; VAT = null; } }
+    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && F.check && !F.check(ATLAS)) || (VAT && V.check && !V.check(VAT))) { ATLAS = null; VAT = null; } if (G.base && !baseOk()) gfxLost(); }
   }
   function draw() {
     var c = ctx, s = CAM.s, dpr = G.dpr, B = G.B, T = G.ter, t = B.t;
@@ -291,6 +289,27 @@
       }
     } catch (e) { TW.ws = []; }
   }
+  // Грубая подложка всей карты (4 точки на клетку). Холст «для частого чтения» живёт в обычной
+  // памяти, а не в видеокарте: слабый телефон под нагрузкой сбрасывает холсты видеокарты, и вместо
+  // земли и мини-карты оставалась чернота.
+  function makeBase() {
+    G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
+    var bx = G.base.getContext('2d', { willReadFrequently: true });
+    G.ter.render(bx, 0, 0, N, N, 4);
+  }
+  function baseOk() {
+    try { return G.base.getContext('2d').getImageData(N * 2, N * 2, 1, 1).data[3] > 0; } catch (e) { return false; }
+  }
+  // Браузер сбросил картинки: перепечь подложку, забыть куски местности, туман и кружки — всё нарисуется заново
+  function gfxLost() {
+    if (!G.ter) return;
+    makeBase();
+    var cc = G.ter.cache, old = []; G.ter.cache = {};
+    Object.keys(cc).forEach(function(k) { if (cc[k].close) old.push(cc[k]); });
+    if (old.length) setTimeout(function() { old.forEach(function(b) { try { b.close(); } catch (e) {} }); }, 2000);
+    FOG = null; FOG_T = -1; DISC = {};
+  }
+  cv.addEventListener('contextrestored', function() { try { gfxLost(); } catch (e) { if (window.errReport) errReport(e, 'ground.restore'); } });
   // Лишние куски — из кэша, самые давние первыми. Кусок, нарисованный за последние полторы
   // секунды, не трогаем: он на экране. Картинку закрываем не сразу, а через 2 с — кадр с ней
   // мог ещё не дорисоваться видеокартой, и закрытая картинка выходила чёрным квадратом
@@ -312,9 +331,13 @@
     var vp = toS(vis[0], vis[1]);
     c.drawImage(G.base, vis[0] * 4, vis[1] * 4, (vis[2] - vis[0]) * 4, (vis[3] - vis[1]) * 4, vp[0], vp[1], (vis[2] - vis[0]) * s, (vis[3] - vis[1]) * s);
     var need = s * dpr; if (need <= 5) return;
-    var tier = TIERS[TIERS.length - 1];
-    for (var i = 0; i < TIERS.length; i++) if (TIERS[i][0] >= need * 0.9) { tier = TIERS[i]; break; }
-    var ppc = tier[0], CH = tier[1], T = G.ter, list = [];
+    // ступень плотности; у границы держим прежнюю, чтобы при лёгком приближении не перерисовывать всю землю
+    var ti = TIERS.length - 1;
+    for (var i = 0; i < TIERS.length; i++) if (TIERS[i][0] >= need * 0.9) { ti = i; break; }
+    var cur = G.tierI;
+    if (cur != null && cur !== ti && TIERS[cur] && TIERS[cur][0] >= need * 0.8 && TIERS[cur][0] <= need * 1.9) ti = cur;
+    G.tierI = ti;
+    var tier = TIERS[ti], ppc = tier[0], CH = tier[1], T = G.ter, list = [];
     var mx = (vis[0] + vis[2]) / 2, my = (vis[1] + vis[3]) / 2;
     for (var cy = Math.floor(vis[1] / CH); cy * CH < vis[3]; cy++) for (var cx = Math.floor(vis[0] / CH); cx * CH < vis[2]; cx++) {
       var dx = cx * CH + CH / 2 - mx, dy = cy * CH + CH / 2 - my; list.push([dx * dx + dy * dy, cx, cy]);
@@ -328,12 +351,30 @@
       if (!ch) {
         if (TW.ws.length) {
           if (!TW.pending[key] && TW.n < TW.ws.length * 3) { TW.pending[key] = 1; TW.n++; TW.ws[TW.i++ % TW.ws.length].postMessage({ k: 'chunk', key: key, cx: k[1], cy: k[2], ppc: ppc, CH: CH, gen: TW.gen }); }
+          standIn(c, T, ti, k[1], k[2], s);
           continue;
         }
-        if (performance.now() - t0 > budget) continue; ch = T.chunk(k[1], k[2], ppc, CH);
+        if (performance.now() - t0 > budget) { standIn(c, T, ti, k[1], k[2], s); continue; }
+        ch = T.chunk(k[1], k[2], ppc, CH);
       } else ch.used = Date.now();
       var p = toS(k[1] * CH, k[2] * CH);
       c.drawImage(ch, 0, 0, px, px, p[0], p[1], w, w);
+    }
+  }
+  // Пока кусок нужной плотности не готов — то же место из соседней ступени, если она в кэше:
+  // при приближении — часть крупного куска, при отдалении — мелкие куски. Иначе видна только подложка.
+  function standIn(c, T, ti, cx, cy, s) {
+    var CH = TIERS[ti][1], x0 = cx * CH, y0 = cy * CH, now = Date.now(), j, b;
+    for (j = ti - 1; j >= 0; j--) {
+      var pc = TIERS[j][0], CC = TIERS[j][1], ccx = Math.floor(x0 / CC), ccy = Math.floor(y0 / CC);
+      b = T.cache[pc + ':' + ccx + ':' + ccy];
+      if (b) { b.used = now; var p = toS(x0, y0); c.drawImage(b, (x0 - ccx * CC) * pc, (y0 - ccy * CC) * pc, CH * pc, CH * pc, p[0], p[1], CH * s + 0.6, CH * s + 0.6); return; }
+    }
+    if (ti + 1 >= TIERS.length) return;
+    var pf = TIERS[ti + 1][0], CF = TIERS[ti + 1][1], n = CH / CF;
+    for (var yy = 0; yy < n; yy++) for (var xx = 0; xx < n; xx++) {
+      var fx = cx * n + xx, fy = cy * n + yy; b = T.cache[pf + ':' + fx + ':' + fy];
+      if (b) { b.used = now; var q = toS(fx * CF, fy * CF); c.drawImage(b, 0, 0, CF * pf, CF * pf, q[0], q[1], CF * s + 0.6, CF * s + 0.6); }
     }
   }
   function label(c, text, x, y, col, size) {
@@ -616,7 +657,7 @@
     var B = G.B;
     if (FOG_T !== B.fogN || !FOG) {
       FOG_T = B.fogN;
-      if (!FOG) { FOG = document.createElement('canvas'); FOG.width = FOG.height = N; }
+      if (!FOG) { FOG = document.createElement('canvas'); FOG.width = FOG.height = N; FOG.getContext('2d', { willReadFrequently: true }); }
       // плотность тумана по клетке, сглаженная по 3×3, чтобы край не был ступенчатым
       var fc = FOG.getContext('2d'), img = fc.createImageData(N, N), d = img.data, sn = B.seen[G.side], al = G.fogA || (G.fogA = new Uint8Array(N * N));
       for (var i = 0; i < N * N; i++) { var v = sn[i]; al[i] = v === 2 ? 0 : v === 1 ? 110 : 215; }

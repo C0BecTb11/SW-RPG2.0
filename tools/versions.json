@@ -28,8 +28,8 @@
   "sha": "c82bbf4f47df"
  },
  "ground/ground.js": {
-  "v": "17",
-  "sha": "0c95d58653d4"
+  "v": "18",
+  "sha": "64ed19e4d798"
  },
  "ground/preview.css": {
   "v": "1",
@@ -68,8 +68,8 @@
   "sha": "23422c935c94"
  },
  "js/event-live.js": {
-  "v": "10",
-  "sha": "5d6cf92a6d45"
+  "v": "11",
+  "sha": "ca4cb3e6c710"
  },
  "js/events-entry.js": {
   "v": "1",
@@ -84,8 +84,8 @@
   "sha": "18a1ca0095c5"
  },
  "js/ground-live.js": {
-  "v": "14",
-  "sha": "0b3c0c31e2a4"
+  "v": "15",
+  "sha": "d52429c307f1"
  },
  "js/planets.js": {
   "v": "4",

@@ -9,6 +9,8 @@ var EventEmitter = require('events');
 
 var GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 var MAX_MSG = 64 * 1024;          // от игрока приходят только короткие приказы
+var MAX_FRAGS = 64;               // кусков у одного сообщения (пустые куски не растят длину — считаем штуки)
+var MAX_FPS = 300;                // кадров от игрока в секунду, включая ping: больше — это не игрок
 
 function Socket(sock) {
   EventEmitter.call(this);
@@ -34,6 +36,10 @@ Socket.prototype.onData = function(d) {
   while (this.open) {
     var b = this.buf;
     if (b.length < 2) return;
+    // поток кадров сверх меры (в т. ч. пустые куски и ping) — разорвать: иначе память сервера тает
+    var nowS = Date.now() / 1000 | 0;
+    if (nowS !== this.fSec) { this.fSec = nowS; this.fN = 0; }
+    if (++this.fN > MAX_FPS) return this.fail(1008);
     var fin = (b[0] & 0x80) !== 0, op = b[0] & 0x0f, masked = (b[1] & 0x80) !== 0;
     var len = b[1] & 0x7f, off = 2;
     if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
@@ -57,17 +63,17 @@ Socket.prototype.frame = function(fin, op, data) {
   if (op >= 0x8 && (!fin || data.length > 125)) return this.fail(1002);   // служебные кадры — короткие и целые
   this.alive = true;                            // любой кадр от игрока — он на связи (не только pong)
   if (op === 0x8) { this.peerCode = data.length >= 2 ? data.readUInt16BE(0) : 1005; this.close(1000); return; }
-  if (op === 0x9) { this.write(0xA, data); return; }
+  if (op === 0x9) { if ((this.sock.writableLength || 0) < 65536) this.write(0xA, data); return; }   // не читает ответы — не копить их
   if (op === 0xA) { this.alive = true; return; }
   if (op === 0x1 || op === 0x2) {
     if (this.frag) return this.fail(1002);
     if (fin) { this.emit('message', op === 0x1 ? data.toString('utf8') : data, op === 0x2); return; }
-    this.frag = [data]; this.fragOp = op; this.fragLen = data.length; return;
+    this.frag = [data]; this.fragOp = op; this.fragLen = data.length; this.fragN = 1; return;
   }
   if (op === 0x0) {
     if (!this.frag) return this.fail(1002);
     this.frag.push(data); this.fragLen += data.length;
-    if (this.fragLen > MAX_MSG) return this.fail(1009);
+    if (this.fragLen > MAX_MSG || ++this.fragN > MAX_FRAGS) return this.fail(1009);
     if (fin) {
       var all = Buffer.concat(this.frag), bin = this.fragOp === 0x2;
       this.frag = null;

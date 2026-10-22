@@ -295,7 +295,13 @@ SystemRoom.prototype.wakeStep = function() {
 };
 
 // ---- снимок в базу
+// Запись в базу — строго по очереди: два запроса вперемешку могли бы записать старое поверх нового
 SystemRoom.prototype.sync = function() {
+  var self = this, p = (this.syncQ || Promise.resolve()).then(function() { return self.syncNow(); });
+  this.syncQ = p.catch(function() {});
+  return p;
+};
+SystemRoom.prototype.syncNow = function() {
   var B = this.B, self = this, ships = [], craft = [], units = [], captured = [];
   this.syncAt = Date.now();
   B.ships.forEach(function(sh) {
@@ -355,6 +361,12 @@ SystemRoom.prototype.unitHpMax = function(sh, uid) {
 };
 // Подхватить из базы прибывших и ушедших, ремонт; бой закрыт базой — всех вон
 SystemRoom.prototype.pull = function() {
+  // прошлый запрос ещё не вернулся (база медленная) — не накладывать: старый ответ поверх нового терял бы бойцов
+  if (this.pulling) return Promise.resolve();
+  var me = this; this.pulling = true;
+  return this.pullNow().then(function(v) { me.pulling = false; return v; }, function(e) { me.pulling = false; throw e; });
+};
+SystemRoom.prototype.pullNow = function() {
   var self = this; this.pullAt = Date.now();
   return this.rpc('rt_space_pull', { p_battle: this.battleId, p_system: this.system }).then(function(st) {
     if (!st || st.closed) { self.cfg.log('warn', 'орбита закрыта базой', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
@@ -413,7 +425,8 @@ SystemRoom.prototype.command = function(c, m) {
   if (m.t === 'cmd' && m.k === 'many') { var self = this; Net.eachMany(m, function(x) { self.command(c, x); }); return; }
   if (m.t === 'cmd') {
     var sh = this.B.ships[m.n | 0];
-    if (sh && sh.dormant && m.k !== 'view') this.B.wake(sh);
+    // будить спящий экипаж — только своему кораблю (иначе один игрок будит всю орбиту и грузит сервер)
+    if (sh && sh.dormant && m.k !== 'view' && c.viewer.ctl(sh)) this.B.wake(sh);
     if (m.k === 'order' && m.x != null && m.x !== 'hold' && isFinite(+m.y)) m.y = this.clampY(c.side, +m.y);
     // курс в площадку сброса — к её середине, по прибытии корабль встаёт в неё целиком (dockStep)
     if (m.k === 'order' && sh && sh.side === c.side) {
@@ -421,7 +434,9 @@ SystemRoom.prototype.command = function(c, m) {
       if (pad && this.fitFacing(sh, pad) != null) { m.x = (pad.x + pad.size / 2) * CELL_M; m.y = (pad.y + pad.size / 2) * CELL_M; sh.dock = pad; }
       else sh.dock = null;
     }
-    if (m.k === 'view' && m.view != null && m.view >= 0 && this.B.ships[m.view | 0] && this.B.ships[m.view | 0].dormant) this.B.wake(this.B.ships[m.view | 0]);
+    // заглянуть внутрь: свой — всегда, чужой — только если его видно
+    var vs = m.k === 'view' && m.view != null && m.view >= 0 ? this.B.ships[m.view | 0] : null;
+    if (vs && vs.dormant && (vs.side === c.side || this.B.sees(c.side, vs))) this.B.wake(vs);
     c.viewer.command(m);
     return;
   }
@@ -443,10 +458,13 @@ SystemRoom.prototype.shouldClose = function() {
 };
 SystemRoom.prototype.close = function(why) {
   var self = this;
-  if (this.closed) return Promise.resolve();
+  if (this.closed) return this.closeP || Promise.resolve();
   this.closed = true;
-  return this.sync().then(function() { return self.rpc('rt_space_close', { p_battle: self.battleId, p_result: { why: why || 'quiet', t: Math.round(self.B.t) } }); })
-    .then(function() { self.cfg.log('info', 'орбита закрыта', { room: self.name, why: why }); }, function(e) { self.cfg.log('error', 'rt_space_close', { room: self.name, err: e.message }); });
+  // пока закрытие не записано в базу, комната остаётся в списке: новый вход подождёт, а не откроет бой,
+  // который тут же закроет запоздавший ответ старого
+  var done = function() { self.closeDone = true; };
+  return (this.closeP = this.sync().then(function() { return self.rpc('rt_space_close', { p_battle: self.battleId, p_result: { why: why || 'quiet', t: Math.round(self.B.t) } }); })
+    .then(function() { self.cfg.log('info', 'орбита закрыта', { room: self.name, why: why }); }, function(e) { self.cfg.log('error', 'rt_space_close', { room: self.name, err: e.message }); }).then(done, done));
 };
 // занят — пока идёт стрельба; зритель на тихой орбите обновлению сервера не мешает (комната откроется заново из базы)
 SystemRoom.prototype.busy = function() { return !this.quiet() ? 1 : 0; };

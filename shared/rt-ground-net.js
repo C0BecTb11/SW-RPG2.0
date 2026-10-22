@@ -4,7 +4,7 @@
  *
  * Кадр f: { t:'f', T, n:[[id,x,y,aim,mv,hp,flags,aux]...], new:[{...}], gone:[id], ev:{s,b,x,m,d,sh},
  *           cnt:[живых 0, 1], cap, dist, fog (RLE), sq, st:[[i,hp,dead]] }
- * flags: 1 в укрытии, 2 оглушён, 4 страх, 8 держит, 16 на месте, 32 купол, 64 внушение, 128 идёт к точке игрока
+ * flags: 1 в укрытии, 2 оглушён, 4 страх, 8 держит, 16 на месте, 32 купол, 64 внушение, 128 идёт к точке игрока, 256/512 — внушение у КНС/Республики
  * aux: техника — угол башни; герой — [поза, k]; остальные — 0.
  * Приказы cmd: move {ids,x,y}, attack {ids,tid}, hold, stop, auto {ids,on}, assign {ids,sq},
  *              ability {id,ab,tgt}, load {ids,ship}.
@@ -59,7 +59,7 @@
   };
   Viewer.prototype.flags = function(a) {
     var t = this.B.t;
-    return (a.inside >= 0 ? 1 : 0) | (a.stun > 0 ? 2 : 0) | (a.fear > 0 ? 4 : 0) | (a.hold ? 8 : 0) | (a.at || !a.goal ? 16 : 0) | (a.barrier > t ? 32 : 0) | (a.mind && a.mind.until > t ? 64 : 0) | (a.post && !a.at ? 128 : 0);
+    return (a.inside >= 0 ? 1 : 0) | (a.stun > 0 ? 2 : 0) | (a.fear > 0 ? 4 : 0) | (a.hold ? 8 : 0) | (a.at || !a.goal ? 16 : 0) | (a.barrier > t ? 32 : 0) | (a.mind && a.mind.until > t ? 64 | (a.mind.by === 1 ? 256 : 512) : 0) | (a.post && !a.at ? 128 : 0);
   };
   Viewer.prototype.intro = function(a) {
     return { id: a.id, tid: a.tid, team: a.team, uid: a.uid || null, name: a.name || '', hpMax: a.hpMax, owner: a.owner || null, npc: !!a.npc, size: a.size,
@@ -249,7 +249,7 @@
       }
       b.aim = u[3]; b.mv = u[4]; b.hp = u[5]; var fl = u[6];
       b.inside = fl & 1 ? 0 : -1; b.stun = fl & 2 ? 1 : 0; b.fear = fl & 4 ? 1 : 0; b.hold = !!(fl & 8); b.at = !!(fl & 16); b.barrier = fl & 32 ? now + 1 : 0;
-      b.mind = fl & 64 ? { until: now + 1, by: 1 - b.team } : null; b.post = !!(fl & 128);
+      b.mind = fl & 64 ? { until: now + 1, by: fl & 256 ? 1 : fl & 512 ? 0 : (b.team === 0 ? 1 : 0) } : null;   // кто управляет: 256 — КНС, 512 — Республика (старый сервер — без бита) b.post = !!(fl & 128);
       if (b.T.vehicle && b.size === 2) b.turretA = +u[7] || 0;
       else if (b.hero && Array.isArray(u[7])) { b.hero.act = ACTS[u[7][0]] || 'idle'; b.hero.k = u[7][1]; b.hero.actT = b.hero.act === 'idle' ? 0 : 1; }
       if (u.length > 8) {

@@ -700,7 +700,7 @@ function animateFlights(frameNow) {
 
   var now = serverNow();
 
-  activeFlights.forEach(function(f) {
+  activeFlights.forEach(function(f) { try {
     var total = f.endMs - f.startMs;
     var progress = total > 0 ? (now - f.startMs) / total : 1;
     if (progress < 0) progress = 0;
@@ -722,20 +722,19 @@ function animateFlights(frameNow) {
         'translate(-50%, -50%) rotate(' + angleDeg + 'deg)';
     }
 
-    if (progress >= 1 && !f.finishRequested) {
+    if (progress >= 1 && !f.finishRequested && !(f.retryAt > Date.now())) {
       f.finishRequested = true;
       // Время вышло — просим сервер зафиксировать прибытие. Функция сама
       // сверяет время, поэтому вызвать её раньше срока бесполезно.
+      // Не вышло (сеть, ошибка) — повторим через 5 с, иначе ракета висела бы до перезагрузки.
+      var retry = function(err) { console.error('Не удалось завершить перелёт:', err); f.finishRequested = false; f.retryAt = Date.now() + 5000; };
       supabase.rpc('finish_commander_move', { p_commander_id: f.commanderId }).then(function(res) {
-        if (res.error) {
-          console.error('Не удалось завершить перелёт:', res.error);
-          return;
-        }
+        if (res.error) { retry(res.error); return; }
         // Не ждём realtime-события — обновляем карту сразу сами.
         reloadCommanders();
-      });
+      }, retry);
     }
-  });
+  } catch (e) { console.error('Ракета перелёта:', e); } });
 
   requestAnimationFrame(animateFlights);
 }

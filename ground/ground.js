@@ -283,14 +283,27 @@
           delete TW.pending[m.key]; TW.n--;
           if (m.gen !== TW.gen || !G.ter) { m.bmp.close(); return; }
           m.bmp.used = Date.now(); G.ter.cache[m.key] = m.bmp;
-          var keys = Object.keys(G.ter.cache), MAX = G.ter.cacheMax || 48;
-          if (keys.length > MAX) { var cc = G.ter.cache; keys.sort(function(a, b) { return cc[a].used - cc[b].used; }).slice(0, keys.length - MAX).forEach(function(k) { if (cc[k].close) cc[k].close(); delete cc[k]; }); }
+          chunkTrim(G.ter.cache, G.ter.cacheMax || 48);
         };
         w.onerror = function() { TW.ws.forEach(function(x) { x.terminate(); }); TW.ws = []; TW.pending = {}; TW.n = 0; };
         w.postMessage({ k: 'map', json: js, gen: TW.gen });
         TW.ws.push(w);
       }
     } catch (e) { TW.ws = []; }
+  }
+  // Лишние куски — из кэша, самые давние первыми. Кусок, нарисованный за последние полторы
+  // секунды, не трогаем: он на экране. Картинку закрываем не сразу, а через 2 с — кадр с ней
+  // мог ещё не дорисоваться видеокартой, и закрытая картинка выходила чёрным квадратом
+  // (мигающие чёрные клетки на телефонах, когда кусков на экране больше, чем мест в кэше).
+  function chunkTrim(cc, MAX) {
+    var keys = Object.keys(cc); if (keys.length <= MAX) return;
+    var now = Date.now(), old = [];
+    keys.sort(function(a, b) { return cc[a].used - cc[b].used; });
+    for (var i = 0; i < keys.length - MAX; i++) {
+      var b = cc[keys[i]]; if (now - b.used < 1500) break;
+      delete cc[keys[i]]; if (b.close) old.push(b);
+    }
+    if (old.length) setTimeout(function() { old.forEach(function(b) { try { b.close(); } catch (e) {} }); }, 2000);
   }
   // Земля: грубая подложка (4 точки на клетку) всегда, поверх — куски местности нужной
   // плотности из кэша; недостающие заказываются потокам (или рисуются по одному в кадре), от середины экрана.
@@ -307,6 +320,8 @@
       var dx = cx * CH + CH / 2 - mx, dy = cy * CH + CH / 2 - my; list.push([dx * dx + dy * dy, cx, cy]);
     }
     list.sort(function(a, b) { return a[0] - b[0]; });
+    // кэш всегда с запасом больше, чем кусков на экране, иначе куски вытесняют друг друга каждый кадр
+    T.cacheMax = Math.min(700, Math.max(220, Math.ceil(list.length * 1.4) + 24));
     var t0 = performance.now(), budget = G.fps && G.fps < 40 ? 6 : 12, px = CH * ppc, w = CH * s + 0.6;
     for (i = 0; i < list.length; i++) {
       var k = list[i], key = ppc + ':' + k[1] + ':' + k[2], ch = T.cache[key];
@@ -519,7 +534,13 @@
       if (m.hero && s > 7) label(c, m.name || (m.team === 0 ? 'Джедай' : 'Ситх'), p[0], p[1] + rr + 9, mine ? '#9fd8ff' : '#ff9a88', 10);
     }
   }
-  function heroLook(m) { if (!m._look) m._look = H.look(m.team === 0 ? 'republic' : 'cis', m.hero.portrait); return m._look; }
+  // у бойца из сети сведения о герое могут ещё не прийти — тогда обычный вид, без запоминания
+  function heroLook(m) {
+    if (m._look) return m._look;
+    var lk = H.look(m.team === 0 ? 'republic' : 'cis', m.hero ? m.hero.portrait : null);
+    if (m.hero) m._look = lk;
+    return lk;
+  }
   function drawShots(c, s, t) {
     var sh = G.B.ev.shots;
     for (var i = 0; i < sh.length; i++) {

@@ -80,7 +80,7 @@
     var B = new NET.Mirror(h, h.side, function(s) { if (ws.readyState === 1) ws.send(s); });
     B.noTown = h.kind === 'event';                   // ивент: своя карта без города
     B.buildings = h.buildings || []; B.plots = h.plots || []; B.zones = { deploy: (h.zones || []).map(function(z) { return [z.x, z.y, z.size]; }), slots: (h.plots || []).map(function(p) { return [p.x, p.y]; }) };
-    G.B = B; G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; FOG_T = -1; G.t = 0;
+    G.B = B; G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
     document.body.classList.toggle('cisside', G.side === 1);
     $('sp-side').textContent = G.side === 0 ? 'Республика' : 'КНС';
     $('gd-planet').textContent = h.name || h.system;
@@ -148,7 +148,7 @@
     $('gd-planet').textContent = pi ? pi.name : planet; $('gd-globe').style.backgroundImage = 'url(../assets/planets/' + planet + '.png)';
     fetchJson('../shared/planets/' + planet + '.json').then(function(js) {
       setTimeout(function() {
-        G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; FOG_T = -1; G.t = 0;
+        G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
         // местность — с наложенным городом (стены, кварталы), как в движке
         G.ter = window.GTerrain.create(G.B.mapJson); G.ter.cacheMax = 220; workersStart(G.B.mapJson);
         G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
@@ -201,7 +201,7 @@
       var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; } if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
       if (B.over >= 0 && !G.ended) endBattle();
     }
-    G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; hud(); }
+    G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; try { hud(); } catch (err) { if (!G.hudErr || now - G.hudErr > 5000) { G.hudErr = now; console.error('Панель не обновилась:', err); } } }
     // раз в 5 с: листы картинок на месте? (браузер телефона может их сбросить — тогда перепечь)
     G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && !F.check(ATLAS)) || (VAT && !V.check(VAT))) { ATLAS = null; VAT = null; } }
     requestAnimationFrame(frame);
@@ -590,7 +590,8 @@
     });
   }
   function drawMini(c) {
-    var B = G.B, W = Math.min(120, G.vw * 0.3), x0 = G.vw - W - 10, y0 = $('sp-bottom').getBoundingClientRect().top - W - 10, k = W / N;
+    var abb = $('gd-abbar'), btop = $('sp-bottom').getBoundingClientRect().top; if (abb && !abb.hidden) btop = Math.min(btop, abb.getBoundingClientRect().top);
+    var B = G.B, W = Math.min(120, G.vw * 0.3), x0 = G.vw - W - 10, y0 = btop - W - 10, k = W / N;
     if (!GFX.get('mini')) return;
     c.save(); c.globalAlpha = 0.9;
     c.drawImage(G.base, x0, y0, W, W);
@@ -614,6 +615,8 @@
     el.innerHTML = '<span>Площадь: <b>' + stName + '</b> · наших ' + cp.cnt[G.side] + ', врагов ' + cp.cnt[1 - G.side] + '</span><i><b style="width:' + (cp.prog / B.capNeed * 100).toFixed(1) + '%"></b></i><span><b>' + Math.round(cp.prog / B.capNeed * 100) + '%</b></span>';
     var dl = $('gd-dist'), dh = B.settle.name + (B.districts.length ? ' · ' + B.districts.map(function(d) { return '<i class="' + (d.by === G.side ? 'my' : 'foe') + '"></i>' + d.name; }).join(' ') : '');
     if (dl.innerHTML !== dh) dl.innerHTML = dh;
+    // единственный свой боец — герой (охота): выбран сразу, касание земли ведёт его
+    if (!G.usel.length && !G.autoSel) { var own = B.agents.filter(function(a) { return a && a.alive && B.ctl(a) === G.side; }); if (own.length === 1 && own[0].hero) { G.usel = [own[0].id]; G.autoSel = true; } }
     var sel = selected(), alive = B.alive(G.side), foe = B.alive(1 - G.side);
     var stat = '<span>Своих <b>' + alive + '</b> · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
     // подсказка по шагу: что сейчас сделает касание
@@ -630,6 +633,25 @@
     if (G.sheet === 'units') $('sp-ship').innerHTML = unitsPanel(B, sel);
     else if (G.sheet === 'act') $('sp-ship').innerHTML = actPanel(B, sel);
     sheetShow();
+    abBar(B, sel);
+  }
+  // Полоса сил героя над нижней панелью: выбран герой, шторка закрыта. Сила → касание цели на поле.
+  var AB_SHORT = { push_dark: 'Телекинез', drain_dark: 'Вытягивание', heal_light: 'Исцеление', barrier_light: 'Купол', lightning_dark: 'Молнии', fear_dark: 'Страх', dash_dark: 'Бросок', throw_dark: 'Клинок', push_light: 'Толчок' };
+  function abBar(B, sel) {
+    var el = $('gd-abbar');
+    if (!el) { el = document.createElement('div'); el.id = 'gd-abbar'; el.className = 'gd-abbar'; el.hidden = true; $('sp-bottom').appendChild(el); }
+    var hero = null; for (var i = 0; i < sel.length; i++) if (sel[i].hero) { hero = sel[i]; break; }
+    var html = '';
+    if (hero && !G.sheet && !G.ended) {
+      hero.hero.abil.forEach(function(ab) {
+        var A = GR.ABIL[ab]; if (!A || !A[0]) return;
+        var cd = Math.max(0, (hero.hero.cds[ab] || 0) - B.t);
+        html += '<button class="sp-chip' + (cd > 0 ? ' cd' : '') + (G.arm && G.arm.ab === ab ? ' arm' : '') + '" data-ab="' + ab + '" type="button" title="' + GR.ABIL_NAME[ab] + '">' + (AB_SHORT[ab] || GR.ABIL_NAME[ab]) + (cd > 0 ? '<em>' + Math.ceil(cd) + 'с</em>' : '') + '</button>';
+      });
+      if (html) html = '<span class="lab">Силы</span>' + html + (G.arm ? '<button class="sp-chip x" data-abx="1" type="button">✕ отмена</button>' : '');
+    }
+    if (el.innerHTML !== html) el.innerHTML = html;
+    el.hidden = !html;
   }
   function unitsPanel(B, sel) {
     var html = '', selIds = {}; G.usel.forEach(function(i) { selIds[i] = 1; });
@@ -680,7 +702,8 @@
   function sheetShow() {
     var on = !!G.sheet, el = $('sp-sheet'); el.hidden = !on; if (!on) return;
     var room = $('sp-bottom').getBoundingClientRect().top - $('sp-top').getBoundingClientRect().bottom - 14;
-    el.style.maxHeight = Math.max(110, Math.min(440, room, window.innerHeight * 0.6)) + 'px';
+    // шторка не закрывает поле целиком: над ней остаётся не меньше трети места под карту
+    el.style.maxHeight = Math.max(110, Math.min(440, room * 0.66, window.innerHeight * 0.6)) + 'px';
     $('sp-sheet-t').textContent = SHEET_T[G.sheet] || '';
   }
   var toastT = 0;
@@ -769,10 +792,11 @@
     $('sp-gfx-b').onclick = function() { GFX.open(G.fps); };
     GFX.on(function(k) { if (k === 'q') { ATLAS = null; VAT = null; resize(); } });
     $('sp-bottom').addEventListener('pointerdown', function(e) {
-      var t = e.target.closest('[data-tab],[data-ba],[data-as],[data-sq],[data-type],[data-ab],#sp-sheet-x'); if (!t) return;
+      var t = e.target.closest('[data-tab],[data-ba],[data-as],[data-sq],[data-type],[data-ab],[data-abx],#sp-sheet-x'); if (!t) return;
       e.preventDefault();
       var B = G.B;
       if (t.id === 'sp-sheet-x') { G.sheet = ''; hud(); return; }
+      if (t.hasAttribute('data-abx')) { G.arm = null; hud(); return; }
       if (t.hasAttribute('data-tab')) { var k = t.getAttribute('data-tab'); G.sheet = G.sheet === k ? '' : k; hud(); return; }
       if (t.hasAttribute('data-ba')) {
         var ba = t.getAttribute('data-ba');
@@ -787,7 +811,9 @@
         var A = GR.ABIL[ab];
         if (A[1] === 'self' || !A[1]) { var err = B.useAbility(G.side, hero.id, ab, null); if (err) toast(err, 'bad'); }
         else if (A[1] === 'ally' && ab === 'heal_light') { var err2 = B.useAbility(G.side, hero.id, ab, { tid: hero.id }); if (err2) { G.arm = { id: hero.id, ab: ab }; toast('Выбери союзника рядом', 'gold'); } }
-        else { G.arm = G.arm && G.arm.ab === ab ? null : { id: hero.id, ab: ab }; if (G.arm) toast('Теперь коснись цели', 'gold'); }
+        else { G.arm = G.arm && G.arm.ab === ab ? null : { id: hero.id, ab: ab }; if (G.arm) toast('Теперь коснись цели на поле', 'gold'); }
+        // цель выбирают на поле — шторка не должна его закрывать
+        if (G.arm) G.sheet = '';
         hud(); return;
       }
     });

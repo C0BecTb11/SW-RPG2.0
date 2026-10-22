@@ -105,9 +105,11 @@
   function installUi() {
     if (!linksReady || inApp()) return;
     var ua = navigator.userAgent || '', hint = document.getElementById('install-hint');
+    var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var mobile = ios || /Android|Mobi/i.test(ua);
     if (installEv && !document.getElementById('install-app')) {
       if (hint) hint.remove();
-      linksEl.insertAdjacentHTML('beforeend', '<a href="#" id="install-app" class="secondary">Установить на телефон</a>');
+      linksEl.insertAdjacentHTML('beforeend', '<a href="#" id="install-app" class="secondary">' + (mobile ? 'Установить на телефон' : 'Установить на компьютер') + '</a>');
       document.getElementById('install-app').addEventListener('click', function(e) {
         e.preventDefault();
         if (!installEv) return;
@@ -117,9 +119,11 @@
       });
     }
     if (installEv || hint) return;
-    var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var chromium = /Chrome\/|Edg\//.test(ua) && !/OPR\/|YaBrowser/.test(ua), mac = /Macintosh/.test(ua);
     var text = ios ? 'На iPhone: открой в <b>Safari</b> → «Поделиться» → <b>«На экран „Домой“»</b>'
              : /Android/i.test(ua) ? 'Игру можно поставить как приложение: в <b>Chrome</b> → ⋮ → <b>«Установить приложение»</b>'
+             : chromium ? 'Игру можно поставить как программу: значок <b>«Установить»</b> справа в адресной строке Chrome или Edge'
+             : mac && /Safari\//.test(ua) ? 'Игру можно поставить как программу: Safari → «Файл» → <b>«Добавить в Dock»</b>'
              : '';
     if (text) linksEl.insertAdjacentHTML('beforeend', '<div class="install-hint" id="install-hint">' + text + '</div>');
   }

@@ -7,6 +7,11 @@
 <meta name="theme-color" content="#05060a">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="assets/app/icon-192.png">
+<link rel="apple-touch-icon" href="assets/app/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Global Conflict">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="stylesheet" href="css/auth.css">
 <link rel="stylesheet" href="css/banner.css">
 <style>
@@ -40,6 +45,19 @@
     margin-top: 20px;
     min-height: 16px;
   }
+  /* подсказка, как поставить игру на телефон, когда кнопки установки нет */
+  .install-hint {
+    margin-top: 2px;
+    padding: 10px 12px;
+    border: 1px dashed #2a3644;
+    border-radius: 2px;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.6;
+    letter-spacing: 0.5px;
+    color: #8fa8c4;
+  }
+  .install-hint b { color: #cfd8dc; font-weight: normal; }
 </style>
 </head>
 <body>
@@ -74,19 +92,22 @@
   });
 
   // Установка на телефон. Chrome сам собирает приложение из сайта (иконка, весь экран) —
-  // кнопка появляется, когда Chrome готов. Запасной путь для Android — файл APK.
-  // Уже открыто как приложение (наше APK или установленное из Chrome) — ничего не предлагаем.
+  // кнопка появляется, когда Chrome готов; до того и в других браузерах — подсказка через меню.
+  // На iPhone кнопки установки не бывает — подсказка «Поделиться → На экран Домой».
+  // Уже открыто как приложение — ничего не предлагаем.
   var linksReady = false, installEv = null;
   function inApp() {
     var ua = navigator.userAgent || '';
     if (ua.indexOf('SWGC-App') >= 0) return true;
+    if (navigator.standalone) return true;                      // iPhone: открыто с экрана «Домой»
     try { return matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; }
   }
   function installUi() {
     if (!linksReady || inApp()) return;
+    var ua = navigator.userAgent || '', hint = document.getElementById('install-hint');
     if (installEv && !document.getElementById('install-app')) {
-      var apk = document.getElementById('apk-app'), html = '<a href="#" id="install-app" class="secondary">Установить на телефон</a>';
-      if (apk) apk.insertAdjacentHTML('beforebegin', html); else linksEl.insertAdjacentHTML('beforeend', html);
+      if (hint) hint.remove();
+      linksEl.insertAdjacentHTML('beforeend', '<a href="#" id="install-app" class="secondary">Установить на телефон</a>');
       document.getElementById('install-app').addEventListener('click', function(e) {
         e.preventDefault();
         if (!installEv) return;
@@ -95,10 +116,12 @@
         installEv = null;
       });
     }
-    if (/Android/i.test(navigator.userAgent || '') && !document.getElementById('apk-app')) {
-      linksEl.insertAdjacentHTML('beforeend',
-        '<a class="secondary" id="apk-app" href="https://github.com/C0BecTb11/SW-RPG2.0/releases/download/app/sw-global-conflict.apk">Файл APK для Android</a>');
-    }
+    if (installEv || hint) return;
+    var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var text = ios ? 'На iPhone: открой в <b>Safari</b> → «Поделиться» → <b>«На экран „Домой“»</b>'
+             : /Android/i.test(ua) ? 'Игру можно поставить как приложение: в <b>Chrome</b> → ⋮ → <b>«Установить приложение»</b>'
+             : '';
+    if (text) linksEl.insertAdjacentHTML('beforeend', '<div class="install-hint" id="install-hint">' + text + '</div>');
   }
   window.addEventListener('beforeinstallprompt', function(e) { e.preventDefault(); installEv = e; installUi(); });
   window.addEventListener('appinstalled', function() { var b = document.getElementById('install-app'); if (b) b.remove(); });

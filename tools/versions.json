@@ -1,0 +1,218 @@
+{
+ "css/dev-panel.css": {
+  "v": "1",
+  "sha": "ea0f625d5383"
+ },
+ "css/event-live.css": {
+  "v": "2",
+  "sha": "001ee13d73dc"
+ },
+ "css/events.css": {
+  "v": "1",
+  "sha": "f2d458a05c20"
+ },
+ "css/ground-live.css": {
+  "v": "3",
+  "sha": "378d52a8193a"
+ },
+ "css/space-live.css": {
+  "v": "3",
+  "sha": "c4745e6f2bf7"
+ },
+ "ground/ground.css": {
+  "v": "5",
+  "sha": "99e3fb2431d8"
+ },
+ "ground/ground.js": {
+  "v": "13",
+  "sha": "eb27435a86e9"
+ },
+ "ground/preview.css": {
+  "v": "1",
+  "sha": "c2a8a987f1b2"
+ },
+ "ground/preview.js": {
+  "v": "3",
+  "sha": "24d58a86cb68"
+ },
+ "ground/terrain-worker.js": {
+  "v": "3",
+  "sha": "aa5665327d4c"
+ },
+ "ground/terrain.js": {
+  "v": "5",
+  "sha": "906a3b485d01"
+ },
+ "js/auth.js": {
+  "v": "2",
+  "sha": "085588d489fd"
+ },
+ "js/credits-bar.js": {
+  "v": "3",
+  "sha": "29981378ca8b"
+ },
+ "js/dev-panel.js": {
+  "v": "2",
+  "sha": "794f31b1edbc"
+ },
+ "js/event-live.js": {
+  "v": "6",
+  "sha": "e3cd28d249d5"
+ },
+ "js/events-entry.js": {
+  "v": "1",
+  "sha": "365ac0fa4f96"
+ },
+ "js/events.js": {
+  "v": "3",
+  "sha": "e22254820baa"
+ },
+ "js/ground-battle.js": {
+  "v": "2",
+  "sha": "18a1ca0095c5"
+ },
+ "js/ground-live.js": {
+  "v": "10",
+  "sha": "30c331ab3815"
+ },
+ "js/planets.js": {
+  "v": "3",
+  "sha": "cc26ba82abfc"
+ },
+ "js/quest.js": {
+  "v": "4",
+  "sha": "5050a5eae8f0"
+ },
+ "js/ship-control.js": {
+  "v": "2",
+  "sha": "b9e1bc3a5d69"
+ },
+ "js/space-battle.js": {
+  "v": "2",
+  "sha": "29d5a10e48f5"
+ },
+ "js/space-live.js": {
+  "v": "12",
+  "sha": "ab7c91ab0a2f"
+ },
+ "proto/proto.css": {
+  "v": "5",
+  "sha": "76d7577487f6"
+ },
+ "proto/rt-client.js": {
+  "v": "5",
+  "sha": "1568cbfe3eab"
+ },
+ "proto/sim-worker.js": {
+  "v": "5",
+  "sha": "ddf8c69a7db1"
+ },
+ "shared/rt-army.js": {
+  "v": "4",
+  "sha": "46200012c36b"
+ },
+ "shared/rt-board.js": {
+  "v": "9",
+  "sha": "6135e3517c9a"
+ },
+ "shared/rt-core.js": {
+  "v": "5",
+  "sha": "ee82bbfd757b"
+ },
+ "shared/rt-crew.js": {
+  "v": "10",
+  "sha": "1c9ac021d481"
+ },
+ "shared/rt-events-cat.js": {
+  "v": "1",
+  "sha": "cd764df88707"
+ },
+ "shared/rt-events.js": {
+  "v": "2",
+  "sha": "57b2c4cfeca6"
+ },
+ "shared/rt-figures.js": {
+  "v": "7",
+  "sha": "29de229d9ace"
+ },
+ "shared/rt-ground-net.js": {
+  "v": "4",
+  "sha": "0af448b4bfeb"
+ },
+ "shared/rt-ground.js": {
+  "v": "10",
+  "sha": "84d71c9778d0"
+ },
+ "shared/rt-heroes.js": {
+  "v": "2",
+  "sha": "6fdc45b5cd6a"
+ },
+ "shared/rt-planets.js": {
+  "v": "3",
+  "sha": "7aab942bfe56"
+ },
+ "shared/rt-ship.js": {
+  "v": "2",
+  "sha": "973b756c3c83"
+ },
+ "shared/rt-space-net.js": {
+  "v": "16",
+  "sha": "4ee88599f499"
+ },
+ "shared/rt-space.js": {
+  "v": "24",
+  "sha": "97e59436e004"
+ },
+ "shared/rt-town.js": {
+  "v": "2",
+  "sha": "1cc156a45532"
+ },
+ "shared/rt-units.js": {
+  "v": "2",
+  "sha": "737635b24a59"
+ },
+ "shared/rt-vehicles.js": {
+  "v": "4",
+  "sha": "e54317fcfb79"
+ },
+ "ships/ship-art.js": {
+  "v": "4",
+  "sha": "d11319f3b7fd"
+ },
+ "ships/ship-view.js": {
+  "v": "6",
+  "sha": "377c582e2369"
+ },
+ "ships/ships.css": {
+  "v": "3",
+  "sha": "f4cc01dde857"
+ },
+ "space/space-deck.js": {
+  "v": "1",
+  "sha": "22b4379cd2a2"
+ },
+ "space/space-gfx.js": {
+  "v": "1",
+  "sha": "78c9321831cd"
+ },
+ "space/space-sfx.js": {
+  "v": "2",
+  "sha": "b41bb33f034d"
+ },
+ "space/space-tasks.js": {
+  "v": "4",
+  "sha": "09afbdcbcd3c"
+ },
+ "space/space-wreck.js": {
+  "v": "1",
+  "sha": "26a531e80361"
+ },
+ "space/space.css": {
+  "v": "20",
+  "sha": "0fc70656188d"
+ },
+ "space/space.js": {
+  "v": "30",
+  "sha": "59f8ef52f715"
+ }
+}

@@ -1212,16 +1212,19 @@
       qLooping = false;
       return;
     }
-    if (ts - qLastPick > 250) { qLastPick = ts; qPickTarget(); }
-    qPlace();
-    // Перелёт: трекер тикает раз в кадр, а обновляется текст раз в секунду
-    if (qData && qData.status === 'active' && qData.current && qData.current.id === 'arrive' &&
-        !qData.step_done && ts - (qFrame.t || 0) > 1000) {
-      qFrame.t = ts;
-      var g = document.querySelector('#quest-tracker .qt-goal');
-      if (g) g.textContent = qTrackerLine();
-    }
+    // следующий кадр — сразу: ошибка в подсветке не должна гасить её до перезагрузки
     requestAnimationFrame(qFrame);
+    try {
+      if (ts - qLastPick > 250) { qLastPick = ts; qPickTarget(); }
+      qPlace();
+      // Перелёт: трекер тикает раз в кадр, а обновляется текст раз в секунду
+      if (qData && qData.status === 'active' && qData.current && qData.current.id === 'arrive' &&
+          !qData.step_done && ts - (qFrame.t || 0) > 1000) {
+        qFrame.t = ts;
+        var g = document.querySelector('#quest-tracker .qt-goal');
+        if (g) g.textContent = qTrackerLine();
+      }
+    } catch (e) { if (!qFrame.err || ts - qFrame.err > 5000) { qFrame.err = ts; console.error('Подсветка обучения:', e); } }
   }
 
   // ===== Старт =====

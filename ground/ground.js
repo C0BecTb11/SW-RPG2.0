@@ -172,7 +172,7 @@
       ATLAS = F.bake(ALL, px, 10); ATLAS.ok = F.check(ATLAS); if (!ATLAS.ok) ATLAS.bad = true;
       DEAD = F.bakeDead(ALL, px * 2, 16);
       var ids = Object.keys(V.TYPES);
-      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15)), Math.max(72, Math.min(128, px * 2))); if (!V.check(VAT)) VAT = null;
+      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15)), Math.max(72, Math.min(128, px * 2))); if (V.check && !V.check(VAT)) VAT = null;
       ATLAS_PX = px;
     } catch (e) { ATLAS = { bad: true }; }
     return ATLAS;
@@ -191,6 +191,11 @@
 
   // ---------------------------------------------------------------- отрисовка
   function frame(now) {
+    // следующий кадр — сразу: любая ошибка ниже пропускает один кадр, а не останавливает бой навсегда
+    requestAnimationFrame(frame);
+    try { frameBody(now); } catch (err) { if (!G.frameErr || now - G.frameErr > 5000) { G.frameErr = now; console.error('Такт экрана не прошёл:', err); } }
+  }
+  function frameBody(now) {
     var dt = Math.min(0.1, (now - (G.last || now)) / 1000); G.last = now;
     G.fpsN++; if (now - G.fpsT > 1000) { G.fps = G.fpsN; G.fpsN = 0; G.fpsT = now; $('sp-fps').textContent = G.fps; }
     var B = G.B;
@@ -198,13 +203,12 @@
       if (G.live) { B.step(dt); G.t = B.t; } else if (!G.ended && G.speed) { B.step(dt * G.speed); G.t = B.t; }
       $('sp-time').textContent = Math.floor(B.t / 60) + ':' + ('0' + Math.floor(B.t % 60)).slice(-2);
       // ошибка в одном кадре не должна останавливать бой: кадр пропускается, цикл живёт
-      var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; } if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
+      var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else cv.width = cv.width; if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
       if (B.over >= 0 && !G.ended) endBattle();
     }
     G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; try { hud(); } catch (err) { if (!G.hudErr || now - G.hudErr > 5000) { G.hudErr = now; console.error('Панель не обновилась:', err); } } }
     // раз в 5 с: листы картинок на месте? (браузер телефона может их сбросить — тогда перепечь)
-    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && !F.check(ATLAS)) || (VAT && !V.check(VAT))) { ATLAS = null; VAT = null; } }
-    requestAnimationFrame(frame);
+    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && F.check && !F.check(ATLAS)) || (VAT && V.check && !V.check(VAT))) { ATLAS = null; VAT = null; } }
   }
   function draw() {
     var c = ctx, s = CAM.s, dpr = G.dpr, B = G.B, T = G.ter, t = B.t;
@@ -412,6 +416,7 @@
   // Кружок стороны под бойцом — картинкой: заливка дуги на каждом бойце дорога на больших размерах
   var DISC = {};
   function disc(team) {
+    if (!TEAMC[team]) team = 2;                          // сторона неизвестна — цвет мародёров, а не 'rgba(undefined)'
     if (DISC[team]) return DISC[team];
     var cv = document.createElement('canvas'); cv.width = cv.height = 64; var c = cv.getContext('2d');
     var g = c.createRadialGradient(32, 32, 10, 32, 32, 32); g.addColorStop(0, 'rgba(' + TEAMC[team] + ',1)'); g.addColorStop(0.75, 'rgba(' + TEAMC[team] + ',0.9)'); g.addColorStop(1, 'rgba(' + TEAMC[team] + ',0)');
@@ -598,7 +603,7 @@
     c.drawImage(FOG, x0, y0, W, W);
     var tw = B.town; if (!B.noTown) { c.strokeStyle = 'rgba(217,169,64,0.7)'; c.lineWidth = 1; c.strokeRect(x0 + tw[0] * k, y0 + tw[1] * k, tw[2] * k, tw[3] * k); }
     if (window.GD_MINI) GD_MINI(c, x0, y0, k);
-    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; c.fillStyle = 'rgb(' + TEAMC[B.ctl(a)] + ')'; c.fillRect(x0 + a.x * k - 1, y0 + a.y * k - 1, a.size === 2 ? 3 : 2, a.size === 2 ? 3 : 2); }
+    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; c.fillStyle = 'rgb(' + (TEAMC[B.ctl(a)] || TEAMC[2]) + ')'; c.fillRect(x0 + a.x * k - 1, y0 + a.y * k - 1, a.size === 2 ? 3 : 2, a.size === 2 ? 3 : 2); }
     var a0 = toW(0, 0), b0 = toW(G.vw, G.vh); c.strokeStyle = 'rgba(255,255,255,0.7)'; c.strokeRect(x0 + a0[0] * k, y0 + a0[1] * k, (b0[0] - a0[0]) * k, (b0[1] - a0[1]) * k);
     c.strokeStyle = '#1c2530'; c.strokeRect(x0 - 0.5, y0 - 0.5, W + 1, W + 1);
     c.restore();

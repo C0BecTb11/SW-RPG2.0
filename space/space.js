@@ -1079,6 +1079,7 @@
   function drawFog(c, T) {
     var B = G.B; if (!B.fog) return;
     var k = 4, w = Math.ceil(CAM.vw / k), h = Math.ceil(CAM.vh / k);
+    if (!(w > 0 && h > 0)) return;                       // окно нулевого размера (свёрнуто, скрытый фрейм) — холст 0×0 не рисуется
     if (!FOG.cv) { FOG.cv = document.createElement('canvas'); FOG.cx = FOG.cv.getContext('2d'); }
     if (FOG.cv.width !== w || FOG.cv.height !== h) { FOG.cv.width = w; FOG.cv.height = h; }
     var f = FOG.cx;

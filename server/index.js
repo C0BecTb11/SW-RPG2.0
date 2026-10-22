@@ -273,7 +273,7 @@ server.on('upgrade', function(req, sock, head) {
   var c = { ws: ws, side: 0, room: null, who: null, msgs: 0, rx: 0, at: Date.now(), msgWin: Date.now(), ua: uaShort(req.headers['user-agent']), ip: req.headers['x-forwarded-for'] || sock.remoteAddress,
             send: function(buf) {
               // медленный игрок: не копим очередь — пропускаем такт и потом шлём бой заново
-              if (ws.bufferedAmount > 2 * 1048576) { c.resync = true; return; }
+              if (ws.bufferedAmount > 262144) { c.resync = true; return; }
               if (c.resync && c.room && c.room.kind !== 'space' && c.room.kind !== 'ground' && c.room.kind !== 'system' && c.room.kind !== 'event') { c.resync = false; ws.send(SWRT.encodeInit(c.room.battle, c.side, c.room.extra)); return; }
               ws.send(buf);
             } };

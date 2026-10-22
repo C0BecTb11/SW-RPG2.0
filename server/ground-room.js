@@ -8,6 +8,8 @@
 'use strict';
 
 var fs = require('fs');
+// Очередь на отправку игроку: больше — кадры пропускаются, потом бой целиком (медленная связь не копит минуты задержки)
+var BUF_MAX = 131072;
 var path = require('path');
 var P = require('../shared/rt-planets.js');
 var U = require('../shared/rt-units.js');
@@ -172,7 +174,7 @@ GroundRoom.prototype.leave = function(c) {
   if (!this.clients.length) this.emptySince = Date.now();
 };
 GroundRoom.prototype.send = function(c, data) {
-  if (c.ws.bufferedAmount > 1048576) { if (c.viewer) c.viewer.lost(); return; }
+  if (c.ws.bufferedAmount > BUF_MAX) { if (c.viewer) c.viewer.lost(); return; }
   var n = typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength;
   this.bytes += n; c.bytes = (c.bytes || 0) + n;
   c.ws.send(data);

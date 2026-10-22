@@ -52,6 +52,13 @@
     var url = LIVE.srv.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws', ws;
     try { ws = new WebSocket(url); } catch (e) { loading(false); toast('Сервер боёв недоступен', 'bad'); return; }
     LIVE.ws = ws; G.closing = false;
+    // рукопожатие потерялось (связь «заморожена») — сокет висит в подключении вечно: бросить и повторить
+    clearTimeout(LIVE.openT);
+    LIVE.openT = setTimeout(function() {
+      if (LIVE.ws !== ws || ws.readyState !== 0) return;
+      LIVE.ws = null; ws.onclose = null; ws.onmessage = null; ws.onopen = null; try { ws.close(); } catch (e) {}
+      LIVE.tries++; retryLive(Math.min(5000, 1000 * LIVE.tries) + Math.random() * 500);
+    }, 7000);
     ws.onopen = function() {
       Promise.resolve(window.GD_TOKEN ? window.GD_TOKEN() : 'dev').then(function(token) {
         var auth = { t: 'auth', token: token || 'dev', room: LIVE.room || 'gr:' + LIVE.system };
@@ -60,6 +67,7 @@
       });
     };
     ws.onmessage = function(e) {
+      LIVE.lastMsg = Date.now();
       var m; try { m = JSON.parse(e.data); } catch (err) { return; }
       if (m.t === 'hello') { LIVE.tries = 0; onHello(m, ws); return; }
       if (m.t === 'error') { loading(false); toast(m.msg || 'Ошибка связи', 'bad'); G.closing = true; return; }
@@ -69,15 +77,31 @@
       if (G.B && G.B.onText) G.B.onText(m);
     };
     ws.onclose = function() {
-      if (G.closing) return;
+      if (G.closing || LIVE.ws !== ws) return;
       LIVE.tries++;
       toast('Связь с планетой прервана, переподключение…', 'bad');
-      setTimeout(connectLive, Math.min(15000, 1500 * LIVE.tries));
+      retryLive(Math.min(5000, 1000 * LIVE.tries) + Math.random() * 500);
     };
+  }
+  // Переподключение: одна попытка в очереди; сразу — когда сеть вернулась или вкладку открыли снова
+  function retryLive(ms) { clearTimeout(LIVE.retryT); LIVE.retryT = setTimeout(function() { LIVE.retryT = 0; connectLive(); }, ms); }
+  function liveDown() { return !LIVE.ws || LIVE.ws.readyState > 1; }
+  // Связь умерла молча (тоннель, лифт: сокет «открыт», кадров нет) — бросить сокет и переподключиться.
+  // Кадры идут 5 раз в секунду: 5 с тишины при открытой вкладке — точно обрыв.
+  function liveWatch() {
+    if (!G.live || G.closing || !LIVE.ws || LIVE.ws.readyState !== 1 || !LIVE.lastMsg) return;
+    if (document.visibilityState === 'hidden' || Date.now() - LIVE.lastMsg < 5000) return;
+    var dead = LIVE.ws; LIVE.ws = null; LIVE.lastMsg = 0;
+    dead.onclose = null; dead.onmessage = null; try { dead.close(); } catch (e) {}
+    LIVE.tries++; toast('Нет связи с сервером боёв — переподключение…', 'bad'); retryLive(300);
   }
   function onHello(h, ws) {
     G.planet = h.system; G.side = h.side;
-    var B = new NET.Mirror(h, h.side, function(s) { if (ws.readyState === 1) ws.send(s); });
+    var B = new NET.Mirror(h, h.side, function(s) {
+      if (ws.readyState === 1 && LIVE.ws === ws) { ws.send(s); return; }
+      // приказ ушёл в пустоту — сказать игроку (не чаще раза в 3 с)
+      var nw = Date.now(); if (!G.offT || nw - G.offT > 3000) { G.offT = nw; toast('Нет связи — приказ не дошёл, переподключение…', 'bad'); }
+    });
     B.noTown = h.kind === 'event';                   // ивент: своя карта без города
     B.buildings = h.buildings || []; B.plots = h.plots || []; B.zones = { deploy: (h.zones || []).map(function(z) { return [z.x, z.y, z.size]; }), slots: (h.plots || []).map(function(p) { return [p.x, p.y]; }) };
     G.B = B; G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
@@ -848,6 +872,13 @@
     $('sp-end-look').onclick = function() { $('sp-end').hidden = true; };
     $('sp-end-again').onclick = function() { $('sp-end').hidden = true; start(G.planet); };
     window.addEventListener('resize', resize);
+    // живой бой: следить за связью; вернулась сеть / открыли вкладку — переподключиться сразу
+    if (window.GD_LIVE) {
+      setInterval(liveWatch, 1000);
+      var kick = function() { if (G.live && !G.closing && liveDown()) retryLive(0); else if (LIVE.ws) LIVE.lastMsg = Date.now(); };
+      window.addEventListener('online', kick);
+      document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') kick(); });
+    }
   }
   function setSpeed(v) { if (v) G.lastSpd = v; G.speed = v; $('sp-pause').innerHTML = v === 0 ? '▶' : '❚❚'; $('sp-spd').textContent = '×' + (v || G.lastSpd); }
 

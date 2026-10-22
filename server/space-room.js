@@ -7,6 +7,8 @@
 'use strict';
 
 var fs = require('fs');
+// Очередь на отправку игроку: больше — кадры пропускаются, потом бой целиком (медленная связь не копит минуты задержки)
+var BUF_MAX = 131072;
 var path = require('path');
 var SWRT = require('../shared/rt-core.js');
 var SWShip = require('../shared/rt-ship.js');
@@ -213,7 +215,7 @@ SpaceRoom.prototype.roster = function() {
 };
 SpaceRoom.prototype.send = function(c, data) {
   // медленная связь: кадры пропускаем (каждый лёгкий кадр — полный), копоть потом заново
-  if (c.ws.bufferedAmount > 1048576) { if (c.viewer) c.viewer.lost(); return; }
+  if (c.ws.bufferedAmount > BUF_MAX) { if (c.viewer) c.viewer.lost(); return; }
   var n = typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength;
   this.bytes += n; c.bytes = (c.bytes || 0) + n;
   c.ws.send(data);

@@ -3451,14 +3451,18 @@
     $('sp-net-link').onclick = netShare;
     $('sp-net-quit').onclick = function() { netClose(); start(G.scen, G.side); };
     // проверка связи раз в 3 с: давно нет кадров — «жёлтая» точка
+    var watchT = 0;
     setInterval(function() {
+      // проверка опоздала — телефон был занят кадром, кадры с сервера ещё в очереди: не рвать
+      var nowW = performance.now(), late = watchT && nowW - watchT > 4500; watchT = nowW;
       var N = G.net; if (!N) return;
+      if (late && N.lastAt) N.lastAt = Math.max(N.lastAt, nowW - 3000);
       netSend({ t: 'ping', at: performance.now() });
       var dot = $('sp-net-dot');
       if (N.ready && N.ws && performance.now() - N.lastAt > 2500) dot.className = 'sp-net-dot wait';
       else if (N.ready && N.ws) dot.className = 'sp-net-dot ok';
-      // связь умерла молча (тоннель, лифт): 6 с без кадров при открытой вкладке — переподключиться
-      if (N.ready && N.ws && N.ws.readyState === 1 && document.visibilityState !== 'hidden' && performance.now() - N.lastAt > 6000) {
+      // связь умерла молча (тоннель, лифт): 8 с без кадров при открытой вкладке — переподключиться
+      if (N.ready && N.ws && N.ws.readyState === 1 && document.visibilityState !== 'hidden' && performance.now() - N.lastAt > 8000) {
         toast('Нет связи с сервером боёв — переподключаюсь…', 'bad'); N.lastAt = performance.now(); netDrop(N, N.ws);
       }
     }, 3000);

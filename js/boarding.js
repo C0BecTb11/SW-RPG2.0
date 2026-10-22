@@ -711,15 +711,23 @@ function bdInit() {
     }
     bdLoad(false);
     // Двери, тревога, итог: сервер меняет строку абордажа — перечитываем
-    var soon = null;
+    var soon = null, rtOk = false, lastPoll = 0;
     supabase.channel('boarding-' + bdId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'boardings', filter: 'id=eq.' + bdId }, function() {
         if (soon) clearTimeout(soon);
         soon = setTimeout(function() { bdLoad(true); }, 200);
       })
-      .subscribe();
-    // Запасной опрос: реалтайм мог уснуть вместе со вкладкой
-    setInterval(function() { if (!document.hidden && bdState && bdState.status === 'active') bdLoad(true); }, 15000);
+      .subscribe(function(st) {
+        var was = rtOk; rtOk = st === 'SUBSCRIBED';
+        if (rtOk && !was) bdLoad(true);   // после переподключения могли пропустить ходы
+      });
+    // Запасной опрос: реалтайм мог уснуть вместе со вкладкой; без канала — чаще
+    setInterval(function() {
+      if (document.hidden || !bdState || bdState.status !== 'active') return;
+      var now = Date.now();
+      if (now - lastPoll < (rtOk ? 15000 : 4000)) return;
+      lastPoll = now; bdLoad(true);
+    }, 1000);
     document.addEventListener('visibilitychange', function() { if (!document.hidden) bdLoad(true); });
     setInterval(bdTick, 1000);
   });

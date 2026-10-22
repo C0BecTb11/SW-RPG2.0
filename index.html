@@ -67,6 +67,12 @@
       linksEl.innerHTML =
         '<a href="auth.html">Войти / Зарегистрироваться</a>';
     }
+    // телефон на Android и игра открыта в браузере — предложить приложение (весь экран, иконка)
+    var ua = navigator.userAgent || '';
+    if (/Android/i.test(ua) && ua.indexOf('SWGC-App') < 0) {
+      linksEl.insertAdjacentHTML('beforeend',
+        '<a class="secondary" href="https://github.com/C0BecTb11/SW-RPG2.0/releases/download/app/sw-global-conflict.apk">Приложение для Android</a>');
+    }
   });
 </script>
 </body>

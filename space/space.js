@@ -3194,7 +3194,7 @@
   // Комната на двоих на игровом сервере: сервер считает бой целиком (корабли,
   // экипажи, абордаж, туман войны), телефон рисует присланное и шлёт приказы.
   // Ссылка: space/?room=КОД&scen=БОЙ. Пока второго нет — за его сторону ИИ.
-  var NET_TRY = [1500, 3000, 6000, 10000, 15000];
+  var NET_TRY = [1000, 2000, 3000, 4000, 5000];
   function netParam(k) { var m = location.search.match(new RegExp('[?&]' + k + '=([^&]+)')); return m ? decodeURIComponent(m[1]) : ''; }
   // замеры на своём сервере (RT_DEV): ?srv=http://127.0.0.1:8080&dev=1 — вход без базы
   var NET_AS = /^[a-z0-9]{1,12}$/.test(netParam('as')) ? netParam('as') : '';   // замеры с союзниками: отдельный игрок
@@ -3257,6 +3257,9 @@
     try { ws = new WebSocket(N.auth.url.replace(/^http/, 'ws') + '/ws'); } catch (e) { netFail('Сервер недоступен'); return; }
     ws.binaryType = 'arraybuffer';
     N.ws = ws; N.ok = false; netRow();
+    // рукопожатие потерялось (связь «заморожена») — не висеть в подключении вечно
+    clearTimeout(N.openT);
+    N.openT = setTimeout(function() { if (G.net !== N || N.ws !== ws || ws.readyState !== 0) return; netDrop(N, ws); }, 7000);
     ws.onopen = function() { ws.send(JSON.stringify({ t: 'auth', token: N.auth.token, room: N.sys ? 'so:' + N.sys : 'sp:' + N.code + ':' + N.scen, side: N.side >= 0 ? N.side : N.want, cfg: N.cfg || undefined })); };
     ws.onmessage = function(e) {
       if (G.net !== N || N.ws !== ws) return;
@@ -3279,11 +3282,22 @@
       // отказ сервера (полная комната, вход не подтверждён) — не повторять
       if (ev.code === 4003 || ev.code === 4004 || ev.code === 4005 || ev.code === 4006 || ev.code === 4007) { netFail(N.err || 'Сервер не пустил в бой'); return; }
       if (ev.code === 4008) { N.side = -1; }                                   // орбита пересоздана — войти заново
-      if (N.tries >= NET_TRY.length) { netFail('Нет связи с сервером'); return; }
       // код закрытия в подсказке: по нему видно, кто оборвал (1006 — сеть или защита на компьютере, 1000/1001 — закрыто штатно)
-      toast((N.ok ? 'Связь прервалась' : 'Сервер не ответил') + (ev.code ? ' (код ' + ev.code + ')' : '') + (N.ok ? ' — переподключаюсь…' : ' — пробую ещё'), 'bad');
-      setTimeout(function() { if (G.net === N) netConnect(); }, NET_TRY[N.tries++]);
+      if (N.tries < 3 || N.tries % 5 === 0) toast((N.ok ? 'Связь прервалась' : 'Сервер не ответил') + (ev.code ? ' (код ' + ev.code + ')' : '') + (N.ok ? ' — переподключаюсь…' : ' — пробую ещё'), 'bad');
+      netRetry(N);
     };
+  }
+  // Переподключение не сдаётся (раньше — 5 попыток и ручной повтор): шаг до 5 с со случайной добавкой
+  function netRetry(N, ms) {
+    clearTimeout(N.retryT);
+    var d = ms != null ? ms : Math.min(5000, NET_TRY[Math.min(N.tries, NET_TRY.length - 1)]) + Math.random() * 500; N.tries++;
+    N.retryT = setTimeout(function() { if (G.net === N && !N.ws) netConnect(); }, d);
+  }
+  // Бросить сокет без ожидания закрытия (мёртвая связь закрывается минутами) и переподключиться
+  function netDrop(N, ws) {
+    if (N.ws !== ws) return;
+    N.ws = null; N.ready = false; ws.onclose = null; ws.onmessage = null; ws.onopen = null; try { ws.close(); } catch (e) {}
+    netRow(); netRetry(N);
   }
   // Сервер прислал бой: собрать зеркало (те же корабли и экипажи — расчёт не идёт)
   function netHello(m) {
@@ -3293,6 +3307,8 @@
     N.ready = false; N.q = []; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
     if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station };
     var token = ++START;
+    // переподключение к тому же бою: вернуть, где игрок был (внутри корабля, выбор, камера)
+    var keep = N.M && G.B ? { mode: G.mode, view: G.view, sel: G.sel, cam: { x: CAM.x, y: CAM.y, s: CAM.s }, follow: G.follow } : null;
     loadShips(sc).then(function() {
       if (token !== START || G.net !== N) return;
       var B = makeBattle(sc, [false, false], sys ? { dormant: true, endless: true } : null);
@@ -3302,6 +3318,13 @@
       if (sys) B.fog = m.fog === true;                                 // орбита: туман, если сервер его ведёт (без засечек)
       setupBattle(B, G.scen);
       if (sys) G.follow = 'all';
+      if (keep) {
+        var okN = function(n) { return n != null && n >= 0 && B.ships[n] && !B.ships[n].dead; };
+        if (okN(keep.sel)) G.sel = keep.sel;
+        if (okN(keep.view)) G.view = keep.view;
+        CAM.x = keep.cam.x; CAM.y = keep.cam.y; CAM.s = keep.cam.s; if (keep.follow != null) G.follow = keep.follow;
+        if (keep.mode === 'inside' && okN(keep.view)) { try { setMode('inside', keep.view); } catch (e) {} }
+      }
       N.ready = true; N.vkey = ''; N.addQ = Promise.resolve();
       netRow();
       var q = N.q; N.q = [];
@@ -3434,7 +3457,15 @@
       var dot = $('sp-net-dot');
       if (N.ready && N.ws && performance.now() - N.lastAt > 2500) dot.className = 'sp-net-dot wait';
       else if (N.ready && N.ws) dot.className = 'sp-net-dot ok';
+      // связь умерла молча (тоннель, лифт): 6 с без кадров при открытой вкладке — переподключиться
+      if (N.ready && N.ws && N.ws.readyState === 1 && document.visibilityState !== 'hidden' && performance.now() - N.lastAt > 6000) {
+        toast('Нет связи с сервером боёв — переподключаюсь…', 'bad'); N.lastAt = performance.now(); netDrop(N, N.ws);
+      }
     }, 3000);
+    // вернулась сеть или открыли вкладку — сразу
+    var kick = function() { var N = G.net; if (!N || N.fail || !N.auth) return; if (!N.ws) netRetry(N, 0); else N.lastAt = performance.now(); };
+    window.addEventListener('online', kick);
+    document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') kick(); });
   }
 
   // ---------------------------------------------------------------- старт

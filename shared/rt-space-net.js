@@ -21,7 +21,27 @@
   'use strict';
 
   var LIGHT_EVERY = 2, AGENTS_EVERY = 2, HEAVY_EVERY = 5;   // в тактах сервера (0,1 с)
-  var DELAY = 0.25;                                         // запаздывание отрисовки, с
+  var DELAY = 0.25;                                         // запаздывание отрисовки по умолчанию, с (дальше — по сети)
+  var STEPR = 0.2;                                          // лёгкие кадры — раз в 0,2 с настоящего времени
+  var KEYS = 6;                                             // сколько положений корабля / малого корабля держит экран
+  // Часы экрана — монотонные: перевод системных часов не сбивает сглаживание
+  function clock() { return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); }
+  // Положение в момент t между двумя известными, что его окружают (за последним — стоит на последнем)
+  function keyAt(ks, t) {
+    var j = ks.length - 1; while (j > 0 && ks[j].T > t) j--;
+    var a = ks[j], b = ks[j + 1] || a, k = b.T > a.T ? Math.max(0, Math.min(1, (t - a.T) / (b.T - a.T))) : 1;
+    if (t < a.T) k = 0;
+    var dh = b.hd - a.hd; while (dh > Math.PI) dh -= 6.2832; while (dh < -Math.PI) dh += 6.2832;
+    return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, hd: a.hd + dh * k };
+  }
+  function keyPush(ks, x, y, hd, T, step) {
+    var lk = ks[ks.length - 1];
+    if (T < lk.T) return;
+    if (T === lk.T) { lk.x = x; lk.y = y; lk.hd = hd; return; }
+    if (T - lk.T > step * 1.5) ks.push({ x: lk.x, y: lk.y, hd: lk.hd, T: T - step });   // молчал — значит стоял
+    ks.push({ x: x, y: y, hd: hd, T: T });
+    if (ks.length > KEYS) ks.splice(0, ks.length - KEYS);
+  }
   var AG = 16;
   var LOCK = 900;                                           // мс: свой приказ важнее кадров, что уже летят                                              // байт на человека в кадре экипажа
   var BIN = { AGENTS: 11, FIRE: 12, AGENTS_D: 13 };
@@ -519,6 +539,8 @@
   Mirror.prototype.light = function(m) {
     var B = this.B, now = Date.now(), i, k;
     m.at = now;
+    this.curT = m.T; this.craftT = m.T;
+    this.clockSync(m.T, m.spd == null ? 1 : m.spd);
     this.snap.push(m); if (this.snap.length > 3) this.snap.shift();
     B.over = m.over;
     // туман
@@ -549,6 +571,16 @@
     this.can = Array.isArray(m.can) ? m.can : m.can ? [m.can] : [];
     this.craftNext = m.craft;
   };
+  // Сдвиг «часы × скорость − время сервера» по кадрам за 4 с: самый быстрый — опора; отставание —
+  // шаг кадров + разброс прихода (как в наземке: между двумя известными положениями — всегда)
+  Mirror.prototype.clockSync = function(T, spd) {
+    if (spd !== this.spdK) { this.offs = []; this.spdK = spd; }
+    if (!(spd > 0)) { this.base = null; return; }
+    var wall = clock() / 1000, o = wall * spd - T, offs = this.offs, lo = Infinity, hi = -Infinity;
+    offs.push([wall, o]); while (offs.length && wall - offs[0][0] > 4) offs.shift();
+    for (var i = 0; i < offs.length; i++) { lo = Math.min(lo, offs[i][1]); hi = Math.max(hi, offs[i][1]); }
+    this.base = lo; this.lag = STEPR + Math.min(0.35, Math.max(0.03, (hi - lo) / spd)) + 0.02;
+  };
   Mirror.prototype.shipState = function(o) {
     var B = this.B, sh = B.ships[o.n]; if (!sh) return;
     if (o.hid) {
@@ -558,15 +590,18 @@
     }
     var wasHid = sh.netHid; sh.netHid = false;
     sh.net = sh.net || {};
-    sh.net.prev = sh.net.cur || null; sh.net.cur = { x: o.x, y: o.y, hd: o.hd, at: Date.now() };
-    if (!sh.net.prev || wasHid || o.dead) sh.net.prev = sh.net.cur;     // вынырнул из тумана — без проезда через полкарты
+    sh.net.cur = { x: o.x, y: o.y, hd: o.hd };
+    // положения по времени сервера; вынырнул из тумана или погиб — с чистого листа (без проезда через полкарты)
+    var T = this.curT != null ? this.curT : 0, spdS = STEPR * (this.spdK > 0 ? this.spdK : 1);
+    if (!sh.net.ks || wasHid || o.dead) sh.net.ks = [{ x: o.x, y: o.y, hd: o.hd, T: T }];
+    else keyPush(sh.net.ks, o.x, o.y, o.hd, T, spdS);
     var mine = !(sh.netLock > Date.now());
     sh.v = o.v; sh.hull = o.hull; sh.sh = o.sh;
     if (mine) { sh.focus = o.f; sh.focusAuto = !!o.fa; }
     if (o.e) { sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5]; }
     else { sh.eff.engine = sh.eff.reactor = sh.eff.shield = sh.eff.bridge = sh.eff.hangar = sh.eff.power = 1; }   // чужой: систем не видно — рисуем как исправный
     sh.crit = o.crit; if (o.dead && !sh.dead) { sh.dead = true; sh.deadAt = B.t; } sh.why = o.why || sh.why; if (o.cap != null) sh.captured = o.cap; sh.inbound = o.inb;
-    sh.netBurn = o.burn; if (this.viewN !== sh.n) { sh.netCt = o.ct; sh.netCtAt = Date.now(); }
+    sh.netBurn = o.burn; if (this.viewN !== sh.n) { sh.netCt = o.ct; sh.netCtAt = Date.now(); sh.netCtT = this.curT; }
     if (o.fs) {
       // наружный огонь: прислали выборку клеток
       if (this.viewN !== sh.n) { var c = sh.crew; for (var j = 0; j < c.burning.length; j++) c.fire[c.burning[j]] = 0; c.burning = []; for (j = 0; j < o.fs.length; j += 2) { c.burning.push(o.fs[j]); c.fire[o.fs[j]] = o.fs[j + 1]; } }
@@ -707,7 +742,7 @@
     }
     if (m.lite) return;
     // время экипажа: к нему привязаны вспышки и выстрелы внутри
-    sh.netCt = m.ct; sh.netCtAt = Date.now();
+    sh.netCt = m.ct; sh.netCtAt = Date.now(); sh.netCtT = this.curT;
     if (m.scAll) c.scorch = [];
     if (m.who) { var wm = this.whoMap[m.n] = {}; m.who.forEach(function(w) { wm[w[0]] = w; }); this.applyWho(sh); }
     (m.scorch || []).forEach(function(q) { c.scorch.push({ x: q[0], y: q[1], r: q[2], a: q[3] }); });
@@ -745,7 +780,7 @@
     // разностный кадр к кораблю, полного кадра которого ещё не было, — ждём полный
     if (delta && this.agFull !== n) return;
     if (!delta) this.agFull = n;
-    sh.netView = true; sh.netCt = ct; sh.netCtAt = now;
+    sh.netView = true; sh.netCt = ct; sh.netCtAt = now; sh.netCtT = this.curT;
     if (ag.length > N) ag.length = N;
     var bd = c.board, list = [];
     if (delta) {
@@ -833,20 +868,23 @@
   Mirror.prototype.update = function() {
     var B = this.B, now = Date.now(), s = this.snap; if (!s.length) return false;
     var last = s[s.length - 1];
-    // время боя идёт со скоростью сервера (пауза — стоит)
-    var spd = last.spd == null ? 1 : last.spd;
-    B.t = last.T + Math.min(0.5, (now - last.at) / 1000) * spd - DELAY * spd; B.acc = 0;
+    // время боя идёт со скоростью сервера (пауза — стоит); своё время отстаёт на lag, плавно
+    var spd = last.spd == null ? 1 : last.spd, nowR = clock() / 1000, dt = this.prevR ? Math.min(0.25, Math.max(0, nowR - this.prevR)) : 0;
+    this.prevR = nowR;
+    var target = this.base != null && spd > 0 ? nowR * spd - this.base - this.lag * spd : last.T;
+    if (this.rt == null) this.rt = target;
+    this.rt += dt * spd;
+    if (Math.abs(this.rt - target) > 0.5 * Math.max(1, spd)) this.rt = target; else this.rt += (target - this.rt) * 0.08;
+    if (this.rt > last.T + 0.05 * spd) this.rt = last.T + 0.05 * spd;          // не забегать за последний кадр
+    B.t = this.rt; B.acc = 0;
     var k, i;
     for (i = 0; i < B.ships.length; i++) {
-      var sh = B.ships[i], n = sh.net; if (!n || !n.cur) continue;
-      k = n.prev && n.cur.at > n.prev.at ? Math.min(1.2, (now - n.cur.at) / (n.cur.at - n.prev.at) ) : 1;
-      // между прошлым и новым кадром с запасом в один кадр
-      var a = n.prev, b = n.cur;
-      sh.x = a.x + (b.x - a.x) * k; sh.y = a.y + (b.y - a.y) * k;
-      var dh = b.hd - a.hd; while (dh > Math.PI) dh -= 6.2832; while (dh < -Math.PI) dh += 6.2832;
-      sh.hd = a.hd + dh * k;
+      var sh = B.ships[i], n = sh.net; if (!n || !n.ks) continue;
+      var p = keyAt(n.ks, B.t);
+      sh.x = p.x; sh.y = p.y; sh.hd = p.hd;
       B.place(sh);
-      if (sh.netCt != null) sh.crew.t = sh.netCt + Math.min(0.5, (now - (sh.netCtAt || last.at)) / 1000) * spd - DELAY * spd;
+      // время экипажа — от его отметки по тому же отстающему времени боя, назад не идёт (вспышки внутри не скачут)
+      if (sh.netCt != null) { var ctt = sh.netCt + (sh.netCtT != null ? B.t - sh.netCtT : Math.min(0.5, (now - (sh.netCtAt || last.at)) / 1000) * spd - DELAY * spd); if (sh.crew.t != null && ctt < sh.crew.t && sh.crew.t - ctt < 0.5) ctt = sh.crew.t; sh.crew.t = ctt; }
       // люди корабля, на который смотрим
       if (sh.netView) {
         var ag = sh.crew.agents;
@@ -870,20 +908,21 @@
       for (i = 0; i < B.craft.length; i++) old[B.craft[i].id] = B.craft[i];
       for (i = 0; i < list.length; i++) {
         var q = list[i], c = old[q[0]], meta = this.craftMeta[q[0]];
-        if (q.length === 1) { if (c) { c.tx = c.x; c.ty = c.y; out.push(c); } continue; }   // стоит — как был
+        if (q.length === 1) { if (c) { if (c.ks) keyPush(c.ks, c.ks[c.ks.length - 1].x, c.ks[c.ks.length - 1].y, c.ks[c.ks.length - 1].hd, this.craftT, STEPR * (spd || 1)); out.push(c); } continue; }   // стоит — как был
         if (q.length > 5) meta = this.craftMeta[q[0]] = { type: q[5], side: q[6], role: q[7], faction: q[8], img: q[9] || null, len: q[10], max: q[11], tgt: q[12] >= 0 ? q[12] : null };
         if (!meta) continue;                               // кадр с описанием потерялся — до полного обновления не рисуем
         if (!c) c = { id: q[0], x: q[1], y: q[2], hd: q[3] };
         c.type = meta.type; c.side = meta.side; c.role = meta.role; c.faction = meta.faction; c.img = meta.img; c.len = meta.len; c.max = meta.max; c.tgt = meta.tgt;
-        c.tx = q[1]; c.ty = q[2]; c.thd = q[3]; c.hp = q[4]; c.dead = false;
+        c.hp = q[4]; c.dead = false;
+        if (!c.ks) c.ks = [{ x: q[1], y: q[2], hd: q[3], T: this.craftT }]; else keyPush(c.ks, q[1], q[2], q[3], this.craftT, STEPR * (spd || 1));
         out.push(c);
       }
       B.craft = out; this.craftNext = null;
     }
+    // малые корабли — так же, по положениям во времени сервера (без «подтягивания» рывками 5 раз в секунду)
     for (i = 0; i < B.craft.length; i++) {
-      var cr = B.craft[i]; if (cr.tx == null) continue;
-      cr.x += (cr.tx - cr.x) * 0.25; cr.y += (cr.ty - cr.y) * 0.25;
-      var dd = cr.thd - cr.hd; while (dd > Math.PI) dd -= 6.2832; while (dd < -Math.PI) dd += 6.2832; cr.hd += dd * 0.3;
+      var cr = B.craft[i]; if (!cr.ks) continue;
+      var cp = keyAt(cr.ks, B.t); cr.x = cp.x; cr.y = cp.y; cr.hd = cp.hd;
     }
     return true;
   };

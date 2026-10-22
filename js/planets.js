@@ -206,9 +206,9 @@ function initPlanets() {
         return;
       }
 
-      var systems = systemsRes.data;
-      var lanes = lanesRes.error ? [] : lanesRes.data;
-      var commanders = commandersRes.error ? [] : commandersRes.data;
+      var systems = systemsRes.data || [];
+      var lanes = (lanesRes.error ? null : lanesRes.data) || [];
+      var commanders = (commandersRes.error ? null : commandersRes.data) || [];
 
       // словарь id -> позиция, чтобы рисовать линии между планетами
       // Координаты берём в пикселях мира: тогда расширение карты не двигает

@@ -52,7 +52,7 @@
 
   // ---------------------------------------------------------------- загрузка
   function load() {
-    return Promise.all([rpc('event_list'), rpc('event_status'), fetch('../shared/events/maps/index.json').then(function(r) { return r.json(); }).catch(function() { return []; })]).then(function(r) {
+    return Promise.all([rpc('event_list'), rpc('event_status'), fetch('../shared/events/maps/index.json', { cache: 'no-cache' }).then(function(r) { return r.json(); }).catch(function() { return []; })]).then(function(r) {
       S.list = r[0]; S.status = r[1]; (r[2] || []).forEach(function(m) { S.maps[m.id] = m.name; });
       document.body.classList.toggle('cis', S.list.side === 'cis');
       $('ev-side').textContent = S.list.side === 'cis' ? 'КНС' : 'Республика';

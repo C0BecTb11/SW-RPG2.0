@@ -76,10 +76,10 @@ function initDevButton() {
   supabase.rpc('dev_is_admin').then(function(r) {
     if (r.error || r.data !== true || document.getElementById('dev-btn')) return;
     var css = document.createElement('link');
-    css.rel = 'stylesheet'; css.href = '../css/dev-panel.css?v=1';
+    css.rel = 'stylesheet'; css.href = '../css/dev-panel.css?v=2';
     document.head.appendChild(css);
     var js = document.createElement('script');
-    js.src = '../js/dev-panel.js?v=2';
+    js.src = '../js/dev-panel.js?v=3';
     document.body.appendChild(js);
     var btn = document.createElement('button');
     btn.id = 'dev-btn'; btn.type = 'button'; btn.textContent = 'DEV'; btn.title = 'Панель разработчика';

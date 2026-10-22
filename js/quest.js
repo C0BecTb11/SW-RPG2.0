@@ -1224,7 +1224,7 @@
         var g = document.querySelector('#quest-tracker .qt-goal');
         if (g) g.textContent = qTrackerLine();
       }
-    } catch (e) { if (!qFrame.err || ts - qFrame.err > 5000) { qFrame.err = ts; console.error('Подсветка обучения:', e); } }
+    } catch (e) { if (!qFrame.err || ts - qFrame.err > 5000) { qFrame.err = ts; console.error('Подсветка обучения:', e); } if (window.errReport) errReport(e, 'quest.frame'); }
   }
 
   // ===== Старт =====

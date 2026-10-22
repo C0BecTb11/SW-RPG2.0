@@ -734,7 +734,7 @@ function animateFlights(frameNow) {
         reloadCommanders();
       }, retry);
     }
-  } catch (e) { console.error('Ракета перелёта:', e); } });
+  } catch (e) { console.error('Ракета перелёта:', e); if (window.errReport) errReport(e, 'planets.flight'); } });
 
   requestAnimationFrame(animateFlights);
 }

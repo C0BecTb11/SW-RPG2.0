@@ -55,7 +55,7 @@
         '</div>' +
         '<div class="dv-tabs">' +
           '<button type="button" data-tab="res">Ресурсы</button><button type="button" data-tab="army">Войска</button>' +
-          '<button type="button" data-tab="misc">Прочее</button><button type="button" data-tab="ev">Ивенты</button><button type="button" data-tab="log">Журнал</button>' +
+          '<button type="button" data-tab="misc">Прочее</button><button type="button" data-tab="ev">Ивенты</button><button type="button" data-tab="err">Ошибки<b class="dv-cnt"></b></button><button type="button" data-tab="log">Журнал</button>' +
         '</div>' +
         '<div class="dv-body"></div>' +
         '<div class="dv-status"></div>' +
@@ -129,19 +129,75 @@
         '<div class="dv-lbl">Уровень</div><div class="dv-chips">' + [1, 2, 3].map(function(n) { return '<button type="button" class="dv-chip' + ((S.evTier || 2) === n ? ' on' : '') + '" data-act="evtier" data-v="' + n + '">' + ['I Новобранец', 'II Ветеран', 'III Легенда'][n - 1] + '</button>'; }).join('') + '</div>' +
         '<p class="dv-note">Карта — случайная, остальные роли — боты (охотников-ботов — двое). Больше настроек и журнал матчей — во вкладке «Тест» в лобби ивентов.</p>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evlobby">Лобби ивентов</button></div></section>';
+    } else if (tab === 'err') {
+      h += '<section><h4>Ошибки у игроков <em class="dv-errsum">Загрузка…</em></h4>' +
+        '<div class="dv-chips"><button type="button" class="dv-chip' + (S.errAll ? '' : ' on') + '" data-act="errall" data-v="0">Открытые</button>' +
+        '<button type="button" class="dv-chip' + (S.errAll ? ' on' : '') + '" data-act="errall" data-v="1">Все</button>' +
+        '<button type="button" class="dv-chip" data-act="errref">↻ Обновить</button></div>' +
+        '<div class="dv-errs"></div></section>';
+      rpc('dev_client_errors', { p_open: !S.errAll, p_limit: 80 }).then(errFill, fail);
     } else {
       h += '<section><h4>Последние действия</h4><div class="dv-log">Загрузка…</div></section>';
       rpc('dev_recent', { p_limit: 40 }).then(function(rows) {
         var box = $('.dv-log'); if (!box) return;
         box.innerHTML = (rows || []).length ? rows.map(function(r) {
-          var t = new Date(r.at), when = ('0' + t.getDate()).slice(-2) + '.' + ('0' + (t.getMonth() + 1)).slice(-2) + ' ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
-          return '<div class="dv-li"><b>' + esc(when) + '</b> ' + esc(r.admin) + ' · ' + esc(ACT[r.action] || r.action) + (r.target ? ' → ' + esc(r.target) : '') + (r.system_id ? ' · ' + esc((sys(r.system_id) || {}).name || r.system_id) : '') + '<i>' + esc(brief(r.data)) + '</i></div>';
+          return '<div class="dv-li"><b>' + esc(when(r.at)) + '</b> ' + esc(r.admin) + ' · ' + esc(ACT[r.action] || r.action) + (r.target ? ' → ' + esc(r.target) : '') + (r.system_id ? ' · ' + esc((sys(r.system_id) || {}).name || r.system_id) : '') + '<i>' + esc(brief(r.data)) + '</i></div>';
         }).join('') : '<p class="dv-note">Пока пусто.</p>';
       }, fail);
     }
     $('.dv-body').innerHTML = h;
   }
-  var ACT = { event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения' };
+  function when(at) {
+    var t = new Date(at);
+    return ('0' + t.getDate()).slice(-2) + '.' + ('0' + (t.getMonth() + 1)).slice(-2) + ' ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
+  }
+
+  // ---- ошибки у игроков (js/err-report.js → report_client_errors)
+  function uaShort(ua) {
+    ua = ua || '';
+    var os = /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+    var br = /YaBrowser/.test(ua) ? 'Яндекс' : /OPR\/|Opera/.test(ua) ? 'Opera' : /Edg\//.test(ua) ? 'Edge' : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /Chrome|CriOS/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : '';
+    return [br, os].filter(Boolean).join(' · ');
+  }
+  function errBadge(n) {
+    var b = el && el.querySelector('.dv-tabs .dv-cnt'); if (!b) return;
+    b.textContent = n > 99 ? '99+' : (n || '');
+  }
+  function errFill(d) {
+    var box = $('.dv-errs'), sum = $('.dv-errsum'); if (!box || !d) return;
+    errBadge(d.open);
+    sum.textContent = 'открыто ' + fmt(d.open) + ' · за сутки ' + fmt(d.day) + ' · всего ' + fmt(d.total);
+    var rows = d.rows || [];
+    if (!rows.length) { box.innerHTML = '<p class="dv-note">' + (S.errAll ? 'Ошибок пока не было.' : 'Открытых ошибок нет.') + '</p>'; return; }
+    var h = rows.map(function(r) {
+      var done = r.resolved_at && !r.again;
+      var where = r.src ? r.src.replace(/^.*\//, '') + (r.line ? ':' + r.line + (r.col ? ':' + r.col : '') : '') : '';
+      return '<div class="dv-err' + (done ? ' done' : '') + '">' +
+        '<div class="dv-err-top"><b>' + esc(when(r.last_at)) + '</b>' +
+          '<span class="dv-err-n" title="повторов">×' + fmt(r.n) + '</span>' +
+          '<span title="разных игроков">👤 ' + fmt(r.users) + '</span>' +
+          (r.again ? '<span class="dv-err-tag">снова после отметки</span>' : done ? '<span class="dv-err-tag ok">исправлено</span>' : '') +
+        '</div>' +
+        '<div class="dv-err-msg">' + esc(r.msg) + '</div>' +
+        (where ? '<div class="dv-err-src">' + esc(where) + (r.ctx ? ' · ' + esc(r.ctx) : '') + '</div>' : r.ctx ? '<div class="dv-err-src">' + esc(r.ctx) + '</div>' : '') +
+        '<div class="dv-err-meta">' + esc(r.page || '') + (r.last_nick ? ' · ' + esc(r.last_nick) : '') + (uaShort(r.ua) ? ' · ' + esc(uaShort(r.ua)) : '') +
+          ' · с ' + esc(when(r.first_at)) + '</div>' +
+        (r.stack ? '<details><summary>Стек</summary><pre>' + esc(r.stack) + '</pre></details>' : '') +
+        (done ? '' : '<div class="dv-row"><button type="button" class="dv-chip" data-act="errok" data-v="' + esc(r.sig) + '">✓ Исправлено</button></div>') +
+      '</div>';
+    }).join('');
+    if (!S.errAll) h += '<div class="dv-row"><button type="button" class="dv-go wide" data-act="errokall">Отметить все открытые исправленными</button></div>';
+    h += '<p class="dv-note">Одинаковые ошибки склеены. Исправленный файл получает новый ?v= — его ошибки идут отдельной строкой, а повтор старой значит, что у кого-то закэширована прошлая версия.</p>';
+    box.innerHTML = h;
+  }
+  function errCount() {
+    // счётчик на вкладке — без блокировки панели
+    try {
+      supabase.rpc('dev_client_errors', { p_open: true, p_limit: 1 }).then(function(r) { if (r && !r.error && r.data) errBadge(r.data.open); }, function() {});
+    } catch (e) { /* не критично */ }
+  }
+
+  var ACT = { errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения' };
   function brief(d) { if (!d) return ''; var o = []; for (var k in d) if (d.hasOwnProperty(k) && d[k] !== 0) o.push(k + ' ' + d[k]); return o.join(', '); }
   function num(id, lo, hi) { var v = parseInt($(id).value, 10); if (!isFinite(v) || v < lo || v > hi) throw new Error('Число от ' + fmt(lo) + ' до ' + fmt(hi)); return v; }
 
@@ -182,6 +238,20 @@
         }, function(err) { b.disabled = false; fail(err); });
       } else if (a === 'evlobby') {
         location.href = '../game/events.html';
+      } else if (a === 'errall') {
+        S.errAll = b.getAttribute('data-v') === '1'; render();
+      } else if (a === 'errref') {
+        render();
+      } else if (a === 'errok') {
+        rpc('dev_client_error_resolve', { p_sig: b.getAttribute('data-v') }).then(function() { say('Ошибка отмечена исправленной'); render(); }, fail);
+      } else if (a === 'errokall') {
+        // второе нажатие в течение 4 с — подтверждение
+        if (!b.getAttribute('data-arm')) {
+          b.setAttribute('data-arm', '1'); b.textContent = 'Точно все? Нажми ещё раз';
+          setTimeout(function() { if (b.isConnected) { b.removeAttribute('data-arm'); b.textContent = 'Отметить все открытые исправленными'; } }, 4000);
+          return;
+        }
+        rpc('dev_client_error_resolve', { p_sig: null }).then(function(n) { say('Отмечено исправленными: ' + n); render(); }, fail);
       }
     } catch (err) { fail(err); }
   }
@@ -193,7 +263,7 @@
       CAT = c;
       if (!S.user) S.user = c.me;
       if (!S.system) { var me = player(S.user); S.system = SYS_FROM_URL || (me && me.planet) || (c.systems[0] && c.systems[0].id); }
-      fillPick(); render();
+      fillPick(); render(); errCount();
     }, function(e) { fail(e); });
   }
   function close() { if (!el) return; el.classList.remove('open'); document.body.classList.remove('dv-open'); }

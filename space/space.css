@@ -45,6 +45,7 @@ button { font-family: inherit; }
 }
 #sp-snd, #sp-gfx-b {
   width: 34px;
+  min-height: 30px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -419,6 +420,7 @@ body.defview .sp-sheet, body.defview .sp-bottom { border-left-color: #4a90d9; }
 .sp-end[hidden] { display: none; }
 .sp-end-card {
   width: min(340px, 88vw);
+  max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;   /* итог не уходит за экран боком */
   padding: 16px 16px 14px;
   background: linear-gradient(180deg, rgba(13,17,25,0.97) 0%, rgba(8,11,17,0.97) 100%);
   border: 1px solid #1c2530;

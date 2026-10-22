@@ -448,6 +448,7 @@ body {
   position: relative;
   width: 100%;
   max-width: 310px;
+  max-height: calc(100dvh - 24px); overflow-y: auto !important; overscroll-behavior: contain; touch-action: pan-y;   /* своя планета боком выше экрана — ✕ и кнопки не обрезаются */
   background: linear-gradient(180deg, #111722 0%, #0a0d14 100%);
   border: 1px solid #1c2530;
   border-radius: 14px;

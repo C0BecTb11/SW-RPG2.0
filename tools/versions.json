@@ -96,8 +96,8 @@
   "sha": "29d5a10e48f5"
  },
  "js/space-live.js": {
-  "v": "13",
-  "sha": "5fa2cbdf094a"
+  "v": "14",
+  "sha": "2f4455d7c1bd"
  },
  "proto/proto.css": {
   "v": "5",
@@ -160,8 +160,8 @@
   "sha": "973b756c3c83"
  },
  "shared/rt-space-net.js": {
-  "v": "16",
-  "sha": "4ee88599f499"
+  "v": "17",
+  "sha": "937bc04e8edb"
  },
  "shared/rt-space.js": {
   "v": "24",
@@ -216,7 +216,7 @@
   "sha": "0abcdaaacd8e"
  },
  "space/space.js": {
-  "v": "31",
-  "sha": "68bf1031b139"
+  "v": "32",
+  "sha": "8274eed2fac0"
  }
 }

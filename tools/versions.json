@@ -1,7 +1,7 @@
 {
  "css/dev-panel.css": {
-  "v": "1",
-  "sha": "ea0f625d5383"
+  "v": "2",
+  "sha": "b2b545ca17e1"
  },
  "css/event-live.css": {
   "v": "2",
@@ -28,8 +28,8 @@
   "sha": "c82bbf4f47df"
  },
  "ground/ground.js": {
-  "v": "15",
-  "sha": "428accc08934"
+  "v": "16",
+  "sha": "daa3fa6b13b4"
  },
  "ground/preview.css": {
   "v": "1",
@@ -56,16 +56,20 @@
   "sha": "209ae7da488e"
  },
  "js/credits-bar.js": {
-  "v": "3",
-  "sha": "29981378ca8b"
+  "v": "4",
+  "sha": "6778892ad277"
  },
  "js/dev-panel.js": {
-  "v": "2",
-  "sha": "794f31b1edbc"
+  "v": "3",
+  "sha": "bba6581ed6e5"
+ },
+ "js/err-report.js": {
+  "v": "1",
+  "sha": "23422c935c94"
  },
  "js/event-live.js": {
-  "v": "8",
-  "sha": "2145685ecc86"
+  "v": "9",
+  "sha": "c170fe810892"
  },
  "js/events-entry.js": {
   "v": "1",
@@ -80,16 +84,16 @@
   "sha": "18a1ca0095c5"
  },
  "js/ground-live.js": {
-  "v": "12",
-  "sha": "b6bde01646ff"
+  "v": "13",
+  "sha": "683f84d9f120"
  },
  "js/planets.js": {
-  "v": "3",
-  "sha": "cc26ba82abfc"
+  "v": "4",
+  "sha": "7ce01e28bf33"
  },
  "js/quest.js": {
-  "v": "4",
-  "sha": "5050a5eae8f0"
+  "v": "5",
+  "sha": "719e753dd70c"
  },
  "js/ship-control.js": {
   "v": "2",

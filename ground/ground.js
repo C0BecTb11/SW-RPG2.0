@@ -227,7 +227,7 @@
   function frame(now) {
     // следующий кадр — сразу: любая ошибка ниже пропускает один кадр, а не останавливает бой навсегда
     requestAnimationFrame(frame);
-    try { frameBody(now); } catch (err) { if (!G.frameErr || now - G.frameErr > 5000) { G.frameErr = now; console.error('Такт экрана не прошёл:', err); } }
+    try { frameBody(now); } catch (err) { if (!G.frameErr || now - G.frameErr > 5000) { G.frameErr = now; console.error('Такт экрана не прошёл:', err); } if (window.errReport) errReport(err, 'ground.frame'); }
   }
   function frameBody(now) {
     var dt = Math.min(0.1, (now - (G.last || now)) / 1000); G.last = now;
@@ -238,10 +238,10 @@
       if (G.live) { B.step(dt); G.t = B.t; } else if (!G.ended && G.speed) { B.step(dt * G.speed); G.t = B.t; }
       $('sp-time').textContent = Math.floor(B.t / 60) + ':' + ('0' + Math.floor(B.t % 60)).slice(-2);
       // ошибка в одном кадре не должна останавливать бой: кадр пропускается, цикл живёт
-      var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else cv.width = cv.width; if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
+      var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else cv.width = cv.width; if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } if (window.errReport) errReport(err, 'ground.draw'); } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
       if (B.over >= 0 && !G.ended) endBattle();
     }
-    G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; try { hud(); } catch (err) { if (!G.hudErr || now - G.hudErr > 5000) { G.hudErr = now; console.error('Панель не обновилась:', err); } } }
+    G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; try { hud(); } catch (err) { if (!G.hudErr || now - G.hudErr > 5000) { G.hudErr = now; console.error('Панель не обновилась:', err); } if (window.errReport) errReport(err, 'ground.hud'); } }
     // раз в 5 с: листы картинок на месте? (браузер телефона может их сбросить — тогда перепечь)
     G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && F.check && !F.check(ATLAS)) || (VAT && V.check && !V.check(VAT))) { ATLAS = null; VAT = null; } }
   }

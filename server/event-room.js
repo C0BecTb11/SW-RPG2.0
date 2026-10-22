@@ -58,7 +58,7 @@ function devMatch(id) {
 
 EventRoom.prototype.open = function() {
   var self = this;
-  var get = this.cfg.dev && /^dev-/.test(this.matchId) ? devMatch(this.matchId) : this.rpc('rt_event_open', { p_match: this.matchId });
+  var get; try { get = this.cfg.dev && /^dev-/.test(this.matchId) ? devMatch(this.matchId) : this.rpc('rt_event_open', { p_match: this.matchId }); } catch (e) { get = Promise.reject(e); }   // кривое имя тестового боя — отказ этому бою, не исключение
   return get.then(function(m) {
     if (!m || !m.event || !m.map) throw new Error('база не вернула матч');
     self.match = m;
@@ -176,7 +176,7 @@ EventRoom.prototype.finish = function() {
     return JSON.stringify({ t: 'evend', result: { winner: res.winner, why: res.why, t: res.t, tasks: res.tasks, need: res.need, forfeit: res.forfeit }, me: me, awards: self.awardFor(c), saved: self.saved, test: !!self.match.test });
   };
   var done = function(aw, saved) {
-    self.awards = aw || null; self.saved = !!saved;
+    self.awards = Array.isArray(aw) ? aw : null; self.saved = !!saved;
     self.clients.forEach(function(c) { self.send(c, self.endMsg(c), true); });
   };
   if (this.cfg.dev && /^dev-/.test(this.matchId)) { done(null, true); return; }
@@ -190,7 +190,7 @@ EventRoom.prototype.finish = function() {
 };
 EventRoom.prototype.awardFor = function(c) {
   if (!this.awards || !c.who) return null;
-  for (var i = 0; i < this.awards.length; i++) if (this.awards[i].user === c.who.user) return this.awards[i];
+  for (var i = 0; i < this.awards.length; i++) if (this.awards[i] && this.awards[i].user === c.who.user) return this.awards[i];
   return null;
 };
 EventRoom.prototype.abort = function(why) {
@@ -209,7 +209,12 @@ EventRoom.prototype.shouldClose = function() {
   if (this.H.result && this.endAt && Date.now() - this.endAt > END_KEEP) { this.closed = true; return true; }
   return false;
 };
-EventRoom.prototype.close = function(why) { this.closed = true; this.cfg.log('info', 'ивент закрыт', { room: this.name, why: why }); return Promise.resolve(); };
+EventRoom.prototype.close = function(why) {
+  this.closed = true; this.cfg.log('info', 'ивент закрыт', { room: this.name, why: why });
+  // итог уже у игроков — отпустить соединения (иначе висят на замёрзшем бою и держат его в памяти)
+  this.clients.slice().forEach(function(c) { try { c.ws.close(4008); } catch (e) {} });
+  return Promise.resolve();
+};
 EventRoom.prototype.busy = function() { return this.ready && !this.closed && !(this.H && this.H.result) ? 1 : 0; };
 EventRoom.prototype.info = function() {
   var B = this.B;

@@ -116,11 +116,12 @@ var GROUND_MAX = 12;        // живых планет на сервер
 var SYSTEM_MAX = 10;        // живых орбит на сервер
 var EVENT_MAX = 12;         // боёв ивентов на сервер
 
-function getRoom(name, cfg) {
+function getRoom(name, cfg, who) {
   var gp = Ground.parse(name);
   if (gp) {
     var g = ROOMS.get(gp.key);
     if (g && !g.closed) return g;
+    if (g && g.closeP && !g.closeDone) return null;     // прошлый бой ещё записывается — вход чуть позже
     if (!Ground.hasMap(gp.system)) return null;
     var ng = 0; ROOMS.forEach(function(x) { if (x.kind === 'ground' && !x.closed) ng++; });
     if (ng >= GROUND_MAX) return null;
@@ -134,6 +135,7 @@ function getRoom(name, cfg) {
   if (so) {
     var q = ROOMS.get(so.key);
     if (q && !q.closed) return q;
+    if (q && q.closeP && !q.closeDone) return null;
     var nq = 0; ROOMS.forEach(function(x) { if (x.kind === 'system' && !x.closed) nq++; });
     if (nq >= SYSTEM_MAX) return null;
     q = new Sys.SystemRoom(so.key, so.system, { rpc: groundRpc, key: CFG.key, log: log, dev: CFG.dev });
@@ -161,10 +163,11 @@ function getRoom(name, cfg) {
   var r = ROOMS.get(name);
   if (r) return r;
   if (sp) {
-    var n = 0; ROOMS.forEach(function(x) { if (x.kind === 'space') n++; });
-    if (n >= SPACE_MAX) return null;
+    // в счёт — комнаты, где кто-то есть (пустые не считаются и не тикают); один игрок — не больше 2 своих
+    var n = 0, mine = 0; ROOMS.forEach(function(x) { if (x.kind === 'space' && x.clients.length) { n++; if (who && x.by === who.user) mine++; } });
+    if (n >= SPACE_MAX || mine >= 2) return null;
     r = new Space.SpaceRoom(name, sp.code, sp.scen, cfg ? Space.cfgClean(cfg) : null);
-    r.dev = CFG.dev;
+    r.dev = CFG.dev; r.by = who ? who.user : null;
     r.ms = []; r.emptySince = Date.now(); r.created = Date.now();
     ROOMS.set(name, r);
     log('info', 'комната создана', { room: name });
@@ -182,9 +185,33 @@ function getRoom(name, cfg) {
 // ---------- такт: 10 раз в секунду, без накопления опоздания ----------
 var TICK_MS = SWRT.TICK * 1000;
 var tickN = 0, nextAt = Date.now() + TICK_MS, late = 0;
+// Сбой одной комнаты не роняет сервер и не мешает другим: всё, что комната делает за такт, — под защитой.
+// Комната, что сбоит такт за тактом (50 подряд, ~5 с), закрывается: игрокам — сообщение, ивент — отмена.
+var ROOM_FAIL = 50;
+function roomFail(r, name, e) {
+  r.errN = (r.errN || 0) + 1;
+  if (r.errN <= 3 || r.errN % 100 === 0) log('error', 'ошибка в такте', { room: name, n: r.errN, err: String(e && e.stack || e).slice(0, 400) });
+  if (r.errN < ROOM_FAIL || r.dropped) return;
+  r.dropped = true;
+  log('error', 'комната закрыта после ошибок', { room: name, n: r.errN });
+  try { if (r.kind === 'event' && r.abort && !r.closed) r.abort('ошибка сервера боя'); else if (r.close && !r.closed) r.close('error'); } catch (e2) {}
+  (r.clients || []).slice().forEach(function(c) { try { c.ws.send(JSON.stringify({ t: 'error', msg: 'Бой прерван из-за ошибки сервера — зайди снова чуть позже' })); c.ws.close(4011); } catch (e3) {} });
+  if (r.kind === 'event') { r.closed = true; r.failed = r.failed || 'ошибка сервера'; } else ROOMS.delete(name);
+}
+var lateLogAt = 0, lateLogN = 0;
 function loop() {
   var t0 = SWRT.now();
-  ROOMS.forEach(function(r, name) {
+  ROOMS.forEach(function(r, name) { try { tickRoom(r, name); } catch (e) { roomFail(r, name, e); } });
+  tickN++;
+  var spent = SWRT.now() - t0;
+  nextAt += TICK_MS;
+  var wait = nextAt - Date.now();
+  if (wait < 0) { late++; nextAt = Date.now() + TICK_MS; wait = TICK_MS; }
+  // опоздание такта — в журнал не чаще раза в 10 с (под нагрузкой иначе 10 строк в секунду)
+  if (spent > TICK_MS * 0.8) { lateLogN++; if (Date.now() - lateLogAt > 10e3) { log('warn', 'такт не укладывается', { ms: Math.round(spent), n: lateLogN }); lateLogAt = Date.now(); lateLogN = 0; } }
+  setTimeout(loop, Math.max(0, wait));
+}
+function tickRoom(r, name) {
     if (r.kind === 'event') {
       // бой ивента: живёт до итога и ещё полторы минуты; закрытый остаётся в списке,
       // чтобы тот же матч не открылся заново (убирается через 10 минут)
@@ -192,29 +219,22 @@ function loop() {
       if (r.shouldClose()) { r.close('end'); return; }
     } else if (r.kind === 'ground' || r.kind === 'system') {
       // планета и орбита живут и без игроков, пока идёт бой; закрываются после тишины
-      if (r.closed) { ROOMS.delete(name); return; }
-      if (r.shouldClose()) { r.close('quiet'); ROOMS.delete(name); return; }
+      if (r.closed) { if (!r.closeP || r.closeDone) ROOMS.delete(name); return; }      // уйдёт из списка, когда закрытие записано
+      if (r.shouldClose()) { r.close('quiet'); return; }
     } else if (!r.clients.length) {
       if (Date.now() - r.emptySince > 5 * 60e3) { ROOMS.delete(name); log('info', 'комната закрыта: никого нет', { room: name }); }
       return;
     }
     var a = SWRT.now();
-    try { r.step(); }
-    catch (e) { log('error', 'ошибка в такте', { room: name, err: String(e && e.stack || e).slice(0, 400) }); }
+    if (!r.ms) r.ms = [];
+    r.step();
+    r.errN = 0;
     r.ms.push(SWRT.now() - a);
     if (r.ms.length > 600) r.ms.shift();
     if (r.kind !== 'space' && r.kind !== 'ground' && r.kind !== 'system' && r.kind !== 'event' && r.battle.tick % 10 === 0) {
       var st = r.statFor({ srvMs: Math.round((SWRT.now() - a) * 100) / 100, cpu: CPU.pct, ver: VERSION });
       for (var i = 0; i < r.clients.length; i++) r.send(r.clients[i], st);
     }
-  });
-  tickN++;
-  var spent = SWRT.now() - t0;
-  nextAt += TICK_MS;
-  var wait = nextAt - Date.now();
-  if (wait < 0) { late++; nextAt = Date.now() + TICK_MS; wait = TICK_MS; }
-  if (spent > TICK_MS * 0.8) log('warn', 'такт не укладывается', { ms: Math.round(spent) });
-  setTimeout(loop, Math.max(0, wait));
 }
 
 // ---------- загрузка процессора ----------
@@ -234,13 +254,13 @@ function pct(arr, p) {
 function health() {
   var rooms = [];
   var busy = 0;   // идущие космические бои; прототипы перезапуску не мешают
-  ROOMS.forEach(function(r, name) {
-    if (r.kind === 'space' || r.kind === 'ground' || r.kind === 'system' || r.kind === 'event') { if (r.closed && r.kind === 'event') return; busy += r.busy(); var inf = r.info(); inf.tickP50 = pct(r.ms, 0.5); inf.tickP95 = pct(r.ms, 0.95); rooms.push(inf); return; }
+  ROOMS.forEach(function(r, name) { try {
+    if (r.kind === 'space' || r.kind === 'ground' || r.kind === 'system' || r.kind === 'event') { if (r.closed && r.kind === 'event') return; busy += r.busy(); var inf = r.info(); inf.tickP50 = pct(r.ms || [], 0.5); inf.tickP95 = pct(r.ms || [], 0.95); rooms.push(inf); return; }
     var c = r.battle.counts();
     rooms.push({ room: name, clients: r.clients.length, troops: c.total, squads: c.squads[0] + c.squads[1],
                  singles: c.singles, lod: r.battle.lod, tickP50: pct(r.ms, 0.5), tickP95: pct(r.ms, 0.95),
                  bytesPerClient: Math.round(r.bytesRate / Math.max(1, r.clients.length)) });
-  });
+  } catch (e) { rooms.push({ room: name, err: String(e && e.message || e).slice(0, 120) }); } });
   return { ok: true, version: VERSION, uptime: Math.round((Date.now() - STARTED) / 1000), cpu: CPU.pct,
            memMb: Math.round(process.memoryUsage().rss / 1048576), late: late, busy: busy, rooms: rooms };
 }
@@ -295,7 +315,7 @@ server.on('upgrade', function(req, sock, head) {
         if (!ws.open) return;
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
-        var r = getRoom(String(m.room || 'p500').slice(0, 40), m.cfg);
+        var r = m.room ? getRoom(String(m.room).slice(0, 40), m.cfg, who) : null;   // без комнаты — не в нагрузочный бой по умолчанию
         if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : Ev.parse(String(m.room || '')) ? 'Бой ивента уже окончен или сервер занят' : 'нет такого боя' })); ws.close(4004); return; }
         if (r.kind === 'space') {
           c.side = -1;
@@ -308,6 +328,10 @@ server.on('upgrade', function(req, sock, head) {
       }, function(e) {
         c.authing = false;
         ws.send(JSON.stringify({ t: 'error', msg: e.message })); ws.close(4003);
+      }).catch(function(e) {
+        // сбой при входе в комнату — этому игроку ошибка, серверу ничего
+        log('error', 'вход в бой не удался', { err: String(e && e.stack || e).slice(0, 400) });
+        try { ws.send(JSON.stringify({ t: 'error', msg: 'Не удалось войти в бой — попробуй ещё раз' })); ws.close(1011); } catch (e2) {}
       });
       return;
     }
@@ -375,12 +399,26 @@ server.listen(CFG.port, CFG.host, function() {
 
 function stop(sig) {
   log('info', 'остановка: ' + sig);
-  CLIENTS.forEach(function(c) { c.ws.close(1012); });
-  flushLog().then(function() { process.exit(0); });
-  setTimeout(function() { process.exit(0); }, 3000).unref();
+  // бои — записать в базу (планета, орбита) или отменить (идущий ивент), потом отпустить игроков; не дольше 2,5 с
+  var waits = [];
+  ROOMS.forEach(function(r) {
+    try {
+      if (r.closed) return;
+      if (r.kind === 'event') { if (r.ready && !(r.H && r.H.result) && r.abort) r.abort('сервер боёв перезапущен'); return; }
+      if ((r.kind === 'ground' || r.kind === 'system') && r.close) waits.push(Promise.resolve(r.close('restart')).catch(function() {}));
+    } catch (e) {}
+  });
+  var done = function() { CLIENTS.forEach(function(c) { try { c.ws.close(1012); } catch (e) {} }); flushLog().then(function() { process.exit(0); }); };
+  Promise.race([Promise.all(waits), new Promise(function(res) { setTimeout(res, 2500); })]).then(done, done);
+  setTimeout(function() { process.exit(0); }, 4000).unref();
 }
 process.on('SIGTERM', function() { stop('SIGTERM'); });
 process.on('SIGINT', function() { stop('SIGINT'); });
+// Отклонённое обещание без обработчика: Node 22 по умолчанию роняет процесс (а с ним все бои) —
+// записать и жить дальше: это сбой одного запроса, а не сервера
+process.on('unhandledRejection', function(e) {
+  log('error', 'необработанный отказ', { err: String(e && e.stack || e).slice(0, 800) });
+});
 // Неизвестная ошибка: записать и выйти — systemd поднимет сервер заново
 process.on('uncaughtException', function(e) {
   log('error', 'необработанная ошибка', { err: String(e && e.stack || e).slice(0, 800) });

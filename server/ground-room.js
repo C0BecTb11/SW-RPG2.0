@@ -206,7 +206,13 @@ GroundRoom.prototype.step = function() {
 };
 
 // Записать в базу изменившиеся позиции и здоровье
+// Запись в базу — строго по очереди: два запроса вперемешку могли бы записать старое поверх нового
 GroundRoom.prototype.sync = function() {
+  var self = this, p = (this.syncQ || Promise.resolve()).then(function() { return self.syncNow(); });
+  this.syncQ = p.catch(function() {});
+  return p;
+};
+GroundRoom.prototype.syncNow = function() {
   var B = this.B, rows = [], srows = [], self = this;
   this.syncAt = Date.now();
   Object.keys(this.byUid).forEach(function(uid) {
@@ -234,6 +240,12 @@ GroundRoom.prototype.sync = function() {
 };
 // Подхватить из базы новых бойцов, ушедших, постройки, прогресс захвата; смена хозяина — закрыть
 GroundRoom.prototype.pull = function() {
+  // прошлый запрос ещё не вернулся (база медленная) — не накладывать: старый ответ поверх нового терял бы бойцов
+  if (this.pulling) return Promise.resolve();
+  var me = this; this.pulling = true;
+  return this.pullNow().then(function(v) { me.pulling = false; return v; }, function(e) { me.pulling = false; throw e; });
+};
+GroundRoom.prototype.pullNow = function() {
   var self = this; this.pullAt = Date.now();
   return this.rpc('rt_ground_pull', { p_battle: this.battleId, p_system: this.system }).then(function(st) {
     if (!st || st.closed) { self.cfg.log('warn', 'бой закрыт базой', { room: self.name }); self.closed = true; self.kick('Бой на планете закрыт'); return; }
@@ -361,10 +373,13 @@ GroundRoom.prototype.shouldClose = function() {
 };
 GroundRoom.prototype.close = function(why) {
   var self = this;
-  if (this.closed) return Promise.resolve();
+  if (this.closed) return this.closeP || Promise.resolve();
   this.closed = true;
-  return this.sync().then(function() { return self.rpc('rt_ground_close', { p_battle: self.battleId, p_result: { why: why || 'quiet', t: Math.round(self.B.t) } }); })
-    .then(function() { self.cfg.log('info', 'планета закрыта', { room: self.name, why: why }); }, function(e) { self.cfg.log('error', 'rt_ground_close', { room: self.name, err: e.message }); });
+  // пока закрытие не записано в базу, комната остаётся в списке: новый вход подождёт, а не откроет бой,
+  // который тут же закроет запоздавший ответ старого
+  var done = function() { self.closeDone = true; };
+  return (this.closeP = this.sync().then(function() { return self.rpc('rt_ground_close', { p_battle: self.battleId, p_result: { why: why || 'quiet', t: Math.round(self.B.t) } }); })
+    .then(function() { self.cfg.log('info', 'планета закрыта', { room: self.name, why: why }); }, function(e) { self.cfg.log('error', 'rt_ground_close', { room: self.name, err: e.message }); }).then(done, done));
 };
 GroundRoom.prototype.busy = function() { return this.ready && !this.closed && (this.clients.length || !this.quiet()) ? 1 : 0; };
 GroundRoom.prototype.info = function() {

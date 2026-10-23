@@ -264,6 +264,18 @@ function makeFeedRow(e) {
     row.appendChild(review);
   }
 
+  // Галактическое событие: что случилось, где и надолго ли — в шторке событий
+  if (e.type === 'galaxy_event' && typeof openGalaxyEvents === 'function') {
+    var gev = document.createElement('button');
+    gev.className = 'feed-go';
+    gev.textContent = 'Подробнее';
+    gev.addEventListener('click', function() {
+      closeEventsFeed();
+      openGalaxyEvents();
+    });
+    row.appendChild(gev);
+  }
+
   // Законы фракции: голосование, итог, указ — окно фракции на разделе Сената / Совета
   if (/^law_/.test(e.type) && typeof openSenate === 'function') {
     var law = document.createElement('button');

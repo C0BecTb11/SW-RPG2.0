@@ -1,0 +1,313 @@
+/* ===== Галактические события =====
+   Плашка под ником на карте, шторка «Галактика · события», метки на планетах, строка в карточке планеты.
+   Тон события: зелёный — к добру, красный — беда, золото — и то и другое. Язык — как у шторок штаба:
+   тёмное стекло, #0d1119, рамки #1c2530, моноширинный шрифт. */
+
+.ge-pill {
+  --ge: #8fa8c4;
+  --ge-rgb: 143,168,196;
+  position: fixed;
+  top: 62px;
+  left: 12px;
+  z-index: 990;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(290px, calc(100vw - 24px));
+  padding: 5px 12px 5px 5px;
+  background: rgba(5, 6, 10, 0.84);
+  border: 1px solid rgba(var(--ge-rgb), 0.45);
+  border-radius: 22px;
+  box-shadow: 0 0 14px rgba(var(--ge-rgb), 0.12);
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  animation: ge-in 0.35s ease-out;
+}
+.ge-pill:active { transform: scale(0.98); }
+.ge-pill.low { top: 104px; }
+.ge-pill.t-good  { --ge: #5fd968; --ge-rgb: 95,217,104; }
+.ge-pill.t-bad   { --ge: #d94a4a; --ge-rgb: 217,74,74; }
+.ge-pill.t-mixed { --ge: #d9a940; --ge-rgb: 217,169,64; }
+
+@keyframes ge-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.ge-pill-ico {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--ge-rgb), 0.7);
+  border-radius: 50%;
+  background: rgba(var(--ge-rgb), 0.1);
+  color: var(--ge);
+  font-size: 14px;
+  line-height: 1;
+}
+.ge-pill.t-bad .ge-pill-ico::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1px solid var(--ge);
+  animation: ge-ping 2.2s ease-out infinite;
+}
+@keyframes ge-ping { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.8); opacity: 0; } }
+
+.ge-pill-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ge-pill-body b { font-size: 11px; font-weight: normal; color: #e3e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ge-pill-body i { font-size: 9px; font-style: normal; color: #8fa8c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ge-pill-more {
+  flex: none;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #1c2530;
+  color: #cfd8dc;
+  font-size: 9.5px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ── Метка на планете (справа сверху; слева — метка приказа штаба) ── */
+.ge-mark {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  z-index: 2;
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid #8fa8c4;
+  border-radius: 50%;
+  background: rgba(5, 6, 10, 0.9);
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+}
+.ge-mark.t-good  { color: #5fd968; border-color: #5fd968; }
+.ge-mark.t-bad   { color: #d94a4a; border-color: #d94a4a; }
+.ge-mark.t-mixed { color: #d9a940; border-color: #d9a940; }
+.ge-mark.t-bad::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1px solid #d94a4a;
+  animation: ge-ping 2.2s ease-out infinite;
+}
+
+/* ── Строка в карточке планеты ───────────────────────────────── */
+.pi-stat.ge-pi { cursor: pointer; }
+.pi-stat.ge-pi b { color: #cfd8dc; }
+.pi-stat.ge-pi.t-good b { color: #5fd968; }
+.pi-stat.ge-pi.t-bad b { color: #d94a4a; }
+.pi-stat.ge-pi.t-mixed b { color: #d9a940; }
+
+/* ── Шторка ───────────────────────────────────────────────────── */
+#ge-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 2450;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(5, 8, 13, 0.78);
+  font-family: 'Courier New', monospace;
+}
+
+#ge-box {
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: #0d1119;
+  border: 1px solid #1c2530;
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  color: #cfd8dc;
+  animation: ge-rise 0.2s ease-out;
+}
+@keyframes ge-rise { from { transform: translateY(24px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+#ge-box button { font-family: 'Courier New', monospace; -webkit-tap-highlight-color: transparent; }
+
+#ge-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1px solid #1c2530;
+}
+#ge-title { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #d9a940; }
+#ge-sub { margin-top: 4px; font-size: 10px; line-height: 1.4; color: #55606c; }
+#ge-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid #2a3644;
+  border-radius: 7px;
+  color: #8fa8c4;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#ge-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 14px calc(18px + env(safe-area-inset-bottom));
+}
+
+.ge-empty {
+  padding: 16px 14px;
+  border: 1px dashed #1c2530;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #55606c;
+  text-align: center;
+}
+.ge-empty b { display: block; margin-bottom: 6px; font-weight: normal; font-size: 12px; color: #8fa8c4; }
+
+.ge-card {
+  --ge: #8fa8c4;
+  --ge-rgb: 143,168,196;
+  margin-bottom: 10px;
+  padding: 12px 13px 13px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(var(--ge-rgb), 0.08), transparent 55%),
+    #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid var(--ge);
+  border-radius: 10px;
+}
+.ge-card.t-good  { --ge: #5fd968; --ge-rgb: 95,217,104; }
+.ge-card.t-bad   { --ge: #d94a4a; --ge-rgb: 217,74,74; }
+.ge-card.t-mixed { --ge: #d9a940; --ge-rgb: 217,169,64; }
+
+.ge-card-head { display: flex; align-items: center; gap: 10px; }
+.ge-ico {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--ge-rgb), 0.7);
+  border-radius: 50%;
+  background: rgba(var(--ge-rgb), 0.1);
+  color: var(--ge);
+  font-size: 16px;
+  line-height: 1;
+}
+.ge-card-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ge-card-t b { font-size: 13px; font-weight: normal; line-height: 1.25; color: #e3e9ec; }
+.ge-card-t i { font-size: 9.5px; font-style: normal; letter-spacing: 0.5px; color: #8fa8c4; }
+.ge-left {
+  flex: none;
+  align-self: flex-start;
+  padding: 3px 7px;
+  border-radius: 10px;
+  background: rgba(var(--ge-rgb), 0.12);
+  color: var(--ge);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.ge-text { margin-top: 9px; font-size: 11.5px; line-height: 1.55; color: #b8c4ca; }
+
+.ge-fx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.ge-fx i {
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 9.5px;
+  font-style: normal;
+  line-height: 15px;
+  white-space: nowrap;
+}
+.ge-fx i.up { background: rgba(95,217,104,0.11); color: #5fd968; }
+.ge-fx i.down { background: rgba(217,74,74,0.13); color: #d94a4a; }
+.ge-fx i.once { background: #161b24; color: #cfd8dc; white-space: normal; }
+
+.ge-planets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ge-planet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  background: #0b0f16;
+  border: 1px solid #2a3644;
+  border-radius: 14px;
+  color: #cfd8dc;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.ge-planet.f-republic { border-color: rgba(74,144,217,0.55); }
+.ge-planet.f-cis { border-color: rgba(217,74,74,0.55); }
+.ge-planet:active { background: #141b27; }
+.ge-planet em { font-style: normal; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: #d9a940; }
+
+.ge-touch { margin-top: 9px; font-size: 9.5px; letter-spacing: 0.5px; color: #d9a940; }
+
+.ge-block {
+  margin: 16px 2px 8px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #8fa8c4;
+}
+
+.ge-past {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #161b24;
+}
+.ge-past:last-of-type { border-bottom: none; }
+.ge-past-ico {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2a3644;
+  border-radius: 50%;
+  color: #55606c;
+  font-size: 11px;
+}
+.ge-past.t-good .ge-past-ico { color: rgba(95,217,104,0.7); }
+.ge-past.t-bad .ge-past-ico { color: rgba(217,74,74,0.7); }
+.ge-past.t-mixed .ge-past-ico { color: rgba(217,169,64,0.7); }
+.ge-past-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ge-past-t b { font-size: 11px; font-weight: normal; color: #8fa8c4; }
+.ge-past-t i { font-size: 9px; font-style: normal; color: #55606c; }
+
+.ge-note {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px dashed #1c2530;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #55606c;
+}

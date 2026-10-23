@@ -148,6 +148,11 @@ function openPlanetInfo(systemId) {
         stats.appendChild(orderRow);
       }
 
+      // Галактические события на этой планете (js/galaxy-events.js)
+      if (typeof gePlanetRows === 'function') {
+        gePlanetRows(systemId).forEach(function(row) { stats.appendChild(row); });
+      }
+
       if (sameFaction) {
         stats.appendChild(makePiStat('Постройки', buildings.length + ' / ' + slotCap));
         stats.appendChild(makePiStat('Орбитальная станция', station ? 'есть' : 'нет'));

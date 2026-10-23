@@ -53,6 +53,7 @@
     infantry: { k: 'cover', r: 5, every: 4 },
     cis_b1: { k: 'crowd', every: 1.5 }, cis_militia: { k: 'crowd', every: 1.5 }, rep_militia: { k: 'crowd', every: 1.5 },
     cis_b2: { k: 'push', near: 4, every: 1.3 },
+    cis_wheel: { k: 'push', near: 10, every: 1.2 },     // подкатывается на выстрел и встаёт
     rep_barc: { k: 'kite', every: 1.2 }, cis_stap: { k: 'kite', every: 1.2 }, rep_atrt: { k: 'kite', every: 1.5 }
   };
   // Мародёры (команда 2, как npc_marauder_act в игре, расстояния — в клетках боя): грабят постройки
@@ -76,6 +77,12 @@
     lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 }
   };
   var SUPP_T = 6, STUN_T = 5;
+  // Колесо-страж (флаг w): катится — быстрый и увёртливый, но не стреляет; встал — за open с
+  // раскрывается и ставит щит, чтобы покатиться дальше — за fold с сворачивается. Щит держит огонь
+  // пехоты, техники издали (её выстрел садит щит в heavy раз сильнее), турелей и воздуха; не держит
+  // артиллерию, технику в упор (point клеток) и героев (мечи, Сила). Пробит — молчит down с;
+  // без попаданий calm с — восстанавливается.
+  var WHEEL = { open: 1.1, fold: 0.7, sh: 180, regen: 25, calm: 3, down: 8, point: 4, eva: 20, heavy: 2 };
   var PEND_T = 30;                 // способность «на подходе»: столько секунд герой идёт к цели, потом отказ      // заградительный огонь: залёг (меткость ½, стреляет реже); оглушён — стоит
 
   function rng(seed) { var s = seed >>> 0 || 1; return function() { s += 0x6D2B79F5; var t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -232,6 +239,7 @@
       hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false, npc: !!extra.npc, rofK: 1, accB: 0, evaB: 0
     };
     a.rad = VRAD[tid] != null ? VRAD[tid] : (Ty.size === 2 ? 1.0 : R);
+    if (Ty.wheel) { a.wh = { k: 0, sh: WHEEL.sh, shMax: WHEEL.sh, down: -1, hitT: -99, fxT: -99 }; a.rad = 0.4; }
     if (Ty.hero) {
       a.range = SABER; a.hero = { act: 'idle', k: 0, actT: 0, cds: {}, abil: extra.abil || (team === 0 ? ACTIVE_LIGHT : ACTIVE_DARK).slice(), portrait: extra.portrait || (team === 0 ? 'jedi_01' : 'sith_01'), passive: extra.passive || {} };
       if (a.hero.passive.hp) a.hpMax += a.hero.passive.hp;
@@ -617,7 +625,7 @@
     if (!a.post && !a.hold && !a.hero && !a.T.artillery) {
       if (engaged && this.micro(a, tg, range, dt)) return;
       // под огнём без цели в дальности: перебежка в укрытие в сторону стрелка (и дальше по приказу, когда стихнет)
-      if (!engaged && !a.inCov && this.t - (a.hitT || -99) < 2.5 && this.t >= (a.mT || 0) && a.T.cls === 'infantry') {
+      if (!engaged && !a.inCov && this.t - (a.hitT || -99) < 2.5 && this.t >= (a.mT || 0) && a.T.cls === 'infantry' && !a.wh) {
         var sh = a.hitBy != null ? this.agents[a.hitBy] : null, en = sh && sh.alive ? sh : this.nearestEnemy(a, a.vision);
         if (en) { var ftg = { x: en.x, y: en.y, d: Math.sqrt((en.x - a.x) * (en.x - a.x) + (en.y - a.y) * (en.y - a.y)) }; a.engT = this.t; if (this.micro(a, ftg, Math.max(range, ftg.d + 1), dt)) return; }
       }
@@ -626,7 +634,7 @@
     }
     if (engaged) {
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
-      if (tg.d > range * 0.6 && !a.at && !a.hold && a.goal) this.nav(a, dt, a.speed * 0.8);
+      if (tg.d > range * 0.6 && !a.at && !a.hold && a.goal && !a.wh) this.nav(a, dt, a.speed * 0.8);   // колесо-страж в бою стоит раскрытым
       return;
     }
     // цель игрока вне дальности — идти к ней
@@ -735,6 +743,7 @@
   };
   // Меткость и уклонение бойца с бонусами игры (остальное — у типа)
   Ground.prototype.statsOf = function(a) {
+    if (a.wh && a.wh.k < 0.5) return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0) + WHEEL.eva, range: a.T.range, cls: a.T.cls, dmg: a.T.dmg };   // катится — попасть труднее
     if (!a.accB && !a.evaB) return a.T;
     return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0), range: a.T.range, cls: a.T.cls, dmg: a.T.dmg };
   };
@@ -806,17 +815,56 @@
     if (!ok[cc]) { var alt = this.nearestOk(a.move, a.size, c[0], c[1]); if (alt) { a.x = alt[0] + off; a.y = alt[1] + off; } }
     a.inside = -1;
     var si = this.structAt[Math.floor(a.y) * N + Math.floor(a.x)];
-    if (si >= 0 && this.structs[si].enter && !this.structs[si].dead && this.structs[si].team === a.team) a.inside = si;
+    if (si >= 0 && this.structs[si].enter && !this.structs[si].dead && this.structs[si].team === a.team && !a.wh) a.inside = si;
   };
 
   // ---- стрельба
-  Ground.prototype.hurt = function(b, d, by) {
+  Ground.prototype.hurt = function(b, d, by, melee) {
     b.hitT = this.t; if (by != null) b.hitBy = by;
     if (!b.alive) return;
+    if (b.wh && !melee && (d = this.shield(b, d, by)) <= 0) return;      // клинок щит не держит
     if (b.barrier > this.t) d *= 0.7;
     if (b.hero && b.hero.passive.absorb) d *= 1 - b.hero.passive.absorb / 100;
     b.hp -= d;
     if (b.hp <= 0) { b.hp = 0; b.alive = false; b.diedAt = this.t; b.mv = 0; this.ev.deaths.push({ t: this.t, id: b.id, by: by }); if (b.sq) { var sq = this.squadOf(b.team, b.sq); if (sq) sq.members = sq.members.filter(function(x) { return x !== b.id; }); } }
+  };
+  // ---- колесо-страж
+  // щит поднят: раскрыт, не пробит
+  Ground.prototype.shieldUp = function(b) { var w = b.wh; return !!w && w.k >= 1 && w.sh > 0 && this.t >= w.down; };
+  // держит ли щит удар от by (боец, 100000+ — постройка, −1 — снаряд без стрелка)
+  Ground.prototype.shieldBlocks = function(b, by) {
+    if (by == null || by < 0) return false;
+    if (by >= 100000) return true;
+    var a = this.agents[by]; if (!a) return false;
+    if (a.hero || a.T.artillery) return false;
+    if (a.T.vehicle && !a.air && !a.fly) { var dx = a.x - b.x, dy = a.y - b.y; if (dx * dx + dy * dy <= WHEEL.point * WHEEL.point) return false; }
+    return true;
+  };
+  // урон после щита; что щит принял — снимается с числа на выстреле. Тяжёлые выстрелы техники
+  // и авиации садят щит вдвое быстрее
+  Ground.prototype.shield = function(b, d, by) {
+    var w = b.wh;
+    if (!this.shieldUp(b) || !this.shieldBlocks(b, by)) return d;
+    var at = by < 100000 ? this.agents[by] : null, drain = at && at.T.vehicle ? WHEEL.heavy : 1;
+    var take = Math.min(w.sh / drain, d), left = d - take;
+    w.sh = Math.max(0, w.sh - take * drain); w.hitT = this.t;
+    var sh = this.ev.shots;
+    for (var i = sh.length - 1; i >= 0 && i >= sh.length - 4; i--) if (sh[i].ti === b.id && sh[i].t === this.t) { sh[i].d = Math.round(left); sh[i].sh = 1; break; }
+    if (w.sh <= 0) { w.sh = 0; w.down = this.t + WHEEL.down; this.ev.fx.push({ t: this.t, k: 'shieldoff', x: b.x, y: b.y, id: b.id }); }
+    else if (this.t - w.fxT > 0.25) { w.fxT = this.t; this.ev.fx.push({ t: this.t, k: 'shield', x: b.x, y: b.y, id: b.id }); }
+    return left;
+  };
+  // после решения хода: стоит — раскрывается (если рядом бой), хочет ехать — сначала сворачивается;
+  // щит восстанавливается только у раскрытого
+  Ground.prototype.wheelStep = function(a, dt) {
+    var w = a.wh, t = this.t, go = a.dvx !== 0 || a.dvy !== 0;
+    if (go) {
+      if (w.k > 0) { w.k = Math.max(0, w.k - dt / WHEEL.fold); a.dvx = 0; a.dvy = 0; a.mv += (0 - a.mv) * Math.min(1, dt * 8); }
+    } else if (w.k < 1) {
+      var fight = a.tgt >= 0 || a.focus >= 0 || t - (a.engT || -99) < 4 || t - (a.hitT || -99) < 4 || a.hold || (a.dpost && a.at);   // на посту обороны — сразу раскрыт
+      if (fight || w.k > 0) w.k = Math.min(1, w.k + dt / WHEEL.open);
+    }
+    if (w.k >= 1 && t >= w.down && w.sh < w.shMax && t - w.hitT > WHEEL.calm) w.sh = Math.min(w.shMax, w.sh + WHEEL.regen * dt);
   };
   Ground.prototype.hurtStruct = function(s, d) {
     if (s.dead) return;
@@ -837,6 +885,7 @@
       if (a.scan <= 0) { a.scan = SCAN + this.R() * 0.15; a.tgt = this.findTarget(a); }
       a.cd -= dt;
       if (a.tgt < 0 || a.cd > 0) continue;
+      if (a.wh && a.wh.k < 1) continue;            // колесо-страж катится или раскрывается — не стреляет
       var tg = this.tgtPos(a); if (!tg) { a.tgt = -1; continue; }
       var range = tg.a ? this.rangeTo(a, tg.a) : a.range;
       if (tg.d > range) continue;
@@ -858,20 +907,23 @@
       var inMul = a.inside >= 0 ? this.structs[a.inside].inMul : 1;
       var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1) * (supp ? 0.5 : 1);
       if (b.hero && b.hero.passive.evasion) p *= 1 - b.hero.passive.evasion / 100;
-      hit = this.R() < p;
-      // джедай отражает выстрелы: часть попаданий уходит обратно
-      if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && this.R() < b.hero.passive.deflect / 100) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; }
-      dmg = hit ? U.damage(a.T, b.T, inMul) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
-      this.shot(a, tg, hit, dmg, b.id);
-      a.revealT = this.t;
-      if (hit) {
-        this.hurt(b, dmg, a.id);
-        if (!b.alive) a.tgt = -1;
-        // окоп: сразу отвечает огнём
-        if (b.alive && b.inside >= 0 && this.structs[b.inside].kind === 'trench' && b.cd > 0.3) b.cd = 0.3;
-        // гранатомёт и ракеты: задевает рядом
-        var splash = /launcher/.test(a.tid) ? 1.6 : a.tid === 'cis_missile' ? 2 : 0;
-        if (splash) { this.splash(tg.x, tg.y, splash, dmg * 0.5, a); this.ev.booms.push({ t: this.t, x: tg.x, y: tg.y, r: splash * 0.8 }); }
+      for (var vv = 0, nv = a.wh ? 2 : 1; vv < nv && b.alive; vv++) {     // колесо-страж — спаренные бластеры
+        hit = this.R() < p;
+        // джедай отражает выстрелы: часть попаданий уходит обратно
+        if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && this.R() < b.hero.passive.deflect / 100) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; }
+        dmg = hit ? U.damage(a.T, b.T, inMul) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
+        this.shot(a, tg, hit, dmg, b.id);
+        if (nv > 1) { var q2 = this.ev.shots[this.ev.shots.length - 1], ox = -Math.sin(a.aim) * (vv ? 0.16 : -0.16), oy = Math.cos(a.aim) * (vv ? 0.16 : -0.16); q2.x0 += ox; q2.y0 += oy; q2.x1 += ox; q2.y1 += oy; }
+        a.revealT = this.t;
+        if (hit) {
+          this.hurt(b, dmg, a.id);
+          if (!b.alive) a.tgt = -1;
+          // окоп: сразу отвечает огнём
+          if (b.alive && b.inside >= 0 && this.structs[b.inside].kind === 'trench' && b.cd > 0.3) b.cd = 0.3;
+          // гранатомёт и ракеты: задевает рядом
+          var splash = /launcher/.test(a.tid) ? 1.6 : a.tid === 'cis_missile' ? 2 : 0;
+          if (splash) { this.splash(tg.x, tg.y, splash, dmg * 0.5, a); this.ev.booms.push({ t: this.t, x: tg.x, y: tg.y, r: splash * 0.8 }); }
+        }
       }
     }
   };
@@ -914,7 +966,7 @@
         a.x = land[0] + 0.5; a.y = land[1] + 0.5; a.vx = a.vy = 0;
         var ld = (s.dmg || S.dmg) * a.dmgK; if (b.hero) ld = Math.min(ld, b.hpMax * 0.3);
         this.ev.shots.push({ t: t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: true, w: 'saber', d: Math.round(ld), ti: b.id, from: a.id, melee: true });
-        this.hurt(b, ld, a.id); ok = true;
+        this.hurt(b, ld, a.id, true); ok = true;
       }
       if (ok) {
         s.ready = t + S.cd * (0.9 + this.R() * 0.2);
@@ -1495,6 +1547,7 @@
       if (a.mind && a.mind.until <= this.t) { a.mind = null; a.tgt = -1; }
       if (a.hero && a.hero.pend) this.pendStep(a);
       this.think(a, dt);
+      if (a.wh) this.wheelStep(a, dt);
     }
     this.collide(dt);
     this.fire(dt);
@@ -1516,5 +1569,5 @@
     return s;
   };
 
-  return { SKILL: SKILL, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
+  return { SKILL: SKILL, WHEEL: WHEEL, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
 });

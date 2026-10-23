@@ -24,7 +24,8 @@ function card(id, W, H){
   c.strokeStyle='rgba('+col+',0.18)'; c.lineWidth=W*0.003; c.beginPath(); c.arc(cx,cy,W*0.41,0,TAU); c.stroke();
   var ang=-Math.PI/2-0.35;
   c.save(); c.translate(cx,cy);
-  if (V.TYPES[id]) { var span=V.TYPES[id].span; var k=W*0.62/span; c.scale(k,k); V.draw(c,id,{ang:ang,mv:0,phase:0,turret:ang+0.25,hp:1}); }
+  if (U.type(id) && U.type(id).wheel) { var kw=W*0.36; c.scale(kw,kw); V.guard(c,{ang:ang,open:1,turret:ang+0.25,hp:1}); V.guardShield(c,0.95,1,0,0.4,'170,150,255'); }   // колесо-страж — раскрыт, со щитом
+  else if (V.TYPES[id]) { var span=V.TYPES[id].span; var k=W*0.62/span; c.scale(k,k); V.draw(c,id,{ang:ang,mv:0,phase:0,turret:ang+0.25,hp:1}); }
   else { var kt=A.kit(id), T=FIG[kt?kt.fig:(side===0?'rep_dc15a':'cis_b1')]; var k2=W*0.9/(F.FIG*1.15); c.translate(0,H*0.05); c.scale(k2,k2); F.draw(c,T,{aim:ang,legs:ang,mv:0,phase:0,gun:T.gun,mark:T.mark}); }
   c.restore();
   // виньетка

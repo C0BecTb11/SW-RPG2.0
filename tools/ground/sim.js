@@ -13,7 +13,7 @@ const U = require('../../shared/rt-units.js');
 const ARMY = {
   0: [['rep_dc15a', 24], ['rep_heavy', 6], ['rep_sniper', 3], ['rep_launcher', 4], ['rep_arc', 4], ['rep_medic', 2], ['rep_engineer', 1], ['rep_jedi', 1],
       ['rep_atte', 2], ['rep_atrt', 3], ['rep_barc', 2], ['rep_aa', 1], ['rep_laat', 1], ['rep_artillery', 1], ['rep_turbo', 1]],
-  1: [['cis_b1', 36], ['cis_b2', 8], ['cis_bx', 4], ['cis_b1_sniper', 3], ['cis_b1_launcher', 4], ['cis_medic', 2], ['cis_engineer', 1], ['cis_sith', 1],
+  1: [['cis_b1', 36], ['cis_b2', 8], ['cis_bx', 4], ['cis_wheel', 3], ['cis_b1_sniper', 3], ['cis_b1_launcher', 4], ['cis_medic', 2], ['cis_engineer', 1], ['cis_sith', 1],
       ['cis_aat', 2], ['cis_stap', 3], ['cis_spider', 1], ['cis_hmp', 1], ['cis_missile', 1], ['cis_artillery', 1], ['cis_mtt', 1]]
 };
 

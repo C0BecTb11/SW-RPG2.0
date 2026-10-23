@@ -241,15 +241,15 @@
 
   // ---------------------------------------------------------------- тела
   var DEADA = null, DEAD_TRIES = 0;
-  // как и набор фигурок: телефон может потерять картинку — проверка раз в 3 с, при потере — пересборка помельче
+  // как и набор фигурок: телефон может потерять картинку — при потере (событие contextlost) пересборка помельче
   function deadAtlas() {
     var now = performance.now();
     if (!DEADA || (DEADA.bad && DEAD_TRIES < 3)) {
       var size = Math.round(Q().atlas * 2.2 / (1 + DEAD_TRIES * 0.35));
-      try { DEADA = X.F.bakeDead(X.ALL, size, 16); DEADA.bad = !X.F.check(DEADA); } catch (e) { DEADA = { bad: true }; }
+      try { DEADA = X.F.bakeDead(X.ALL, size, 16); DEADA.bad = !DEADA.canvas; } catch (e) { DEADA = { bad: true }; }
       DEAD_TRIES++; DEADA.at = now;
-    } else if (!DEADA.bad && now - DEADA.at > 3000) {
-      DEADA.at = now; if (!X.F.check(DEADA)) DEADA.bad = true;
+      // сброс — событием, без чтения точки из видеокарты (оно вешало слабый телефон)
+      if (DEADA.canvas) { var D0 = DEADA; try { D0.canvas.addEventListener('contextlost', function() { D0.bad = true; }); } catch (e) {} }
     }
     return DEADA;
   }

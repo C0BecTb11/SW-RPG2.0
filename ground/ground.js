@@ -27,7 +27,12 @@
   var CAM = { x: 72, y: 100, s: 16 };
   var TIERS = [[8, 16], [16, 8], [32, 4], [64, 2]], FOG = null, FOG_T = -1;   // [точек на клетку, клеток в куске]: чем ближе, тем мельче куски
   var ALL = F.withCrew(S.TYPES), FIG_IDX = {}; ALL.forEach(function(t, i) { FIG_IDX[t.id] = i; });
-  var ATLAS = null, VAT = null, DEAD = null, ATLAS_PX = 0;
+  // Наборы картинок (листы) — по одному на вид бойца, тела и машины: пекутся по требованию, когда вид
+  // впервые попал на экран, не дольше бюджета за кадр. Раньше всё пеклось разом при входе (секунды
+  // занятого потока) и раз в 5 с проверялось чтением точки из видеокарты — на слабом телефоне такое
+  // чтение под нехваткой памяти вешало страницу намертво. Теперь сброшенный браузером лист ловится
+  // событием contextlost и перепекается сам.
+  var SHEETS = { fig: {}, dead: {}, veh: {} }, BAKEQ = [], BAKEK = {}, SHEET_PX = 0;
 
   // ---------------------------------------------------------------- загрузка
   function fetchJson(url) { return fetch(url, { cache: 'no-cache' }).then(function(r) { if (!r.ok) throw new Error(url + ': ' + r.status); return r.json(); }); }
@@ -260,18 +265,35 @@
   }
 
   // ---------------------------------------------------------------- наборы картинок
-  function atlas() {
-    if (ATLAS && ATLAS.ok) return ATLAS;
-    if (ATLAS && ATLAS.bad) return ATLAS;
-    try {
-      var px = Math.round(GFX.Q().atlas);
-      ATLAS = F.bake(ALL, px, 10); ATLAS.ok = F.check(ATLAS); if (!ATLAS.ok) ATLAS.bad = true;
-      DEAD = F.bakeDead(ALL, px * 2, 16);
-      var ids = Object.keys(V.TYPES);
-      VAT = V.bake(ids, Math.round(px / (F.FIG * 1.15)), Math.max(72, Math.min(128, px * 2))); if (V.check && !V.check(VAT)) VAT = null;
-      ATLAS_PX = px;
-    } catch (e) { ATLAS = { bad: true }; }
-    return ATLAS;
+  function sheetsReset() { SHEETS = { fig: {}, dead: {}, veh: {} }; BAKEQ = []; BAKEK = {}; }
+  // лист вида или null (тогда вид заказан, а кадр рисуется живьём)
+  function sheet(kind, key) {
+    var sh = SHEETS[kind][key];
+    if (sh) return sh.bad ? null : sh;
+    var k = kind + ':' + key; if (!BAKEK[k]) { BAKEK[k] = 1; BAKEQ.push([kind, key]); }
+    return null;
+  }
+  function watchLost(cv, kind, key, sh) {
+    try { cv.addEventListener('contextlost', function() { if (SHEETS[kind][key] === sh) delete SHEETS[kind][key]; }); } catch (e) {}
+  }
+  // Испечь заказанное: не дольше budget мс за кадр, но хотя бы один лист
+  function bakeStep(budget) {
+    if (!BAKEQ.length) return;
+    var px = Math.round(GFX.Q().atlas); if (px !== SHEET_PX) { if (SHEET_PX) { sheetsReset(); return; } SHEET_PX = px; }
+    var t0 = performance.now();
+    while (BAKEQ.length) {
+      var q = BAKEQ.shift(), kind = q[0], key = q[1]; delete BAKEK[kind + ':' + key];
+      if (SHEETS[kind][key]) continue;
+      var sh;
+      try {
+        if (kind === 'fig') sh = F.bake([ALL[key]], px, 10);
+        else if (kind === 'dead') sh = F.bakeDead([ALL[key]], px * 2, F.DEAD_DIRS);
+        else { var A = V.bake([key], Math.round(px / (F.FIG * 1.15)), Math.max(72, Math.min(128, px * 2))); sh = A.by[key]; }
+        SHEETS[kind][key] = sh;
+        watchLost(sh.canvas, kind, key, sh); if (sh.tur) watchLost(sh.tur, kind, key, sh);
+      } catch (e) { SHEETS[kind][key] = { bad: true }; if (window.errReport) errReport(e, 'ground.bake'); }
+      if (performance.now() - t0 >= budget) break;
+    }
   }
 
   // ---------------------------------------------------------------- камера
@@ -314,8 +336,10 @@
       if (B.over >= 0 && !G.ended) endBattle();
     }
     G.hudT = (G.hudT || 0) + dt; if (G.hudT > 0.25) { G.hudT = 0; try { hud(); } catch (err) { if (!G.hudErr || now - G.hudErr > 5000) { G.hudErr = now; console.error('Панель не обновилась:', err); } if (window.errReport) errReport(err, 'ground.hud'); } }
-    // раз в 5 с: листы картинок на месте? (браузер телефона может их сбросить — тогда перепечь)
-    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if ((ATLAS && ATLAS.ok && F.check && !F.check(ATLAS)) || (VAT && V.check && !V.check(VAT))) { ATLAS = null; VAT = null; } if (G.base && !baseOk()) gfxLost(); }
+    // листы, заказанные этим кадром: печём понемногу, чтобы поток не вставал
+    bakeStep(G.fps && G.fps < 40 ? 4 : 8);
+    // раз в 5 с: подложка на месте? (она в обычной памяти — проверка дешёвая; листы ловят сброс сами)
+    G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if (G.base && G.baseReady && !baseOk()) gfxLost(); }
   }
   function draw() {
     var c = ctx, s = CAM.s, dpr = G.dpr, B = G.B, T = G.ter, t = B.t;
@@ -349,9 +373,11 @@
     try {
       var cnt = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
       for (var i = 0; i < cnt; i++) {
-        var w = new Worker('../ground/terrain-worker.js?v=3');
+        var w = new Worker('../ground/terrain-worker.js?v=4');
         w.onmessage = function(e) {
-          var m = e.data; if (m.k !== 'chunk') return;
+          var m = e.data;
+          if (m.k === 'base') { if (m.gen === TW.gen && G.ter) baseFrom(m); return; }
+          if (m.k !== 'chunk') return;
           delete TW.pending[m.key]; TW.n--;
           if (m.gen !== TW.gen || !G.ter) { m.bmp.close(); return; }
           m.bmp.used = Date.now(); G.ter.cache[m.key] = m.bmp;
@@ -362,6 +388,7 @@
           if (window.errReport) errReport({ name: 'Воркер земли', message: (ev && ev.message) || 'упал без текста',
             stack: ev && ev.filename ? ev.filename + ':' + ev.lineno + ':' + ev.colno : '' }, 'ground.worker');
           TW.ws.forEach(function(x) { x.terminate(); }); TW.ws = []; TW.pending = {}; TW.n = 0;
+          if (G.ter && !G.baseReady) baseStrips(G.baseGen);
         };
         w.postMessage({ k: 'map', json: js, gen: TW.gen });
         TW.ws.push(w);
@@ -373,11 +400,49 @@
   // земли и мини-карты оставалась чернота.
   // Точки подложки храним и копией в памяти: если браузер сбросит холст, вернуть их — миллисекунды,
   // а перерисовка всей карты на слабом телефоне — секунды.
+  // Считает её фоновый поток (секунды на слабом телефоне — не в главном), без потоков — главный
+  // полосами по ~30 мс; пока не готова, под кусками местности ровный тёмный тон.
   function makeBase() {
     G.base = document.createElement('canvas'); G.base.width = G.base.height = N * 4;
     var bx = G.base.getContext('2d', { willReadFrequently: true });
-    G.ter.render(bx, 0, 0, N, N, 4);
-    try { G.baseImg = bx.getImageData(0, 0, N * 4, N * 4); } catch (e) { G.baseImg = null; }
+    bx.fillStyle = '#151b20'; bx.fillRect(0, 0, N * 4, N * 4);
+    G.baseImg = null; G.baseReady = false; G.baseGen = (G.baseGen || 0) + 1;
+    clearTimeout(G.baseWait);
+    var gen = G.baseGen;
+    if (TW.ws.length) {
+      TW.ws[0].postMessage({ k: 'base', n: N, ppc: 4, gen: TW.gen });
+      G.baseWait = setTimeout(function() { if (!G.baseReady && G.baseGen === gen) baseStrips(gen); }, 8000);   // поток молчит — сами
+    } else baseStrips(gen);
+  }
+  function baseFrom(m) {
+    if (G.baseReady || !G.base || m.w !== N * 4) return;
+    try {
+      var img = new ImageData(new Uint8ClampedArray(m.buf), m.w, m.w);
+      G.base.getContext('2d', { willReadFrequently: true }).putImageData(img, 0, 0);
+      G.baseImg = img; G.baseReady = true; clearTimeout(G.baseWait);
+    } catch (e) { if (window.errReport) errReport(e, 'ground.base'); baseStrips(G.baseGen); }
+  }
+  function baseStrips(gen) {
+    if (G.baseStripGen === gen) return;              // уже считается
+    G.baseStripGen = gen;
+    var y = 0, ROWS = 12, bx = G.base.getContext('2d', { willReadFrequently: true });
+    var tmp = document.createElement('canvas'); tmp.width = N * 4; tmp.height = ROWS * 4;
+    var tx = tmp.getContext('2d', { willReadFrequently: true });
+    (function step() {
+      if (G.baseGen !== gen || !G.ter || G.baseReady) return;
+      var t0 = performance.now();
+      try {
+        while (y < N && performance.now() - t0 < 30) {
+          var h = Math.min(ROWS, N - y);
+          G.ter.render(tx, 0, y, N, h, 4);
+          bx.drawImage(tmp, 0, 0, N * 4, h * 4, 0, y * 4, N * 4, h * 4);
+          y += h;
+        }
+      } catch (e) { if (window.errReport) errReport(e, 'ground.base'); return; }
+      if (y < N) { setTimeout(step, 0); return; }
+      try { G.baseImg = bx.getImageData(0, 0, N * 4, N * 4); } catch (e) { G.baseImg = null; }
+      G.baseReady = true;
+    })();
   }
   function restoreBase() {
     if (!G.baseImg || G.baseImg.width !== N * 4) { makeBase(); return; }
@@ -393,7 +458,7 @@
   function gfxLost() {
     if (!G.ter) return;
     restoreBase();
-    FOG = null; FOG_T = -1; DISC = {};
+    FOG = null; FOG_T = -1; DISC = {}; sheetsReset();
     if (window.errReport) errReport(new Error('холст подложки сброшен браузером'), 'ground.base');
   }
   cv.addEventListener('contextrestored', function() { try { gfxLost(); } catch (e) { if (window.errReport) errReport(e, 'ground.restore'); } });
@@ -553,7 +618,7 @@
     if (st.hp < st.hpMax) { c.fillStyle = '#141a22'; c.fillRect(p[0], p[1] - 5, st.w * s, 3); c.fillStyle = st.team === G.side ? '#5fd968' : '#ff6a5a'; c.fillRect(p[0], p[1] - 5, st.w * s * st.hp / st.hpMax, 3); }
   }
   function drawDead(c, s, vis) {
-    var B = G.B, ag = B.agents, A = atlas();
+    var B = G.B, ag = B.agents;
     for (var i = 0; i < ag.length; i++) {
       var a = ag[i]; if (a.alive || a.gone) continue;
       if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue;
@@ -565,7 +630,8 @@
         if (a.T.vehicle) drawVehicle(c, a, s, p, 0.4, true); else { c.save(); c.translate(p[0], p[1]); c.scale(s * HK, s * HK); c.globalAlpha = al * 0.7; H.draw(c, { aim: a.aim, mv: 0, phase: 0, act: 'idle', look: H.look(a.team === 0 ? 'republic' : 'cis', a.hero.portrait), blade: 'rgba(0,0,0,0)' }); c.restore(); }
       } else {
         var fi = figOf(a), T = ALL[fi];
-        if (DEAD && age > 0.5) { var size = s * DEAD.scale * FIGK, dd = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * DEAD.dirs) % DEAD.dirs, kk = fi * DEAD.dirs + dd; c.drawImage(DEAD.canvas, (kk % DEAD.cols) * DEAD.cell, Math.floor(kk / DEAD.cols) * DEAD.cell, DEAD.cell, DEAD.cell, p[0] - size / 2, p[1] - size / 2, size, size); }
+        var DS = age > 0.5 ? sheet('dead', fi) : null;
+        if (DS) { var size = s * DS.scale * FIGK, dd = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * DS.dirs) % DS.dirs; c.drawImage(DS.canvas, (dd % DS.cols) * DS.cell, Math.floor(dd / DS.cols) * DS.cell, DS.cell, DS.cell, p[0] - size / 2, p[1] - size / 2, size, size); }
         else { c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK); F.dead(c, T, a.aim, Math.min(1, age / 0.5), a.id); }
       }
       c.restore();
@@ -575,9 +641,10 @@
   function drawVehicle(c, a, s, p, alpha, wreck) {
     var id = a.tid, vt = V.TYPES[id]; if (!vt) return;
     c.save(); if (alpha != null) c.globalAlpha = alpha;
-    var E = VAT && VAT.by[id];
-    if (E && s * G.dpr <= E.ppc * 1.7) {
-      var dir = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * VAT.dirs) % VAT.dirs, fr = E.frames > 1 && !wreck && a.mv > 0.3 ? 1 + Math.floor(a.phase / (TAU / (VAT.frames - 1))) % (VAT.frames - 1) : 0;
+    // лист — пока машина на экране не крупнее его точек (вблизи — живьём, чтобы не мылить)
+    var E = s * G.dpr > 128 * 1.7 ? null : sheet('veh', id); if (E && s * G.dpr > E.ppc * 1.7) E = null;
+    if (E) {
+      var dir = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * V.DIRS) % V.DIRS, fr = E.frames > 1 && !wreck && a.mv > 0.3 ? 1 + Math.floor(a.phase / (TAU / (V.FRAMES - 1))) % (V.FRAMES - 1) : 0;
       var kk = dir * E.frames + fr, size = E.span * s, half = size / 2;
       c.drawImage(E.canvas, (kk % E.cols) * E.px, Math.floor(kk / E.cols) * E.px, E.px, E.px, p[0] - half, p[1] - half, size, size);
       if (vt.turret && !wreck) {
@@ -647,7 +714,7 @@
     c.restore();
   }
   function drawUnits(c, s, vis, t) {
-    var B = G.B, ag = B.agents, A = atlas(), side = G.side, sel = {};
+    var B = G.B, ag = B.agents, side = G.side, sel = {}, A = null;
     G.usel.forEach(function(id) { sel[id] = 1; });
     var order = [];
     for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive) continue; if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue; if (a.team !== side && !B.canSee(side, a)) continue; order.push(a); }
@@ -668,10 +735,10 @@
         var hr = m.hero;
         H.draw(c, { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase, act: hr.actT > 0 ? hr.act : (m.mv > 0.3 ? 'run' : 'idle'), k: hr.k, look: heroLook(m) });
         c.restore();
-      } else if (A.ok && s * G.dpr * A.scale * FIGK <= A.cell * 1.7) {
-        var size = s * A.scale * FIGK, half = size / 2, per = A.dirs * A.frames;
+      } else if ((A = s * G.dpr * F.FIG * 1.15 * FIGK <= Math.round(GFX.Q().atlas) * 1.7 ? sheet('fig', figOf(m)) : null)) {
+        var size = s * A.scale * FIGK, half = size / 2;
         var dir = Math.round(((m.aim % TAU) + TAU) % TAU / TAU * A.dirs) % A.dirs, fr = m.mv > 0.3 ? 1 + Math.floor(m.phase / (TAU / 4)) % 4 : 0;
-        var kk = figOf(m) * per + dir * A.frames + fr;
+        var kk = dir * A.frames + fr;
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
       } else { c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK); F.draw(c, ALL[figOf(m)], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase }); c.restore(); }
       // состояния
@@ -1050,7 +1117,7 @@
     $('sp-pause').onclick = function() { setSpeed(G.speed === 0 ? (G.lastSpd || 1) : 0); };
     $('sp-spd').onclick = function() { var c = G.speed || G.lastSpd || 1; setSpeed(c === 1 ? 2 : c === 2 ? 4 : 1); };
     $('sp-gfx-b').onclick = function() { GFX.open(G.fps); };
-    GFX.on(function(k) { if (k === 'q') { ATLAS = null; VAT = null; resize(); } });
+    GFX.on(function(k) { if (k === 'q') { sheetsReset(); resize(); } });
     $('sp-bottom').addEventListener('pointerdown', function(e) {
       var t = e.target.closest('[data-tab],[data-ba],[data-as],[data-sq],[data-type],[data-ab],[data-abx],#sp-sheet-x'); if (!t) return;
       e.preventDefault();

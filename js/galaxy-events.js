@@ -68,12 +68,23 @@
     return '';
   }
 
+  // Длительные действия события — такими же плашками, как эффекты
+  function actionFx(a) {
+    var out = [];
+    a = a || {};
+    if (a.travel) out.push({ good: a.travel < 0, text: 'прыжки флота ' + (a.travel < 0 ? 'быстрее' : 'дольше') + ' на ' + Math.abs(a.travel) + '%' });
+    if (a.trade) out.push({ good: a.trade > 0, text: 'торговый пост платит ' + (a.trade > 0 ? '+' : '−') + Math.abs(a.trade) + '%' });
+    return out;
+  }
+
   function resultText(r, n) {
     var out = [];
     r = r || {};
     if (r.raid) out.push('банды мародёров у ' + r.raid + ' ' + plural(r.raid, 'поселения', 'поселений', 'поселений') + ' — по ' + (r.gang | 0) + ' бойца');
     if (r.stock) Object.keys(r.stock).forEach(function(k) { out.push('+' + fmt(r.stock[k]) + ' ' + (RES[k] || k) + (n > 1 ? ' на склад каждой планеты' : ' на склад планеты')); });
     if (r.gift) out.push('+' + r.gift + ' ' + plural(r.gift, 'боец', 'бойца', 'бойцов') + ' управляющему');
+    if (r.credits) out.push('+' + fmt(r.credits) + ' кр. управляющему');
+    if (r.unrest) out.push('напряжение ' + (r.unrest > 0 ? '+' : '−') + Math.abs(r.unrest) + (n > 1 ? ' на каждой планете' : ''));
     return out;
   }
 
@@ -258,7 +269,7 @@
         '<span class="ge-card-t"><b>' + esc(ev.title) + '</b><i>' + esc(scopeText(ev)) + '</i></span>' +
         '<span class="ge-left" data-ge-left="' + ms(ev.ends) + '">' + left(ev.ends) + '</span></div>' +
       '<div class="ge-text">' + esc(ev.text) + '</div>';
-    var fx = (ev.effects || []).map(effect), res = resultText(ev.result, (ev.planets || []).length);
+    var fx = (ev.effects || []).map(effect).concat(actionFx(ev.actions)), res = resultText(ev.result, (ev.planets || []).length);
     if (fx.length || res.length) {
       h += '<div class="ge-fx">' + fx.map(function(x) { return '<i class="' + (x.good ? 'up' : 'down') + '">' + esc(x.text) + '</i>'; }).join('') +
         res.map(function(t) { return '<i class="once">' + esc(t) + '</i>'; }).join('') + '</div>';

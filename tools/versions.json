@@ -8,8 +8,8 @@
   "sha": "001ee13d73dc"
  },
  "css/events.css": {
-  "v": "1",
-  "sha": "f2d458a05c20"
+  "v": "2",
+  "sha": "93cab287ed79"
  },
  "css/galaxy.css": {
   "v": "2",
@@ -69,15 +69,15 @@
  },
  "js/event-live.js": {
   "v": "12",
-  "sha": "68ee1fe624b6"
+  "sha": "ae1192f573ab"
  },
  "js/events-entry.js": {
-  "v": "1",
-  "sha": "365ac0fa4f96"
+  "v": "2",
+  "sha": "528f12f29b7d"
  },
  "js/events.js": {
-  "v": "3",
-  "sha": "e22254820baa"
+  "v": "4",
+  "sha": "3843f6cfa5ad"
  },
  "js/ground-battle.js": {
   "v": "2",

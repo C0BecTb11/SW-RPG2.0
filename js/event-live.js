@@ -328,7 +328,9 @@
     var a = $('ev-end-award');
     if (aw) {
       var res2 = Object.keys(aw.res || {}).map(function(k) { return aw.res[k] + ' ' + CAT.RES_NAME[k]; }).join(', ');
-      a.innerHTML = (aw.credits > 0 ? '+' + fmtN(aw.credits) + ' кредитов' : 'Без награды') + (res2 ? '<br><em>на склад: ' + esc(res2) + '</em>' : '') + (aw.points ? '<br><em>+' + aw.points + ' очков рейтинга</em>' : '') +
+      // награда раз в день: победная уже была (или утешительная) — бой шёл на рейтинг и трофеи
+      a.innerHTML = (aw.credits > 0 ? '+' + fmtN(aw.credits) + ' кредитов' : aw.capped ? '<em>' + (aw.won ? 'Награда за победу сегодня уже получена' : 'Награда за сегодня уже получена') + '</em>' : 'Без награды') +
+        (res2 ? '<br><em>на склад: ' + esc(res2) + '</em>' : '') + (aw.points ? '<br><em>+' + aw.points + ' очков рейтинга</em>' : '') +
         (aw.title ? '<span class="ttl">Новый титул: «' + esc(aw.title) + '»</span>' : '') + (aw.won ? '<span class="ttl" style="color:#e8d9a8">Трофей уровня ' + ['I', 'II', 'III'][(e.tier || 1) - 1] + '</span>' : '');
     } else if (e.test || m.test) a.innerHTML = '<em>Тестовый бой — награда не начисляется</em>';
     else if (aborted) a.innerHTML = '<em>Бой отменён — награды нет</em>';

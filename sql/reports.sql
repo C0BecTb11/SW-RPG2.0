@@ -286,6 +286,10 @@ begin
        from active_effects e left join systems s on s.id = e.system_id
        where e.ends_at > now() and e.starts_at <= now()
          and e.system_id in (select system_id from system_control where controller_user_id = v_me)),
+    -- законы фракции (sql/laws.sql) действуют на все её планеты — показываем отдельно
+    'laws', (select coalesce(jsonb_agg(jsonb_build_object('kind', fe.kind, 'value', fe.value, 'title', fe.title, 'ends', fe.ends_at, 'decree', fe.source = 'decree') order by fe.ends_at), '[]'::jsonb)
+       from faction_effects fe where fe.faction = (select faction from profiles where id = v_me) and fe.starts_at <= now() and fe.ends_at > now()
+         and fe.kind in ('mood', 'extract', 'income')),
     'planets', (select coalesce(jsonb_agg(jsonb_build_object('system', sc.system_id, 'planet', s.name,
                   'mood', effect_sum(sc.system_id, 'mood'), 'extract', effect_sum(sc.system_id, 'extract'), 'income', effect_sum(sc.system_id, 'income'))), '[]'::jsonb)
        from system_control sc join systems s on s.id = sc.system_id where sc.controller_user_id = v_me));

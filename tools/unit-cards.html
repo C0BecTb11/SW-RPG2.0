@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#000}canvas{display:block}</style></head><body>
+<script src="../shared/rt-core.js"></script><script src="../shared/rt-figures.js"></script><script src="../shared/rt-army.js"></script>
+<script src="../shared/rt-units.js"></script><script src="../shared/rt-vehicles.js"></script>
+<script>
+// Карточки юнитов из моделек боя (shared/rt-figures.js, rt-vehicles.js) → assets/units/models/<id>.jpg.
+// Открыть через локальный сервер из корня репозитория, в консоли: make('cis_b1', 512, 512) — dataURL картинки.
+// Пакетом — Playwright: для каждого id из ids (кроме героев и авиации) сохранить make(id, 512, 512).
+var S=window.SWRT, F=window.SWRTFig, A=window.SWArmy, U=window.SWUnits, V=window.SWVehicles, TAU=Math.PI*2;
+var ALL=F.withCrew(S.TYPES), FIG={}; ALL.forEach(function(t){FIG[t.id]=t;});
+var TEAM={0:[111,184,255],1:[255,110,90],2:[230,200,90]};
+// Карточка юнита из модельки боя: тёмный пол с сеткой, свет стороны, моделька сверху
+function card(id, W, H){
+  var u=U.get(id), side=u?u[1]:2, col=TEAM[side]||TEAM[2], cv=document.createElement('canvas'); cv.width=W; cv.height=H; var c=cv.getContext('2d');
+  // фон
+  var g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,'#0c1018'); g.addColorStop(1,'#06080d'); c.fillStyle=g; c.fillRect(0,0,W,H);
+  var cx=W/2, cy=H/2;
+  var rg=c.createRadialGradient(cx,cy,0,cx,cy,Math.max(W,H)*0.55); rg.addColorStop(0,'rgba('+col+',0.22)'); rg.addColorStop(0.5,'rgba('+col+',0.06)'); rg.addColorStop(1,'rgba('+col+',0)'); c.fillStyle=rg; c.fillRect(0,0,W,H);
+  // сетка пола
+  c.strokeStyle='rgba(143,168,196,0.07)'; c.lineWidth=1; var step=W/8;
+  for(var x=step/2;x<W;x+=step){c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();}
+  for(var y=(H/2)%step;y<H;y+=step){c.beginPath();c.moveTo(0,y);c.lineTo(W,y);c.stroke();}
+  // круг стороны под моделькой
+  c.strokeStyle='rgba('+col+',0.45)'; c.lineWidth=W*0.006; c.beginPath(); c.arc(cx,cy,W*0.36,0,TAU); c.stroke();
+  c.strokeStyle='rgba('+col+',0.18)'; c.lineWidth=W*0.003; c.beginPath(); c.arc(cx,cy,W*0.41,0,TAU); c.stroke();
+  var ang=-Math.PI/2-0.35;
+  c.save(); c.translate(cx,cy);
+  if (V.TYPES[id]) { var span=V.TYPES[id].span; var k=W*0.62/span; c.scale(k,k); V.draw(c,id,{ang:ang,mv:0,phase:0,turret:ang+0.25,hp:1}); }
+  else { var kt=A.kit(id), T=FIG[kt?kt.fig:(side===0?'rep_dc15a':'cis_b1')]; var k2=W*0.9/(F.FIG*1.15); c.translate(0,H*0.05); c.scale(k2,k2); F.draw(c,T,{aim:ang,legs:ang,mv:0,phase:0,gun:T.gun,mark:T.mark}); }
+  c.restore();
+  // виньетка
+  var vg=c.createRadialGradient(cx,cy,Math.min(W,H)*0.35,cx,cy,Math.max(W,H)*0.75); vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)'); c.fillStyle=vg; c.fillRect(0,0,W,H);
+  return cv;
+}
+window.make=function(id,W,H){ return card(id,W,H).toDataURL('image/jpeg', 0.9); };
+window.ids=Object.keys(U.U);
+</script></body></html>

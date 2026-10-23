@@ -604,7 +604,7 @@
   }
   // Радиус бойца на экране в клетках: техника — по виду сверху, пехота и герои — по фигурке
   function vrad(m) { if (m.T.vehicle) { var vt = V.TYPES[m.tid]; return vt ? vt.span * 0.4 : 1; } if (m.wh) return 0.5; return 0.42 * HK; }
-  // Колесо-страж: у движка — заряд щита и откат, у зеркала сети — готовая доля (sf, −1 — щита нет)
+  // Колесо Смерти: у движка — заряд щита и откат, у зеркала сети — готовая доля (sf, −1 — щита нет)
   function wheelSh(m) {
     var w = m.wh; if (!w) return -1;
     if (w.shMax) return w.k >= 1 && w.sh > 0 && G.B.t >= w.down ? w.sh / w.shMax : -1;
@@ -652,7 +652,7 @@
     var order = [];
     for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive) continue; if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue; if (a.team !== side && !B.canSee(side, a)) continue; order.push(a); }
     order.sort(function(a, b) { return (a.air || a.fly ? 1 : 0) - (b.air || b.fly ? 1 : 0) || a.y - b.y; });
-    // вспышки щитов колёс-стражей: последнее попадание по каждому
+    // вспышки щитов Колёс Смерти: последнее попадание по каждому
     var fxl = B.ev.fx; SHF = {}; for (i = 0; i < fxl.length; i++) if (fxl[i].k === 'shield' && fxl[i].t <= t) SHF[fxl[i].id] = fxl[i].t;
     for (i = 0; i < order.length; i++) {
       var m = order[i], p = toS(m.x, m.y), mine = B.ctl(m) === side;

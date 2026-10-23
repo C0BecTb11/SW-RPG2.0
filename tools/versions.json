@@ -23,6 +23,10 @@
   "v": "4",
   "sha": "aafae6e1d7f2"
  },
+ "css/mine-site.css": {
+  "v": "1",
+  "sha": "2a4021a0608a"
+ },
  "css/reports.css": {
   "v": "2",
   "sha": "addfa9a4ee77"
@@ -128,12 +132,16 @@
   "sha": "0cca4ca75a8e"
  },
  "js/ground-battle.js": {
-  "v": "5",
-  "sha": "f07e21b5083b"
+  "v": "6",
+  "sha": "bd3bf979109c"
  },
  "js/ground-live.js": {
   "v": "24",
   "sha": "fa1d8f73985a"
+ },
+ "js/mine-site.js": {
+  "v": "1",
+  "sha": "46ffee8a707a"
  },
  "js/planet-info.js": {
   "v": "2",

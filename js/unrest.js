@@ -1,8 +1,10 @@
-/* Напряжение на планетах — шаг 1 плана мятежей (sql/unrest.sql, claude/rebellion-plan.md).
+/* Напряжение на планетах — план мятежей (sql/unrest.sql, sql/unrest_riot.sql, claude/rebellion-plan.md).
  *
  * Шкала 0–100 у планеты: растёт от голода, врага у стен, ушедших с добычей мародёров и запустения,
  * гаснет от довольства, гарнизона, присмотра управляющего и спокойных суток. Считается раз в сутки
- * в час выдачи. Сейчас — наблюдение: шкала видна, последствий нет.
+ * в час выдачи. Последствия (шаги 2 и 3) включаются переключателями на сервере: штрафы на 50/75,
+ * мятеж на 100 (повстанцы у поселения, 48 ч на подавление), переговоры. Пока они выключены —
+ * неделя наблюдения: шкала видна, последствий нет, интерфейс так и пишет.
  *
  * Здесь три показа одной шкалы (префикс un-, всё внутри IIFE):
  *   unSettlementHtml(data) — блок во вкладке «Развитие» окна поселения (ground-battle.js);
@@ -19,14 +21,20 @@
     strike: { t: 'забастовки',    c: 'strike' },
     riot:   { t: 'мятеж назрел',  c: 'riot' }
   };
-  // Что будет на пороге, когда включатся последствия (шаги 2 и 3) — подсказка под шкалой
-  var NEXT = {
-    calm:   'С 30 — ропот: предупреждения управляющему и лидеру.',
-    murmur: 'С 50 — волнения: добыча и доход −15% (после недели наблюдения).',
-    unrest: 'С 75 — забастовки: −30%, ополчение не встаёт.',
-    strike: 'На 100 — мятеж: повстанцы у поселения, 48 ч на подавление.',
-    riot:   'Мятеж назрел. Последствия включатся после недели наблюдения.'
-  };
+  // Что ждёт на следующем пороге — подсказка под шкалой. Пока последствия выключены (неделя
+  // наблюдения), к штрафам и мятежу приписано, что они ещё не действуют.
+  function nextText(k, d) {
+    var pct = d.pct || {}, pen = !!d.penalties, riots = !!d.riots;
+    var later = ' (после недели наблюдения)';
+    switch (k) {
+      case 'calm':   return 'С 30 — ропот: предупреждения управляющему и лидеру.';
+      case 'murmur': return 'С 50 — волнения: добыча и доход −' + (pct.unrest || 15) + '%' + (pen ? '.' : later + '.');
+      case 'unrest': return 'С 75 — забастовки: −' + (pct.strike || 30) + '%, ополчение не встаёт' + (pen ? '.' : later + '.');
+      case 'strike': return 'На 100 — мятеж: повстанцы у поселения, 48 ч на подавление' + (riots ? '.' : later + '.');
+      default:       return riots ? 'Мятеж назрел: начнётся при выдаче.' : 'Мятеж назрел. Последствия включатся после недели наблюдения.';
+    }
+  }
+  var KIND = { extract: 'добыча', income: 'доход', mood: 'довольство', build_time: 'стройка', hire_time: 'набор' };
 
   var cache = { list: null, at: 0, busy: false };
 
@@ -56,6 +64,12 @@
     var h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000);
     return h > 0 ? h + ' ч' + (m ? ' ' + m + ' мин' : '') : m + ' мин';
   }
+  // Коротко, для строк карточки и списка: «45 ч» или «12 мин»
+  function shortTo(iso) {
+    var ms = new Date(iso).getTime() - Date.now();
+    if (!(ms > 0)) return '';
+    return ms >= 3600000 ? Math.ceil(ms / 3600000) + ' ч' : Math.max(1, Math.ceil(ms / 60000)) + ' мин';
+  }
   function daysTo(iso) {
     var ms = new Date(iso).getTime() - Date.now();
     if (!(ms > 0)) return '';
@@ -79,19 +93,27 @@
   function settlementHtml(d) {
     if (!d || d.value == null) return '';
     var v = d.value | 0, k = stateOf(v), f = d.forecast || {}, fd = f.delta | 0;
-    var hold = f.hold, grow = expect(v, fd, f.cap, hold);
+    // мятеж на другой планете фракции держит шкалу на 99 — прогноз не обещает больше
+    var cap = d.riot_elsewhere && d.riots ? Math.min(f.cap || 100, 99) : f.cap;
+    var hold = f.hold, grow = expect(v, fd, cap, hold);
+    var riot = d.riot || null;
     var html = '<div class="un-box un-s-' + k + '">';
-    html += '<div class="stl-sec"><span>Напряжение</span><em class="un-st">' + ST[k].t + '</em></div>';
+    html += '<div class="stl-sec"><span>Напряжение</span><em class="un-st">' + (riot ? 'мятеж' : ST[k].t) + '</em></div>';
     html += '<div class="un-top">' +
       '<b class="un-val">' + v + '</b>' +
       '<span class="un-top-r"><i>из 100</i>' +
-        '<em class="un-trend ' + trendCls(grow) + '">к утру ' + signed(grow) + '</em></span>' +
+        (riot ? '<em class="un-trend up">пока идёт мятеж</em>'       // шкала стоит на 100 до его конца
+              : '<em class="un-trend ' + trendCls(grow) + '">к утру ' + signed(grow) + '</em>') + '</span>' +
     '</div>';
     html += gauge(v, f.cap);
     html += '<div class="un-scale"><span style="left:30%">30</span><span style="left:50%">50</span><span style="left:75%">75</span></div>';
 
-    // Прогноз на ближайшую выдачу: из чего сложится
-    var rows = f.rows || [];
+    // Мятеж и действующие штрафы — сразу под шкалой: это то, что происходит сейчас
+    if (riot) html += riotHtml(riot);
+    html += effectsHtml(d.effects || []);
+
+    // Прогноз на ближайшую выдачу: из чего сложится (во время мятежа шкала не движется — не показываем)
+    var rows = riot ? [] : (f.rows || []);
     if (rows.length) {
       html += '<div class="un-rows">' + rows.map(function(r) {
         var n = r.value | 0;
@@ -102,6 +124,7 @@
     var notes = [];
     if (hold) notes.push('Шкала не растёт: ' + esc(hold) + (f.hold_until ? ' · ещё ' + daysTo(f.hold_until) : ''));
     if (f.cap_why) notes.push('Предел ' + (f.cap | 0) + ': ' + esc(f.cap_why));
+    if (d.riot_elsewhere && !d.riot) notes.push('Мятеж на планете ' + esc(d.riot_elsewhere) + ': здесь шкала держится на 99, пока он не кончится');
     var hist = d.history || [];
     if (hist.length) {
       var max = 1;
@@ -111,12 +134,98 @@
         return '<i class="un-s-' + stateOf(hv) + '" style="height:' + Math.max(8, Math.round(hv / Math.max(30, max) * 100)) + '%"><em>' + hv + '</em></i>';
       }).join('') + '</div><div class="un-hist-cap">последние выдачи</div>';
     }
+    // Переговоры — решение, после всех цифр
+    if (d.deal) html += dealHtml(d.deal, !!riot);
     html += '<div class="un-note">' +
       (notes.length ? notes.map(function(n) { return '<span>' + n + '</span>'; }).join('') : '') +
-      '<span class="obs">◈ Неделя наблюдения: шкала считается, последствий пока нет. ' + NEXT[k] + '</span>' +
+      (d.observe
+        ? '<span class="obs">◈ Неделя наблюдения: шкала считается, последствий пока нет. ' + nextText(k, d) + '</span>'
+        : (d.riot ? '' : '<span class="obs">◈ ' + nextText(k, d) + '</span>')) +
     '</div>';
     return html + '</div>';
   }
+
+  // Мятеж: сколько повстанцев осталось и сколько времени до провала.
+  // Отсчёт и полоса времени — через data-stl-end окна поселения (stlTick), без своих таймеров.
+  function riotHtml(r) {
+    var total = Math.max(1, r.total | 0), alive = Math.max(0, Math.min(total, r.alive | 0));
+    var end = new Date(r.ends_at).getTime(), start = new Date(r.started_at).getTime();
+    var span = Math.max(1, Math.round((end - start) / 1000));
+    var pips = '';
+    for (var i = 0; i < total; i++) pips += '<i' + (i < alive ? ' class="on"' : '') + '></i>';
+    return '<div class="un-riot">' +
+      '<div class="un-riot-top"><b>⚑ Мятеж</b>' +
+        '<em>до провала <span data-stl-end="' + end + '">' + hoursTo(r.ends_at) + '</span></em></div>' +
+      '<div class="un-riot-time"><i data-stl-end="' + end + '" data-stl-total="' + span + '"></i></div>' +
+      '<div class="un-riot-reb"><span>Повстанцы у поселения</span><span class="un-pips">' + pips + '</span>' +
+        '<b>' + alive + ' из ' + total + '</b></div>' +
+      '<div class="un-riot-txt">Добыча и доход −50%, стройка и набор вдвое дольше. Перебейте повстанцев — ' +
+        'шкала упадёт до 50. Не успеете: уровень поселения −1, развитие с нуля, управляющий снят.</div>' +
+    '</div>';
+  }
+
+  // Действующие эффекты напряжения (кроме самого мятежа — он расписан выше)
+  function effectsHtml(list) {
+    var groups = {};
+    list.forEach(function(e) {
+      if (e.source === 'riot') return;
+      var key = e.source + '|' + e.title + '|' + e.value;
+      if (!groups[key]) groups[key] = { title: e.title, value: e.value | 0, ends: e.ends, kinds: [] };
+      if (KIND[e.kind]) groups[key].kinds.push(KIND[e.kind]);
+    });
+    var out = Object.keys(groups).map(function(key) {
+      var g = groups[key], n = g.value, left = hoursTo(g.ends);
+      var what = g.kinds.join(' и ') + ' ' + (n > 0 ? '+' + n : '−' + Math.abs(n)) + (g.kinds[0] === 'довольство' ? '' : '%');
+      return '<div class="un-eff"><span>' + esc(g.title) + '</span>' +
+        (left ? '<em>ещё ' + left + '</em>' : '') + '<b>' + esc(what) + '</b></div>';
+    });
+    return out.length ? '<div class="un-effs">' + out.join('') + '</div>' : '';
+  }
+
+  // Переговоры: цена и кнопки (управляющий — своими, лидер и казначей — из казны) или причина отказа
+  function dealHtml(dl, riot) {
+    var html = '<div class="un-deal">' +
+      '<div class="un-deal-h"><b>Переговоры</b><em>шкала → ' + (dl.value | 0 || 60) + '</em></div>';
+    if (!dl.ok) return html + '<div class="un-deal-why">' + esc(dl.why || 'Сейчас договориться нельзя') + '</div></div>';
+    var cr = dl.credits | 0, food = dl.food | 0, noFood = (dl.food_have | 0) < food;
+    html += '<div class="un-deal-cost"><b>' + fmt(cr) + ' кр.</b> и <b>' + fmt(food) + ' еды</b> со склада' +
+      ' <i class="' + (noFood ? 'short' : '') + '">есть ' + fmt(dl.food_have | 0) + '</i></div>';
+    if (dl.self) {
+      var poor = (dl.my_credits | 0) < cr;
+      html += '<button type="button" class="stl-go un-deal-go" data-un-deal="self"' + (poor || noFood ? ' disabled' : '') + '>' +
+        'Договориться' + '<em>' + (poor ? 'не хватает кредитов' : noFood ? 'не хватает еды' : 'своими кредитами') + '</em></button>';
+    }
+    if (dl.treasury) {
+      var thin = (dl.bank | 0) < cr;
+      html += '<button type="button" class="stl-go un-deal-go alt" data-un-deal="bank"' + (thin || noFood ? ' disabled' : '') + '>' +
+        'Из казны' + '<em>в казне ' + fmt(dl.bank | 0) + ' кр.</em></button>';
+    }
+    return html + '<div class="un-deal-why">' + (riot ? 'Повстанцы уйдут без боя. ' : 'Забастовки кончатся. ') +
+      'Снова договориться — не раньше чем через 7 суток.</div></div>';
+  }
+  function fmt(n) { return String(n | 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+  // Кнопки переговоров живут в окне поселения: один обработчик на документ
+  document.addEventListener('click', function(e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-un-deal]') : null;
+    if (!btn || btn.disabled) return;
+    var s = sb(), sys = typeof systemId !== 'undefined' ? systemId : null;
+    if (!s || !sys) return;
+    var bank = btn.getAttribute('data-un-deal') === 'bank';
+    var go = function() {
+      btn.disabled = true; btn.classList.add('busy');
+      Promise.resolve(s.rpc('unrest_negotiate', { p_system: sys, p_treasury: bank })).then(function(r) {
+        if (r && r.error) { btn.disabled = false; btn.classList.remove('busy'); alert(r.error.message); return; }
+        cache.at = 0;
+        if (typeof loadSettlementPanel === 'function') loadSettlementPanel();
+      }, function() { btn.disabled = false; btn.classList.remove('busy'); });
+    };
+    var cost = btn.closest('.un-deal').querySelector('.un-deal-cost');
+    var note = (cost ? cost.textContent.replace(/\s*есть.*$/, '') : '') + (bank ? ' — из казны фракции.' : ' — из твоих кредитов.') +
+      ' Шкала опустится до 60.';
+    if (typeof gameConfirm !== 'function') { if (confirm('Договориться? ' + note)) go(); return; }
+    gameConfirm({ kicker: 'Переговоры', title: 'Договориться с недовольными', note: note, ok: 'Договориться', cancel: 'Не сейчас' }, go);
+  });
 
   // ── Данные для галактики и окна фракции ───────────────────────────
   function fetchList() {
@@ -187,9 +296,14 @@
     }
 
     var v = p.value | 0, f = expect(v, p.forecast, p.cap, p.hold);
-    if (v || f > 0) {                                       // спокойно и спокойным останется — не шумим
+    if (p.riot) {                                           // мятеж важнее шкалы: повстанцы и время
+      var rr = next('un-pi un-s-riot un-pi-riot'), left = shortTo(p.riot.ends_at);
+      rr.innerHTML = '<span>⚑ Мятеж</span><b>повстанцев ' + (p.riot.alive | 0) + ' из ' + (p.riot.total | 0) +
+        (left ? ' · ещё ' + left : '') + '</b>';
+    } else if (v || f > 0) {                                // спокойно и спокойным останется — не шумим
       var k = stateOf(v), r3 = next('un-pi un-s-' + k);
       r3.innerHTML = '<span>⚑ Напряжение</span><b>' + v + ' · ' + ST[k].t +
+        (p.pen ? ' · добыча и доход −' + (p.pen | 0) + '%' : '') +
         (f ? ' <em class="un-trend ' + trendCls(f) + '">' + signed(f) + ' к утру</em>' : '') + '</b>';
     }
   }
@@ -209,6 +323,7 @@
   function planetBits(systemId) {
     var p = byId(systemId), out = [];
     if (!p) return out;
+    if (p.riot) out.push('<span class="fs-mood bad">⚑ мятеж ' + (p.riot.alive | 0) + '/' + (p.riot.total | 0) + '</span>');
     var c = p.cond || {};
     if (p.controller && (c.total | 0)) {
       var left = (c.left || []).length;
@@ -224,7 +339,8 @@
     if (!d || !d.planets) return '';
     var list = d.planets.filter(function(p) { return (p.value | 0) > 0 || expect(p.value, p.forecast, p.cap, p.hold) > 0; });
     var hot = d.planets.filter(function(p) { return (p.value | 0) >= 30; }).length;
-    var meta = hot ? '<b class="hot">неспокойных ' + hot + '</b> · наблюдение' : 'наблюдение';
+    var mode = d.observe ? 'наблюдение' : 'последствия действуют';
+    var meta = hot ? '<b class="hot">неспокойных ' + hot + '</b> · ' + mode : mode;
     var html = '<section class="fs-sec un-sec">' + (typeof fsSecHead === 'function' ? fsSecHead('Напряжение', meta) : '');
     if (!list.length) {
       return html + '<div class="fs-empty">Все планеты спокойны. Шкала растёт от голода, врага у стен и мародёров, ' +
@@ -234,9 +350,13 @@
       var v = p.value | 0, k = stateOf(v), f = expect(v, p.forecast, p.cap, p.hold);
       html += '<button type="button" class="un-pl un-s-' + k + '" data-sys="' + esc(p.id) + '" data-info="1">' +
         '<span class="un-pl-body">' +
-          '<span class="un-pl-top"><b>' + esc(p.name) + '</b><em class="un-st">' + ST[k].t + '</em></span>' +
+          '<span class="un-pl-top"><b>' + esc(p.name) + '</b><em class="un-st">' + (p.riot ? 'мятеж' : ST[k].t) + '</em></span>' +
           gauge(v, p.cap, true) +
-          '<span class="un-pl-line">' + (p.controller ? esc(p.controller) : '<i>ничья</i>') +
+          '<span class="un-pl-line">' +
+            (p.riot ? '<i class="riot">повстанцев ' + (p.riot.alive | 0) + '/' + (p.riot.total | 0) +
+                        (shortTo(p.riot.ends_at) ? ' · ещё ' + shortTo(p.riot.ends_at) : '') + '</i> · ' : '') +
+            (p.controller ? esc(p.controller) : '<i>ничья</i>') +
+            (p.pen ? ' · штраф −' + (p.pen | 0) + '%' : '') +
             (p.hold ? ' · ' + esc(p.hold) : '') + '</span>' +
         '</span>' +
         '<span class="un-pl-v"><b>' + v + '</b><em class="un-trend ' + trendCls(f) + '">' + signed(f) + '</em></span>' +

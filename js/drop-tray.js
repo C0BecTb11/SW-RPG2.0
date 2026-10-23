@@ -125,14 +125,17 @@ function openDropTray() {
   var btn = document.getElementById('drop-btn');
   if (btn) btn.style.visibility = 'hidden';
 
-  // Полоса вторжения — на виду над лотком и в рабочем масштабе
+  // Куда высаживать — на виду над лотком и в рабочем масштабе: при вторжении полоса внизу,
+  // на своей планете — первая зона высадки (полоса вторжения хозяину ни к чему)
   setTimeout(function() {
     if (!dtOpen) return;
     setBottomInset(dtInset(el));
     // Середину экрана берём до смены масштаба, иначе карта прыгнет вбок
     var midX = (viewport.clientWidth / 2 - panX) / scale / CELL_PX;
     if (scale < 0.9) scale = 1;
-    focusCell(midX, GRID_SIZE - ATTACK_ZONE_H / 2 - 1);
+    var z = iAmAttacker === true ? null : deployZones[0];
+    if (z) focusCell(z.x + (z.size || DEPLOY_SIZE) / 2, z.y + (z.size || DEPLOY_SIZE) / 2);
+    else if (iAmAttacker === true) focusCell(midX, GRID_SIZE - ATTACK_ZONE_H / 2 - 1);
     redrawScene();
   }, 30);
 }
@@ -410,7 +413,7 @@ function dtDragMove(x, y) {
 
   if (typeof dcChip === 'function') {
     if (d.ok) dcChip(x, y, 'Высадить сюда', it.name + ' · ' + cx + ':' + cy, 'move');
-    else dcChip(x, y, d.why, it.kind === 'fighter' && !iAmAttacker ? 'садятся в зону высадки' : 'тяни в полосу вторжения', 'bad');
+    else dcChip(x, y, d.why, iAmAttacker ? 'тяни в полосу вторжения' : it.kind === 'fighter' ? 'садятся в зону высадки' : 'тяни в зону высадки', 'bad');
   }
   if (!same) redrawScene();
 }
@@ -418,11 +421,9 @@ function dtDragMove(x, y) {
 // Почему сюда нельзя (или null — можно)
 function dtWhy(it, x, y) {
   if (x < 0 || y < 0 || x + it.w > GRID_SIZE || y + it.h > GRID_SIZE) return 'За краем карты';
-  if (it.kind === 'fighter') {
-    if (!fighterLandCellAllowed(x, y)) return iAmAttacker ? 'Вне полосы вторжения' : 'Вне зоны высадки';
-  } else if (y < GRID_SIZE - ATTACK_ZONE_H) {
-    return 'Вне полосы вторжения';
-  }
+  // Те же правила, что у сервера (unload_unit_at, unload_vehicle_at, land_fighter): при вторжении —
+  // полоса вторжения, на своей планете — зоны высадки
+  if (!fighterLandCellAllowed(x, y)) return iAmAttacker ? 'Вне полосы вторжения' : 'Вне зоны высадки';
   // Занятость считаем раз на свежую карту, а не на каждый сдвиг пальца
   var d = dtDrag;
   var occ;
@@ -568,18 +569,34 @@ function dtCommit(it, x, y, fx, fy) {
 
 function dtDraw() {
   if (!dtOpen) return;
-  var y0 = GRID_SIZE - ATTACK_ZONE_H;
+  var y0 = GRID_SIZE - ATTACK_ZONE_H, soft = !droppingUnit && !droppingVehicle && !landingFighter;
 
-  // Полоса вторжения: мягкая заливка и рамка, пока лоток открыт
-  if (!droppingUnit && !droppingVehicle && !landingFighter) {
-    ctx.fillStyle = 'rgba(217,74,74,0.10)';
-    ctx.fillRect(0, y0 * CELL_PX, GRID_SIZE * CELL_PX, ATTACK_ZONE_H * CELL_PX);
+  if (iAmAttacker === true) {
+    // Вторжение: полоса вторжения — мягкая заливка и рамка, пока лоток открыт
+    if (soft) {
+      ctx.fillStyle = 'rgba(217,74,74,0.10)';
+      ctx.fillRect(0, y0 * CELL_PX, GRID_SIZE * CELL_PX, ATTACK_ZONE_H * CELL_PX);
+    }
+    ctx.strokeStyle = 'rgba(217,74,74,0.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(1, y0 * CELL_PX + 1, GRID_SIZE * CELL_PX - 2, ATTACK_ZONE_H * CELL_PX - 2);
+    ctx.setLineDash([]);
+  } else if (iAmAttacker === false) {
+    // Своя планета: высадка — в зоны высадки (полосу вторжения хозяину не показываем)
+    deployZones.forEach(function(z) {
+      var n = z.size || DEPLOY_SIZE;
+      if (soft) {
+        ctx.fillStyle = 'rgba(95,217,104,0.10)';
+        ctx.fillRect(z.x * CELL_PX, z.y * CELL_PX, n * CELL_PX, n * CELL_PX);
+      }
+      ctx.strokeStyle = 'rgba(95,217,104,0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(z.x * CELL_PX + 1, z.y * CELL_PX + 1, n * CELL_PX - 2, n * CELL_PX - 2);
+      ctx.setLineDash([]);
+    });
   }
-  ctx.strokeStyle = 'rgba(217,74,74,0.75)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 6]);
-  ctx.strokeRect(1, y0 * CELL_PX + 1, GRID_SIZE * CELL_PX - 2, ATTACK_ZONE_H * CELL_PX - 2);
-  ctx.setLineDash([]);
 
   // Ждут ответа сервера. Высаженные уходят, как только пришла свежая карта
   for (var i = dtPending.length - 1; i >= 0; i--) {

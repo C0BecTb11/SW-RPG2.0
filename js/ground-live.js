@@ -29,17 +29,22 @@
   function boot() {
     GL.canvas = $('sp-canvas');
     if (!systemId) return;
+    // токен — с пределом ожидания: зависшая сессия не держит вход на планету (js/supabase-client.js)
     window.GD_TOKEN = function() {
-      return sb().auth.getSession().then(function(r) { var s = r && r.data && r.data.session; return s ? s.access_token : 'dev'; });
+      return (typeof sbAccessToken === 'function' ? sbAccessToken(5000)
+        : sb().auth.getSession().then(function(r) { var s = r && r.data && r.data.session; return s ? s.access_token : ''; }))
+        .then(function(t) { return t || 'dev'; });
     };
-    sb().rpc('rt_ground_status', { p_system: systemId }).then(function(r) {
+    // адрес сервера боёв: база не ответила за 8 с — запасной адрес, а не вечное ожидание
+    var status = sb().rpc('rt_ground_status', { p_system: systemId });
+    (typeof sbWithin === 'function' ? sbWithin(status, 8000, 'rt_ground_status') : status).then(function(r) {
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=22'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=23'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=22'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=23'; document.body.appendChild(s);
     });
   }
   var toastQ = [];

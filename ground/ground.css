@@ -56,6 +56,13 @@
 .gp-load.off { opacity: 0; pointer-events: none; }
 .gp-load div { display: flex; align-items: center; gap: 10px; background: rgba(8,11,17,0.92); border: 1px solid #1c2530; border-radius: 10px; padding: 12px 16px; }
 .gp-load span { width: 14px; height: 14px; border: 2px solid rgba(217,169,64,0.3); border-top-color: #d9a940; border-radius: 50%; animation: gp-spin 0.8s linear infinite; }
+.gp-stuck { position: fixed; inset: 0; z-index: 1150; display: grid; place-items: center; padding: 16px; background: rgba(5,6,10,0.72); }
+.gp-stuck[hidden] { display: none; }
+.gp-stuck-box { width: 100%; max-width: 340px; box-sizing: border-box; padding: 16px 16px 14px; background: rgba(8,11,17,0.96); border: 1px solid #1c2530; border-left: 3px solid #d94a4a; border-radius: 10px; font-family: 'Courier New', monospace; }
+.gp-stuck-box b { display: block; font-weight: normal; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: #e8d9a8; }
+.gp-stuck-box p { margin: 8px 0 0; font-size: 11px; line-height: 1.5; color: #8fa8c4; }
+.gp-stuck-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.gp-stuck-btns .sp-btn { flex: 1 1 30%; min-height: 36px; }
 @keyframes gp-spin { to { transform: rotate(360deg); } }
 .gd-dist { font-size: 10px; color: #8fa8c4; gap: 6px; flex-wrap: wrap; row-gap: 2px; }
 .gd-dist:empty { display: none; }

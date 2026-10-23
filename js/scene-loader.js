@@ -50,7 +50,8 @@
       'Устройство: ядер ' + (nav.hardwareConcurrency || '?') + ', память ' + (nav.deviceMemory || '?') + ' ГБ, экран ' +
         (window.innerWidth || 0) + '×' + (window.innerHeight || 0) + ' ×' + (window.devicePixelRatio || 1)
     ].join('\n');
-    try { errReport({ message: 'Долгая загрузка сцены · ' + (location.pathname.split('/').pop() || ''), stack: info }, 'scene.slow'); } catch (e) {}
+    // исход — в тексте: «готово», «не дождались», «по таймеру», «ушёл» и «сервер боёв» идут разными строками журнала
+    try { errReport({ message: 'Долгая загрузка сцены · ' + (location.pathname.split('/').pop() || '') + ' · ' + String(why).replace(/ \d+ с$/, ''), stack: info }, 'scene.slow'); } catch (e) {}
   }
 
   var bar = el.querySelector('.sl-bar i');

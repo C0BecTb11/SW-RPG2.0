@@ -100,16 +100,33 @@
     busy = true;
     took.forEach(function(t) { t[0].d -= t[1]; t[0].sent = true; });
     function back() { took.forEach(function(t) { t[0].d += t[1]; }); tries++; }
+    var settled = false;
+    function done(ok) {
+      if (settled) return; settled = true; clearTimeout(guard);
+      busy = false;
+      if (!ok) back(); else tries = 0;
+      // ещё не отправленные новые — следом, повторы старых — через минуту
+      var fresh = false, more = false;
+      keys.forEach(function(k) { if (Q[k].d > 0) { more = true; if (!Q[k].sent) fresh = true; } });
+      if (more) plan(ok && fresh ? 2000 : 60000);
+    }
+    // Клиент базы может зависнуть целиком (он ждёт сессию, а сессия заблокирована) — ровно тогда,
+    // когда журнал нужнее всего. Нет ответа за 10 с — отправить напрямую, с сохранённым токеном.
+    var guard = setTimeout(function() {
+      if (settled) return;
+      try {
+        var tok = typeof sbStoredToken === 'function' ? sbStoredToken() : '';
+        if (!tok || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_KEY === 'undefined' || typeof fetch !== 'function') { done(false); return; }
+        fetch(SUPABASE_URL + '/rest/v1/rpc/report_client_errors', {
+          method: 'POST', keepalive: true,
+          headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_items: items })
+        }).then(function(r) { done(!!(r && r.ok)); }, function() { done(false); });
+      } catch (e) { done(false); }
+    }, 10000);
     try {
-      supabase.rpc('report_client_errors', { p_items: items }).then(function(r) {
-        busy = false;
-        if (r && r.error) back(); else tries = 0;
-        // ещё не отправленные новые — следом, повторы старых — через минуту
-        var fresh = false, more = false;
-        keys.forEach(function(k) { if (Q[k].d > 0) { more = true; if (!Q[k].sent) fresh = true; } });
-        if (more) plan(fresh ? 2000 : 60000);
-      }, function() { busy = false; back(); plan(60000); });
-    } catch (e) { busy = false; back(); }
+      supabase.rpc('report_client_errors', { p_items: items }).then(function(r) { done(!(r && r.error)); }, function() { done(false); });
+    } catch (e) { done(false); }
   }
 
   window.addEventListener('error', function(e) {

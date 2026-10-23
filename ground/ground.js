@@ -48,6 +48,8 @@
   // ---------------------------------------------------------------- живая планета по сети
   function connectLive() {
     if (!LIVE.srv) { loading(false); toast('Не задан адрес сервера боёв', 'bad'); return; }
+    if (!LIVE.waitSince) LIVE.waitSince = Date.now();         // ждём «hello» — сторож helloWatch
+    LIVE.stage = 'сокет';
     loading(true, 'Связь с планетой…');
     var url = LIVE.srv.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws', ws;
     try { ws = new WebSocket(url); } catch (e) { loading(false); toast('Сервер боёв недоступен', 'bad'); if (window.errReport) errReport(e, 'rt.socket'); return; }
@@ -60,17 +62,27 @@
       LIVE.tries++; retryLive(Math.min(5000, 1000 * LIVE.tries) + Math.random() * 500);
     }, 7000);
     ws.onopen = function() {
+      LIVE.stage = 'токен';
       Promise.resolve(window.GD_TOKEN ? window.GD_TOKEN() : 'dev').then(function(token) {
+        if (ws.readyState !== 1) return;
         var auth = { t: 'auth', token: token || 'dev', room: LIVE.room || 'gr:' + LIVE.system };
         if (/[?&]side=(0|1)/.test(location.search)) auth.side = +/[?&]side=(0|1)/.exec(location.search)[1];
         ws.send(JSON.stringify(auth));
-      });
+        LIVE.stage = 'вход';
+      }).then(null, function(e) { if (window.errReport) errReport(e, 'rt.token'); });
     };
     ws.onmessage = function(e) {
       LIVE.lastMsg = Date.now();
       var m; try { m = JSON.parse(e.data); } catch (err) { return; }
       if (m.t === 'hello') { LIVE.tries = 0; onHello(m, ws); return; }
-      if (m.t === 'error') { loading(false); toast(m.msg || 'Ошибка связи', 'bad'); G.closing = true; if (window.errReport) errReport({ name: 'Сервер боёв', message: String(m.msg || 'ошибка без текста').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '‹id›') }, 'rt.server'); return; }
+      if (m.t === 'error') {
+        // сервер отказал (планета не открылась, бой прерван): не тост, который исчезнет, оставив пустой экран, —
+        // окно с причиной и кнопками
+        G.closing = true; LIVE.waitSince = 0;
+        stuckShow('Планета не открылась', m.msg || 'Ошибка связи с сервером боёв');
+        if (window.errReport) errReport({ name: 'Сервер боёв', message: String(m.msg || 'ошибка без текста').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '‹id›') }, 'rt.server');
+        return;
+      }
       if (m.t === 'reset') { toast(m.msg || 'Планета изменилась', 'gold'); G.B = null; return; }
       if (m.t === 'note') { toast(m.msg, m.kind || 'gold'); return; }
       if (m.t === 'ev' || m.t === 'evend') { if (window.GD_ON_EV) window.GD_ON_EV(m); return; }     // ивент: худ и итог (js/event-live.js)
@@ -79,7 +91,7 @@
     ws.onclose = function() {
       if (G.closing || LIVE.ws !== ws) return;
       LIVE.tries++;
-      toast('Связь с планетой прервана, переподключение…', 'bad');
+      if (LIVE.hadHello && !LIVE.stuckOn) toast('Связь с планетой прервана, переподключение…', 'bad');   // до первого входа — молча, ждёт сторож
       retryLive(Math.min(5000, 1000 * LIVE.tries) + Math.random() * 500);
     };
   }
@@ -93,6 +105,52 @@
     clearTimeout(LIVE.retryT); LIVE.retryT = setTimeout(function() { LIVE.retryT = 0; connectLive(); }, ms);
   }
   function liveDown() { return !LIVE.ws || LIVE.ws.readyState > 1; }
+  // Сторож входа: планета не открылась за HELLO_WAIT — вместо вечной крутилки окно с причиной
+  // (по этапу: нет соединения / нет токена / сервер не открыл комнату) и кнопками; случай — в журнал.
+  var HELLO_WAIT = 20000;
+  var STAGE_WHY = {
+    'сокет': 'Сервер боёв не отвечает. Проверь связь — или попробуй чуть позже.',
+    'токен': 'Не удалось подтвердить вход в игру. Обычно помогает перезагрузка страницы.',
+    'вход': 'Сервер боёв не открыл планету. Попробуй ещё раз.'
+  };
+  function helloWatch() {
+    if (!LIVE.waitSince || G.closing || document.hidden || LIVE.stuckOn) return;
+    if (Date.now() - LIVE.waitSince < HELLO_WAIT) return;
+    stuckShow('Планета не открывается', STAGE_WHY[LIVE.stage] || 'Нет ответа от сервера боёв.');
+    if (!LIVE.stuckRep && window.errReport) {
+      LIVE.stuckRep = true;
+      errReport({ name: 'Сервер боёв', message: 'нет входа за ' + HELLO_WAIT / 1000 + ' с · этап: ' + LIVE.stage,
+                  stack: 'попыток ' + LIVE.tries + ' · сервер ' + String(LIVE.srv || '').replace(/^https?:\/\//, '') +
+                         ' · ' + (navigator.onLine === false ? 'нет сети' : 'сеть есть') + ' · комната ' + (LIVE.room || 'gr:' + LIVE.system) }, 'rt.hello');
+    }
+  }
+  function stuckEsc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function stuckShow(title, why) {
+    var el = $('gd-stuck');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'gd-stuck'; el.className = 'gp-stuck'; document.body.appendChild(el);
+      el.addEventListener('click', function(e) {
+        var b = e.target.closest ? e.target.closest('[data-stuck]') : null; if (!b) return;
+        var k = b.getAttribute('data-stuck');
+        if (k === 'retry') {
+          stuckHide(); G.closing = false; LIVE.tries = 0; LIVE.waitSince = Date.now();
+          clearTimeout(LIVE.retryT); LIVE.retryT = 0;
+          if (LIVE.ws) { var old = LIVE.ws; LIVE.ws = null; old.onclose = null; old.onmessage = null; try { old.close(); } catch (x) {} }
+          connectLive();
+        } else if (k === 'reload') location.reload();
+        else if (k === 'back') location.href = LIVE.system === 'ev' ? 'events.html' : 'galaxy-map.html';
+      });
+    }
+    var inGame = location.pathname.indexOf('/game/') >= 0;
+    el.innerHTML = '<div class="gp-stuck-box"><b>' + stuckEsc(title) + '</b><p>' + stuckEsc(why) + '</p>' +
+      '<div class="gp-stuck-btns"><button type="button" class="sp-btn gold" data-stuck="retry">Повторить</button>' +
+      '<button type="button" class="sp-btn" data-stuck="reload">Перезагрузить</button>' +
+      (inGame ? '<button type="button" class="sp-btn" data-stuck="back">' + (LIVE.system === 'ev' ? 'К ивентам' : 'В галактику') + '</button>' : '') + '</div></div>';
+    el.hidden = false; LIVE.stuckOn = true;
+    loading(false);
+    if (window.sceneLoader && sceneLoader.isOpen()) sceneLoader.hide('сервер боёв');
+  }
+  function stuckHide() { var el = $('gd-stuck'); if (el) el.hidden = true; LIVE.stuckOn = false; }
   // Связь умерла молча (тоннель, лифт: сокет «открыт», кадров нет) — бросить сокет и переподключиться.
   // Кадры идут 5 раз в секунду: 8 с тишины при открытой вкладке — обрыв. Но если сама проверка
   // опоздала (слабый телефон надолго занят кадром), кадры просто ещё лежат в очереди — не рвать:
@@ -107,6 +165,7 @@
     LIVE.tries++; toast('Нет связи с сервером боёв — переподключение…', 'bad'); retryLive(300);
   }
   function onHello(h, ws) {
+    LIVE.waitSince = 0; LIVE.stuckRep = false; LIVE.hadHello = true; stuckHide();
     G.planet = h.system; G.side = h.side;
     var B = new NET.Mirror(h, h.side, function(s) {
       if (ws.readyState === 1 && LIVE.ws === ws) { ws.send(s); return; }
@@ -973,9 +1032,10 @@
     $('sp-end-again').onclick = function() { $('sp-end').hidden = true; start(G.planet); };
     window.addEventListener('resize', resize);
     // живой бой: следить за связью; вернулась сеть / открыли вкладку — переподключиться сразу
-    if (window.GD_LIVE) {
-      setInterval(liveWatch, 1000);
-      var kick = function() { if (G.live && !G.closing && liveDown()) retryLive(0); else if (LIVE.ws) LIVE.lastMsg = Date.now(); };
+    if (LIVE) {
+      setInterval(function() { liveWatch(); helloWatch(); }, 1000);
+      // свернули во время входа — счёт ожидания с возвращения, а не с начала
+      var kick = function() { if (LIVE.waitSince) LIVE.waitSince = Date.now(); if (G.live && !G.closing && liveDown()) retryLive(0); else if (LIVE.ws) LIVE.lastMsg = Date.now(); };
       window.addEventListener('online', kick);
       document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'visible') kick(); });
     }

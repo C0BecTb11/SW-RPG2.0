@@ -98,13 +98,19 @@ function sbGoToAuth() {
 // только при живой сессии и отдаёт тот же {data: {session}}, что getSession.
 function sbSessionGate() {
   return new Promise(function(resolve) {
-    var tries = 0;
+    var tries = 0, answered = false;
+    // сессия молчит 8 с (блокировка сессии между вкладками, телефон проснулся) — в журнал:
+    // так видно, если вход на страницу встал ещё до загрузки игры
+    setTimeout(function() {
+      if (!answered && window.errReport) errReport({ name: 'Вход', message: 'сессия не ответила за 8 с · ' + (location.pathname.split('/').pop() || '') }, 'auth.gate');
+    }, 8000);
     function attempt() {
       supabase.auth.getSession().then(function(res) {
+        answered = true;
         var s = res && res.data && res.data.session;
         if (s) { resolve({ data: { session: s }, error: null }); return; }
         retry();
-      }, retry);
+      }, function() { answered = true; retry(); });
     }
     function retry() {
       if (tries < 2 && sbHasStoredToken()) {
@@ -131,3 +137,39 @@ function sbSessionGate() {
     return realRpc.apply(null, arguments);
   };
 })();
+
+// Токен входа для сервера боёв. getSession иногда не отвечает (блокировка сессии между
+// вкладками, телефон проснулся) — тогда через ms берём сохранённый токен напрямую, а случай
+// пишем в журнал. Пустая строка — токена нет вовсе.
+function sbStoredToken() {
+  try {
+    var j = JSON.parse(window.localStorage.getItem(SB_TOKEN_KEY) || 'null');
+    return (j && (j.access_token || (j.currentSession && j.currentSession.access_token))) || '';
+  } catch (e) { return ''; }
+}
+function sbAccessToken(ms) {
+  ms = ms || 5000;
+  var done = false;
+  return Promise.race([
+    supabase.auth.getSession().then(function(r) {
+      done = true; var s = r && r.data && r.data.session; return s ? s.access_token : sbStoredToken();
+    }, function() { done = true; return sbStoredToken(); }),
+    new Promise(function(res) {
+      setTimeout(function() {
+        if (done) return;
+        if (window.errReport) errReport({ name: 'Вход', message: 'сессия не ответила за ' + ms / 1000 + ' с — взят сохранённый токен' }, 'auth.slow');
+        res(sbStoredToken());
+      }, ms);
+    })
+  ]);
+}
+// Запрос с пределом ожидания: нет ответа за ms — отказ (вызывающий идёт запасным путём) и строка в журнал
+function sbWithin(p, ms, what) {
+  return new Promise(function(res, rej) {
+    var t = setTimeout(function() {
+      if (window.errReport) errReport({ name: 'База', message: what + ' не ответил за ' + ms / 1000 + ' с' }, 'slow:' + what);
+      rej(new Error(what + ': нет ответа'));
+    }, ms);
+    Promise.resolve(p).then(function(v) { clearTimeout(t); res(v); }, function(e) { clearTimeout(t); rej(e); });
+  });
+}

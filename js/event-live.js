@@ -29,18 +29,21 @@
   function boot() {
     if (devRoom) { start(Q('srv') || 'http://127.0.0.1:8080', 'ev:' + devRoom, function() { return Promise.resolve('dev'); }); return; }
     if (!matchId) { location.href = 'events.html'; return; }
+    // токен и адрес сервера — с пределом ожидания (js/supabase-client.js): зависшая сессия
+    // или молчащая база не держат вход в бой, а случай виден в журнале
+    var tok = function() { return sbAccessToken(5000); };
     sbSessionGate().then(function() {
-      return supabase.rpc('event_status');
+      return sbWithin(supabase.rpc('event_status'), 8000, 'event_status');
     }).then(function(r) {
       var st = r && r.data || {}, srv = (st.server && st.server.url) || SRV_FALLBACK;
       if (st.server && st.server.online === false) setTimeout(function() { if (window.GD) GD.toast('Сервер боёв не на связи — бой может не открыться', 'bad'); }, 1500);
-      start(srv, 'ev:' + matchId, function() { return supabase.auth.getSession().then(function(x) { var s = x && x.data && x.data.session; return s ? s.access_token : ''; }); });
-    }, function() { start(SRV_FALLBACK, 'ev:' + matchId, function() { return supabase.auth.getSession().then(function(x) { var s = x && x.data && x.data.session; return s ? s.access_token : ''; }); }); });
+      start(srv, 'ev:' + matchId, tok);
+    }, function() { start(SRV_FALLBACK, 'ev:' + matchId, tok); });
   }
   function start(srv, room, token) {
     window.GD_TOKEN = token;
     window.GD_LIVE = { system: 'ev', room: room, srv: srv, ws: null, tries: 0 };
-    var s = document.createElement('script'); s.src = '../ground/ground.js?v=22'; document.body.appendChild(s);
+    var s = document.createElement('script'); s.src = '../ground/ground.js?v=23'; document.body.appendChild(s);
   }
 
   // ---------------------------------------------------------------- бой открылся

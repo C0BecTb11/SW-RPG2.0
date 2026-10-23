@@ -44,12 +44,12 @@
   "sha": "55b5c151ff6c"
  },
  "ground/ground.css": {
-  "v": "6",
-  "sha": "c82bbf4f47df"
+  "v": "7",
+  "sha": "4539d6b1930e"
  },
  "ground/ground.js": {
-  "v": "22",
-  "sha": "ae40964a77f6"
+  "v": "23",
+  "sha": "a51ab50319b7"
  },
  "ground/preview.css": {
   "v": "1",
@@ -88,12 +88,12 @@
   "sha": "e1a37a3a70f1"
  },
  "js/err-report.js": {
-  "v": "3",
-  "sha": "1eb6477dd47a"
+  "v": "4",
+  "sha": "b3e4d717d3d8"
  },
  "js/event-live.js": {
-  "v": "15",
-  "sha": "1d15a7187bde"
+  "v": "16",
+  "sha": "8bc4ba7cb13d"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -132,8 +132,8 @@
   "sha": "9c5ce8e3d28e"
  },
  "js/ground-live.js": {
-  "v": "19",
-  "sha": "aa19f6c25625"
+  "v": "20",
+  "sha": "b617ee4444fe"
  },
  "js/planet-info.js": {
   "v": "2",
@@ -156,8 +156,8 @@
   "sha": "15de3a2fcd85"
  },
  "js/scene-loader.js": {
-  "v": "1",
-  "sha": "94a8634c7ef6"
+  "v": "2",
+  "sha": "3ba339716db6"
  },
  "js/ship-control.js": {
   "v": "2",
@@ -172,8 +172,8 @@
   "sha": "7b919c7ec0ec"
  },
  "js/supabase-client.js": {
-  "v": "1",
-  "sha": "bff57b0bcbea"
+  "v": "2",
+  "sha": "a7be2f16aef2"
  },
  "js/unrest.js": {
   "v": "3",

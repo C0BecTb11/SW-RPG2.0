@@ -70,6 +70,7 @@
   function leftText(sec) {
     sec = Math.max(0, Math.floor(sec));
     var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    if (h >= 48) return Math.floor(h / 24) + ' д' + (h % 24 ? ' ' + (h % 24) + ' ч' : '');
     if (h > 0) return h + ' ч' + (m ? ' ' + m + ' мин' : '');
     if (m > 0) return m + ' мин';
     return 'меньше минуты';
@@ -241,7 +242,7 @@
     paintSub();
     var p = pending();
     setTabCount('new', p.length, 'gold');
-    setTabCount('fx', effects().length, '');
+    setTabCount('fx', effects().length + ((st.data && st.data.laws) || []).length, '');
     setTabCount('done', 0, '');
     if (!st.data) {
       body.innerHTML = st.error
@@ -401,25 +402,34 @@
     return list.map(function(r) { return cardDone(r, false); }).join('');
   }
 
+  function effRow(e, tag) {
+    var n = e.value | 0;
+    return '<div class="rep-eff"><div class="rep-eff-row"><span class="rep-got ' + (n > 0 ? 'up' : 'down') + '">' + sign(n) + (e.kind === 'mood' ? '' : '%') + ' ' + KIND[e.kind] + '</span>' +
+      '<span class="rep-eff-l" data-end="' + ms(e.ends) + '">' + leftText((ms(e.ends) - now()) / 1000) + '</span></div>' +
+      '<div class="rep-eff-t">' + (tag ? tag + ' · ' : '') + esc(e.title || '') + '</div></div>';
+  }
+
   function renderFx() {
-    var planets = (st.data && st.data.planets) || [], eff = effects();
+    var planets = (st.data && st.data.planets) || [], eff = effects(), laws = (st.data && st.data.laws) || [];
     if (!planets.length) return '<div class="rep-empty"><b>Своих планет нет</b>Эффекты донесений действуют на планеты, которыми ты правишь.</div>';
     var h = '';
-    if (!eff.length) h += '<div class="rep-empty"><b>Действующих эффектов нет</b>Они появляются от решений в донесениях: прибавка к добыче, доходу или довольству — или наоборот.</div>';
+    if (!eff.length && !laws.length) h += '<div class="rep-empty"><b>Действующих эффектов нет</b>Они появляются от решений в донесениях: прибавка к добыче, доходу или довольству — или наоборот.</div>';
+    // законы фракции (Сенат / Совет) действуют на все её планеты сразу
+    if (laws.length) {
+      h += '<div class="rep-pcard law"><div class="rep-pname">Законы фракции</div>';
+      laws.forEach(function(e) { h += effRow(e, e.decree ? 'указ' : 'закон'); });
+      h += '</div>';
+    }
     planets.slice().sort(function(a, b) { return String(a.planet).localeCompare(String(b.planet)); }).forEach(function(p) {
       var mine = eff.filter(function(e) { return e.system === p.system; });
-      if (!mine.length) return;
+      if (!mine.length && !laws.length) return;
       h += '<div class="rep-pcard on"><div class="rep-pname">' + esc(p.planet || p.system) + '</div><div class="rep-meters">' +
         meter(p.mood | 0, '', 'довольство') + meter(p.extract | 0, '%', 'добыча') + meter(p.income | 0, '%', 'доход') + '</div>';
-      mine.forEach(function(e) {
-        var n = e.value | 0;
-        h += '<div class="rep-eff"><div class="rep-eff-row"><span class="rep-got ' + (n > 0 ? 'up' : 'down') + '">' + sign(n) + (e.kind === 'mood' ? '' : '%') + ' ' + KIND[e.kind] + '</span>' +
-          '<span class="rep-eff-l" data-end="' + ms(e.ends) + '">' + leftText((ms(e.ends) - now()) / 1000) + '</span></div>' +
-          '<div class="rep-eff-t">' + esc(e.title || '') + '</div></div>';
-      });
+      mine.forEach(function(e) { h += effRow(e, ''); });
+      if (laws.length) h += '<div class="rep-eff-t rep-eff-law">Цифры вверху — с учётом законов фракции</div>';
       h += '</div>';
     });
-    if (eff.length) h += '<div class="rep-note">Сумма по планете ограничена: довольство — ±30, добыча и доход — ±50%. Довольство видно в поселении строкой «События».</div>';
+    if (eff.length || laws.length) h += '<div class="rep-note">Сумма по планете ограничена: довольство — ±30, добыча и доход — ±50%. Довольство видно в поселении строкой «События».</div>';
     return h;
   }
 

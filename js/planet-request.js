@@ -39,8 +39,10 @@ function refreshPlanetRequestBadge() {
     var n = res.error ? 0 : (res.data || 0);
     var text = n > 9 ? '9+' : String(n);
 
+    // Значок общий с голосованиями Сената (js/faction-senate.js) — там части складываются
     var badge = document.getElementById('faction-badge');
-    if (badge) { badge.textContent = text; badge.style.display = n > 0 ? 'block' : 'none'; }
+    if (typeof setFactionBadgePart === 'function') setFactionBadgePart('req', n);
+    else if (badge) { badge.textContent = text; badge.style.display = n > 0 ? 'block' : 'none'; }
 
     var count = document.getElementById('pr-review-count');
     if (count) { count.textContent = n; count.classList.toggle('has', n > 0); }

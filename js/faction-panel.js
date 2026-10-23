@@ -508,6 +508,7 @@ function fsRender(animate) {
   body.classList.toggle('fs-anim', !!animate);
   body.innerHTML =
     (typeof fsRenderHQ === 'function' ? fsRenderHQ() : '') +
+    (typeof fsRenderSenate === 'function' ? fsRenderSenate() : '') +
     fsRenderBalance(d) +
     fsRenderFront(d) +
     fsRenderMembers(d) +
@@ -591,7 +592,9 @@ function fsLoad(first) {
     supabase.rpc('get_faction_overview'),
     supabase.rpc('get_faction_feed', { p_limit: 30 }),
     // Штаб: приказ дня, цели и должности. Сбой штаба не ломает сводку.
-    typeof hqFetch === 'function' ? hqFetch() : Promise.resolve(null)
+    typeof hqFetch === 'function' ? hqFetch() : Promise.resolve(null),
+    // Сенат / Совет: законы и голосования (js/faction-senate.js)
+    typeof snFetch === 'function' ? snFetch() : Promise.resolve(null)
   ]).then(function(res) {
     if (my !== fsState.req) return;
     fsState.busy = false;
@@ -816,6 +819,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (act === 'retry') { fsSkeleton(); fsLoad(true); return; }
       if (act === 'hq-dir' && typeof openHqDirective === 'function') { openHqDirective(); return; }
       if (act === 'hq-targets' && typeof openHqTargets === 'function') { openHqTargets(); return; }
+      if (act && act.indexOf('sn-') === 0) { if (!t.disabled && typeof snOnBody === 'function') snOnBody(act, t); return; }
       var sys = t.getAttribute('data-sys');
       if (sys) fsGoTo(sys, t.getAttribute('data-info') === '1');
     });

@@ -1,0 +1,132 @@
+/* ===== Сенат / Совет: законы фракции =====
+   Раздел в окне фракции и шторка «Законы» (общая шторка штаба #hq-sheet).
+   Цвет стороны — var(--fc) окна фракции; зелёный — польза закона, красный — его цена,
+   золото — голосование, которое ждёт решения. */
+
+/* при переходе из ленты раздел не прячется под шапкой окна */
+.sn-sec { scroll-margin-top: 74px; }
+
+.sn-bill {
+  margin-bottom: 8px;
+  padding: 11px 13px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid var(--fc);
+  border-radius: 10px;
+}
+.sn-bill.voting { border-left-color: #d9a940; background: linear-gradient(90deg, rgba(217,169,64,0.06), #10151e 55%); }
+.sn-bill.decree { border-left-style: double; border-left-width: 4px; }
+
+.sn-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+
+.sn-tag {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--fc);
+}
+.sn-bill.voting .sn-tag { color: #d9a940; }
+
+.sn-left { flex: none; font-size: 9.5px; color: #55606c; white-space: nowrap; }
+.sn-bill.voting .sn-left { color: #d9a940; }
+
+.sn-title { font-size: 13px; line-height: 1.3; color: #e3e9ec; }
+
+.sn-fx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.sn-fx i {
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 9.5px;
+  font-style: normal;
+  line-height: 15px;
+  white-space: nowrap;
+}
+.sn-fx i.up { background: rgba(95,217,104,0.11); color: #5fd968; }
+.sn-fx i.down { background: rgba(217,74,74,0.13); color: #d94a4a; }
+
+.sn-tally { margin-top: 11px; }
+.sn-bar {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  padding: 1px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 4px;
+}
+.sn-bar i { display: block; height: 100%; transition: width 0.5s ease; }
+.sn-bar i.y { border-radius: 3px 0 0 3px; background: #5fd968; }
+.sn-bar i.n { border-radius: 0 3px 3px 0; background: #d94a4a; }
+.sn-bar i[style*="width:0%"] { display: none; }
+
+.sn-count { display: flex; justify-content: space-between; gap: 6px; margin-top: 5px; font-size: 9.5px; color: #55606c; }
+.sn-count .y { color: #5fd968; }
+.sn-count .n { color: #d94a4a; }
+
+.sn-vote { display: flex; gap: 7px; margin-top: 10px; }
+.sn-btn {
+  flex: 1 1 0;
+  min-height: 38px;
+  padding: 8px 6px;
+  background: #0b0f16;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #8fa8c4;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sn-btn.y:active, .sn-btn.y.on { border-color: #5fd968; color: #5fd968; }
+.sn-btn.n:active, .sn-btn.n.on { border-color: #d94a4a; color: #d94a4a; }
+.sn-btn.y.on { background: rgba(95,217,104,0.1); }
+.sn-btn.n.on { background: rgba(217,74,74,0.1); }
+.sn-btn:disabled { opacity: 0.5; cursor: default; }
+
+.sn-by { margin-top: 8px; font-size: 9.5px; color: #55606c; }
+
+/* ── Шторка «Законы» ─────────────────────────────────────────── */
+.sn-law {
+  margin-bottom: 8px;
+  padding: 11px 12px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 10px;
+}
+.sn-law.on { border-left-color: var(--fc); }
+
+.sn-law-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sn-law-head b { min-width: 0; font-size: 12px; font-weight: normal; letter-spacing: 0.5px; color: #e3e9ec; }
+.sn-law-head em { flex: none; font-size: 9px; font-style: normal; letter-spacing: 1px; text-transform: uppercase; color: var(--fc); }
+.sn-law-head em.wait { color: #55606c; text-transform: none; letter-spacing: 0; }
+
+.sn-law-text { margin-top: 6px; font-size: 10.5px; line-height: 1.5; color: #8fa8c4; }
+
+.sn-law-acts { display: flex; gap: 7px; margin-top: 10px; }
+.sn-law-acts .hq-small { flex: 1 1 0; min-height: 34px; }
+.sn-law-acts .sn-decree { color: #d9a940; border-color: rgba(217,169,64,0.45); }
+
+.sn-hist {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px solid #161b24;
+  font-size: 10.5px;
+}
+.sn-hist:last-of-type { border-bottom: none; }
+.sn-hist b { font-weight: normal; color: #cfd8dc; }
+.sn-hist span { font-size: 9.5px; color: #55606c; }
+.sn-hist.bad span { color: rgba(217,74,74,0.8); }
+
+.sn-rules {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px dashed #1c2530;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1.55;
+  color: #55606c;
+}

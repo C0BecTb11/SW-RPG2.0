@@ -318,6 +318,8 @@
   border-radius: 9px;
 }
 .rep-pcard.on { border-left-color: #4a90d9; }
+.rep-pcard.law { border-left-color: #d9a940; background: linear-gradient(90deg, rgba(217,169,64,0.05), #10151e 60%); }
+.rep-eff-law { margin-top: 9px; padding-top: 8px; border-top: 1px solid #161b24; font-size: 9.5px; color: #55606c; }
 
 .rep-pname { font-size: 13px; color: #e4ecef; }
 

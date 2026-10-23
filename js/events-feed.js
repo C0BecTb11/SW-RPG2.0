@@ -264,6 +264,18 @@ function makeFeedRow(e) {
     row.appendChild(review);
   }
 
+  // Законы фракции: голосование, итог, указ — окно фракции на разделе Сената / Совета
+  if (/^law_/.test(e.type) && typeof openSenate === 'function') {
+    var law = document.createElement('button');
+    law.className = 'feed-go';
+    law.textContent = e.type === 'law_proposed' ? 'Голосовать' : 'Открыть';
+    law.addEventListener('click', function() {
+      closeEventsFeed();
+      openSenate();
+    });
+    row.appendChild(law);
+  }
+
   // Донесение: новое — сразу к выбору, исход — к решённым
   if ((e.type === 'report_new' || e.type === 'report_result') && typeof openReports === 'function') {
     var rep = document.createElement('button');

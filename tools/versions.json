@@ -20,8 +20,12 @@
   "sha": "378d52a8193a"
  },
  "css/reports.css": {
+  "v": "2",
+  "sha": "addfa9a4ee77"
+ },
+ "css/senate.css": {
   "v": "1",
-  "sha": "c1ce18523ab8"
+  "sha": "5c6e4c806f33"
  },
  "css/space-live.css": {
   "v": "4",
@@ -80,12 +84,24 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "1",
-  "sha": "2f6ad7db0957"
+  "v": "2",
+  "sha": "3df4ecaba31c"
  },
  "js/events.js": {
   "v": "4",
   "sha": "3843f6cfa5ad"
+ },
+ "js/faction-panel.js": {
+  "v": "1",
+  "sha": "0343c795da54"
+ },
+ "js/faction-senate.js": {
+  "v": "1",
+  "sha": "71c477cdef4b"
+ },
+ "js/faction-staff.js": {
+  "v": "1",
+  "sha": "0f3107ded55b"
  },
  "js/ground-battle.js": {
   "v": "2",
@@ -94,6 +110,10 @@
  "js/ground-live.js": {
   "v": "16",
   "sha": "a96fa3efe41b"
+ },
+ "js/planet-request.js": {
+  "v": "1",
+  "sha": "a26ef5a0d47b"
  },
  "js/planets.js": {
   "v": "4",
@@ -104,8 +124,8 @@
   "sha": "719e753dd70c"
  },
  "js/reports.js": {
-  "v": "1",
-  "sha": "b897b66b9d03"
+  "v": "2",
+  "sha": "0d0f20674820"
  },
  "js/ship-control.js": {
   "v": "2",

@@ -470,7 +470,15 @@ function fsFeedLine(e) {
     case 'treasury_debt':
       return ['−' + fsNum(e.amount) + ' кр. · ' + fsEsc(e.subject || ''), ''];
     case 'unrest_level':
-      return [fsEsc(sys) + ' · ' + fsEsc(m.state_t || '') + ' · ' + fsNum(e.amount), 'наблюдение'];
+      return [fsEsc(sys) + ' · ' + fsEsc(m.state_t || '') + ' · ' + fsNum(e.amount), m.obs === false ? '' : 'наблюдение'];
+    case 'unrest_near':
+      return [fsEsc(sys) + ' · напряжение ' + fsNum(e.amount), 'мятеж близко'];
+    case 'unrest_riot':
+      return [fsEsc(sys) + ' · повстанцев ' + fsNum(e.amount), '48 ч на подавление'];
+    case 'unrest_riot_end':
+      return [fsEsc(sys), m.status === 'suppressed' ? 'подавлен' : 'договорились'];
+    case 'unrest_riot_lost':
+      return [fsEsc(sys), 'управляющий снят' + (m.level ? ' · уровень ' + m.level : '')];
     case 'unrest_calm':
       return [fsEsc(sys) + ' · напряжение ' + fsNum(e.amount), ''];
     case 'settlement_conditions':

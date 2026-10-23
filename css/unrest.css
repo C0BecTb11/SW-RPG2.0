@@ -120,6 +120,56 @@
   color: #55606c;
 }
 
+/* ── Мятеж ───────────────────────────────────────────────────────── */
+.un-riot {
+  margin-top: 10px;
+  padding: 10px 12px 11px;
+  background: linear-gradient(180deg, rgba(255,92,92,0.08), rgba(255,92,92,0.02));
+  border: 1px solid rgba(255,92,92,0.45);
+  border-radius: 9px;
+  box-shadow: 0 0 14px rgba(255,92,92,0.08);
+}
+.un-riot-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.un-riot-top b { font-weight: normal; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: #ff5c5c; }
+.un-riot-top em { font-style: normal; font-size: 10px; color: #8fa8c4; white-space: nowrap; }
+.un-riot-top em span { color: #ff5c5c; font-variant-numeric: tabular-nums; }
+.un-riot-time { height: 3px; margin-top: 8px; border-radius: 2px; background: rgba(255,92,92,0.12); overflow: hidden; }
+.un-riot-time i { display: block; height: 100%; width: 0; background: #ff5c5c; opacity: 0.75; transition: width 1s linear; }
+.un-riot-reb { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 10.5px; color: #8fa8c4; }
+.un-riot-reb > span:first-child { flex: none; }
+.un-riot-reb b { flex: none; margin-left: auto; font-weight: normal; color: #cfd8dc; }
+.un-pips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.un-pips i {
+  width: 7px; height: 7px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,92,92,0.45);
+  border-radius: 50%;
+}
+.un-pips i.on { background: #ff5c5c; border-color: #ff5c5c; box-shadow: 0 0 5px rgba(255,92,92,0.5); }
+.un-riot-txt { margin-top: 8px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+
+/* Действующие штрафы напряжения */
+.un-effs { margin-top: 10px; border: 1px solid #1c2530; border-left: 3px solid var(--un); border-radius: 8px; background: #10151e; }
+.un-eff { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; padding: 7px 10px 8px; font-size: 10.5px; color: #8fa8c4; }
+.un-eff + .un-eff { border-top: 1px solid #161b24; }
+.un-eff span { min-width: 0; color: #cfd8dc; letter-spacing: 0.5px; }
+.un-eff em { flex: none; margin-left: auto; font-style: normal; font-size: 9.5px; color: #55606c; white-space: nowrap; }
+.un-eff b { flex-basis: 100%; font-weight: normal; color: #d94a4a; }
+
+/* Переговоры */
+.un-deal { margin-top: 10px; padding: 10px 12px 11px; background: #10151e; border: 1px solid #1c2530; border-radius: 9px; }
+.un-deal-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.un-deal-h b { font-weight: normal; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #d9a940; }
+.un-deal-h em { font-style: normal; font-size: 10px; color: #5fd968; white-space: nowrap; }
+.un-deal-cost { margin-top: 8px; font-size: 10.5px; line-height: 1.5; color: #8fa8c4; }
+.un-deal-cost b { font-weight: normal; color: #cfd8dc; }
+.un-deal-cost i { font-style: normal; color: #55606c; white-space: nowrap; }
+.un-deal-cost i.short { color: #d94a4a; }
+.un-deal-why { margin-top: 8px; font-size: 10px; line-height: 1.5; color: #55606c; }
+.un-deal-go.alt { background: transparent; color: #d9a940; box-shadow: inset 0 0 0 1px rgba(217,169,64,0.55); }
+.un-deal-go.alt:disabled { background: #16202e; color: #55606c; box-shadow: inset 0 0 0 1px #2a3644; }
+.un-deal-go + .un-deal-go { margin-top: 6px; }
+
 /* ── Карточка планеты ────────────────────────────────────────────── */
 .pi-stat.un-pi b { color: var(--un); }
 .pi-stat.un-pi .un-trend { margin-left: 4px; font-size: 0.9em; }
@@ -178,6 +228,7 @@
 .un-pl-top .un-st { flex: none; font-size: 9.5px; letter-spacing: 0.5px; }
 .un-pl-line { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #8fa8c4; }
 .un-pl-line i { font-style: normal; color: #d9a940; }
+.un-pl-line i.riot { color: #ff5c5c; }
 .un-pl-v { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 34px; }
 .un-pl-v b { font-size: 16px; font-weight: normal; line-height: 1; color: var(--un); }
 .un-pl-v .un-trend { font-size: 9.5px; }

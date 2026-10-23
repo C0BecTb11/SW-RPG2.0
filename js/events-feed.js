@@ -431,6 +431,7 @@ var FEED_BOARD_END = feedSet(['boarding_captured', 'boarding_lost', 'boarding_bl
 
 // Поселение: открываем его панель
 var FEED_SETTLEMENT = feedSet(['settlement_conditions', 'settlement_remind', 'unrest_level', 'unrest_calm',
+  'unrest_near', 'unrest_riot', 'unrest_riot_end', 'unrest_riot_lost',
   'district_built', 'district_started', 'settlement_upgrade',
   'settlement_level_up', 'settlement_hungry', 'settlement_failed', 'settlement_gift',
   'settlement_donation', 'settlement_festival', 'settlement_income', 'capture_started',

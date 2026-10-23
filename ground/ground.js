@@ -736,7 +736,7 @@
     var stat = '<span>Своих <b>' + alive + '</b> · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
     // подсказка по шагу: что сейчас сделает касание
     var one = sel.length === 1 ? sel[0] : null, oneCv = one && B.coverInfo ? B.coverInfo(one) : null;
-    var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника' : 'врага')
+    var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника — подойдёт сам' : 'врага — подойдёт сам')
       : one ? '<b>' + (one.name || one.T.name) + '</b> · ' + Math.round(one.hp) + '/' + one.hpMax + (oneCv ? ' · ' + (oneCv.k === 'struct' ? '🛡 ' : '') + oneCv.text.split(' (')[0].split(' ·')[0] : '') + (one.focus >= 0 ? ' · атакует ' + unitName(B, one.focus) : one.tgt >= 0 && one.tgt < 100000 ? ' · стреляет по ' + unitName(B, one.tgt) : one.goal && !one.at ? ' · идёт' : '')
       : sel.length ? 'Выбрано <b>' + sel.length + '</b> · касание земли — идти, врага — атаковать'
       : 'Коснись своего бойца, чтобы выбрать · долгое нажатие — рамка';
@@ -857,8 +857,8 @@
     if (!G.arm && window.GD_ON_TAP && window.GD_ON_TAP(cx, cy, a, sel.length, px, py) === true) return;
     if (G.arm) {
       var hero = B.agents[G.arm.id], A = GR.ABIL[G.arm.ab], err;
-      if (A[1] === 'area') err = B.useAbility(G.side, G.arm.id, G.arm.ab, { x: w[0], y: w[1] });
-      else if (a) err = B.useAbility(G.side, G.arm.id, G.arm.ab, { tid: a.id });
+      if (A[1] === 'area') err = B.useAbility(G.side, G.arm.id, G.arm.ab, { x: w[0], y: w[1] }, true);
+      else if (a) err = B.useAbility(G.side, G.arm.id, G.arm.ab, { tid: a.id }, true);
       else err = 'нужна цель';
       if (err) toast(err, 'bad'); G.arm = null; hud(); return;
     }
@@ -935,7 +935,7 @@
         var ab = t.getAttribute('data-ab'), sel = selected(), hero = sel.filter(function(a) { return a.hero; })[0]; if (!hero) return;
         var A = GR.ABIL[ab];
         if (A[1] === 'self' || !A[1]) { var err = B.useAbility(G.side, hero.id, ab, null); if (err) toast(err, 'bad'); }
-        else if (A[1] === 'ally' && ab === 'heal_light') { var err2 = B.useAbility(G.side, hero.id, ab, { tid: hero.id }); if (err2) { G.arm = { id: hero.id, ab: ab }; toast('Выбери союзника рядом', 'gold'); } }
+        else if (A[1] === 'ally' && ab === 'heal_light') { var err2 = B.useAbility(G.side, hero.id, ab, { tid: hero.id }); if (err2) { G.arm = { id: hero.id, ab: ab }; toast('Выбери союзника — герой подойдёт сам', 'gold'); } }
         else { G.arm = G.arm && G.arm.ab === ab ? null : { id: hero.id, ab: ab }; if (G.arm) toast('Теперь коснись цели на поле', 'gold'); }
         // цель выбирают на поле — шторка не должна его закрывать
         if (G.arm) G.sheet = '';

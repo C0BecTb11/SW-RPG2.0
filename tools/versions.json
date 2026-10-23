@@ -44,8 +44,8 @@
   "sha": "c82bbf4f47df"
  },
  "ground/ground.js": {
-  "v": "19",
-  "sha": "dc60df109d6b"
+  "v": "20",
+  "sha": "dfd69ba2c647"
  },
  "ground/preview.css": {
   "v": "1",
@@ -88,8 +88,8 @@
   "sha": "23422c935c94"
  },
  "js/event-live.js": {
-  "v": "12",
-  "sha": "ae1192f573ab"
+  "v": "13",
+  "sha": "321246addd30"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -128,8 +128,8 @@
   "sha": "18a1ca0095c5"
  },
  "js/ground-live.js": {
-  "v": "16",
-  "sha": "a96fa3efe41b"
+  "v": "17",
+  "sha": "c56436e1ee74"
  },
  "js/planet-info.js": {
   "v": "1",
@@ -208,12 +208,12 @@
   "sha": "29de229d9ace"
  },
  "shared/rt-ground-net.js": {
-  "v": "5",
-  "sha": "3883d04a12c3"
+  "v": "6",
+  "sha": "b864c2136c7e"
  },
  "shared/rt-ground.js": {
-  "v": "10",
-  "sha": "84d71c9778d0"
+  "v": "11",
+  "sha": "977be863f655"
  },
  "shared/rt-heroes.js": {
   "v": "2",

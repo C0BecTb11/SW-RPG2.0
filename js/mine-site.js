@@ -8,12 +8,20 @@ var mnBuilding = null;     // строка постройки
 var mnAt = 0;              // когда пришло состояние (мс, часы клиента)
 var mnPoll = null, mnTick = null, mnBusy = false, mnSeq = 0;
 var mnOpenAt = 0, mnDownBack = false;   // касание фона закрывает шторку, только если оно на фоне и началось
-var mnForm = { len: 8, pace: 'normal', h: 0, d: 0, touched: false };
+var mnForm = { len: 8, pace: 'normal', task: 'extract', h: 0, d: 0, touched: false };
 var MN_PACE = { careful: 'Бережно', normal: 'Обычно', rush: 'Аврал' };
 var MN_PACE_HINT = {
   careful: 'медленнее, зато отдых вдвое короче',
   normal: 'обычная выработка и отдых',
   rush: 'быстрее, но отдых дольше, а часть бригады может выбыть'
+};
+var MN_TASK = { extract: 'Добыча', prep: 'Вскрыша', survey: 'Разведка жилы', maint: 'Обслуживание' };
+var MN_TASK_SUB = { extract: 'сырьё ×1', prep: '×0,2 → добыча +25 %', survey: 'жила +40 % на сутки', maint: 'ремонт оборудования' };
+var MN_TASK_HINT = {
+  extract: 'основная работа: сырьё на склад',
+  prep: 'почти без выхода, зато следующая смена добычи даст +25 %',
+  survey: 'без выхода: шанс найти богатую жилу — +40 % к добыче на сутки',
+  maint: 'без выхода: бригада чинит оборудование, техники ускоряют ремонт'
 };
 var MN_KIND = {
   rep_mine: 'Рудник', cis_mine: 'Рудник', rep_gas: 'Газовый промысел', cis_gas: 'Газовый промысел',
@@ -70,7 +78,7 @@ function mnPanel() {
 function openMineSite(building) {
   mnBuilding = building; mnOpenAt = Date.now(); mnDownBack = false;
   mnState = null;
-  mnForm = { len: 8, pace: 'normal', h: 0, d: 0, touched: false };
+  mnForm = { len: 8, pace: 'normal', task: 'extract', h: 0, d: 0, touched: false };
   var p = mnPanel();
   var t = building.building_types || {};
   document.getElementById('mn-title').textContent = MN_KIND[t.code] || 'Участок';
@@ -129,13 +137,25 @@ function mnClamp() {
   mnForm.d = Math.max(0, Math.min(mnForm.d, md, st.places - mnForm.h));
 }
 
-// Выработка в час по тем же правилам, что mine_rate_h в базе, с эффектами планеты
-function mnRate(h, d, len, pace, fedH, fedD) {
-  var st = mnState, c = st.cfg;
+// Выработка в час по тем же правилам, что в базе: mine_rate_h × множитель участка (mine_mult) × задача × эффекты планеты
+function mnMult(task) {
+  var st = mnState, m = st.mult || 1;
+  if (task !== 'extract' && st.prep) m = m / (1 + st.prep / 100);       // вскрыша копится только для добычи
+  return m;
+}
+function mnRate(h, d, len, pace, fedH, fedD, task) {
+  var st = mnState, c = st.cfg, tk = c.task && c.task[task || 'extract'] != null ? c.task[task || 'extract'] : 1;
   var k = c.rate * st.res_k * (c.pace[pace] || 1) *
           (h * (c.k_h[len] || 1) * (fedH ? 1 : c.hungry) + d * (c.k_d[len] || 1) * (fedD ? 1 : c.hungry));
-  return k * Math.max(0, 100 + (st.eff || 0)) / 100;
+  return k * mnMult(task || 'extract') * tk * Math.max(0, 100 + (st.eff || 0)) / 100;
 }
+// Износ за смену, %: как в mine_finish (бережно ×0,5, аврал ×2, мастерские ×0,7; разведка вполовину)
+function mnWear(h, d, len, pace, task) {
+  var st = mnState, c = st.cfg, pw = (pace === 'careful' ? 0.5 : pace === 'rush' ? 2 : 1) * (st.districts && st.districts.workshops ? 0.7 : 1);
+  if (task === 'maint') return -(h + d) * len * 2 * (1 + 0.5 * Math.min(st.techs, st.techs_max));
+  return len * pw * (h * c.wear_h + d * c.wear_d) * (task === 'survey' ? 0.5 : 1);
+}
+function mnStarsHtml(n) { var s = ''; for (var i = 0; i < 5; i++) s += '<i class="' + (i < n ? 'on' : '') + '">★</i>'; return s; }
 function mnRestMin(kind, hours, pace) {
   var k = (mnState.cfg.rest[pace] || 1);
   return kind === 'h' ? Math.max(60, Math.round(hours * 30 * k)) : Math.max(30, Math.round(hours * 15 * k));
@@ -156,6 +176,7 @@ function mnRender() {
       '<div><em>бригада</em><b>' + (st.humans + st.droids) + '<small>/' + st.staff_max + '</small></b><span>мест работы ' + st.places + '</span></div>' +
       '<div><em>склад участка</em><b>' + st.stock + '<small>/' + st.site_cap + '</small></b><span>планета ' + st.planet.res + '/' + st.planet.cap + '</span></div>' +
     '</div>' +
+    mnStateHtml(st) +
     (st.eff ? '<div class="mn-eff ' + (st.eff > 0 ? 'up' : 'down') + '">Эффекты планеты: добыча ' + (st.eff > 0 ? '+' : '−') + Math.abs(st.eff) + ' %</div>' : '') +
     (st.capture ? '<div class="mn-eff down">На планете идёт захват — новые смены не начать</div>' : '') +
   '</div>';
@@ -180,6 +201,12 @@ function mnRender() {
   html += '<div class="mn-note">На смену выходит не больше ' + st.places + ' — по числу мест работы. Остальные отдыхают и сменяют уставших. ' +
     'Люди: паёк — 1 еда за смену (на планете ' + st.planet.food + '). Дроиды: обслуживание — 1 руда за смену (на планете ' + st.planet.ore + '). Без него выработка ×' + mnNum(st.cfg.hungry, 1) + '.</div>';
 
+  // --- специалисты
+  html += '<div class="mn-sec">Специалисты</div>' + mnSpecRow('f', st) + mnSpecRow('t', st);
+
+  // --- участок: места работы
+  html += mnUpgradeHtml(st);
+
   // --- последние смены
   if (st.last && st.last.length) {
     html += '<div class="mn-sec">Последние смены</div><div class="mn-log">';
@@ -187,8 +214,10 @@ function mnRender() {
       var when = new Date(x.ended_at || x.started_at), hm = when.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       var crew = [x.humans ? mnWorkers(x.humans, 'h') : '', x.droids ? mnWorkers(x.droids, 'd') : ''].filter(Boolean).join(' + ');
       var tag = x.status === 'stopped' ? 'остановлена' : x.status === 'lost' ? 'сорвана' : x.auto ? 'авто' : '';
-      html += '<div class="mn-log-row"><span class="t">' + hm + '</span><span class="w">' + x.len + ' ч · ' + MN_PACE[x.pace].toLowerCase() + ' · ' + crew + (tag ? ' · <i>' + tag + '</i>' : '') + (x.fed ? '' : ' · <i class="bad">без пайка</i>') + '</span>' +
-        '<b style="color:' + col + '">+' + x.got + '</b>' + (x.lost ? '<em class="bad">−' + x.lost + '</em>' : '') + '</div>';
+      var task = x.task && x.task !== 'extract' ? MN_TASK[x.task] + ' · ' : '';
+      html += '<div class="mn-log-row"><span class="t">' + hm + '</span><span class="w">' + task + x.len + ' ч · ' + MN_PACE[x.pace].toLowerCase() + ' · ' + crew + (tag ? ' · <i>' + tag + '</i>' : '') + (x.fed ? '' : ' · <i class="bad">без пайка</i>') +
+        (x.result ? '<br><i class="res">' + mnEsc(x.result) + '</i>' : '') + '</span>' +
+        (x.got || !x.task || x.task === 'extract' ? '<b style="color:' + col + '">+' + x.got + '</b>' : '') + (x.lost ? '<em class="bad">−' + x.lost + '</em>' : '') + '</div>';
     });
     html += '</div>';
   }
@@ -197,6 +226,58 @@ function mnRender() {
   html += '<div class="mn-err" id="mn-err"></div>';
   body.innerHTML = html;
   mnLive();
+}
+
+// Состояние участка: оборудование, опыт бригады, жила, вскрыша — и что это даёт к выработке
+function mnStateHtml(st) {
+  var w = st.wear || 0, wk = w >= 60 ? 'bad' : w >= 25 ? 'warn' : 'ok', now = Date.now();
+  var star = st.stars || 0, next = st.hours_next;
+  var html = '<div class="mn-state">' +
+    '<div class="mn-st ' + wk + '"><em>оборудование</em><b>' + Math.max(0, Math.round(100 - w)) + ' %</b><span>' + (w > 0.5 ? 'износ ' + mnNum(w, 0) + ' % · ×' + mnNum(1 - w * 0.004, 2) : 'в порядке') + '</span></div>' +
+    '<div class="mn-st"><em>опыт бригады</em><b class="mn-stars">' + mnStarsHtml(star) + '</b><span>' + (star ? '+' + star * 3 + ' % · ' : '') + (next ? st.hours + '/' + next + ' ч' : 'предел') + '</span></div>';
+  if (st.vein_until) html += '<div class="mn-st gold"><em>богатая жила</em><b>+40 %</b><span>ещё ' + mnLeft(new Date(st.vein_until).getTime() - now) + '</span></div>';
+  if (st.prep) html += '<div class="mn-st gold"><em>вскрыша</em><b>+' + st.prep + ' %</b><span>к следующей добыче</span></div>';
+  html += '</div>';
+  if (st.mult && Math.abs(st.mult - 1) > 0.005) html += '<div class="mn-eff ' + (st.mult > 1 ? 'up' : 'down') + '">Участок к выработке: ×' + mnNum(st.mult, 2) + '</div>';
+  return html;
+}
+
+// Бригадир и техники
+function mnSpecRow(kind, st) {
+  var n = kind === 'f' ? st.foremen : st.techs, max = kind === 'f' ? st.foremen_max : st.techs_max, price = kind === 'f' ? st.cfg.hire_f : st.cfg.hire_t;
+  var name = kind === 'f' ? 'Бригадир' : 'Техники';
+  var what = kind === 'f' ? '+10 % к выработке смены, в аврале травм и поломок вдвое меньше'
+                          : 'чинят оборудование: каждый — 1 % износа в час; на обслуживании ремонт быстрее на 50 %';
+  return '<div class="mn-crew ' + kind + '">' +
+    '<div class="mn-crew-ico">' + (kind === 'f' ? '<svg viewBox="0 0 20 20"><path d="M5 8a5 5 0 0 1 10 0z"/><path d="M4 8h12"/><path d="M7 12h6M7 15h4"/></svg>'
+                                                : '<svg viewBox="0 0 20 20"><path d="M12.5 3.5a3.5 3.5 0 0 0-3.9 4.6L3.5 13.2l3.3 3.3 5.1-5.1a3.5 3.5 0 0 0 4.6-3.9l-2.2 2.2-2.3-.6-.6-2.3z"/></svg>') + '</div>' +
+    '<div class="mn-crew-info"><b>' + name + ' · ' + n + '<small> из ' + max + '</small></b><em>' + what + '</em></div>' +
+    '<div class="mn-crew-btns">' +
+      '<button type="button" class="mn-btn" data-mn="hire" data-k="' + kind + '"' + (n < max ? '' : ' disabled') + '>+ Нанять<small>' + price + ' кр</small></button>' +
+      '<button type="button" class="mn-btn ghost" data-mn="fire" data-k="' + kind + '"' + (n > 0 ? '' : ' disabled') + '>− Уволить</button>' +
+    '</div></div>';
+}
+
+// Улучшение мест работы и помощь районов поселения
+function mnUpgradeHtml(st) {
+  var u = st.upgrade, d = st.districts || {}, html = '<div class="mn-sec">Участок · мест работы ' + st.places + '</div>';
+  if (u) {
+    var okC = (st.credits || 0) >= u.credits, okD = st.planet.durasteel >= u.durasteel, okE = st.planet.electronics >= u.electronics;
+    html += '<div class="mn-up">' +
+      '<div class="mn-up-top"><b>' + st.places + ' → ' + u.places + ' мест</b><span>барак до ' + u.places * 2 + ' рабочих</span></div>' +
+      '<div class="mn-up-cost"><span class="' + (okC ? '' : 'bad') + '">' + u.credits + ' кр</span>' +
+        '<span class="' + (okD ? '' : 'bad') + '">дюрасталь ' + u.durasteel + ' <i>(' + st.planet.durasteel + ')</i></span>' +
+        (u.electronics ? '<span class="' + (okE ? '' : 'bad') + '">электроника ' + u.electronics + ' <i>(' + st.planet.electronics + ')</i></span>' : '') + '</div>' +
+      '<button type="button" class="mn-go" data-mn="upgrade"' + (okC && okD && okE && !st.capture ? '' : ' disabled') + '>Улучшить участок</button>' +
+    '</div>';
+  } else html += '<div class="mn-note">Участок наибольший — 18 мест работы.</div>';
+  var tips = [];
+  tips.push((d.hospital ? '✓' : '·') + ' Госпиталь — травмы людей вдвое короче');
+  tips.push((d.workshops ? '✓' : '·') + ' Мастерские — поломки дроидов вдвое короче, износ ×0,7');
+  tips.push((d.market ? '✓' : '·') + ' Рынок — найм на 20 % дешевле');
+  tips.push((d.warehouses ? '✓' : '·') + ' Склады — склад участка +300');
+  html += '<div class="mn-districts">' + tips.map(function(t) { return '<span class="' + (t.charAt(0) === '✓' ? 'on' : '') + '">' + t + '</span>'; }).join('') + '</div>';
+  return html;
 }
 
 function mnCrewRow(kind, st) {
@@ -226,14 +307,28 @@ function mnRunHtml() {
   var crew = [r.humans ? mnWorkers(r.humans, 'h') : '', r.droids ? mnWorkers(r.droids, 'd') : ''].filter(Boolean).join(' + ');
   var warn = (!r.fed_h && r.humans) || (!r.fed_d && r.droids) ? '<div class="mn-note warn">' + (!r.fed_h && r.humans ? 'Людям не хватило пайка' : 'Дроидам не хватило обслуживания') + ' — выработка ×' + mnNum(mnState.cfg.hungry, 1) + '</div>' : '';
   return '<div class="mn-run" style="--mn-c:' + col + '">' +
-    '<div class="mn-run-top"><span>' + r.len + ' ч · ' + MN_PACE[r.pace].toLowerCase() + (r.auto ? ' · автосмена' : '') + '</span><b id="mn-run-left"></b></div>' +
-    '<div class="mn-run-crew">' + crew + ' · ' + mnNum(r.rate, 1) + ' в час</div>' +
+    '<div class="mn-run-top"><span>' + (r.task && r.task !== 'extract' ? MN_TASK[r.task] + ' · ' : '') + r.len + ' ч · ' + MN_PACE[r.pace].toLowerCase() + (r.auto ? ' · автосмена' : '') + '</span><b id="mn-run-left"></b></div>' +
+    '<div class="mn-run-crew">' + crew + (r.rate > 0 ? ' · ' + mnNum(r.rate, 1) + ' в час' : '') + (r.mult && Math.abs(r.mult - 1) > 0.005 ? ' · участок ×' + mnNum(r.mult, 2) : '') + '</div>' +
     '<div class="mn-bar"><i id="mn-run-bar"></i></div>' +
-    '<div class="mn-run-got"><span>Добыто за смену</span><b id="mn-run-got" style="color:' + col + '"></b><em id="mn-run-of"></em></div>' +
+    mnRunGot(r, col) +
     warn +
     '<button type="button" class="mn-go danger" data-mn="stop">Закончить смену сейчас</button>' +
-    '<div class="mn-note">Добытое ляжет на склад по концу смены. Закончить раньше можно — придёт то, что успели.</div>' +
+    '<div class="mn-note">' + ({
+      prep: 'Вскрыша засчитается, если отработать хотя бы половину смены: следующая добыча +25 %.',
+      survey: 'Итог разведки — по концу смены. Закончить раньше можно, но шанс будет меньше: он растёт с отработанными часами.',
+      maint: 'Ремонт засчитается по концу смены. Закончить раньше можно — починят за отработанные часы.'
+    }[r.task] || 'Добытое ляжет на склад по концу смены. Закончить раньше можно — придёт то, что успели.') + '</div>' +
   '</div>';
+}
+
+// Что даст идущая смена: добыча и вскрыша — счётчик, разведка — шанс, обслуживание — ремонт
+function mnRunGot(r, col) {
+  var st = mnState, n = (r.humans || 0) + (r.droids || 0);
+  if (r.task === 'survey')
+    return '<div class="mn-run-got"><span>Шанс найти жилу</span><b style="color:#8fd3ff">' + Math.round(Math.min(0.6, 0.12 * r.len * n / 6) * 100) + ' %</b><em>к концу смены</em></div>';
+  if (r.task === 'maint')
+    return '<div class="mn-run-got"><span>Снимет износа</span><b style="color:#8fd3ff">−' + Math.round(Math.min(st.wear, n * r.len * 2 * (1 + 0.5 * Math.min(st.techs, st.techs_max)))) + ' %</b><em>сейчас ' + mnNum(st.wear, 0) + ' %</em></div>';
+  return '<div class="mn-run-got"><span>Добыто за смену</span><b id="mn-run-got" style="color:' + col + '"></b><em id="mn-run-of"></em></div>';
 }
 
 function mnFormHtml() {
@@ -241,6 +336,11 @@ function mnFormHtml() {
   if (st.res_k <= 0) return '<div class="mn-empty bad">На планете нет залежи этого сырья — участок стоит</div>';
   var mh = st.rest_h ? 0 : st.avail_h, md = st.rest_d ? 0 : st.avail_d;
   html += '<div class="mn-form">';
+  if (f.task === 'maint' && !(st.wear > 0)) f.task = 'extract';
+  html += '<div class="mn-lab">Задача</div><div class="mn-chips tasks">' + ['extract', 'prep', 'survey', 'maint'].map(function(t) {
+    var off = t === 'maint' && !(st.wear > 0);
+    return '<button type="button" class="mn-chip' + (f.task === t ? ' on' : '') + '" data-mn="task" data-v="' + t + '"' + (off ? ' disabled' : '') + '>' + MN_TASK[t] + '<small>' + MN_TASK_SUB[t] + '</small></button>';
+  }).join('') + '</div><div class="mn-hint">' + MN_TASK_HINT[f.task] + '</div>';
   html += '<div class="mn-lab">Длина</div><div class="mn-chips lens">' + c.lens.map(function(l) {
     return '<button type="button" class="mn-chip' + (f.len === l ? ' on' : '') + '" data-mn="len" data-v="' + l + '">' + l + ' ч<small>×' + mnNum(c.k_h[l], 2) + '</small></button>';
   }).join('') + '</div>';
@@ -251,14 +351,19 @@ function mnFormHtml() {
   html += '<div class="mn-lab">Кто выходит · мест ' + st.places + '</div>';
   html += mnStepper('h', 'Люди', f.h, mh, st.rest_h) + mnStepper('d', 'Дроиды', f.d, md, st.rest_d);
   // прогноз
-  var fedH = st.planet.food >= f.h, fedD = st.planet.ore >= f.d, rate = mnRate(f.h, f.d, f.len, f.pace, fedH, fedD);
+  var fedH = st.planet.food >= f.h, fedD = st.planet.ore >= f.d, rate = mnRate(f.h, f.d, f.len, f.pace, fedH, fedD, f.task);
   var restH = f.h ? mnRestMin('h', f.len, f.pace) : 0, restD = f.d ? mnRestMin('d', f.len, f.pace) : 0;
+  var wear = mnWear(f.h, f.d, f.len, f.pace, f.task), main;
+  if (f.task === 'survey') main = '<b>' + Math.round(Math.min(0.6, 0.12 * f.len * (f.h + f.d) / 6) * 100) + ' %</b><span>шанс найти богатую жилу</span>';
+  else if (f.task === 'maint') main = '<b>−' + Math.round(Math.min(st.wear, -wear)) + ' %</b><span>износа за смену (сейчас ' + mnNum(st.wear, 0) + ' %)</span>';
+  else main = '<b>≈ ' + Math.round(rate * f.len) + '</b><span>' + mnEsc((st.res || {}).name || '').toLowerCase() + ' за смену · ' + mnNum(rate, 1) + ' в час' + (f.task === 'prep' ? ' · потом добыча +25 %' : '') + '</span>';
   html += '<div class="mn-fc">' +
-    '<div class="mn-fc-main"><b>≈ ' + Math.round(rate * f.len) + '</b><span>' + mnEsc((st.res || {}).name || '').toLowerCase() + ' за смену · ' + mnNum(rate, 1) + ' в час</span></div>' +
+    '<div class="mn-fc-main">' + main + '</div>' +
     '<div class="mn-fc-row">' +
       (f.h ? '<span>паёк: ' + f.h + ' еды' + (fedH ? '' : ' <i class="bad">не хватает</i>') + '</span>' : '') +
       (f.d ? '<span>обслуживание: ' + f.d + ' руды' + (fedD ? '' : ' <i class="bad">не хватает</i>') + '</span>' : '') +
       ((f.h || f.d) ? '<span>отдых после: ' + [restH ? 'люди ' + mnRestText(restH) : '', restD ? 'дроиды ' + mnRestText(restD) : ''].filter(Boolean).join(', ') + '</span>' : '') +
+      ((f.h || f.d) && f.task !== 'maint' ? '<span>износ оборудования: +' + mnNum(wear, 1) + ' %</span>' : '') +
     '</div></div>';
   var can = (f.h + f.d) > 0 && !st.capture;
   html += '<button type="button" class="mn-go" data-mn="start"' + (can ? '' : ' disabled') + '>Начать смену</button>';
@@ -306,7 +411,8 @@ function mnHud(now) {
   var html;
   if (st.run) {
     var r = st.run, t1 = new Date(r.ends_at).getTime(), got = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - mnAt) / 3600000;
-    html = '<i class="on"></i>Смена · ' + (now < t1 ? 'ещё ' + mnLeft(t1 - now) : 'заканчивается') + ' · <b style="color:' + ((st.res || {}).color || '#cfd8dc') + '">+' + Math.floor(got) + '</b>';
+    var tn = r.task && r.task !== 'extract' ? MN_TASK[r.task] : 'Смена';
+    html = '<i class="on"></i>' + tn + ' · ' + (now < t1 ? 'ещё ' + mnLeft(t1 - now) : 'заканчивается') + (r.rate > 0 ? ' · <b style="color:' + ((st.res || {}).color || '#cfd8dc') + '">+' + Math.floor(got) + '</b>' : '');
   } else if (st.res_k <= 0) html = '<i></i>Залежи нет';
   else if (st.rest_h || st.rest_d) html = '<i class="rest"></i>Бригада отдыхает' + (st.auto.on ? ' · автосмена ждёт' : '');
   else html = '<i></i>' + (st.auto.on ? 'Автосмена начнётся в течение минуты' : 'Смены нет');
@@ -326,7 +432,7 @@ function mnCall(fn, args) {
     if (r.error) { mnErr(r.error.message); return; }
     mnForm.touched = false;
     mnSet(r.data);
-    if (fn === 'mine_hire' && typeof refreshCreditsSoon === 'function') refreshCreditsSoon();
+    if ((fn === 'mine_hire' || fn === 'mine_upgrade') && typeof refreshCreditsSoon === 'function') refreshCreditsSoon();
     if (typeof loadPlanetStock === 'function') loadPlanetStock();
   }, function() { mnBusy = false; mnErr('Нет связи с сервером'); });
 }
@@ -339,7 +445,16 @@ function mnClick(e) {
   else if (act === 'inc' || act === 'dec') {
     mnForm[k] += act === 'inc' ? 1 : -1; mnForm.touched = true; mnClamp(); mnRender();
   }
-  else if (act === 'start') mnCall('mine_shift_start', { p_len: mnForm.len, p_pace: mnForm.pace, p_humans: mnForm.h, p_droids: mnForm.d });
+  else if (act === 'task') { mnForm.task = v; mnForm.touched = true; mnRender(); }
+  else if (act === 'start') mnCall('mine_shift_start', { p_len: mnForm.len, p_pace: mnForm.pace, p_humans: mnForm.h, p_droids: mnForm.d, p_task: mnForm.task });
+  else if (act === 'upgrade') {
+    var u = st.upgrade, up = function() { mnCall('mine_upgrade', {}); };
+    var items = [{ text: u.credits + ' кр.', kind: 'credits' }, { text: 'Дюрасталь ' + u.durasteel, color: '#8fa8c4', bad: st.planet.durasteel < u.durasteel }];
+    if (u.electronics) items.push({ text: 'Электроника ' + u.electronics, color: '#4a90d9', bad: st.planet.electronics < u.electronics });
+    if (typeof gameConfirm === 'function') gameConfirm({ tone: 'build', kicker: 'Улучшение участка', title: 'Мест работы: ' + st.places + ' → ' + u.places,
+      rows: [{ label: 'Спишется', items: items }], note: 'Барак вырастет вместе с участком: до ' + u.places * 2 + ' рабочих. Сырьё — со склада планеты.', ok: 'Улучшить' }, up);
+    else up();
+  }
   else if (act === 'stop') {
     var go = function() { mnCall('mine_shift_stop', {}); };
     if (typeof gameConfirm === 'function') gameConfirm({ tone: 'danger', kicker: 'Смена', title: 'Закончить сейчас?', note: 'Придёт то, что успели добыть, бригада уйдёт на отдых.', ok: 'Закончить', cancel: 'Пусть работают' }, go);
@@ -349,17 +464,21 @@ function mnClick(e) {
   else if (act === 'auto-len') mnCall('mine_auto_set', { p_on: st.auto.on, p_len: +v, p_pace: st.auto.pace });
   else if (act === 'auto-pace') mnCall('mine_auto_set', { p_on: st.auto.on, p_len: st.auto.len, p_pace: v });
   else if (act === 'hire') {
-    var price = k === 'h' ? st.cfg.hire_h : st.cfg.hire_d;
+    var price = { h: st.cfg.hire_h, d: st.cfg.hire_d, f: st.cfg.hire_f, t: st.cfg.hire_t }[k];
     var hire = function() { mnCall('mine_hire', { p_kind: k, p_n: 1 }); };
-    if (typeof gameConfirm === 'function') gameConfirm({ tone: 'build', kicker: 'Найм на участок', title: k === 'h' ? 'Рабочий' : 'Дроид-рабочий',
-      sub: k === 'h' ? 'Паёк — 1 еда за смену' : 'Обслуживание — 1 руда за смену',
-      rows: [{ label: 'Спишется', items: [{ text: price + ' кр.', kind: 'credits' }] }],
-      note: k === 'h' ? 'Люди выгоднее на коротких сменах, но после смены дольше отдыхают.' : 'Дроиды ровно держат долгие смены и отдыхают меньше.', ok: 'Нанять' }, hire);
+    var HI = {
+      h: ['Рабочий', 'Паёк — 1 еда за смену', 'Люди выгоднее на коротких сменах, но после смены дольше отдыхают.'],
+      d: ['Дроид-рабочий', 'Обслуживание — 1 руда за смену', 'Дроиды ровно держат долгие смены и отдыхают меньше.'],
+      f: ['Бригадир', 'Ведёт каждую смену участка', '+10 % к выработке; в аврале травм и поломок вдвое меньше.'],
+      t: ['Техник', 'Чинит оборудование между сменами', 'Каждый техник снимает 1 % износа в час, на обслуживании — быстрее.']
+    }[k];
+    if (typeof gameConfirm === 'function') gameConfirm({ tone: 'build', kicker: 'Найм на участок', title: HI[0], sub: HI[1],
+      rows: [{ label: 'Спишется', items: [{ text: price + ' кр.', kind: 'credits' }] }], note: HI[2], ok: 'Нанять' }, hire);
     else hire();
   }
   else if (act === 'fire') {
     var fire = function() { mnCall('mine_fire', { p_kind: k, p_n: 1 }); };
-    if (typeof gameConfirm === 'function') gameConfirm({ tone: 'danger', kicker: 'Бригада', title: k === 'h' ? 'Уволить рабочего?' : 'Списать дроида?', note: 'Деньги за найм не вернутся.', ok: k === 'h' ? 'Уволить' : 'Списать' }, fire);
+    if (typeof gameConfirm === 'function') gameConfirm({ tone: 'danger', kicker: 'Бригада', title: { h: 'Уволить рабочего?', d: 'Списать дроида?', f: 'Уволить бригадира?', t: 'Уволить техника?' }[k], note: 'Деньги за найм не вернутся.', ok: k === 'd' ? 'Списать' : 'Уволить' }, fire);
     else if (confirm('Уволить?')) fire();
   }
 }

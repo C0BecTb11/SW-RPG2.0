@@ -168,13 +168,15 @@
   // была на виду — главный поток стоял (долгий расчёт, тяжёлая отрисовка). В фоне и после
   // сна телефона таймеры стоят законно — такие паузы отсекает visibilitychange.
   (function() {
-    var last = Date.now();
+    var last = Date.now(), wasLoading = false;
+    // пока открыт экран загрузки сцены, заморозку пишет он сам (js/scene-loader.js, «Долгая загрузка сцены»)
+    function loading() { try { return !!(window.sceneLoader && window.sceneLoader.isOpen()); } catch (e) { return false; } }
     document.addEventListener('visibilitychange', function() { last = Date.now(); });
     window.addEventListener('pageshow', function() { last = Date.now(); });
     setInterval(function() {
-      var now = Date.now(), gap = now - last;
-      last = now;
-      if (document.hidden || gap < 8000 || gap > 600000) return;
+      var now = Date.now(), gap = now - last, busyLoad = wasLoading || loading();
+      last = now; wasLoading = loading();
+      if (busyLoad || document.hidden || gap < 8000 || gap > 600000) return;
       var band = gap < 15000 ? '8–15 с' : gap < 30000 ? '15–30 с' : 'больше 30 с';
       report({ name: 'Зависание', message: 'страница не отвечала ' + band,
                stack: 'пауза ' + Math.round(gap / 100) / 10 + ' с · ' + page() }, 'freeze');

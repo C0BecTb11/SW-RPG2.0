@@ -357,6 +357,58 @@
 .mn-btn.ghost { background: none; color: #8fa8c4; }
 .mn-btn:disabled { opacity: 0.35; }
 
+/* --- состояние участка */
+.mn-state { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.mn-st {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+  min-width: 0;
+}
+.mn-st em { font-style: normal; font-size: 9px; letter-spacing: 0.5px; color: #55606c; text-transform: uppercase; }
+.mn-st b { font-size: 14px; color: #cfd8dc; }
+.mn-st span { font-size: 9px; color: #55606c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mn-st.ok b { color: #5fd968; }
+.mn-st.warn b { color: #d9a940; }
+.mn-st.bad { border-color: rgba(217, 74, 74, 0.35); }
+.mn-st.bad b { color: #d94a4a; }
+.mn-st.gold { border-color: rgba(217, 169, 64, 0.35); background: rgba(217, 169, 64, 0.06); }
+.mn-st.gold b { color: #ffd66b; }
+.mn-stars { letter-spacing: 1px; }
+.mn-stars i { font-style: normal; font-size: 12px; color: #2a3644; }
+.mn-stars i.on { color: #ffd66b; text-shadow: 0 0 5px rgba(255, 214, 107, 0.45); }
+
+/* --- задачи смены */
+.mn-chips.tasks .mn-chip { flex: 1 1 calc(50% - 6px); }
+.mn-chip:disabled { opacity: 0.35; }
+
+/* --- специалисты */
+.mn-crew.f .mn-crew-ico svg { stroke: #e06a5a; }
+.mn-crew.t .mn-crew-ico svg { stroke: #8fd3ff; }
+.mn-crew-info b small { font-size: 10px; color: #55606c; }
+
+/* --- улучшение участка */
+.mn-up {
+  padding: 10px 11px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #4a90d9;
+  border-radius: 8px;
+}
+.mn-up-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mn-up-top b { font-size: 12px; color: #cfd8dc; font-weight: normal; }
+.mn-up-top span { font-size: 9px; color: #55606c; }
+.mn-up-cost { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 7px 0 9px; font-size: 10px; color: #8fa8c4; }
+.mn-up-cost span:first-child { color: #d9a940; }
+.mn-up-cost i { font-style: normal; color: #55606c; }
+#mn-panel .mn-up-cost .bad, #mn-panel .mn-up-cost .bad i { color: #d94a4a; }
+.mn-districts { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; font-size: 9px; color: #55606c; }
+.mn-districts .on { color: #5fd968; }
+
 /* --- последние смены */
 .mn-log { display: flex; flex-direction: column; }
 
@@ -374,6 +426,7 @@
 .mn-log-row .w { flex: 1; min-width: 0; color: #8fa8c4; }
 .mn-log-row .w i { font-style: normal; color: #55606c; }
 .mn-log-row .w i.bad { color: #d94a4a; }
+.mn-log-row .w i.res { color: #8fd3ff; }
 .mn-log-row b { flex: none; font-size: 12px; }
 .mn-log-row em { flex: none; font-style: normal; font-size: 10px; }
 

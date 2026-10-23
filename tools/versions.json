@@ -39,6 +39,10 @@
   "v": "1",
   "sha": "fe11069615cc"
  },
+ "css/unrest.css": {
+  "v": "1",
+  "sha": "d0bb74fde7bd"
+ },
  "ground/ground.css": {
   "v": "6",
   "sha": "c82bbf4f47df"
@@ -104,8 +108,8 @@
   "sha": "3843f6cfa5ad"
  },
  "js/faction-panel.js": {
-  "v": "2",
-  "sha": "c6fc6696e824"
+  "v": "3",
+  "sha": "d4f33115197e"
  },
  "js/faction-senate.js": {
   "v": "2",
@@ -124,16 +128,16 @@
   "sha": "85971362cb66"
  },
  "js/ground-battle.js": {
-  "v": "2",
-  "sha": "18a1ca0095c5"
+  "v": "3",
+  "sha": "95ad4fa28a4d"
  },
  "js/ground-live.js": {
   "v": "17",
   "sha": "c56436e1ee74"
  },
  "js/planet-info.js": {
-  "v": "1",
-  "sha": "e99471c4d5e5"
+  "v": "2",
+  "sha": "bf5dc9b4e8b9"
  },
  "js/planet-request.js": {
   "v": "1",
@@ -166,6 +170,10 @@
  "js/space-live.js": {
   "v": "15",
   "sha": "7b919c7ec0ec"
+ },
+ "js/unrest.js": {
+  "v": "1",
+  "sha": "d6db821949e0"
  },
  "proto/proto.css": {
   "v": "5",

@@ -467,6 +467,10 @@ function fsFeedLine(e) {
       return [fsEsc(e.subject || '') + (sys ? ' · ' + fsEsc(sys) : ''), fsEsc(e.actor_name || '')];
     case 'treasury_debt':
       return ['−' + fsNum(e.amount) + ' кр. · ' + fsEsc(e.subject || ''), ''];
+    case 'unrest_level':
+      return [fsEsc(sys) + ' · ' + fsEsc(m.state_t || '') + ' · ' + fsNum(e.amount), 'наблюдение'];
+    case 'unrest_calm':
+      return [fsEsc(sys) + ' · напряжение ' + fsNum(e.amount), ''];
     default:
       var a = [];
       if (e.subject && e.subject !== sys) a.push(fsEsc(e.subject));
@@ -518,6 +522,7 @@ function fsRender(animate) {
     (typeof fsRenderHQ === 'function' ? fsRenderHQ() : '') +
     (typeof fsRenderSenate === 'function' ? fsRenderSenate() : '') +
     (typeof fsRenderTreasury === 'function' ? fsRenderTreasury() : '') +
+    (typeof fsRenderUnrest === 'function' ? fsRenderUnrest() : '') +
     fsRenderBalance(d) +
     fsRenderFront(d) +
     fsRenderMembers(d) +
@@ -605,7 +610,9 @@ function fsLoad(first) {
     // Сенат / Совет: законы и голосования (js/faction-senate.js)
     typeof snFetch === 'function' ? snFetch() : Promise.resolve(null),
     // Казна фракции (js/faction-treasury.js)
-    typeof tsFetch === 'function' ? tsFetch() : Promise.resolve(null)
+    typeof tsFetch === 'function' ? tsFetch() : Promise.resolve(null),
+    // Напряжение на планетах (js/unrest.js)
+    typeof unFetch === 'function' ? unFetch() : Promise.resolve(null)
   ]).then(function(res) {
     if (my !== fsState.req) return;
     fsState.busy = false;

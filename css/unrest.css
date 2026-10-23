@@ -1,0 +1,156 @@
+/* ===== Напряжение на планетах (js/unrest.js) =====
+   Шкала 0–100 с порогами 30 / 50 / 75: спокойно — серо-голубое, ропот — золото,
+   волнения — оранжевое, забастовки и мятеж — красное. Язык — как у окна поселения
+   и окна фракции: тёмное стекло, рамки #1c2530, моноширинный шрифт. */
+
+.un-box, .un-pl, .un-pi { --un: #8fa8c4; --un-rgb: 143,168,196; }
+.un-s-murmur { --un: #d9a940; --un-rgb: 217,169,64; }
+.un-s-unrest { --un: #e0873a; --un-rgb: 224,135,58; }
+.un-s-strike { --un: #d94a4a; --un-rgb: 217,74,74; }
+.un-s-riot   { --un: #ff5c5c; --un-rgb: 255,92,92; }
+
+/* ── Шкала ───────────────────────────────────────────────────────── */
+.un-gauge {
+  position: relative;
+  display: flex;
+  height: 8px;
+  margin-top: 8px;
+  border-radius: 4px;
+  overflow: visible;
+}
+.un-gauge.mini { height: 4px; margin-top: 6px; }
+.un-z { display: block; height: 100%; }
+.un-z.z0 { width: 30%; background: rgba(143,168,196,0.10); border-radius: 4px 0 0 4px; }
+.un-z.z1 { width: 20%; background: rgba(217,169,64,0.12); }
+.un-z.z2 { width: 25%; background: rgba(224,135,58,0.14); }
+.un-z.z3 { width: 25%; background: rgba(217,74,74,0.16); border-radius: 0 4px 4px 0; }
+.un-z + .un-z { box-shadow: inset 1px 0 0 #0d1119; }
+.un-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(var(--un-rgb), 0.35), var(--un));
+  box-shadow: 0 0 8px rgba(var(--un-rgb), 0.35);
+  transition: width 0.5s ease-out;
+}
+.un-cap {
+  position: absolute;
+  top: -3px; bottom: -3px;
+  width: 0;
+  border-left: 1px dashed #8fa8c4;
+  opacity: 0.6;
+}
+.un-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  box-sizing: border-box;
+  border: 2px solid var(--un);
+  border-radius: 50%;
+  background: #0d1119;
+  box-shadow: 0 0 0 3px rgba(var(--un-rgb), 0.15);
+}
+.un-s-riot .un-dot, .un-s-strike .un-dot { animation: un-pulse 1.8s ease-out infinite; }
+@keyframes un-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--un-rgb), 0.5); } 100% { box-shadow: 0 0 0 9px rgba(var(--un-rgb), 0); } }
+
+.un-scale { position: relative; height: 14px; margin-top: 3px; font-size: 8.5px; color: #55606c; }
+.un-scale span { position: absolute; top: 0; transform: translateX(-50%); }
+
+.un-trend { font-style: normal; white-space: nowrap; }
+.un-trend.up { color: #d94a4a; }
+.un-trend.down { color: #5fd968; }
+.un-trend.flat { color: #55606c; }
+.un-st { font-style: normal; color: var(--un) !important; }
+
+/* ── Окно поселения ──────────────────────────────────────────────── */
+.un-box { margin-top: 14px; font-family: 'Courier New', monospace; }
+.un-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.un-val { font-size: 26px; font-weight: normal; line-height: 1; color: var(--un); text-shadow: 0 0 12px rgba(var(--un-rgb), 0.25); }
+.un-top-r { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 10px; }
+.un-top-r i { font-style: normal; color: #55606c; }
+
+.un-rows { margin-top: 4px; border-top: 1px solid #161b24; }
+.un-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #161b24;
+  font-size: 10.5px;
+  color: #8fa8c4;
+}
+.un-row:last-child { border-bottom: none; }
+.un-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.un-row b { flex: none; font-weight: normal; }
+.un-row b.up { color: #d94a4a; }
+.un-row b.down { color: #5fd968; }
+
+.un-hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 46px;
+  margin-top: 10px;
+  padding-top: 12px;
+}
+.un-hist-cap { margin-top: 4px; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+.un-hist i {
+  position: relative;
+  flex: 1;
+  min-height: 3px;
+  border-radius: 2px 2px 0 0;
+  background: rgba(var(--un-rgb), 0.55);
+}
+.un-hist i em {
+  position: absolute;
+  left: 50%; bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 1px;
+  font-size: 8px;
+  font-style: normal;
+  color: #55606c;
+}
+
+.un-note { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+.un-note span.obs {
+  padding: 8px 10px;
+  border: 1px dashed #1c2530;
+  border-radius: 8px;
+  color: #55606c;
+}
+
+/* ── Карточка планеты ────────────────────────────────────────────── */
+.pi-stat.un-pi b { color: var(--un); }
+.pi-stat.un-pi .un-trend { margin-left: 4px; font-size: 0.9em; }
+
+/* ── Окно фракции ────────────────────────────────────────────────── */
+.un-pl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 9px 12px 10px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid var(--un);
+  border-radius: 9px;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.un-pl:active { background: #16202e; }
+.un-pl-body { flex: 1; min-width: 0; }
+.un-pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.un-pl-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: normal; letter-spacing: 0.5px; color: #cfd8dc; }
+.un-pl-top .un-st { flex: none; font-size: 9.5px; letter-spacing: 0.5px; }
+.un-pl-line { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #8fa8c4; }
+.un-pl-line i { font-style: normal; color: #d9a940; }
+.un-pl-v { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 34px; }
+.un-pl-v b { font-size: 16px; font-weight: normal; line-height: 1; color: var(--un); }
+.un-pl-v .un-trend { font-size: 9.5px; }
+.un-more { margin-top: 2px; font-size: 10px; color: #55606c; text-align: center; }

@@ -107,6 +107,7 @@ EventRoom.prototype.admit = function(c) {
   var E = this.E;
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'event', system: this.mapInfo.id, name: this.mapInfo.name, side: c.side, att: B.att, T: Math.round(B.t * 100) / 100, capNeed: 1,
+    me: c.who.user === 'dev' && this.cfg.dev ? 'dev' : c.who.user, own: true,
     map: this.mapPacked, structs: [], districts: [], faction: null, controller: null, zones: [], zoneBox: null, buildings: [], plots: [],
     ev: { match: this.match.id, event: E.id, title: E.title, tier: this.match.tier, role: p.role, roleName: role ? role.name : p.role, test: !!this.match.test,
           place: this.mapInfo.name, about: this.mapInfo.about, goal: E.goal ? E.goal[role ? role.side : 'republic'] : '', minutes: E.minutes[this.match.tier - 1],

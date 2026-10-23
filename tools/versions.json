@@ -20,8 +20,8 @@
   "sha": "627a3a75d935"
  },
  "css/ground-live.css": {
-  "v": "3",
-  "sha": "378d52a8193a"
+  "v": "4",
+  "sha": "aafae6e1d7f2"
  },
  "css/reports.css": {
   "v": "2",
@@ -48,8 +48,8 @@
   "sha": "4539d6b1930e"
  },
  "ground/ground.js": {
-  "v": "23",
-  "sha": "a51ab50319b7"
+  "v": "24",
+  "sha": "7c766cb5e87f"
  },
  "ground/preview.css": {
   "v": "1",
@@ -92,8 +92,8 @@
   "sha": "b3e4d717d3d8"
  },
  "js/event-live.js": {
-  "v": "16",
-  "sha": "8bc4ba7cb13d"
+  "v": "17",
+  "sha": "7ed10b5414ad"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -132,8 +132,8 @@
   "sha": "9c5ce8e3d28e"
  },
  "js/ground-live.js": {
-  "v": "20",
-  "sha": "b617ee4444fe"
+  "v": "21",
+  "sha": "53ae597dd881"
  },
  "js/planet-info.js": {
   "v": "2",

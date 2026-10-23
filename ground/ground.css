@@ -75,3 +75,5 @@ body.live .sp-speed, body.live #gd-poly-b { display: none; }
 .sp-ucard .st.cv.struct { color: #5fd968; }
 .sp-ucard .st.cv.cover { color: #cfd8dc; }
 .sp-ucard .st.cv.open { color: #d9a940; }
+.sp-ucard .st.cv.wheel { color: #9aa6b4; }
+.sp-ucard .st.cv.wheel.on { color: #82b9ff; }

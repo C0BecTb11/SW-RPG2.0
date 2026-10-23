@@ -199,9 +199,9 @@
     0: { small: [['rep_dc15a', 10], ['rep_heavy', 2], ['rep_sniper', 1], ['rep_medic', 1], ['rep_jedi', 1], ['rep_atrt', 1], ['rep_atte', 1]],
          mid: [['rep_dc15a', 24], ['rep_heavy', 6], ['rep_sniper', 3], ['rep_launcher', 4], ['rep_arc', 4], ['rep_medic', 2], ['rep_engineer', 1], ['rep_jedi', 1], ['rep_atte', 2], ['rep_atrt', 3], ['rep_barc', 2], ['rep_aa', 1], ['rep_laat', 1], ['rep_artillery', 1], ['rep_turbo', 1]],
          big: [['rep_dc15a', 60], ['rep_heavy', 14], ['rep_sniper', 6], ['rep_launcher', 8], ['rep_arc', 8], ['rep_commando', 4], ['rep_medic', 4], ['rep_engineer', 2], ['rep_jedi', 2], ['rep_atte', 4], ['rep_atrt', 6], ['rep_barc', 4], ['rep_aa', 2], ['rep_laat', 2], ['rep_artillery', 2], ['rep_turbo', 2]] },
-    1: { small: [['cis_b1', 16], ['cis_b2', 3], ['cis_bx', 1], ['cis_medic', 1], ['cis_sith', 1], ['cis_stap', 1], ['cis_aat', 1]],
-         mid: [['cis_b1', 36], ['cis_b2', 8], ['cis_bx', 4], ['cis_b1_sniper', 3], ['cis_b1_launcher', 4], ['cis_medic', 2], ['cis_engineer', 1], ['cis_sith', 1], ['cis_aat', 2], ['cis_stap', 3], ['cis_spider', 1], ['cis_hmp', 1], ['cis_missile', 1], ['cis_artillery', 1], ['cis_mtt', 1]],
-         big: [['cis_b1', 90], ['cis_b2', 18], ['cis_bx', 8], ['cis_b1_sniper', 6], ['cis_b1_launcher', 8], ['cis_bounty', 2], ['cis_hunter', 2], ['cis_medic', 4], ['cis_engineer', 2], ['cis_sith', 2], ['cis_aat', 4], ['cis_stap', 6], ['cis_spider', 2], ['cis_hmp', 2], ['cis_missile', 2], ['cis_artillery', 2], ['cis_mtt', 2]] }
+    1: { small: [['cis_b1', 16], ['cis_b2', 3], ['cis_bx', 1], ['cis_wheel', 1], ['cis_medic', 1], ['cis_sith', 1], ['cis_stap', 1], ['cis_aat', 1]],
+         mid: [['cis_b1', 36], ['cis_b2', 8], ['cis_bx', 4], ['cis_wheel', 3], ['cis_b1_sniper', 3], ['cis_b1_launcher', 4], ['cis_medic', 2], ['cis_engineer', 1], ['cis_sith', 1], ['cis_aat', 2], ['cis_stap', 3], ['cis_spider', 1], ['cis_hmp', 1], ['cis_missile', 1], ['cis_artillery', 1], ['cis_mtt', 1]],
+         big: [['cis_b1', 90], ['cis_b2', 18], ['cis_bx', 8], ['cis_wheel', 6], ['cis_b1_sniper', 6], ['cis_b1_launcher', 8], ['cis_bounty', 2], ['cis_hunter', 2], ['cis_medic', 4], ['cis_engineer', 2], ['cis_sith', 2], ['cis_aat', 4], ['cis_stap', 6], ['cis_spider', 2], ['cis_hmp', 2], ['cis_missile', 2], ['cis_artillery', 2], ['cis_mtt', 2]] }
   };
   var PORTRAITS = { 0: ['jedi_01', 'jedi_02', 'jedi_03', 'jedi_04', 'jedi_05', 'jedi_06', 'jedi_07', 'jedi_08', 'jedi_09', 'jedi_10', 'jedi_11'], 1: ['sith_01', 'sith_02', 'sith_03', 'sith_04', 'sith_05', 'sith_06'] };
   function placeArmy(B, team, list, box, R, aim) {
@@ -559,7 +559,8 @@
       if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue;
       var p = toS(a.x, a.y), age = B.t - a.diedAt, al = Math.max(0, Math.min(1, 1 - (age - 25) / 15));
       c.save(); c.globalAlpha = al;
-      if (a.T.vehicle || a.hero) {
+      if (a.wh) { c.translate(p[0], p[1]); c.scale(s, s); c.globalAlpha = al * 0.85; V.guard(c, { ang: a.legs, turret: a.aim, open: a.wh.k, hp: 0 }); }
+      else if (a.T.vehicle || a.hero) {
         // техника: тёмный остов на месте
         if (a.T.vehicle) drawVehicle(c, a, s, p, 0.4, true); else { c.save(); c.translate(p[0], p[1]); c.scale(s * HK, s * HK); c.globalAlpha = al * 0.7; H.draw(c, { aim: a.aim, mv: 0, phase: 0, act: 'idle', look: H.look(a.team === 0 ? 'republic' : 'cis', a.hero.portrait), blade: 'rgba(0,0,0,0)' }); c.restore(); }
       } else {
@@ -602,7 +603,28 @@
     return (DISC[team] = cv);
   }
   // Радиус бойца на экране в клетках: техника — по виду сверху, пехота и герои — по фигурке
-  function vrad(m) { if (m.T.vehicle) { var vt = V.TYPES[m.tid]; return vt ? vt.span * 0.4 : 1; } return 0.42 * HK; }
+  function vrad(m) { if (m.T.vehicle) { var vt = V.TYPES[m.tid]; return vt ? vt.span * 0.4 : 1; } if (m.wh) return 0.5; return 0.42 * HK; }
+  // Колесо-страж: у движка — заряд щита и откат, у зеркала сети — готовая доля (sf, −1 — щита нет)
+  function wheelSh(m) {
+    var w = m.wh; if (!w) return -1;
+    if (w.shMax) return w.k >= 1 && w.sh > 0 && G.B.t >= w.down ? w.sh / w.shMax : -1;
+    return w.sf != null ? w.sf : -1;
+  }
+  function wheelInfo(m) {
+    var w = m.wh; if (!w) return '';
+    if (w.k <= 0) return 'свёрнут: катится, не стреляет';
+    if (w.k < 1) return 'меняет режим';
+    var sf = wheelSh(m);
+    return sf >= 0 ? 'щит ' + Math.round(sf * 100) + ' %' : 'щит пробит — восстанавливается';
+  }
+  var SHIELD_C = '170,150,255', SHF = {};
+  function drawWheel(c, m, s, p, t) {
+    var w = m.wh, sf = wheelSh(m);
+    c.save(); c.translate(p[0], p[1]); c.scale(s, s);
+    V.guard(c, { ang: m.legs, turret: m.aim, open: w.k, phase: m.phase, mv: m.mv, hp: m.hp / m.hpMax });
+    if (sf >= 0) { var fl = SHF[m.id] != null ? Math.max(0, 1 - (t - SHF[m.id]) / 0.3) : 0; V.guardShield(c, 0.95, sf, fl, t, SHIELD_C); }
+    c.restore();
+  }
   // Куда идут свои: линия от бойца к его клетке и квадрат места — у выбранных всегда,
   // у остальных 4 с после приказа (как на палубе при абордаже)
   function drawOrders(c, s) {
@@ -630,6 +652,8 @@
     var order = [];
     for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive) continue; if (a.x < vis[0] - 4 || a.x > vis[2] + 4 || a.y < vis[1] - 4 || a.y > vis[3] + 4) continue; if (a.team !== side && !B.canSee(side, a)) continue; order.push(a); }
     order.sort(function(a, b) { return (a.air || a.fly ? 1 : 0) - (b.air || b.fly ? 1 : 0) || a.y - b.y; });
+    // вспышки щитов колёс-стражей: последнее попадание по каждому
+    var fxl = B.ev.fx; SHF = {}; for (i = 0; i < fxl.length; i++) if (fxl[i].k === 'shield' && fxl[i].t <= t) SHF[fxl[i].id] = fxl[i].t;
     for (i = 0; i < order.length; i++) {
       var m = order[i], p = toS(m.x, m.y), mine = B.ctl(m) === side;
       // кольцо стороны и выделение
@@ -638,6 +662,7 @@
       else { var dr = rr * 0.8; c.globalAlpha = m.T.vehicle ? 0.18 : 0.3; c.drawImage(disc(B.ctl(m)), p[0] - dr, p[1] + rr * 0.55 - dr, dr * 2, dr * 2); c.globalAlpha = 1; }
       if (m.air || m.fly) { var sp = vrad(m) * 2.5, sh = toS(m.x + sp * 0.35, m.y + sp * 0.45); c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(sh[0], sh[1], s * sp * 0.45, s * sp * 0.3, m.aim, 0, TAU); c.fill(); }
       if (m.T.vehicle) drawVehicle(c, m, s, p, null, false);
+      else if (m.wh) drawWheel(c, m, s, p, t);
       else if (m.hero) {
         c.save(); c.translate(p[0], p[1]); c.scale(s * HK, s * HK);
         var hr = m.hero;
@@ -727,6 +752,7 @@
       else if (f.k === 'dome' && t < f.until && a) H.fx.dome(c, a.x, a.y, f.r, t);
       else if (f.k === 'healed' && age < 1) { c.save(); c.globalAlpha = 1 - age; c.strokeStyle = 'rgba(180,255,210,0.9)'; c.lineWidth = 0.06; c.beginPath(); c.arc(f.x, f.y, 0.5 + age * 0.8, 0, TAU); c.stroke(); c.restore(); }
       else if (f.k === 'deflect' && age < 0.3 && a) { c.save(); c.globalAlpha = 1 - age / 0.3; c.strokeStyle = heroLook(a).blade; c.lineWidth = 0.08; c.beginPath(); c.arc(a.x, a.y, 0.6, 0, TAU); c.stroke(); c.restore(); }
+      else if (f.k === 'shieldoff' && age < 0.6) { c.save(); c.globalAlpha = 1 - age / 0.6; c.strokeStyle = 'rgba(' + SHIELD_C + ',0.9)'; c.lineWidth = 0.08; c.setLineDash([0.18, 0.14]); c.beginPath(); c.arc(f.x, f.y, 0.95 + age * 1.6, 0, TAU); c.stroke(); c.restore(); }
       else if (f.k === 'artfire' && age < 0.3) { c.save(); c.globalAlpha = 1 - age / 0.3; c.fillStyle = '#ffd27a'; c.beginPath(); c.arc(f.x, f.y, 0.6 + age * 2, 0, TAU); c.fill(); c.restore(); }
       // способность бойца из исследований: название над ним (свои — золотом, враг — красным)
       else if (f.k === 'skill' && age < 1.6) {
@@ -842,7 +868,7 @@
     // подсказка по шагу: что сейчас сделает касание
     var one = sel.length === 1 ? sel[0] : null, oneCv = one && B.coverInfo ? B.coverInfo(one) : null;
     var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника — подойдёт сам' : 'врага — подойдёт сам')
-      : one ? '<b>' + (one.name || one.T.name) + '</b> · ' + Math.round(one.hp) + '/' + one.hpMax + (oneCv ? ' · ' + (oneCv.k === 'struct' ? '🛡 ' : '') + oneCv.text.split(' (')[0].split(' ·')[0] : '') + (one.focus >= 0 ? ' · атакует ' + unitName(B, one.focus) : one.tgt >= 0 && one.tgt < 100000 ? ' · стреляет по ' + unitName(B, one.tgt) : one.goal && !one.at ? ' · идёт' : '')
+      : one ? '<b>' + (one.name || one.T.name) + '</b> · ' + Math.round(one.hp) + '/' + one.hpMax + (one.wh ? ' · ' + wheelInfo(one) : oneCv ? ' · ' + (oneCv.k === 'struct' ? '🛡 ' : '') + oneCv.text.split(' (')[0].split(' ·')[0] : '') + (one.focus >= 0 ? ' · атакует ' + unitName(B, one.focus) : one.tgt >= 0 && one.tgt < 100000 ? ' · стреляет по ' + unitName(B, one.tgt) : one.goal && !one.at ? ' · идёт' : '')
       : sel.length ? 'Выбрано <b>' + sel.length + '</b> · касание земли — идти, врага — атаковать'
       : 'Коснись своего бойца, чтобы выбрать · долгое нажатие — рамка';
     // в игре верхней панели нет — захват площади одной строкой в полосе
@@ -897,7 +923,8 @@
     var cv = B.coverInfo ? B.coverInfo(a) : null;
     var html = '<div class="sp-ucard"><div class="nm"><b' + (a.hero ? ' class="hero"' : '') + '>' + (a.name || Ty.name) + '</b><em>' + Ty.name + ' · урон ' + Ty.dmg + ' · дальность ' + Ty.range + (CLS_RU[Ty.cls] ? ' · ' + CLS_RU[Ty.cls] : '') + '</em></div>' +
       '<div class="hp' + (a.hp / a.hpMax < 0.35 ? ' low' : '') + '"><span>' + Math.round(a.hp) + ' / ' + a.hpMax + '</span><i><b style="width:' + Math.round(a.hp / a.hpMax * 100) + '%"></b></i></div><div class="st' + (a.tgt >= 0 ? ' fire' : '') + '">' + st + (a.stun > 0 ? ' · оглушён' : '') + (a.fear > 0 ? ' · бежит в страхе' : '') + '</div>' +
-      (cv ? '<div class="st cv ' + cv.k + '">' + (cv.k === 'struct' ? '🛡 ' : cv.k === 'cover' ? '◧ ' : '') + cv.text + '</div>' : '');
+      (cv ? '<div class="st cv ' + cv.k + '">' + (cv.k === 'struct' ? '🛡 ' : cv.k === 'cover' ? '◧ ' : '') + cv.text + '</div>' : '') +
+      (a.wh ? '<div class="st cv wheel' + (wheelSh(a) >= 0 ? ' on' : '') + '">⬡ ' + wheelInfo(a) + '</div>' : '');
     if (a.hero) {
       html += '<div class="gd-ab">';
       a.hero.abil.forEach(function(ab) { var A = GR.ABIL[ab]; if (!A || !A[0]) return; var cd = Math.max(0, (a.hero.cds[ab] || 0) - B.t); html += '<button class="sp-chip' + (cd > 0 ? ' cd' : '') + (G.arm && G.arm.ab === ab ? ' arm' : '') + '" data-ab="' + ab + '">' + GR.ABIL_NAME[ab] + (cd > 0 ? '<em> ' + Math.ceil(cd) + 'с</em>' : '') + '</button>'; });

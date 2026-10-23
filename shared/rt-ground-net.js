@@ -5,7 +5,7 @@
  * Кадр f: { t:'f', T, n:[[id,x,y,aim,mv,hp,flags,aux]...], new:[{...}], gone:[id], ev:{s,b,x,m,d,sh},
  *           cnt:[живых 0, 1], cap, dist, fog (RLE), sq, st:[[i,hp,dead]] }
  * flags: 1 в укрытии, 2 оглушён, 4 страх, 8 держит, 16 на месте, 32 купол, 64 внушение, 128 идёт к точке игрока, 256/512 — внушение у КНС/Республики
- * aux: техника — угол башни; герой — [поза, k]; остальные — 0.
+ * aux: техника — угол башни; герой — [поза, k]; колесо-страж — [раскрыт 0..1, щит 0..1 или −1]; остальные — 0.
  * Приказы cmd: move {ids,x,y}, attack {ids,tid}, hold, stop, auto {ids,on}, assign {ids,sq},
  *              ability {id,ab,tgt}, load {ids,ship}.
  * ES5, UMD.
@@ -83,7 +83,8 @@
       // описание бойца — новому, после потери кадров (this.full) и когда оно изменилось (раз в 10 с сверка)
       if (!this.known[a.id] || this.full) { var it = this.intro(a); this.known[a.id] = JSON.stringify(it); nw.push(it); }
       else if (full) { var it2 = this.intro(a), k2 = JSON.stringify(it2); if (k2 !== this.known[a.id]) { this.known[a.id] = k2; nw.push(it2); } }
-      var aux = a.T.vehicle && a.size === 2 ? r2(a.turretA) : a.hero ? [ACT_N[a.hero.actT > 0 ? a.hero.act : 'idle'] || 0, r2(a.hero.k || 0)] : 0;
+      var aux = a.T.vehicle && a.size === 2 ? r2(a.turretA) : a.hero ? [ACT_N[a.hero.actT > 0 ? a.hero.act : 'idle'] || 0, r2(a.hero.k || 0)]
+        : a.wh ? [r2(a.wh.k), B.shieldUp(a) ? r2(a.wh.sh / a.wh.shMax) : -1] : 0;
       var row = [a.id, r2(a.x), r2(a.y), r2(a.aim), a.mv > 0.3 ? 1 : 0, Math.round(a.hp), this.flags(a), aux];
       // свои: куда идёт (клетка приказа) и что прикрывает — для линий хода и карточки
       if (a.team === side) { row.push(a.goal && !a.at ? a.goal[1] * N + a.goal[0] : -1, a.inside >= 0 ? a.inside : -1); }
@@ -234,7 +235,8 @@
         a = { id: n.id, tid: n.tid, T: Ty, team: n.team, uid: n.uid, name: n.name, hpMax: n.hpMax, owner: n.owner, npc: n.npc, size: n.size || Ty.size,
               x: 0, y: 0, aim: 0, legs: 0, mv: 0, phase: Math.random() * TAU, hp: n.hpMax, alive: true, gone: false, diedAt: 0, air: Ty.air, fly: Ty.move === 'air',
               inside: -1, stun: 0, fear: 0, hold: false, at: true, goal: null, post: false, sq: 0, tgt: -1, focus: -1, barrier: 0, mind: null, turretA: 0,
-              hero: n.hero ? { act: 'idle', k: 0, actT: 0, cds: {}, abil: n.hero.abil || [], portrait: n.hero.portrait, hid: n.hero.hid || null } : null, ks: null, vis: false, seenT: 0 };
+              hero: n.hero ? { act: 'idle', k: 0, actT: 0, cds: {}, abil: n.hero.abil || [], portrait: n.hero.portrait, hid: n.hero.hid || null } : null, ks: null, vis: false, seenT: 0,
+              wh: Ty.wheel ? { k: 0, sf: -1 } : null };
         this.agents[n.id] = a;
       } else { a.name = n.name; a.hpMax = n.hpMax; a.owner = n.owner; a.uid = n.uid; }
     }
@@ -261,6 +263,7 @@
       if (!locked) b.post = !!(fl & 128);
       if (b.T.vehicle && b.size === 2) b.turretA = +u[7] || 0;
       else if (b.hero && Array.isArray(u[7])) { b.hero.act = ACTS[u[7][0]] || 'idle'; b.hero.k = u[7][1]; b.hero.actT = b.hero.act === 'idle' ? 0 : 1; }
+      else if (b.wh && Array.isArray(u[7])) { b.wh.k = +u[7][0] || 0; b.wh.sf = u[7][1] == null ? -1 : +u[7][1]; }
       if (u.length > 8) {
         // клетка приказа своего бойца — с сервера (на экране приказ ставился в точку касания)
         if (!locked) { if (u[8] >= 0) { b.goal = [u[8] % N, Math.floor(u[8] / N)]; if (!b.ordT) b.ordT = Date.now(); } else { b.goal = null; b.ordT = 0; } }

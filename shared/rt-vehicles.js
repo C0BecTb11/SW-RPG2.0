@@ -661,6 +661,90 @@
     }
   }
 
+  // ---------------------------------------------------------------- колесо-страж (КНС)
+  // Не машина, а боец (shared/rt-units, флаг w), поэтому в TYPES не входит и рисуется живьём.
+  // Свёрнут — монолитное колесо с протектором и ступицами по бокам, катится носом по +x.
+  // Раскрывается (u.open 0..1): обод расходится на две бронещеки по бокам, из-под них
+  // выдвигаются четыре упора, сверху поднимается башенка со спаренными бластерами (u.turret —
+  // абсолютный угол). u.hp 0 — обломки.
+  var GUARD = { base: '#5d636b', mid: '#454a51', dark: '#2a2e33', tire: '#26292d', ochre: '#c47a32', eye: '#ff9d3c', k: 1.15, span: 1.2 };
+  function ease(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+  function guard(c, u) {
+    var G = GUARD, e = ease(u.open || 0), dead = u.hp != null && u.hp <= 0, ph = u.phase || 0;
+    c.save(); c.rotate(u.ang || 0); c.scale(G.k, G.k); c.lineCap = 'round'; c.lineJoin = 'round';
+    // тень: свёрнутый — узкая полоса колеса, раскрытый — шире
+    shadowOf(c, u, 1.2, function() { c.beginPath(); c.ellipse(0, 0, 0.44 + e * 0.04, 0.2 + e * 0.24, 0, 0, TAU); });
+    // упоры: из-под корпуса по диагоналям
+    if (e > 0.04) {
+      c.save(); c.globalAlpha *= Math.min(1, e * 1.6);
+      for (var q = 0; q < 4; q++) {
+        var fx = q < 2 ? 1 : -1, fy = q % 2 ? 1 : -1, L = 0.12 + 0.24 * e;
+        var hip = [fx * 0.1, fy * 0.09], foot = [hip[0] + fx * L * 0.78, hip[1] + fy * L * 0.92], knee = [hip[0] + fx * L * 0.5, hip[1] + fy * L * 0.36];
+        leg(c, u, hip, knee, foot, 0.045, G.mid, 0, 0.04);
+      }
+      c.restore();
+    }
+    // корпус под ободом — виден, когда щеки разошлись
+    if (e > 0.02) {
+      c.fillStyle = lit(c, u, 0, 0, 0.2, G.base, 1.15, 0.6);
+      poly(c, [[0.2, -0.07], [0.12, -0.15], [-0.14, -0.15], [-0.21, -0.07], [-0.21, 0.07], [-0.14, 0.15], [0.12, 0.15], [0.2, 0.07]]); c.fill(); edge(c, G.dark, 0.014);
+      seam(c, -0.06, -0.14, -0.06, 0.14, 0.01);
+      c.fillStyle = G.ochre; c.fillRect(-0.19, -0.035, 0.1, 0.07);
+      bolts(c, [[0.12, -0.1], [0.12, 0.1], [-0.15, -0.1], [-0.15, 0.1]], 0.012);
+    }
+    // обод: две половины. Свёрнут — сомкнуты в колесо; раскрыт — щеки по бокам, чуть развёрнуты
+    for (var sd = -1; sd <= 1; sd += 2) {
+      c.save();
+      c.translate(0, sd * 0.32 * e); c.rotate(sd * 0.22 * e);
+      var len = 0.42 - 0.05 * e, w = 0.15;
+      rr(c, -len, sd < 0 ? -w : 0, len * 2, w, 0.07);
+      c.fillStyle = lit(c, u, 0, sd * w / 2, w, e > 0.5 ? G.mid : G.tire, 1.25, 0.55); c.fill(); edge(c, 'rgba(0,0,0,0.6)', 0.014);
+      // протектор на ходу (свёрнут), броневые рёбра — раскрыт
+      c.save(); rr(c, -len, sd < 0 ? -w : 0, len * 2, w, 0.07); c.clip();
+      c.strokeStyle = 'rgba(0,0,0,' + (0.55 - 0.3 * e) + ')'; c.lineWidth = 0.035;
+      var sp = 0.11, off = ((ph / TAU) * sp * 3) % sp;
+      for (var x = -len - sp + off; x < len + sp; x += sp) { c.beginPath(); c.moveTo(x, -w - 0.01); c.lineTo(x + sd * 0.02, w + 0.01); c.stroke(); }
+      c.fillStyle = 'rgba(255,255,255,' + (0.1 + 0.06 * e) + ')'; c.fillRect(-len * 0.8, sd < 0 ? -w + 0.02 : 0.02, len * 1.6, 0.018);
+      c.restore();
+      // ступица / щека: охра и сенсорная щель
+      c.fillStyle = dome(c, u, 0, sd * (w * 0.5), 0.085, G.base, 1.3, 0.6); c.beginPath(); c.ellipse(0, sd * w * 0.5, 0.11, 0.06, 0, 0, TAU); c.fill(); edge(c, G.dark, 0.012);
+      c.fillStyle = G.ochre; c.beginPath(); c.ellipse(0, sd * w * 0.5, 0.05, 0.026, 0, 0, TAU); c.fill();
+      c.restore();
+    }
+    // свёрнутый: сенсор на носу ступицы светится
+    if (e < 0.5 && !dead) { c.fillStyle = 'rgba(255,157,60,' + (0.85 * (1 - e * 2)) + ')'; dot(c, 0.4 - 0.02, 0, 0.022); }
+    // башенка со спаренными бластерами — поднимается при раскрытии
+    if (e > 0.25) {
+      var tk = (e - 0.25) / 0.75, ta = (u.turret != null ? u.turret : (u.ang || 0)) - (u.ang || 0);
+      c.save(); c.rotate(ta); c.scale(0.7 + 0.3 * tk, 0.7 + 0.3 * tk);
+      for (var bb = -1; bb <= 1; bb += 2) cannon(c, u, 0.04, bb * 0.045, 0.04 + 0.32 * tk, bb * 0.045, 0.034, '#3b4046');
+      c.fillStyle = 'rgba(0,0,0,0.35)'; dot(c, 0.012, 0.016, 0.105);
+      c.fillStyle = dome(c, u, 0, 0, 0.1, G.base, 1.4, 0.55); c.beginPath(); c.moveTo(0.1, -0.06); c.lineTo(0.03, -0.1); c.lineTo(-0.09, -0.08); c.lineTo(-0.11, 0); c.lineTo(-0.09, 0.08); c.lineTo(0.03, 0.1); c.lineTo(0.1, 0.06); c.closePath(); c.fill(); edge(c, G.dark, 0.012);
+      if (!dead) { c.fillStyle = G.eye; c.fillRect(0.055, -0.03, 0.03, 0.06); c.fillStyle = 'rgba(255,200,140,0.9)'; c.fillRect(0.065, -0.012, 0.012, 0.024); }
+      c.restore();
+    }
+    if (dead) { c.fillStyle = 'rgba(14,10,8,0.55)'; c.beginPath(); c.ellipse(0, 0, 0.42, 0.3 + e * 0.15, 0, 0, TAU); c.fill(); }
+    else scorch(c, u, [[-0.2, -0.1, 0.07], [0.15, 0.12, 0.06], [0, -0.2, 0.05]]);
+    c.restore();
+  }
+  // Щит колеса-стража: купол k 0..1 (заряд), flash 0..1 (вспышка от попадания), t — время для мерцания.
+  // r — радиус в единицах контекста, col — 'r,g,b'
+  function guardShield(c, r, k, flash, t, col) {
+    col = col || '120,190,255';
+    var a = 0.1 + 0.12 * k + 0.35 * flash;
+    var g = c.createRadialGradient(0, 0, r * 0.55, 0, 0, r);
+    g.addColorStop(0, 'rgba(' + col + ',0)'); g.addColorStop(0.8, 'rgba(' + col + ',' + (a * 0.55).toFixed(3) + ')'); g.addColorStop(1, 'rgba(' + col + ',' + a.toFixed(3) + ')');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+    // соты по кромке: мерцают, при слабом заряде редеют
+    c.strokeStyle = 'rgba(' + col + ',' + (0.25 + 0.45 * k + 0.3 * flash).toFixed(3) + ')'; c.lineWidth = r * 0.035;
+    var n = 18, rot = (t || 0) * 0.35;
+    for (var i = 0; i < n; i++) {
+      if (k < 0.999 && ((i * 7) % 10) / 10 > k + 0.15) continue;
+      var a0 = rot + i / n * TAU, a1 = a0 + TAU / n * 0.72;
+      c.beginPath(); c.arc(0, 0, r * 0.97, a0, a1); c.stroke();
+    }
+  }
+
   // ---------------------------------------------------------------- набор
   // size — клеток по стороне; h — высота (для тени); walk — есть ли анимация шага/качения
   // k — во сколько раз рисунок крупнее своих «чертёжных» единиц: масштаб к пехотинцу
@@ -746,5 +830,5 @@
       return true;
     } catch (e) { return false; }
   }
-  root.SWVehicles = { TYPES: TYPES, draw: draw, bake: bake, check: check, DIRS: DIRS, FRAMES: FRAMES, TDIRS: TDIRS };
+  root.SWVehicles = { TYPES: TYPES, draw: draw, bake: bake, check: check, DIRS: DIRS, FRAMES: FRAMES, TDIRS: TDIRS, guard: guard, guardShield: guardShield, GUARD: GUARD };
 })(typeof self !== 'undefined' ? self : this);

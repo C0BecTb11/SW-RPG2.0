@@ -20,7 +20,8 @@
 
   // id: [имя, сторона(0 респ, 1 КНС, 2 мародёры), класс, hp, урон, ход, дальность, обзор, меткость, уклонение,
   //      клеток по стороне, слоты (место в трюме), везёт (слоты), флаги]
-  // флаги: v — техника, h — герой, s — разведчик (скрытный, stealth_range), r — ретранслятор, b — строит, a — артиллерия (splash)
+  // флаги: v — техника, h — герой, s — разведчик (скрытный, stealth_range), r — ретранслятор, b — строит, a — артиллерия (splash),
+  //        w — колесо-страж: катится быстро и без стрельбы, на месте раскрывается, ставит щит и бьёт спаренными бластерами
   var U = {
     rep_dc15a:      ['Клон с DC-15A', 0, 'infantry', 100, 20, 4, 3, 5, 75, 10, 1, 1, 0, ''],
     rep_heavy:      ['Клон-пулемётчик', 0, 'infantry', 120, 35, 4, 3, 4, 75, 10, 1, 1, 0, ''],
@@ -53,6 +54,7 @@
     cis_engineer:   ['Инженерный дроид', 1, 'infantry', 80, 10, 4, 3, 6, 70, 10, 1, 1, 0, 'b'],
     cis_medic:      ['Дроид-техник', 1, 'infantry', 100, 15, 3, 3, 6, 70, 12, 1, 1, 0, 'm'],
     cis_militia:    ['Ополченец', 1, 'infantry', 70, 14, 3, 3, 5, 65, 10, 1, 1, 0, ''],
+    cis_wheel:      ['Колесо-страж', 1, 'infantry', 150, 25, 9, 4, 6, 78, 12, 1, 1, 0, 'w'],
     cis_probe:      ['Зонд-разведчик', 1, 'infantry', 50, 0, 7, 0, 12, 60, 35, 1, 1, 0, 's5'],
     cis_sith:       ['Ситх', 1, 'hero', 340, 155, 6, 1, 8, 96, 50, 1, 1, 0, 'h'],
     cis_stap:       ['Спидер STAP', 1, 'vehicle', 120, 35, 9, 4, 10, 76, 30, 1, 2, 0, 'v'],
@@ -114,7 +116,7 @@
       id: id, name: u[0], side: u[1], cls: cls, hp: u[3], dmg: u[4],
       speed: u[5] * SPEED_K, range: u[6], vision: u[7], acc: u[8], eva: u[9], size: u[10], slots: u[11], carry: u[12],
       vehicle: fl.indexOf('v') >= 0, hero: fl.indexOf('h') >= 0, scout: !!sm, stealth: sm ? +sm[1] : 0, relay: fl.indexOf('r') >= 0,
-      builder: fl.indexOf('b') >= 0, medic: fl.indexOf('m') >= 0, artillery: !!am, splash: am ? +am[1] : 0,
+      builder: fl.indexOf('b') >= 0, medic: fl.indexOf('m') >= 0, wheel: fl.indexOf('w') >= 0, artillery: !!am, splash: am ? +am[1] : 0,
       rof: ROF[cls] || 1.6, air: cls === 'air',
       move: cls === 'air' ? 'air' : fl.indexOf('v') >= 0 ? (id === 'cis_aat' || id === 'cis_mtt' || id === 'cis_stap' || id === 'rep_barc' ? 'hover' : (id === 'rep_laat' || id === 'cis_hmp' ? 'air' : 'track')) : 'foot'
     };

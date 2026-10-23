@@ -1834,10 +1834,10 @@
       var asz = Math.round(GFX.Q().atlas * SIZES[Math.min(ATLAS_TRIES, SIZES.length - 1)]), acols = Math.max(20, Math.ceil(ALL.length * F.DIRS * F.FRAMES / Math.floor(4000 / asz)));
       try { ATLAS = F.bake(ALL, asz, acols); } catch (e) { ATLAS = { bad: true }; }
       ATLAS_TRIES++;
-      ATLAS.ok = !!ATLAS.canvas && F.check(ATLAS); ATLAS.bad = !ATLAS.ok; ATLAS.at = performance.now();
-    } else if (ATLAS.ok && performance.now() - ATLAS.at > 3000) {
-      ATLAS.at = performance.now();
-      if (!F.check(ATLAS)) { ATLAS.ok = false; ATLAS.bad = true; }
+      ATLAS.ok = !!ATLAS.canvas; ATLAS.bad = !ATLAS.ok; ATLAS.at = performance.now();
+      // сброс картинки браузером ловим событием, а не чтением точки из видеокарты: на слабом телефоне
+      // такое чтение под нехваткой памяти вешало страницу
+      if (ATLAS.canvas) { var A0 = ATLAS; try { A0.canvas.addEventListener('contextlost', function() { A0.ok = false; A0.bad = true; }); } catch (e) {} }
     }
     return ATLAS;
   }

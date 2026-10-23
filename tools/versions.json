@@ -52,8 +52,8 @@
   "sha": "7dbe235506f3"
  },
  "ground/ground.js": {
-  "v": "26",
-  "sha": "bad92de5ea23"
+  "v": "27",
+  "sha": "d82b2ecb6257"
  },
  "ground/preview.css": {
   "v": "1",
@@ -64,8 +64,8 @@
   "sha": "24d58a86cb68"
  },
  "ground/terrain-worker.js": {
-  "v": "3",
-  "sha": "aa5665327d4c"
+  "v": "4",
+  "sha": "7c879552fdc6"
  },
  "ground/terrain.js": {
   "v": "5",
@@ -96,8 +96,8 @@
   "sha": "b3e4d717d3d8"
  },
  "js/event-live.js": {
-  "v": "19",
-  "sha": "96f9526f7392"
+  "v": "20",
+  "sha": "d0715ced0e53"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -136,8 +136,8 @@
   "sha": "bd3bf979109c"
  },
  "js/ground-live.js": {
-  "v": "24",
-  "sha": "fa1d8f73985a"
+  "v": "25",
+  "sha": "7b77119422bd"
  },
  "js/mine-site.js": {
   "v": "1",
@@ -180,8 +180,8 @@
   "sha": "29d5a10e48f5"
  },
  "js/space-live.js": {
-  "v": "15",
-  "sha": "7b919c7ec0ec"
+  "v": "16",
+  "sha": "51abd60d3d18"
  },
  "js/supabase-client.js": {
   "v": "2",
@@ -284,8 +284,8 @@
   "sha": "f4cc01dde857"
  },
  "space/space-deck.js": {
-  "v": "1",
-  "sha": "22b4379cd2a2"
+  "v": "2",
+  "sha": "b7d2efdea9b9"
  },
  "space/space-gfx.js": {
   "v": "1",
@@ -308,7 +308,7 @@
   "sha": "0abcdaaacd8e"
  },
  "space/space.js": {
-  "v": "33",
-  "sha": "8b361e54b674"
+  "v": "34",
+  "sha": "3b5a987c557b"
  }
 }

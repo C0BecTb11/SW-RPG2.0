@@ -798,6 +798,17 @@ body {
 }
 
 .cargo-capacity.full { color: #d94a4a; }
+/* правило площадки сброса — под счётчиком трюма */
+.cargo-padnote {
+  margin: 6px 18px 0;
+  padding: 7px 10px;
+  border: 1px dashed #1c2530;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #55606c;
+}
 
 #cargo-list {
   overflow-y: auto;

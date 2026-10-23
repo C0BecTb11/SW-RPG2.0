@@ -685,6 +685,20 @@
       // плотность тумана по клетке, сглаженная по 3×3, чтобы край не был ступенчатым
       var fc = FOG.getContext('2d'), img = fc.createImageData(N, N), d = img.data, sn = B.seen[G.side], al = G.fogA || (G.fogA = new Uint8Array(N * N));
       for (var i = 0; i < N * N; i++) { var v = sn[i]; al[i] = v === 2 ? 0 : v === 1 ? 110 : 215; }
+      // Полоса вторжения: движок держит её открытой хозяину планеты (высадку врага видно), но
+      // подсвечивать её не нужно — там, куда не смотрят свои бойцы, она под обычной дымкой
+      if (!B.noTown && G.side === B.def) {
+        var sy0 = N - P.GEO.strip, lit = null, RK = (GR && GR.RANGE_K) || 3;
+        for (var j = 0; j < B.agents.length; j++) {
+          var ow = B.agents[j]; if (!ow || !ow.alive || ow.team !== G.side) continue;
+          var r = ow.vision || ((ow.T && ow.T.vision) || 4) * RK; if (ow.y + r < sy0) continue;
+          lit = lit || new Uint8Array(N * P.GEO.strip);
+          for (var ly = Math.max(sy0, Math.floor(ow.y - r)); ly <= Math.min(N - 1, Math.ceil(ow.y + r)); ly++)
+            for (var lx = Math.max(0, Math.floor(ow.x - r)); lx <= Math.min(N - 1, Math.ceil(ow.x + r)); lx++)
+              if ((lx - ow.x) * (lx - ow.x) + (ly - ow.y) * (ly - ow.y) <= r * r) lit[(ly - sy0) * N + lx] = 1;
+        }
+        for (var k = sy0 * N; k < N * N; k++) if (al[k] === 0 && !(lit && lit[k - sy0 * N])) al[k] = 110;
+      }
       for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
         var sum = 0, n = 0;
         for (var yy = Math.max(0, y - 1); yy <= Math.min(N - 1, y + 1); yy++) for (var xx = Math.max(0, x - 1); xx <= Math.min(N - 1, x + 1); xx++) { sum += al[yy * N + xx]; n++; }

@@ -79,6 +79,10 @@
   "v": "5",
   "sha": "d39eac02b406"
  },
+ "js/drop-tray.js": {
+  "v": "1",
+  "sha": "e1a37a3a70f1"
+ },
  "js/err-report.js": {
   "v": "1",
   "sha": "23422c935c94"

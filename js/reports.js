@@ -289,9 +289,24 @@
     return '<span class="rep-cat">' + esc(CAT[r.cat] || 'Донесение') + (r.chain ? ' · <em>продолжение</em>' : '') + '</span>';
   }
 
+  // Название планеты не склоняется, поэтому склоняем слово «планета» по слову перед ним:
+  // «на планете Куат», «у планеты Куат», «шахтёры планеты Куат»; после «сектор» и в начале фразы — как есть
+  var PLANET_FORM = { 'на': 'планете', 'в': 'планете', 'о': 'планете', 'к': 'планете', 'по': 'планете', 'предлагает': 'планете',
+                      'над': 'планетой', 'под': 'планетой', 'за': 'планетой', 'перед': 'планетой', 'охранять': 'планету' };
+  var MOTION = /^(вернул|прилет|посадил|прибыл|привез|высадил|пришл|пришёл|перебрас|отправ|прислал|приехал|прибыв)/i;
   function textOf(r) {
-    var planet = '<b>' + esc(r.planet || 'планеты') + '</b>';
-    return esc(r.data && r.data.text || '').replace('{planet}', planet);
+    var name = '<b>' + esc(r.planet || r.system || '') + '</b>';
+    var t = esc(r.data && r.data.text || '');
+    // «вернулся на…», «прилетел на…» — куда: «на планету»
+    t = t.replace(/([А-Яа-яЁё]+)(\s+)(на)(\s+)\{planet\}/g, function(m, verb, s1, na, s2) {
+      return MOTION.test(verb) ? verb + s1 + na + s2 + 'планету ' + name : m;
+    });
+    t = t.replace(/(^|[^А-Яа-яЁёA-Za-z-])([А-Яа-яЁё-]+)(\s+)\{planet\}/g, function(m, pre, word, sp) {
+      var w = word.toLowerCase();
+      if (w.indexOf('сектор') === 0 || w === 'планета' || w === 'планеты') return pre + word + sp + name;
+      return pre + word + sp + (PLANET_FORM[w] || 'планеты') + ' ' + name;
+    });
+    return t.replace(/\{planet\}/g, name);
   }
 
   function leftChip(r) {
@@ -416,8 +431,9 @@
     if (!eff.length && !laws.length) h += '<div class="rep-empty"><b>Действующих эффектов нет</b>Они появляются от решений в донесениях: прибавка к добыче, доходу или довольству — или наоборот.</div>';
     // законы фракции (Сенат / Совет) действуют на все её планеты сразу
     if (laws.length) {
-      h += '<div class="rep-pcard law"><div class="rep-pname">Законы фракции</div>';
-      laws.forEach(function(e) { h += effRow(e, e.decree ? 'указ' : 'закон'); });
+      var withEv = laws.some(function(e) { return e.src === 'event'; }), withLaw = laws.some(function(e) { return e.src !== 'event'; });
+      h += '<div class="rep-pcard law"><div class="rep-pname">' + (withEv && withLaw ? 'Законы и события' : withEv ? 'Галактические события' : 'Законы фракции') + '</div>';
+      laws.forEach(function(e) { h += effRow(e, e.src === 'event' ? 'событие' : e.decree ? 'указ' : 'закон'); });
       h += '</div>';
     }
     planets.slice().sort(function(a, b) { return String(a.planet).localeCompare(String(b.planet)); }).forEach(function(p) {
@@ -426,7 +442,7 @@
       h += '<div class="rep-pcard on"><div class="rep-pname">' + esc(p.planet || p.system) + '</div><div class="rep-meters">' +
         meter(p.mood | 0, '', 'довольство') + meter(p.extract | 0, '%', 'добыча') + meter(p.income | 0, '%', 'доход') + '</div>';
       mine.forEach(function(e) { h += effRow(e, ''); });
-      if (laws.length) h += '<div class="rep-eff-t rep-eff-law">Цифры вверху — с учётом законов фракции</div>';
+      if (laws.length) h += '<div class="rep-eff-t rep-eff-law">Цифры вверху — с учётом законов и событий на всю фракцию</div>';
       h += '</div>';
     });
     if (eff.length || laws.length) h += '<div class="rep-note">Сумма по планете ограничена: довольство — ±30, добыча и доход — ±50%. Довольство видно в поселении строкой «События».</div>';

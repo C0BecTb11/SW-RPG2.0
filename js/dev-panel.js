@@ -131,6 +131,15 @@
         '<div class="dv-lbl">Уровень</div><div class="dv-chips">' + [1, 2, 3].map(function(n) { return '<button type="button" class="dv-chip' + ((S.evTier || 2) === n ? ' on' : '') + '" data-act="evtier" data-v="' + n + '">' + ['I Новобранец', 'II Ветеран', 'III Легенда'][n - 1] + '</button>'; }).join('') + '</div>' +
         '<p class="dv-note">Карта — случайная, остальные роли — боты (охотников-ботов — двое). Больше настроек и журнал матчей — во вкладке «Тест» в лобби ивентов.</p>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evlobby">Лобби ивентов</button></div></section>';
+      // галактические события: запустить любое сейчас и закончить идущие
+      h += '<section><h4>Галактические события <em>вне расписания</em></h4>' +
+        '<div class="dv-row"><select class="dv-in" id="dv-ge">' + (S.geTypes ? S.geTypes.map(function(t) {
+          return '<option value="' + esc(t.id) + '"' + (t.id === S.geType ? ' selected' : '') + '>' + esc(t.title) + ' · ' + esc(GE_SCOPE[t.scope] || t.scope) + '</option>'; }).join('') : '<option>Загрузка…</option>') + '</select></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="gestart"' + (S.geTypes ? '' : ' disabled') + '>Запустить сейчас</button></div>' +
+        '<div class="dv-ges"></div>' +
+        '<p class="dv-note">Тестовое событие не занимает место в расписании (до двух обычных разом). Цель — случайная планета без другого события.</p></section>';
+      if (!S.geTypes) rpc('dev_galaxy_event_types').then(function(t) { S.geTypes = t || []; if (tab === 'ev') render(); }, fail);
+      geFill();
     } else if (tab === 'err') {
       h += '<section><h4>Ошибки у игроков <em class="dv-errsum">Загрузка…</em></h4>' +
         '<div class="dv-chips"><button type="button" class="dv-chip' + (S.errAll ? '' : ' on') + '" data-act="errall" data-v="0">Открытые</button>' +
@@ -199,7 +208,19 @@
     } catch (e) { /* не критично */ }
   }
 
-  var ACT = { errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
+  var GE_SCOPE = { galaxy: 'вся галактика', faction: 'сторона', sector: 'сектор', planet: 'планета', front: 'фронт' };
+  // идущие галактические события — с кнопкой «Закончить»
+  function geFill() {
+    rpc('galaxy_events_state').then(function(d) {
+      var box = $('.dv-ges'); if (!box) return;
+      var list = (d && d.active) || [];
+      box.innerHTML = list.length ? list.map(function(e) {
+        return '<div class="dv-row"><span class="dv-in" style="flex:1;border:none;padding-left:0">' + esc(e.glyph) + ' ' + esc(e.title) + ' · ' + esc(e.center_name || GE_SCOPE[e.scope]) + '</span>' +
+          '<button type="button" class="dv-go bad" data-act="geend" data-v="' + esc(e.id) + '">Закончить</button></div>';
+      }).join('') : '<p class="dv-note">Сейчас событий нет.</p>';
+    }, fail);
+  }
+  var ACT = { galaxy_event: 'галактическое событие', galaxy_event_end: 'конец события', errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
   function brief(d) { if (!d) return ''; var o = []; for (var k in d) if (d.hasOwnProperty(k) && d[k] !== 0) o.push(k + ' ' + d[k]); return o.join(', '); }
   function num(id, lo, hi) { var v = parseInt($(id).value, 10); if (!isFinite(v) || v < lo || v > hi) throw new Error('Число от ' + fmt(lo) + ' до ' + fmt(hi)); return v; }
 
@@ -240,6 +261,16 @@
         rpc('dev_event_start', { p_event: ev[0], p_tier: S.evTier || 2, p_role: ev[1], p_map: null, p_bots: 2 }).then(function(r) {
           if (r && r.match) location.href = '../game/event-battle.html?m=' + encodeURIComponent(r.match.id); else { b.disabled = false; say('Тест не создан', true); }
         }, function(err) { b.disabled = false; fail(err); });
+      } else if (a === 'gestart') {
+        S.geType = $('#dv-ge').value; b.disabled = true;
+        rpc('dev_galaxy_event_start', { p_type: S.geType }).then(function(r) {
+          b.disabled = false; say('Событие запущено: ' + ((r && r.systems) || []).length + ' пл.');
+          if (typeof geReload === 'function') geReload(); geFill();
+        }, function(err) { b.disabled = false; fail(err); });
+      } else if (a === 'geend') {
+        rpc('dev_galaxy_event_end', { p_id: b.getAttribute('data-v') }).then(function() {
+          say('Событие закончено'); if (typeof geReload === 'function') geReload(); geFill();
+        }, fail);
       } else if (a === 'evlobby') {
         location.href = '../game/events.html';
       } else if (a === 'errall') {

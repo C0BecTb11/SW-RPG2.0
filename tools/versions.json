@@ -11,6 +11,10 @@
   "v": "2",
   "sha": "93cab287ed79"
  },
+ "css/galaxy-events.css": {
+  "v": "1",
+  "sha": "1a4da42b1e82"
+ },
  "css/galaxy.css": {
   "v": "2",
   "sha": "627a3a75d935"
@@ -68,12 +72,12 @@
   "sha": "209ae7da488e"
  },
  "js/credits-bar.js": {
-  "v": "5",
-  "sha": "de9e6b99dc8f"
+  "v": "6",
+  "sha": "8b61bbc6fa5c"
  },
  "js/dev-panel.js": {
-  "v": "4",
-  "sha": "25ef106ade1f"
+  "v": "5",
+  "sha": "d39eac02b406"
  },
  "js/err-report.js": {
   "v": "1",
@@ -88,8 +92,8 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "2",
-  "sha": "3df4ecaba31c"
+  "v": "3",
+  "sha": "2121f939e327"
  },
  "js/events.js": {
   "v": "4",
@@ -111,6 +115,10 @@
   "v": "1",
   "sha": "944bb3981ec6"
  },
+ "js/galaxy-events.js": {
+  "v": "1",
+  "sha": "85971362cb66"
+ },
  "js/ground-battle.js": {
   "v": "2",
   "sha": "18a1ca0095c5"
@@ -118,6 +126,10 @@
  "js/ground-live.js": {
   "v": "16",
   "sha": "a96fa3efe41b"
+ },
+ "js/planet-info.js": {
+  "v": "1",
+  "sha": "e99471c4d5e5"
  },
  "js/planet-request.js": {
   "v": "1",
@@ -132,8 +144,8 @@
   "sha": "719e753dd70c"
  },
  "js/reports.js": {
-  "v": "2",
-  "sha": "0d0f20674820"
+  "v": "3",
+  "sha": "15de3a2fcd85"
  },
  "js/ship-control.js": {
   "v": "2",

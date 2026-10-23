@@ -286,13 +286,14 @@ begin
     'effects', (select coalesce(jsonb_agg(jsonb_build_object('system', e.system_id, 'planet', s.name, 'kind', e.kind, 'value', e.value, 'title', e.title, 'ends', e.ends_at) order by e.ends_at), '[]'::jsonb)
        from (select system_id, kind, value, title, ends_at from active_effects where ends_at > now() and starts_at <= now()
              union all
-             select system_id, kind, value, 'Казна · ' || title, ends_at from faction_effects
+             select system_id, kind, value, case when source like 'event:%' then 'Событие · ' else 'Казна · ' end || title, ends_at from faction_effects
               where system_id is not null and kind in ('mood', 'extract', 'income') and ends_at > now() and starts_at <= now()
                 and faction = (select faction from profiles where id = v_me)) e
        left join systems s on s.id = e.system_id
        where e.system_id in (select system_id from system_control where controller_user_id = v_me)),
-    -- законы фракции (sql/laws.sql) действуют на все её планеты — показываем отдельно
-    'laws', (select coalesce(jsonb_agg(jsonb_build_object('kind', fe.kind, 'value', fe.value, 'title', fe.title, 'ends', fe.ends_at, 'decree', fe.source = 'decree') order by fe.ends_at), '[]'::jsonb)
+    -- на всю фракцию: законы, указы и галактические события (sql/galaxy_events.sql)
+    'laws', (select coalesce(jsonb_agg(jsonb_build_object('kind', fe.kind, 'value', fe.value, 'title', fe.title, 'ends', fe.ends_at, 'decree', fe.source = 'decree',
+                 'src', case when fe.source like 'event:%' then 'event' when fe.source = 'decree' then 'decree' else 'law' end) order by fe.ends_at), '[]'::jsonb)
        from faction_effects fe where fe.faction = (select faction from profiles where id = v_me) and fe.starts_at <= now() and fe.ends_at > now()
          and fe.system_id is null and fe.kind in ('mood', 'extract', 'income')),
     'planets', (select coalesce(jsonb_agg(jsonb_build_object('system', sc.system_id, 'planet', s.name,

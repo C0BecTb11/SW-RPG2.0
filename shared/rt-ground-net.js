@@ -156,7 +156,7 @@
         var tgt = null;
         if (m.tgt && m.tgt.tid != null) { var ta = B.agents[m.tgt.tid | 0]; if (!ta || !ta.alive) return; tgt = { tid: ta.id }; }
         else if (m.tgt && m.tgt.x != null) tgt = { x: +m.tgt.x, y: +m.tgt.y };
-        var err = B.useAbility(side, hid, String(m.ab || ''), tgt);
+        var err = B.useAbility(side, hid, String(m.ab || ''), tgt, true);   // приказ игрока: далеко — подойдёт сам
         if (err) B.msg(err, side, 'bad');
         return;
       }

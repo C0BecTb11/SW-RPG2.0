@@ -75,7 +75,8 @@
     twin:        { cd: 18, name: 'Спаренный выстрел' },
     lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 }
   };
-  var SUPP_T = 6, STUN_T = 5;      // заградительный огонь: залёг (меткость ½, стреляет реже); оглушён — стоит
+  var SUPP_T = 6, STUN_T = 5;
+  var PEND_T = 30;                 // способность «на подходе»: столько секунд герой идёт к цели, потом отказ      // заградительный огонь: залёг (меткость ½, стреляет реже); оглушён — стоит
 
   function rng(seed) { var s = seed >>> 0 || 1; return function() { s += 0x6D2B79F5; var t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function turn(cur, to, step) {
@@ -296,7 +297,7 @@
     for (var i = 0; i < list.length; i++) {
       var a = list[i], spot = this.spotNear(a, cx, cy, taken);
       if (!spot) continue;
-      if (!(opts && opts.auto)) this.microEnd(a, true);
+      if (!(opts && opts.auto)) { this.microEnd(a, true); if (a.hero) a.hero.pend = null; }
       this.mark(taken, spot[0], spot[1], a);
       this.goCell(a, spot[0], spot[1], [cx, cy]); a.post = !(opts && opts.auto); a.hold = false; a.focus = -1; n++;
       if (!(opts && opts.auto)) { a.auto = false; a.dpost = null; a.sortie = false; }
@@ -338,17 +339,17 @@
   Ground.prototype.orderAttack = function(team, ids, tid) {
     var self = this, tg = this.agents[tid]; if (!tg || !tg.alive || tg.team === team) return 0;
     var n = 0;
-    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); a.focus = tid; a.post = false; a.hold = false; a.goal = null; a.at = true; a.auto = false; a.dpost = null; a.sortie = false; n++; });
+    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); if (a.hero) a.hero.pend = null; a.focus = tid; a.post = false; a.hold = false; a.goal = null; a.at = true; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
   };
   Ground.prototype.orderHold = function(team, ids) {
     var self = this, n = 0;
-    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); var c = self.cellOf(a); a.goal = [c[0], c[1]]; a.at = true; a.post = true; a.hold = true; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
+    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); if (a.hero) a.hero.pend = null; var c = self.cellOf(a); a.goal = [c[0], c[1]]; a.at = true; a.post = true; a.hold = true; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
   };
   Ground.prototype.orderStop = function(team, ids) {
     var self = this, n = 0;
-    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); a.goal = null; a.at = true; a.post = false; a.hold = false; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
+    ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); if (a.hero) a.hero.pend = null; a.goal = null; a.at = true; a.post = false; a.hold = false; a.focus = -1; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
   };
   // Отряды: sqId > 0 — в отряд, 0 — новый, −1 — без отряда
@@ -365,7 +366,7 @@
     return sq ? sq.id : -1;
   };
   Ground.prototype.squadOf = function(team, id) { var sqs = this.teams[team].squads; for (var i = 0; i < sqs.length; i++) if (sqs[i].id === id) return sqs[i]; return null; };
-  Ground.prototype.setAuto = function(team, ids, on) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (self.mine(team, a)) { a.post = !on && a.post; a.auto = !!on; if (on) { a.hold = false; a.dpost = null; a.sortie = false; a.ph = 0; } } }); };
+  Ground.prototype.setAuto = function(team, ids, on) { var self = this; ids.forEach(function(i) { var a = self.agents[i]; if (self.mine(team, a)) { a.post = !on && a.post; a.auto = !!on; if (on) { if (a.hero) a.hero.pend = null; a.hold = false; a.dpost = null; a.sortie = false; a.ph = 0; } } }); };
 
   // ---- обзор
   Ground.prototype.canSee = function(team, b) {
@@ -1077,21 +1078,24 @@
     }
     h.data = null;
   };
-  // Применить способность героя: tgt = { tid } | { x, y } | null
-  Ground.prototype.useAbility = function(team, id, abilId, tgt) {
+  // Применить способность героя: tgt = { tid } | { x, y } | null.
+  // approach — приказ игрока: цель далеко — герой сам подойдёт и применит (ИИ ботов зовёт без него и получает «далеко»)
+  Ground.prototype.useAbility = function(team, id, abilId, tgt, approach) {
     var a = this.agents[id], A = ABIL[abilId];
     if (!a || !a.alive || !a.hero || !A || !A[0] || !this.mine(team, a)) return 'нет';
     var h = a.hero;
     if (h.abil.indexOf(abilId) < 0) return 'не изучено';
     if ((h.cds[abilId] || 0) > this.t) return 'откат ' + Math.ceil(h.cds[abilId] - this.t) + ' с';
     if (h.actT > 0) return 'занят';
+    h.pend = null;                                              // новая способность заменяет ожидающую
     var rng = A[2] * RANGE_K, b = tgt && tgt.tid != null ? this.agents[tgt.tid] : null, data = { power: A[4] };
     if (A[1] === 'enemy' || A[1] === 'ally') {
       if (!b || !b.alive) return 'нет цели';
       if (A[1] === 'enemy' && this.ctl(b) === team) return 'это свой';
       if (A[1] === 'ally' && b.team !== team) return 'это враг';
       var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy);
-      if (d > rng + 0.5) return 'далеко';
+      // далеко — герой сам подходит на дальность и применяет (pendStep); новый приказ игрока отменяет
+      if (d > rng + 0.5) return approach ? this.pendStart(team, a, abilId, b) : 'далеко';
       a.aim = Math.atan2(dy, dx); data.tid = b.id; data.x = b.x; data.y = b.y;
     } else if (A[1] === 'area' && tgt && tgt.x != null) { a.aim = Math.atan2(tgt.y - a.y, tgt.x - a.x); data.x = tgt.x; data.y = tgt.y; }
     if (A[5] === 'damage') data.damage = true;
@@ -1104,6 +1108,47 @@
     this.heroAct(a, A[0], dur, data);
     this.msg(ABIL_NAME[abilId] || abilId, team, 'gold');
     return '';
+  };
+
+  // Способность «на подходе»: герой идёт к цели (врага — преследует, к союзнику — идёт следом) и, как только
+  // цель в дальности, применяет. Отменяют: новый приказ игрока, гибель или уход цели из вида, PEND_T секунд.
+  Ground.prototype.pendStart = function(team, a, abilId, b) {
+    var h = a.hero, A = ABIL[abilId];
+    if (A[1] === 'enemy' && !this.canSee(team, b)) return 'цель не видна';
+    this.microEnd(a, true);
+    a.hold = false; a.auto = false; a.dpost = null; a.sortie = false;
+    if (A[1] === 'enemy') { a.focus = b.id; a.post = false; a.goal = null; a.at = true; }
+    else { a.focus = -1; this.pendFollow(a, b); }
+    h.pend = { ab: abilId, tid: b.id, team: team, until: this.t + PEND_T };
+    this.msg((ABIL_NAME[abilId] || abilId) + ': подхожу на дальность', team, '');
+    return '';
+  };
+  Ground.prototype.pendFollow = function(a, b) {
+    var c = [Math.floor(b.x), Math.floor(b.y)], g = a.goal;
+    if (g && !a.at && Math.abs(g[0] - c[0]) + Math.abs(g[1] - c[1]) <= 1) return;
+    var spot = this.spotNear(a, c[0], c[1], {}); if (!spot) return;
+    this.goCell(a, spot[0], spot[1]); a.post = true;
+  };
+  Ground.prototype.pendStep = function(a) {
+    var h = a.hero, p = h.pend, A = ABIL[p.ab], b = this.agents[p.tid], name = ABIL_NAME[p.ab] || p.ab;
+    // отказ: герой останавливается там, где шёл (дальше сам решит, драться ли), и игроку — почему
+    var drop = function(self, why) { h.pend = null; if (a.focus === p.tid) a.focus = -1; a.goal = null; a.at = true; a.post = false; if (why) self.msg(name + ': ' + why, p.team, 'bad'); };
+    if (!this.mine(p.team, a)) { h.pend = null; return; }
+    if (!b || !b.alive || b.gone) return drop(this, 'цели больше нет');
+    if (A[1] === 'enemy' && (this.ctl(b) === p.team || !this.canSee(p.team, b))) return drop(this, 'цель потеряна');
+    if (A[1] === 'ally' && b.team !== p.team) return drop(this, 'цель потеряна');
+    if (this.t > p.until) return drop(this, 'не дошёл до цели');
+    if (h.actT > 0 || a.stun > 0) return;                      // ударом или оглушением занят — дождаться
+    var dx = b.x - a.x, dy = b.y - a.y, rng = A[2] * RANGE_K;
+    if (dx * dx + dy * dy <= (rng + 0.5) * (rng + 0.5)) {
+      h.pend = null;
+      if (A[1] === 'ally') { var c = this.cellOf(a); a.goal = [c[0], c[1]]; a.at = true; a.post = false; }
+      var err = this.useAbility(p.team, a.id, p.ab, { tid: b.id });
+      if (err) this.msg(name + ': ' + err, p.team, 'bad');
+      return;
+    }
+    if (A[1] === 'enemy') { if (a.focus !== b.id) a.focus = b.id; }
+    else this.pendFollow(a, b);
   };
 
   // ---- ИИ стороны без игрока: отряды к площади, оборона у площади
@@ -1448,6 +1493,7 @@
       a = ag[i];
       if (!a.alive) { if (!a.gone && this.t - a.diedAt > DEATH_KEEP) a.gone = true; continue; }
       if (a.mind && a.mind.until <= this.t) { a.mind = null; a.tgt = -1; }
+      if (a.hero && a.hero.pend) this.pendStep(a);
       this.think(a, dt);
     }
     this.collide(dt);

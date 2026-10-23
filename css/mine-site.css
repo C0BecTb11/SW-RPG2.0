@@ -1,28 +1,71 @@
-/* Участок добычи (js/mine-site.js). Шторка снизу, как окна построек (logi-panel): тот же фон,
-   рамки, золотые заголовки разделов и синяя основная кнопка. Префикс — mn-. */
+/* Участок добычи (js/mine-site.js): отдельный экран — сверху живая сцена участка (js/mine-scene.js),
+   под ней управление в языке окон построек (logi-panel): тот же фон, рамки, золотые заголовки
+   разделов и синяя основная кнопка. Телефон боком — сцена слева, управление справа. Префикс — mn-. */
 
 #mn-panel {
   position: fixed;
   inset: 0;
   z-index: 2100;
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: center;
-  background: rgba(5, 8, 13, 0.75);
+  background: rgba(5, 8, 13, 0.92);
   font-family: 'Courier New', monospace;
 }
 
 #mn-box {
   width: 100%;
   max-width: 560px;
-  max-height: 88vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: #0d1119;
-  border-top: 1px solid #1c2530;
-  border-radius: 14px 14px 0 0;
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  border-left: 1px solid #1c2530;
+  border-right: 1px solid #1c2530;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.45);
 }
+
+/* --- живая сцена */
+#mn-stage {
+  position: relative;
+  flex: none;
+  height: 42vh;
+  min-height: 210px;
+  max-height: 400px;
+  background: #11150f;
+  border-bottom: 1px solid #1c2530;
+  overflow: hidden;
+}
+
+#mn-stage .mn-cv { position: absolute; inset: 0; display: block; }
+
+.mn-hud {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  max-width: calc(100% - 20px);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: rgba(10, 13, 20, 0.82);
+  border: 1px solid #1c2530;
+  border-radius: 999px;
+  font-size: 10px;
+  color: #cfd8dc;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mn-hud:empty { display: none; }
+.mn-hud i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #55606c; }
+.mn-hud i.on { background: #5fd968; box-shadow: 0 0 6px rgba(95, 217, 104, 0.8); animation: mn-pulse 1.6s ease-in-out infinite; }
+.mn-hud i.rest { background: #8fa8c4; }
+.mn-hud b { font-size: 12px; }
+
+@keyframes mn-pulse { 50% { opacity: 0.45; } }
 
 #mn-head {
   flex: none;
@@ -345,8 +388,21 @@
   font-size: 11px;
 }
 
-/* телефон боком: шторка уже, чтобы не закрывать карту целиком */
+/* телефон боком: сцена слева, управление справа */
 @media (orientation: landscape) and (max-height: 500px) {
-  #mn-panel { justify-content: flex-end; }
-  #mn-box { max-width: 460px; max-height: 100vh; border-radius: 14px 0 0 0; }
+  #mn-box {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) min(420px, 52vw);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #mn-head { grid-column: 2; grid-row: 1; }
+  #mn-body { grid-column: 2; grid-row: 2; }
+  #mn-stage { grid-column: 1; grid-row: 1 / span 2; height: auto; max-height: none; min-height: 0; border-bottom: none; border-right: 1px solid #1c2530; }
+}
+
+/* на широком экране — сцена крупнее */
+@media (min-width: 900px) and (min-height: 700px) {
+  #mn-box { max-width: 760px; }
+  #mn-stage { height: 46vh; max-height: 520px; }
 }

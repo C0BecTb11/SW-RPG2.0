@@ -24,8 +24,8 @@
   "sha": "aafae6e1d7f2"
  },
  "css/mine-site.css": {
-  "v": "1",
-  "sha": "2a4021a0608a"
+  "v": "2",
+  "sha": "98bba64f1534"
  },
  "css/reports.css": {
   "v": "2",
@@ -139,9 +139,13 @@
   "v": "25",
   "sha": "7b77119422bd"
  },
+ "js/mine-scene.js": {
+  "v": "1",
+  "sha": "250f244af43b"
+ },
  "js/mine-site.js": {
-  "v": "2",
-  "sha": "c13307b984ac"
+  "v": "3",
+  "sha": "d149941d9513"
  },
  "js/planet-info.js": {
   "v": "2",

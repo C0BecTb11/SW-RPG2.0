@@ -12,6 +12,9 @@
 --   отклонённый закон можно предложить снова через 48 ч; указ — раз в 7 дней, только лидер.
 -- Предлагает лидер и должности с полномочием «Законы» (laws). Голосуют все игроки фракции.
 -- Встраивание: найм бойцов и кораблей × hire_time, стройка зданий × build_time (минус — быстрее).
+-- Денежные законы (funds) связаны с казной фракции (sql/treasury.sql): налог с дохода поселений
+-- ({"tax": %}) или заём ({"now": +кр. сразу, "end": −кр. в конце срока}). Они — только голосованием;
+-- новый заём, пока казна в минусе, не дают.
 
 -- ---------------------------------------------------------------- настройки
 insert into public.game_settings (key, value) values
@@ -26,9 +29,11 @@ create table if not exists public.faction_laws (
   title text not null,
   text text not null,
   effects jsonb not null,
+  funds jsonb,
   sort integer not null default 0,
   active boolean not null default true
 );
+alter table public.faction_laws add column if not exists funds jsonb;
 create table if not exists public.faction_bills (
   id uuid primary key default gen_random_uuid(),
   faction text not null,
@@ -61,9 +66,11 @@ create table if not exists public.faction_effects (
   title text,
   source text not null default 'law',
   source_id uuid,
+  system_id text,                                 -- null — на все планеты фракции; иначе одна планета (проекты казны)
   starts_at timestamptz not null default now(),
   ends_at timestamptz not null
 );
+alter table public.faction_effects add column if not exists system_id text;
 create index if not exists faction_effects_fac on public.faction_effects (faction, kind, ends_at);
 
 alter table public.faction_laws enable row level security;
@@ -85,7 +92,7 @@ on conflict (type) do nothing;
 create or replace function public.faction_power_list()
  returns text[] language sql immutable set search_path to 'public', 'pg_temp'
 as $function$
-  select array['manage_roles','planet_requests','planet_controllers','orders','economy','laws']::text[];
+  select array['manage_roles','planet_requests','planet_controllers','orders','economy','laws','treasury']::text[];
 $function$;
 
 -- ---------------------------------------------------------------- каталог
@@ -117,15 +124,29 @@ insert into public.faction_laws (id, faction, title, text, effects, sort) values
 on conflict (id) do update set faction = excluded.faction, title = excluded.title, text = excluded.text,
   effects = excluded.effects, sort = excluded.sort, active = true;
 
+-- денежные законы — работают с казной фракции (sql/treasury.sql)
+insert into public.faction_laws (id, faction, title, text, effects, funds, sort) values
+  ('rep_war_tax', 'republic', 'Военный налог', 'Десятая часть доходов поселений идёт в казну Республики — на нужды фронта.',
+     '[{"kind":"income","value":-10}]', '{"tax":10}', 7),
+  ('rep_bonds', 'republic', 'Военные облигации', 'Банки Корусанта выкупают облигации Республики. Через неделю — расчёт с процентами.',
+     '[]', '{"now":2000,"end":-2600}', 8),
+  ('cis_guild_levy', 'cis', 'Сбор Гильдии коммерции', 'Десятая часть доходов поселений уходит в казну Конфедерации.',
+     '[{"kind":"income","value":-10}]', '{"tax":10}', 7),
+  ('cis_bank_debt', 'cis', 'Долг Банковскому клану', 'Муунские банкиры дают Совету кредит. Через неделю его придётся вернуть с процентами.',
+     '[]', '{"now":2000,"end":-2600}', 8)
+on conflict (id) do update set faction = excluded.faction, title = excluded.title, text = excluded.text,
+  effects = excluded.effects, funds = excluded.funds, sort = excluded.sort, active = true;
+
 -- ---------------------------------------------------------------- эффекты
--- Сумма по виду: эффекты планеты (донесения) + законы её фракции. Потолок: довольство ±30, проценты ±50.
+-- Сумма по виду: эффекты планеты (донесения) + законы её фракции + проекты казны на этой планете. Потолок: довольство ±30, проценты ±50.
 create or replace function public.effect_sum(p_system text, p_kind text)
  returns integer language sql stable security definer set search_path to 'public', 'pg_temp'
 as $function$
   select greatest(case when p_kind = 'mood' then -30 else -50 end, least(case when p_kind = 'mood' then 30 else 50 end,
          coalesce((select sum(value) from active_effects where system_id = p_system and kind = p_kind and starts_at <= now() and ends_at > now()), 0)
        + coalesce((select sum(fe.value) from faction_effects fe join systems s on s.faction = fe.faction
-                   where s.id = p_system and fe.kind = p_kind and fe.starts_at <= now() and fe.ends_at > now()), 0)))::integer;
+                   where s.id = p_system and fe.kind = p_kind and fe.starts_at <= now() and fe.ends_at > now()
+                     and (fe.system_id is null or fe.system_id = p_system)), 0)))::integer;
 $function$;
 
 -- ---------------------------------------------------------------- служебное
@@ -168,6 +189,10 @@ begin
     insert into faction_effects (faction, kind, value, title, source, source_id, starts_at, ends_at)
     values (b.faction, e->>'kind', (e->>'value')::integer, l.title, case when b.mode = 'decree' then 'decree' else 'law' end, b.id, b.starts_at, b.ends_at);
   end loop;
+  -- заём: деньги в казну сразу
+  if l.funds ? 'now' then
+    perform treasury_add(b.faction, (l.funds->>'now')::integer, 'law', b.proposed_by, null, null, l.title);
+  end if;
 end;
 $function$;
 
@@ -208,10 +233,15 @@ begin
   for r in select id from faction_bills where status = 'voting' and vote_ends_at <= now() loop
     perform law_close(r.id); v_n := v_n + 1;
   end loop;
-  for r in select b.id, b.faction, l.title from faction_bills b join faction_laws l on l.id = b.law_id
+  for r in select b.id, b.faction, l.title, l.funds from faction_bills b join faction_laws l on l.id = b.law_id
            where b.status = 'active' and b.ends_at <= now() loop
     update faction_bills set status = 'expired' where id = r.id;
     perform log_event(null, r.faction, null, 'law_expired', r.title, 1, 'faction', jsonb_build_object('bill', r.id));
+    -- заём: расчёт с процентами в конце срока (казна может уйти в минус — это долг)
+    if r.funds ? 'end' then
+      perform treasury_add(r.faction, (r.funds->>'end')::integer, 'debt', null, null, null, r.title);
+      perform log_event(null, r.faction, null, 'treasury_debt', r.title, abs((r.funds->>'end')::integer), 'faction', jsonb_build_object('bill', r.id));
+    end if;
     v_n := v_n + 1;
   end loop;
   return v_n;
@@ -239,14 +269,15 @@ begin
     'members', law_members(v_fac), 'quorum', law_quorum(v_fac),
     'vote_hours', event_setting_int('law_vote_hours', 48), 'law_days', event_setting_int('law_days', 7),
     'decree_hours', event_setting_int('law_decree_hours', 24), 'retry_hours', event_setting_int('law_retry_hours', 48),
-    'laws', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'title', l.title, 'text', l.text, 'effects', l.effects,
+    'treasury', coalesce((select credits from faction_treasury where faction = v_fac), 0),
+    'laws', (select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'title', l.title, 'text', l.text, 'effects', l.effects, 'funds', l.funds,
                'busy', (select b.status from faction_bills b where b.law_id = l.id and b.status in ('voting', 'active') limit 1),
                'retry_at', (select max(b.closed_at) + make_interval(hours => event_setting_int('law_retry_hours', 48)) from faction_bills b
                             where b.law_id = l.id and b.status = 'failed'
                               and b.closed_at > now() - make_interval(hours => event_setting_int('law_retry_hours', 48))))
              order by l.sort), '[]'::jsonb) from faction_laws l where l.faction = v_fac and l.active),
     'bills', (select coalesce(jsonb_agg(x order by x->>'status' desc, x->>'at'), '[]'::jsonb) from (
-       select jsonb_build_object('id', b.id, 'law', b.law_id, 'title', l.title, 'text', l.text, 'effects', l.effects, 'mode', b.mode, 'status', b.status,
+       select jsonb_build_object('id', b.id, 'law', b.law_id, 'title', l.title, 'text', l.text, 'effects', l.effects, 'funds', l.funds, 'mode', b.mode, 'status', b.status,
                 'by', p.nickname, 'at', b.created_at, 'vote_ends', b.vote_ends_at, 'starts', b.starts_at, 'ends', b.ends_at,
                 'yes', case when b.status = 'voting' then (select count(*) from faction_votes v where v.bill_id = b.id and v.yes) else b.yes end,
                 'no', case when b.status = 'voting' then (select count(*) from faction_votes v where v.bill_id = b.id and not v.yes) else b.no end,
@@ -282,6 +313,9 @@ begin
   if v_retry > now() then raise exception 'Закон недавно отклонили — снова можно через % ч', ceil(extract(epoch from v_retry - now()) / 3600)::integer; end if;
   if (select count(*) from faction_bills where faction = v_fac and status in ('voting', 'active')) >= event_setting_int('law_slots', 2) then
     raise exception 'Уже % закона — действующие и на голосовании. Новый — когда один из них закончится', event_setting_int('law_slots', 2);
+  end if;
+  if l.funds ? 'now' and coalesce((select credits from faction_treasury where faction = v_fac), 0) < 0 then
+    raise exception 'Казна в долгу — новый заём не дадут, пока долг не погашен';
   end if;
   insert into faction_bills (faction, law_id, mode, status, proposed_by, vote_ends_at)
   values (v_fac, l.id, 'vote', 'voting', v_me, now() + make_interval(hours => event_setting_int('law_vote_hours', 48)))
@@ -325,6 +359,7 @@ begin
   perform law_tick();
   select * into l from faction_laws where id = p_law and active;
   if not found or l.faction <> v_fac then raise exception 'Такого закона нет'; end if;
+  if l.funds is not null then raise exception 'Денежные законы принимает только голосование'; end if;
   select max(created_at) + make_interval(days => event_setting_int('law_decree_cooldown_days', 7)) into v_next
     from faction_bills where faction = v_fac and mode = 'decree';
   if v_next > now() then raise exception 'Следующий указ — через % ч', ceil(extract(epoch from v_next - now()) / 3600)::integer; end if;

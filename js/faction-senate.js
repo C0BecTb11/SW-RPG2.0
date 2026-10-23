@@ -55,11 +55,21 @@ function snEffect(e) {
   return { good: v > 0, text: k.up + ' ' + (v > 0 ? '+' : '−') + Math.abs(v) + k.unit };
 }
 
-function snEffects(list) {
+// Денежные законы (sql/laws.sql, funds): налог в казну, заём сразу и возврат в конце срока
+function snFunds(f) {
+  if (!f) return '';
+  var num = typeof fsNum === 'function' ? fsNum : function(n) { return String(n); }, h = '';
+  if (f.tax) h += '<i class="up">в казну ' + (f.tax | 0) + '% дохода поселений</i>';
+  if (f.now) h += '<i class="up">казне +' + num(f.now) + ' кр. сразу</i>';
+  if (f.end) h += '<i class="down">возврат ' + num(Math.abs(f.end)) + ' кр. в конце срока</i>';
+  return h;
+}
+
+function snEffects(list, funds) {
   return '<span class="sn-fx">' + (list || []).map(function(e) {
     var x = snEffect(e);
     return '<i class="' + (x.good ? 'up' : 'down') + '">' + snEsc(x.text) + '</i>';
-  }).join('') + '</span>';
+  }).join('') + snFunds(funds) + '</span>';
 }
 
 // ── Загрузка ───────────────────────────────────────────────────────
@@ -130,7 +140,7 @@ function snBillCard(b) {
     '<div class="sn-top"><span class="sn-tag">' + tag + '</span><span class="sn-left" data-sn-end="' + snMs(voting ? b.vote_ends : b.ends) +
       '" data-sn-pre="' + (voting ? 'итог через ' : 'ещё ') + '">' + left + '</span></div>' +
     '<div class="sn-title">' + snEsc(b.title) + '</div>' +
-    snEffects(b.effects);
+    snEffects(b.effects, b.funds);
   if (voting) {
     var tot = Math.max(1, yes + no), py = Math.round(yes * 100 / tot);
     h += '<div class="sn-tally"><div class="sn-bar"><i class="y" style="width:' + (yes + no ? py : 0) + '%"></i><i class="n" style="width:' + (yes + no ? 100 - py : 0) + '%"></i></div>' +
@@ -234,11 +244,11 @@ function snRenderSheet() {
     var busy = !!snState.busy[l.id];
     h += '<div class="sn-law' + (l.busy ? ' on' : '') + '">' +
       '<div class="sn-law-head"><b>' + snEsc(l.title) + '</b>' + (state ? '<em>' + state + '</em>' : retry ? '<em class="wait">снова через ' + snLeft(l.retry_at) + '</em>' : '') + '</div>' +
-      '<div class="sn-law-text">' + snEsc(l.text) + '</div>' + snEffects(l.effects);
+      '<div class="sn-law-text">' + snEsc(l.text) + '</div>' + snEffects(l.effects, l.funds);
     if (free && (d.can_propose || d.is_leader)) {
       h += '<div class="sn-law-acts">' +
         (d.can_propose ? '<button type="button" class="hq-small" data-hq="sn-propose" data-id="' + snEsc(l.id) + '"' + (busy ? ' disabled' : '') + '>На голосование</button>' : '') +
-        (d.is_leader ? '<button type="button" class="hq-small sn-decree" data-hq="sn-decree" data-id="' + snEsc(l.id) + '"' + (busy || decreeLeft ? ' disabled' : '') + '>' +
+        (d.is_leader && !l.funds ? '<button type="button" class="hq-small sn-decree" data-hq="sn-decree" data-id="' + snEsc(l.id) + '"' + (busy || decreeLeft ? ' disabled' : '') + '>' +
           (decreeLeft ? 'Указ — через ' + snLeft(d.decree_at) : 'Указ на ' + (d.decree_hours | 0) + ' ч') + '</button>' : '') +
       '</div>';
     }
@@ -259,7 +269,7 @@ function snRenderSheet() {
 
   h += '<div class="sn-rules">Одновременно — не больше ' + (d.slots | 0) + ' законов. Голосование идёт ' + (d.vote_hours | 0) + ' ч: закон принят, если «за» больше, чем «против», и проголосовали хотя бы ' +
     (d.quorum | 0) + ' из ' + (d.members | 0) + ' активных. Проголосовали все — итог сразу. Отклонённый закон можно предложить снова через ' + (d.retry_hours | 0) + ' ч. ' +
-    'Указ лидера вводит закон без голосования на ' + (d.decree_hours | 0) + ' ч, раз в неделю. Время найма и стройки в карточках показано без учёта законов.</div>';
+    'Указ лидера вводит закон без голосования на ' + (d.decree_hours | 0) + ' ч, раз в неделю; денежные законы — только голосованием. Время найма и стройки в карточках показано без учёта законов.</div>';
   body.innerHTML = h;
 }
 

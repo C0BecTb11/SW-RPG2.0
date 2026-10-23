@@ -459,6 +459,14 @@ function fsFeedLine(e) {
       return [fsEsc(sys), e.subject ? 'теперь ' + fsEsc(e.subject) : ''];
     case 'militia_raised':
       return [fsEsc(sys), e.amount ? 'ополченцев: ' + e.amount : ''];
+    case 'treasury_donate':
+      return ['+' + fsNum(e.amount) + ' кр. в казну', fsEsc(e.actor_name || '')];
+    case 'treasury_grant':
+      return [fsNum(e.amount) + ' кр. → ' + fsEsc(m.to || e.subject || ''), fsEsc(e.actor_name || '')];
+    case 'treasury_project':
+      return [fsEsc(e.subject || '') + (sys ? ' · ' + fsEsc(sys) : ''), fsEsc(e.actor_name || '')];
+    case 'treasury_debt':
+      return ['−' + fsNum(e.amount) + ' кр. · ' + fsEsc(e.subject || ''), ''];
     default:
       var a = [];
       if (e.subject && e.subject !== sys) a.push(fsEsc(e.subject));
@@ -509,6 +517,7 @@ function fsRender(animate) {
   body.innerHTML =
     (typeof fsRenderHQ === 'function' ? fsRenderHQ() : '') +
     (typeof fsRenderSenate === 'function' ? fsRenderSenate() : '') +
+    (typeof fsRenderTreasury === 'function' ? fsRenderTreasury() : '') +
     fsRenderBalance(d) +
     fsRenderFront(d) +
     fsRenderMembers(d) +
@@ -594,7 +603,9 @@ function fsLoad(first) {
     // Штаб: приказ дня, цели и должности. Сбой штаба не ломает сводку.
     typeof hqFetch === 'function' ? hqFetch() : Promise.resolve(null),
     // Сенат / Совет: законы и голосования (js/faction-senate.js)
-    typeof snFetch === 'function' ? snFetch() : Promise.resolve(null)
+    typeof snFetch === 'function' ? snFetch() : Promise.resolve(null),
+    // Казна фракции (js/faction-treasury.js)
+    typeof tsFetch === 'function' ? tsFetch() : Promise.resolve(null)
   ]).then(function(res) {
     if (my !== fsState.req) return;
     fsState.busy = false;
@@ -820,6 +831,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (act === 'hq-dir' && typeof openHqDirective === 'function') { openHqDirective(); return; }
       if (act === 'hq-targets' && typeof openHqTargets === 'function') { openHqTargets(); return; }
       if (act && act.indexOf('sn-') === 0) { if (!t.disabled && typeof snOnBody === 'function') snOnBody(act, t); return; }
+      if (act && act.indexOf('ts-') === 0) { if (!t.disabled && typeof tsOnBody === 'function') tsOnBody(act, t); return; }
       var sys = t.getAttribute('data-sys');
       if (sys) fsGoTo(sys, t.getAttribute('data-info') === '1');
     });

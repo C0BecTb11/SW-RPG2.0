@@ -1,7 +1,7 @@
 {
  "css/dev-panel.css": {
-  "v": "2",
-  "sha": "b2b545ca17e1"
+  "v": "3",
+  "sha": "6809dc8c4ba5"
  },
  "css/event-live.css": {
   "v": "2",
@@ -48,8 +48,8 @@
   "sha": "c82bbf4f47df"
  },
  "ground/ground.js": {
-  "v": "20",
-  "sha": "dfd69ba2c647"
+  "v": "21",
+  "sha": "fe404f149809"
  },
  "ground/preview.css": {
   "v": "1",
@@ -76,24 +76,24 @@
   "sha": "209ae7da488e"
  },
  "js/credits-bar.js": {
-  "v": "6",
-  "sha": "8b61bbc6fa5c"
+  "v": "7",
+  "sha": "96b6b6106fd8"
  },
  "js/dev-panel.js": {
-  "v": "5",
-  "sha": "d39eac02b406"
+  "v": "6",
+  "sha": "57332d2c6f9e"
  },
  "js/drop-tray.js": {
   "v": "1",
   "sha": "e1a37a3a70f1"
  },
  "js/err-report.js": {
-  "v": "1",
-  "sha": "23422c935c94"
+  "v": "2",
+  "sha": "2e18a8364376"
  },
  "js/event-live.js": {
-  "v": "13",
-  "sha": "321246addd30"
+  "v": "14",
+  "sha": "531230ce912c"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -132,8 +132,8 @@
   "sha": "9c5ce8e3d28e"
  },
  "js/ground-live.js": {
-  "v": "17",
-  "sha": "c56436e1ee74"
+  "v": "18",
+  "sha": "54861d40726e"
  },
  "js/planet-info.js": {
   "v": "2",
@@ -170,6 +170,10 @@
  "js/space-live.js": {
   "v": "15",
   "sha": "7b919c7ec0ec"
+ },
+ "js/supabase-client.js": {
+  "v": "1",
+  "sha": "bff57b0bcbea"
  },
  "js/unrest.js": {
   "v": "3",

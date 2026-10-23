@@ -195,7 +195,7 @@ begin
       elsif r.ends_at <= now() then
         perform riot_finish(r.id, 'failed');
       end if;
-    exception when others then
+    exception when others then perform err_db('riot_tick', sqlstate, sqlerrm, true);
       raise warning 'riot_tick %: %', r.id, sqlerrm;
     end;
   end loop;

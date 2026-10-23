@@ -4,7 +4,72 @@
 var SUPABASE_URL = 'https://zqqaxhhajhgspaiwlyhy.supabase.co';
 var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxcWF4aGhhamhnc3BhaXdseWh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0NDMyNjIsImV4cCI6MjEwMTAxOTI2Mn0.oauDY1aq02uU1dHsoj_H50fi4owBDypn_hMHDalHOSw';
 
-var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Ответы базы с ошибкой — в журнал ошибок (js/err-report.js → DEV → «Ошибки» → «Игроки»).
+// Через этот fetch идут все запросы к таблицам и функциям (supabase.rpc, supabase.from).
+// Пишем только сбои: отказ с текстом для игрока («raise exception», код P0001), «нет строки»
+// у .single() (PGRST116) и истёкший вход (401, PGRST301/303) — это не ошибки игры.
+// Обрыв сети тоже не пишем: на телефоне это норма, игра переспрашивает сама.
+var SB_QUIET_CODES = { P0001: 1, PGRST116: 1, PGRST301: 1, PGRST303: 1 };
+function sbClean(s) {
+  return String(s == null ? '' : s)
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '‹id›')
+    .replace(/"[^"]{0,80}"/g, '"…"').replace(/\d{3,}/g, '#');
+}
+function sbNoteFail(url, init, res) {
+  if (!window.errReport || res.status === 401) return;
+  var m = /\/rest\/v1\/(rpc\/)?([A-Za-z0-9_]+)/.exec(url);
+  if (!m || m[2] === 'report_client_errors') return;            // сам журнал не пишет о себе — без петли
+  var what = (m[1] ? 'rpc ' : 'таблица ') + m[2], method = (init && init.method) || 'GET';
+  res.clone().text().then(function(t) {
+    var j = null;
+    try { j = JSON.parse(t); } catch (e) {}
+    var code = j && j.code ? String(j.code) : '';
+    if (SB_QUIET_CODES[code]) return;
+    var msg = j && j.message ? sbClean(j.message) : ('HTTP ' + res.status + (t ? ' · ' + sbClean(t.slice(0, 120)) : ''));
+    window.errReport({ name: 'База', message: what + ' · ' + (code ? code + ': ' : '') + msg,
+                       stack: [method + ' ' + what, 'HTTP ' + res.status,
+                               j && j.details ? 'details: ' + String(j.details).slice(0, 300) : '',
+                               j && j.hint ? 'hint: ' + String(j.hint).slice(0, 300) : ''].filter(Boolean).join('\n') },
+                     m[1] ? 'rpc:' + m[2] : 'db:' + m[2]);
+  }, function() {});
+}
+function sbFetch(input, init) {
+  var f = window.fetch(input, init);
+  try {
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/rest/v1/') >= 0) {
+      f.then(function(res) { try { if (res && res.status >= 400) sbNoteFail(url, init, res); } catch (e) {} }, function() {});
+    }
+  } catch (e) { /* журнал не мешает запросу */ }
+  return f;
+}
+
+var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: sbFetch } });
+
+// Realtime: канал не поднялся (CHANNEL_ERROR) или не ответил (TIMED_OUT) — в журнал.
+// Только когда страница на виду и сеть есть: в фоне и без сети каналы рвутся законно.
+(function() {
+  var realChannel = supabase.channel.bind(supabase);
+  supabase.channel = function(name) {
+    var ch = realChannel.apply(null, arguments);
+    try {
+      var realSub = ch.subscribe.bind(ch);
+      ch.subscribe = function(cb, timeout) {
+        return realSub(function(status, err) {
+          try {
+            if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && window.errReport &&
+                !document.hidden && navigator.onLine !== false) {
+              window.errReport({ name: 'Realtime', message: 'канал ' + sbClean(name).replace(/-[A-Za-z0-9_]+$/, '-…') + ' · ' + status +
+                                 (err && err.message ? ' · ' + sbClean(err.message) : '') }, 'realtime');
+            }
+          } catch (e) {}
+          if (typeof cb === 'function') return cb.apply(this, arguments);
+        }, timeout);
+      };
+    } catch (e) { /* без обёртки — как было */ }
+    return ch;
+  };
+})();
 
 // Игровые страницы без входа. Их открывают не только игроки: «Прочитать
 // вслух» Google и роботы загружают страницу без сессии. Все игровые функции

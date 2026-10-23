@@ -7,6 +7,7 @@ var mnState = null;        // последнее состояние с серв�
 var mnBuilding = null;     // строка постройки
 var mnAt = 0;              // когда пришло состояние (мс, часы клиента)
 var mnPoll = null, mnTick = null, mnBusy = false, mnSeq = 0;
+var mnOpenAt = 0, mnDownBack = false;   // касание фона закрывает шторку, только если оно на фоне и началось
 var mnForm = { len: 8, pace: 'normal', h: 0, d: 0, touched: false };
 var MN_PACE = { careful: 'Бережно', normal: 'Обычно', rush: 'Аврал' };
 var MN_PACE_HINT = {
@@ -56,14 +57,17 @@ function mnPanel() {
       '<div id="mn-body"></div>' +
     '</div>';
   document.body.appendChild(p);
-  p.addEventListener('click', function(e) { if (e.target === p) closeMineSite(); });
+  // Тап, которым открыли участок (на карте планеты), браузер следом досылает щелчком — уже по фону
+  // открытой шторки. Закрываем только касание, начатое на фоне, и не в первые 0,4 с.
+  p.addEventListener('pointerdown', function(e) { mnDownBack = e.target === p; });
+  p.addEventListener('click', function(e) { if (e.target === p && mnDownBack && Date.now() - mnOpenAt > 400) closeMineSite(); mnDownBack = false; });
   document.getElementById('mn-close').addEventListener('click', closeMineSite);
   document.getElementById('mn-body').addEventListener('click', mnClick);
   return p;
 }
 
 function openMineSite(building) {
-  mnBuilding = building;
+  mnBuilding = building; mnOpenAt = Date.now(); mnDownBack = false;
   mnState = null;
   mnForm = { len: 8, pace: 'normal', h: 0, d: 0, touched: false };
   var p = mnPanel();

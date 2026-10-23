@@ -54,6 +54,7 @@ function mnPanel() {
     '<div id="mn-box">' +
       '<div id="mn-head"><div class="mn-ttl"><b id="mn-title">Участок</b><span id="mn-sub"></span></div>' +
         '<button id="mn-close" type="button" aria-label="Закрыть">✕</button></div>' +
+      '<div id="mn-stage"><div class="mn-hud" id="mn-hud"></div></div>' +
       '<div id="mn-body"></div>' +
     '</div>';
   document.body.appendChild(p);
@@ -76,6 +77,9 @@ function openMineSite(building) {
   document.getElementById('mn-sub').textContent = t.name || '';
   document.getElementById('mn-body').innerHTML = '<div class="mn-empty">Загрузка…</div>';
   p.style.display = 'flex';
+  document.body.classList.add('mn-open');
+  if (window.MNScene) { try { MNScene.mount(document.getElementById('mn-stage')); } catch (e) { if (window.errReport) errReport(e, 'mine.scene'); } }
+  document.getElementById('mn-hud').textContent = '';
   mnLoad();
   if (mnPoll) clearInterval(mnPoll);
   mnPoll = setInterval(function() { if (!document.hidden) mnLoad(); }, 15000);
@@ -86,6 +90,8 @@ function openMineSite(building) {
 function closeMineSite() {
   var p = document.getElementById('mn-panel');
   if (p) p.style.display = 'none';
+  document.body.classList.remove('mn-open');
+  if (window.MNScene) MNScene.stop();
   if (mnPoll) { clearInterval(mnPoll); mnPoll = null; }
   if (mnTick) { clearInterval(mnTick); mnTick = null; }
   mnBuilding = null; mnState = null;
@@ -105,6 +111,7 @@ function mnLoad() {
 
 function mnSet(st) {
   mnState = st; mnAt = Date.now();
+  if (window.MNScene) { try { MNScene.set(st, mnAt); } catch (e) { if (window.errReport) errReport(e, 'mine.scene'); } }
   // по умолчанию на смену — все свободные и отдохнувшие, не больше мест
   if (!mnForm.touched) {
     var h = st.rest_h ? 0 : st.avail_h, d = st.rest_d ? 0 : st.avail_d;
@@ -273,6 +280,7 @@ function mnStepper(kind, label, v, max, rest) {
 function mnLive() {
   var st = mnState; if (!st) return;
   var now = Date.now();
+  mnHud(now);
   if (st.run) {
     var r = st.run, t0 = new Date(r.started_at).getTime(), t1 = new Date(r.ends_at).getTime();
     var got = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - mnAt) / 3600000;
@@ -290,6 +298,19 @@ function mnLive() {
     else due = true;
   }
   if (due && !mnBusy && now - mnAt > 3000) mnLoad();
+}
+
+// Строка поверх сцены: что сейчас на участке
+function mnHud(now) {
+  var el = document.getElementById('mn-hud'), st = mnState; if (!el || !st) return;
+  var html;
+  if (st.run) {
+    var r = st.run, t1 = new Date(r.ends_at).getTime(), got = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - mnAt) / 3600000;
+    html = '<i class="on"></i>Смена · ' + (now < t1 ? 'ещё ' + mnLeft(t1 - now) : 'заканчивается') + ' · <b style="color:' + ((st.res || {}).color || '#cfd8dc') + '">+' + Math.floor(got) + '</b>';
+  } else if (st.res_k <= 0) html = '<i></i>Залежи нет';
+  else if (st.rest_h || st.rest_d) html = '<i class="rest"></i>Бригада отдыхает' + (st.auto.on ? ' · автосмена ждёт' : '');
+  else html = '<i></i>' + (st.auto.on ? 'Автосмена начнётся в течение минуты' : 'Смены нет');
+  if (el.innerHTML !== html) el.innerHTML = html;
 }
 
 function mnErr(msg) { var e = document.getElementById('mn-err'); if (e) { e.textContent = msg || ''; e.style.display = msg ? 'block' : 'none'; } }

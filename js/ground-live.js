@@ -36,10 +36,10 @@
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=20'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=21'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=20'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=21'; document.body.appendChild(s);
     });
   }
   var toastQ = [];

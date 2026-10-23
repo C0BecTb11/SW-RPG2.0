@@ -50,7 +50,7 @@
     if (!LIVE.srv) { loading(false); toast('Не задан адрес сервера боёв', 'bad'); return; }
     loading(true, 'Связь с планетой…');
     var url = LIVE.srv.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws', ws;
-    try { ws = new WebSocket(url); } catch (e) { loading(false); toast('Сервер боёв недоступен', 'bad'); return; }
+    try { ws = new WebSocket(url); } catch (e) { loading(false); toast('Сервер боёв недоступен', 'bad'); if (window.errReport) errReport(e, 'rt.socket'); return; }
     LIVE.ws = ws; G.closing = false;
     // рукопожатие потерялось (связь «заморожена») — сокет висит в подключении вечно: бросить и повторить
     clearTimeout(LIVE.openT);
@@ -70,7 +70,7 @@
       LIVE.lastMsg = Date.now();
       var m; try { m = JSON.parse(e.data); } catch (err) { return; }
       if (m.t === 'hello') { LIVE.tries = 0; onHello(m, ws); return; }
-      if (m.t === 'error') { loading(false); toast(m.msg || 'Ошибка связи', 'bad'); G.closing = true; return; }
+      if (m.t === 'error') { loading(false); toast(m.msg || 'Ошибка связи', 'bad'); G.closing = true; if (window.errReport) errReport({ name: 'Сервер боёв', message: String(m.msg || 'ошибка без текста').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '‹id›') }, 'rt.server'); return; }
       if (m.t === 'reset') { toast(m.msg || 'Планета изменилась', 'gold'); G.B = null; return; }
       if (m.t === 'note') { toast(m.msg, m.kind || 'gold'); return; }
       if (m.t === 'ev' || m.t === 'evend') { if (window.GD_ON_EV) window.GD_ON_EV(m); return; }     // ивент: худ и итог (js/event-live.js)
@@ -84,7 +84,14 @@
     };
   }
   // Переподключение: одна попытка в очереди; сразу — когда сеть вернулась или вкладку открыли снова
-  function retryLive(ms) { clearTimeout(LIVE.retryT); LIVE.retryT = setTimeout(function() { LIVE.retryT = 0; connectLive(); }, ms); }
+  function retryLive(ms) {
+    // пятая неудача подряд при живой сети и открытой вкладке — уже не моргание связи: в журнал (раз за страницу)
+    if (LIVE.tries >= 5 && !LIVE.reported && navigator.onLine !== false && !document.hidden && window.errReport) {
+      LIVE.reported = true;
+      errReport({ name: 'Сервер боёв', message: 'нет связи: ' + LIVE.tries + ' попыток подряд', stack: 'комната ' + (LIVE.room || 'gr:' + LIVE.system) }, 'rt.connect');
+    }
+    clearTimeout(LIVE.retryT); LIVE.retryT = setTimeout(function() { LIVE.retryT = 0; connectLive(); }, ms);
+  }
   function liveDown() { return !LIVE.ws || LIVE.ws.readyState > 1; }
   // Связь умерла молча (тоннель, лифт: сокет «открыт», кадров нет) — бросить сокет и переподключиться.
   // Кадры идут 5 раз в секунду: 8 с тишины при открытой вкладке — обрыв. Но если сама проверка
@@ -287,7 +294,12 @@
           m.bmp.used = Date.now(); G.ter.cache[m.key] = m.bmp;
           chunkTrim(G.ter.cache, G.ter.cacheMax || 48);
         };
-        w.onerror = function() { TW.ws.forEach(function(x) { x.terminate(); }); TW.ws = []; TW.pending = {}; TW.n = 0; };
+        w.onerror = function(ev) {
+          // воркер упал — земля дорисуется в главном потоке; причину — в журнал
+          if (window.errReport) errReport({ name: 'Воркер земли', message: (ev && ev.message) || 'упал без текста',
+            stack: ev && ev.filename ? ev.filename + ':' + ev.lineno + ':' + ev.colno : '' }, 'ground.worker');
+          TW.ws.forEach(function(x) { x.terminate(); }); TW.ws = []; TW.pending = {}; TW.n = 0;
+        };
         w.postMessage({ k: 'map', json: js, gen: TW.gen });
         TW.ws.push(w);
       }

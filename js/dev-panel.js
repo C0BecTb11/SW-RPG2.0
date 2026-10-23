@@ -141,12 +141,19 @@
       if (!S.geTypes) rpc('dev_galaxy_event_types').then(function(t) { S.geTypes = t || []; if (tab === 'ev') render(); }, fail);
       geFill();
     } else if (tab === 'err') {
-      h += '<section><h4>Ошибки у игроков <em class="dv-errsum">Загрузка…</em></h4>' +
+      // два журнала: у игроков (браузер) и на сервере (база, pg_cron, сервер боёв)
+      var srv = S.errSrc === 'server', ec = S.errCnt || {};
+      h += '<section><h4>' + (srv ? 'Ошибки на сервере' : 'Ошибки у игроков') + ' <em class="dv-errsum">Загрузка…</em></h4>' +
+        '<div class="dv-chips dv-errsrc">' +
+          '<button type="button" class="dv-chip' + (srv ? '' : ' on') + '" data-act="errsrc" data-v="client">Игроки' + (ec.client ? ' <i>' + fmt(ec.client) + '</i>' : '') + '</button>' +
+          '<button type="button" class="dv-chip' + (srv ? ' on' : '') + '" data-act="errsrc" data-v="server">Сервер' + (ec.server ? ' <i>' + fmt(ec.server) + '</i>' : '') + '</button></div>' +
         '<div class="dv-chips"><button type="button" class="dv-chip' + (S.errAll ? '' : ' on') + '" data-act="errall" data-v="0">Открытые</button>' +
         '<button type="button" class="dv-chip' + (S.errAll ? ' on' : '') + '" data-act="errall" data-v="1">Все</button>' +
         '<button type="button" class="dv-chip" data-act="errref">↻ Обновить</button></div>' +
         '<div class="dv-errs"></div></section>';
-      rpc('dev_client_errors', { p_open: !S.errAll, p_limit: 80 }).then(errFill, fail);
+      if (srv) rpc('dev_server_errors', { p_open: !S.errAll, p_limit: 80 }).then(srvFill, fail);
+      else rpc('dev_client_errors', { p_open: !S.errAll, p_limit: 80 }).then(errFill, fail);
+      errCount();
     } else {
       h += '<section><h4>Последние действия</h4><div class="dv-log">Загрузка…</div></section>';
       rpc('dev_recent', { p_limit: 40 }).then(function(rows) {
@@ -174,9 +181,16 @@
     var b = el && el.querySelector('.dv-tabs .dv-cnt'); if (!b) return;
     b.textContent = n > 99 ? '99+' : (n || '');
   }
+  // счётчики на переключателе «Игроки / Сервер» — без перерисовки всей вкладки
+  function errSrcCounts(c) {
+    S.errCnt = c;
+    var bs = el && el.querySelectorAll('.dv-errsrc .dv-chip'); if (!bs || !bs.length) return;
+    [['client', 'Игроки'], ['server', 'Сервер']].forEach(function(k, i) {
+      if (bs[i]) bs[i].innerHTML = k[1] + (c[k[0]] ? ' <i>' + fmt(c[k[0]]) + '</i>' : '');
+    });
+  }
   function errFill(d) {
     var box = $('.dv-errs'), sum = $('.dv-errsum'); if (!box || !d) return;
-    errBadge(d.open);
     sum.textContent = 'открыто ' + fmt(d.open) + ' · за сутки ' + fmt(d.day) + ' · всего ' + fmt(d.total);
     var rows = d.rows || [];
     if (!rows.length) { box.innerHTML = '<p class="dv-note">' + (S.errAll ? 'Ошибок пока не было.' : 'Открытых ошибок нет.') + '</p>'; return; }
@@ -201,10 +215,40 @@
     h += '<p class="dv-note">Одинаковые ошибки склеены. Исправленный файл получает новый ?v= — его ошибки идут отдельной строкой, а повтор старой значит, что у кого-то закэширована прошлая версия.</p>';
     box.innerHTML = h;
   }
+  // ---- ошибки на сервере (sql/error_log.sql: база, pg_cron, сервер боёв)
+  var SRC_T = { db: 'база', cron: 'cron', rt: 'сервер боёв' };
+  function srvFill(d) {
+    var box = $('.dv-errs'), sum = $('.dv-errsum'); if (!box || !d) return;
+    sum.textContent = 'открыто ' + fmt(d.open) + ' · за сутки ' + fmt(d.day) + ' · всего ' + fmt(d.total);
+    var rows = d.rows || [];
+    if (!rows.length) { box.innerHTML = '<p class="dv-note">' + (S.errAll ? 'Ошибок на сервере пока не было.' : 'Открытых ошибок на сервере нет.') + '</p>'; return; }
+    var h = rows.map(function(r) {
+      var done = r.resolved_at && !r.again, data = '';
+      if (r.data) { try { data = JSON.stringify(r.data, null, 1); } catch (e) { data = String(r.data); } }
+      return '<div class="dv-err' + (done ? ' done' : '') + '">' +
+        '<div class="dv-err-top"><b>' + esc(when(r.last_at)) + '</b>' +
+          '<span class="dv-err-n" title="повторов">×' + fmt(r.n) + '</span>' +
+          '<span class="dv-err-tag src ' + esc(r.source) + '">' + esc(SRC_T[r.source] || r.source) + '</span>' +
+          (r.again ? '<span class="dv-err-tag">снова после отметки</span>' : done ? '<span class="dv-err-tag ok">исправлено</span>' : '') +
+        '</div>' +
+        '<div class="dv-err-msg">' + esc(r.msg) + '</div>' +
+        '<div class="dv-err-src">' + esc(r.ctx || '') + (r.state ? ' · ' + esc(r.state) : '') + '</div>' +
+        '<div class="dv-err-meta">с ' + esc(when(r.first_at)) + '</div>' +
+        (data ? '<details><summary>Данные</summary><pre>' + esc(data) + '</pre></details>' : '') +
+        (done ? '' : '<div class="dv-row"><button type="button" class="dv-chip" data-act="errok" data-v="' + esc(r.sig) + '">✓ Исправлено</button></div>') +
+      '</div>';
+    }).join('');
+    if (!S.errAll) h += '<div class="dv-row"><button type="button" class="dv-go wide" data-act="errokall">Отметить все открытые исправленными</button></div>';
+    h += '<p class="dv-note">База — ошибки, которые функции проглотили, чтобы не сорвать такт; cron — упавшие задания; сервер боёв — его журнал, падения процесса и молчание дольше 3 минут. Разбор — раз в 5 минут.</p>';
+    box.innerHTML = h;
+  }
   function errCount() {
-    // счётчик на вкладке — без блокировки панели
+    // счётчик на вкладке (игроки + сервер) — без блокировки панели
     try {
-      supabase.rpc('dev_client_errors', { p_open: true, p_limit: 1 }).then(function(r) { if (r && !r.error && r.data) errBadge(r.data.open); }, function() {});
+      supabase.rpc('dev_error_counts').then(function(r) {
+        if (!r || r.error || !r.data) return;
+        errBadge((r.data.client | 0) + (r.data.server | 0)); errSrcCounts(r.data);
+      }, function() {});
     } catch (e) { /* не критично */ }
   }
 
@@ -273,12 +317,14 @@
         }, fail);
       } else if (a === 'evlobby') {
         location.href = '../game/events.html';
+      } else if (a === 'errsrc') {
+        S.errSrc = b.getAttribute('data-v'); render();
       } else if (a === 'errall') {
         S.errAll = b.getAttribute('data-v') === '1'; render();
       } else if (a === 'errref') {
         render();
       } else if (a === 'errok') {
-        rpc('dev_client_error_resolve', { p_sig: b.getAttribute('data-v') }).then(function() { say('Ошибка отмечена исправленной'); render(); }, fail);
+        rpc(S.errSrc === 'server' ? 'dev_server_error_resolve' : 'dev_client_error_resolve', { p_sig: b.getAttribute('data-v') }).then(function() { say('Ошибка отмечена исправленной'); render(); }, fail);
       } else if (a === 'errokall') {
         // второе нажатие в течение 4 с — подтверждение
         if (!b.getAttribute('data-arm')) {
@@ -286,7 +332,7 @@
           setTimeout(function() { if (b.isConnected) { b.removeAttribute('data-arm'); b.textContent = 'Отметить все открытые исправленными'; } }, 4000);
           return;
         }
-        rpc('dev_client_error_resolve', { p_sig: null }).then(function(n) { say('Отмечено исправленными: ' + n); render(); }, fail);
+        rpc(S.errSrc === 'server' ? 'dev_server_error_resolve' : 'dev_client_error_resolve', { p_sig: null }).then(function(n) { say('Отмечено исправленными: ' + n); render(); }, fail);
       }
     } catch (err) { fail(err); }
   }

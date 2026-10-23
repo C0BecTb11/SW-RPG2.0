@@ -2719,6 +2719,8 @@ function onSlotTapped(slotIndex) {
       else if (isHub && typeof openSupplyScreen === 'function') openSupplyScreen('routes', { hub: existing.system_id || systemId });
       else if (isHub) openLogisticsPanel(existing);
       else if (isTrade) openTradePanel(existing);
+      // добыча — участок с бригадой и сменами (js/mine-site.js), остальное хозяйство — окно экономики
+      else if (isEconomy && typeof openMineSite === 'function' && isMineBuilding(code)) openMineSite(existing);
       else if (isEconomy) openEconomyPanel(existing);
       else openUnitPanel(existing);
     } else {

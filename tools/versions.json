@@ -48,8 +48,8 @@
   "sha": "7dbe235506f3"
  },
  "ground/ground.js": {
-  "v": "25",
-  "sha": "2390af95c2dc"
+  "v": "26",
+  "sha": "bad92de5ea23"
  },
  "ground/preview.css": {
   "v": "1",
@@ -92,8 +92,8 @@
   "sha": "b3e4d717d3d8"
  },
  "js/event-live.js": {
-  "v": "18",
-  "sha": "b4b38ddc6d01"
+  "v": "19",
+  "sha": "96f9526f7392"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -132,8 +132,8 @@
   "sha": "f07e21b5083b"
  },
  "js/ground-live.js": {
-  "v": "23",
-  "sha": "22999d756419"
+  "v": "24",
+  "sha": "fa1d8f73985a"
  },
  "js/planet-info.js": {
   "v": "2",
@@ -224,12 +224,12 @@
   "sha": "29de229d9ace"
  },
  "shared/rt-ground-net.js": {
-  "v": "7",
-  "sha": "6b6e8ee10a2e"
+  "v": "8",
+  "sha": "49ff82187320"
  },
  "shared/rt-ground.js": {
-  "v": "12",
-  "sha": "f633c4984079"
+  "v": "13",
+  "sha": "a6fa24fcc648"
  },
  "shared/rt-heroes.js": {
   "v": "2",
@@ -256,12 +256,12 @@
   "sha": "1cc156a45532"
  },
  "shared/rt-units.js": {
-  "v": "3",
-  "sha": "252dc21877ce"
+  "v": "4",
+  "sha": "47f37f37be6a"
  },
  "shared/rt-vehicles.js": {
-  "v": "5",
-  "sha": "727ae3fe3c99"
+  "v": "6",
+  "sha": "a32972c8b4b0"
  },
  "ships/ship-art.js": {
   "v": "4",

@@ -77,7 +77,7 @@
     lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 }
   };
   var SUPP_T = 6, STUN_T = 5;
-  // Колесо-страж (флаг w): катится — быстрый и увёртливый, но не стреляет; встал — за open с
+  // Колесо Смерти (флаг w): катится — быстрый и увёртливый, но не стреляет; встал — за open с
   // раскрывается и ставит щит, чтобы покатиться дальше — за fold с сворачивается. Щит держит огонь
   // пехоты, техники издали (её выстрел садит щит в heavy раз сильнее), турелей и воздуха; не держит
   // артиллерию, технику в упор (point клеток) и героев (мечи, Сила). Пробит — молчит down с;
@@ -634,7 +634,7 @@
     }
     if (engaged) {
       a.mv += (0 - a.mv) * Math.min(1, dt * 6);
-      if (tg.d > range * 0.6 && !a.at && !a.hold && a.goal && !a.wh) this.nav(a, dt, a.speed * 0.8);   // колесо-страж в бою стоит раскрытым
+      if (tg.d > range * 0.6 && !a.at && !a.hold && a.goal && !a.wh) this.nav(a, dt, a.speed * 0.8);   // Колесо Смерти в бою стоит раскрытым
       return;
     }
     // цель игрока вне дальности — идти к ней
@@ -828,7 +828,7 @@
     b.hp -= d;
     if (b.hp <= 0) { b.hp = 0; b.alive = false; b.diedAt = this.t; b.mv = 0; this.ev.deaths.push({ t: this.t, id: b.id, by: by }); if (b.sq) { var sq = this.squadOf(b.team, b.sq); if (sq) sq.members = sq.members.filter(function(x) { return x !== b.id; }); } }
   };
-  // ---- колесо-страж
+  // ---- Колесо Смерти
   // щит поднят: раскрыт, не пробит
   Ground.prototype.shieldUp = function(b) { var w = b.wh; return !!w && w.k >= 1 && w.sh > 0 && this.t >= w.down; };
   // держит ли щит удар от by (боец, 100000+ — постройка, −1 — снаряд без стрелка)
@@ -885,7 +885,7 @@
       if (a.scan <= 0) { a.scan = SCAN + this.R() * 0.15; a.tgt = this.findTarget(a); }
       a.cd -= dt;
       if (a.tgt < 0 || a.cd > 0) continue;
-      if (a.wh && a.wh.k < 1) continue;            // колесо-страж катится или раскрывается — не стреляет
+      if (a.wh && a.wh.k < 1) continue;            // Колесо Смерти катится или раскрывается — не стреляет
       var tg = this.tgtPos(a); if (!tg) { a.tgt = -1; continue; }
       var range = tg.a ? this.rangeTo(a, tg.a) : a.range;
       if (tg.d > range) continue;
@@ -907,7 +907,7 @@
       var inMul = a.inside >= 0 ? this.structs[a.inside].inMul : 1;
       var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1) * (supp ? 0.5 : 1);
       if (b.hero && b.hero.passive.evasion) p *= 1 - b.hero.passive.evasion / 100;
-      for (var vv = 0, nv = a.wh ? 2 : 1; vv < nv && b.alive; vv++) {     // колесо-страж — спаренные бластеры
+      for (var vv = 0, nv = a.wh ? 2 : 1; vv < nv && b.alive; vv++) {     // Колесо Смерти — спаренные бластеры
         hit = this.R() < p;
         // джедай отражает выстрелы: часть попаданий уходит обратно
         if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && this.R() < b.hero.passive.deflect / 100) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; }

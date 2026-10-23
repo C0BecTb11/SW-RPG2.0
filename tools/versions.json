@@ -19,6 +19,10 @@
   "v": "3",
   "sha": "378d52a8193a"
  },
+ "css/reports.css": {
+  "v": "1",
+  "sha": "c1ce18523ab8"
+ },
  "css/space-live.css": {
   "v": "4",
   "sha": "de8cd473ee40"
@@ -56,12 +60,12 @@
   "sha": "209ae7da488e"
  },
  "js/credits-bar.js": {
-  "v": "4",
-  "sha": "6778892ad277"
+  "v": "5",
+  "sha": "de9e6b99dc8f"
  },
  "js/dev-panel.js": {
-  "v": "3",
-  "sha": "bba6581ed6e5"
+  "v": "4",
+  "sha": "25ef106ade1f"
  },
  "js/err-report.js": {
   "v": "1",
@@ -74,6 +78,10 @@
  "js/events-entry.js": {
   "v": "2",
   "sha": "528f12f29b7d"
+ },
+ "js/events-feed.js": {
+  "v": "1",
+  "sha": "2f6ad7db0957"
  },
  "js/events.js": {
   "v": "4",
@@ -94,6 +102,10 @@
  "js/quest.js": {
   "v": "5",
   "sha": "719e753dd70c"
+ },
+ "js/reports.js": {
+  "v": "1",
+  "sha": "b897b66b9d03"
  },
  "js/ship-control.js": {
   "v": "2",

@@ -264,6 +264,18 @@ function makeFeedRow(e) {
     row.appendChild(review);
   }
 
+  // Донесение: новое — сразу к выбору, исход — к решённым
+  if ((e.type === 'report_new' || e.type === 'report_result') && typeof openReports === 'function') {
+    var rep = document.createElement('button');
+    rep.className = 'feed-go';
+    rep.textContent = e.type === 'report_new' ? 'Ответить' : 'Открыть';
+    rep.addEventListener('click', function() {
+      closeEventsFeed();
+      openReports(e.type === 'report_new' ? 'new' : 'done');
+    });
+    row.appendChild(rep);
+  }
+
   return row;
 }
 

@@ -118,7 +118,9 @@
       h += '<section><h4>Игрок <em>' + esc(p.nick || '') + '</em></h4>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="research">Открыть все исследования фракции</button></div>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="tutorial">Засчитать текущий шаг обучения</button></div>' +
-        '<p class="dv-note">Шаг обучения засчитывается, награду игрок забирает сам — так выдаются корабль и бойцы шага.</p></section>';
+        '<p class="dv-note">Шаг обучения засчитывается, награду игрок забирает сам — так выдаются корабль и бойцы шага.</p>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="report">Прислать донесение</button></div>' +
+        '<p class="dv-note">Случайное донесение его стороны на одну из его планет — вне дневной нормы. Без своей планеты не придёт.</p></section>';
     } else if (tab === 'ev') {
       // тест ивентов: бой без очереди, свои роль и уровень, пустые роли — боты; награда не начисляется
       h += '<section><h4>Тест ивентов</h4>' +
@@ -197,7 +199,7 @@
     } catch (e) { /* не критично */ }
   }
 
-  var ACT = { errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения' };
+  var ACT = { errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
   function brief(d) { if (!d) return ''; var o = []; for (var k in d) if (d.hasOwnProperty(k) && d[k] !== 0) o.push(k + ' ' + d[k]); return o.join(', '); }
   function num(id, lo, hi) { var v = parseInt($(id).value, 10); if (!isFinite(v) || v < lo || v > hi) throw new Error('Число от ' + fmt(lo) + ' до ' + fmt(hi)); return v; }
 
@@ -228,6 +230,8 @@
         rpc('dev_research_all', { p_user: S.user }).then(function(n) { say(p.nick + ': открыто исследований — ' + n); }, fail);
       } else if (a === 'tutorial') {
         rpc('dev_tutorial_done', { p_user: S.user }).then(function(n) { say(p.nick + ': шаг обучения ' + n + ' засчитан'); }, fail);
+      } else if (a === 'report') {
+        rpc('dev_report_send', { p_user: S.user, p_report: null }).then(function(r) { say(p.nick + ': донесение отправлено' + (r && r.system ? ' · ' + r.system : '')); }, fail);
       } else if (a === 'evtier') {
         S.evTier = +b.getAttribute('data-v'); render();
       } else if (a === 'evtest') {

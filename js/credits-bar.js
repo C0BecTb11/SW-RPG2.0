@@ -79,7 +79,7 @@ function initDevButton() {
     css.rel = 'stylesheet'; css.href = '../css/dev-panel.css?v=2';
     document.head.appendChild(css);
     var js = document.createElement('script');
-    js.src = '../js/dev-panel.js?v=3';
+    js.src = '../js/dev-panel.js?v=4';
     document.body.appendChild(js);
     var btn = document.createElement('button');
     btn.id = 'dev-btn'; btn.type = 'button'; btn.textContent = 'DEV'; btn.title = 'Панель разработчика';

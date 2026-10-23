@@ -136,19 +136,86 @@
     return null;
   }
 
-  // ── Карточка планеты ──────────────────────────────────────────────
-  function planetRows(systemId) {
-    var p = byId(systemId), rows = [];
-    if (!p) return rows;
+  // ── Условия суток и управляющий ───────────────────────────────────
+  // Сервер отдаёт их только своей фракции (unrest_faction), карточка зовёт только для своих планет.
+  var AWAY_DAYS = 3;
+  function condText(p) {
+    var c = p.cond || {}, d = cache.list || {};
+    if (!p.controller) return { cls: 'bad', t: 'нет управляющего · довольство −' + (d.no_ruler || 10) + ' в сутки' };
+    if (!(c.total | 0)) return { cls: '', t: 'на эти сутки нет' };
+    var left = c.left || [];
+    return { cls: left.length ? 'mid' : 'good',
+             t: (c.done | 0) + '/' + (c.total | 0) + (left.length ? ' · осталось: ' + left.join(', ') : ' · всё выполнено') };
+  }
+  function seenText(n) { return n === 1 ? 'не заходит сутки' : 'не заходит ' + n + ' ' + (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'дня' : 'дней'); }
+
+  function revoke(p) {
+    var go = function() {
+      var s = sb(); if (!s) return;
+      Promise.resolve(s.rpc('leader_revoke_planet', { p_system: p.id })).then(function(r) {
+        if (r && r.error) { if (typeof hqToast === 'function') hqToast(r.error.message, true); else alert(r.error.message); return; }
+        if (typeof hqToast === 'function') hqToast(p.controller + ' больше не управляет: ' + p.name);
+        fetchList().then(function() { if (typeof openPlanetInfo === 'function') openPlanetInfo(p.id); });
+      });
+    };
+    if (typeof gameConfirm !== 'function') { if (confirm('Снять управляющего ' + p.controller + '?')) go(); return; }
+    gameConfirm({ tone: 'danger', kicker: 'Снять управляющего', title: p.name,
+      sub: p.controller + ' · ' + seenText(p.seen_days | 0),
+      note: 'Планета станет ничьей: условий не будет, довольство начнёт падать. Новый управляющий — по заявке, как обычно.',
+      ok: 'Снять', cancel: 'Оставить' }, go);
+  }
+
+  function fillRows(systemId, rows) {
+    var p = byId(systemId);
+    rows.forEach(function(r) { r.innerHTML = ''; r.style.display = 'none'; });
+    if (!p) return;
+    var i = 0;
+    function next(cls) { var r = rows[i++]; r.style.display = ''; r.className = 'pi-stat ' + cls; return r; }
+
+    var c = condText(p), r1 = next('un-pi un-cond ' + c.cls);
+    r1.innerHTML = '<span>☑ Условия</span><b>' + esc(c.t) + '</b>';
+
+    if (p.controller && (p.seen_days | 0) >= AWAY_DAYS) {
+      var r2 = next('un-pi un-away');
+      r2.innerHTML = '<span>⚠ Управляющий</span><b>' + esc(seenText(p.seen_days | 0)) + '</b>';
+      if (cache.list && cache.list.is_leader) {
+        var btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'un-pi-btn'; btn.textContent = 'Снять';
+        btn.addEventListener('click', function(e) { e.stopPropagation(); revoke(p); });
+        r2.querySelector('b').appendChild(btn);
+      }
+    }
+
     var v = p.value | 0, f = expect(v, p.forecast, p.cap, p.hold);
-    if (!v && f <= 0) return rows;                         // спокойно и спокойным останется — не шумим
-    var k = stateOf(v);
-    var row = document.createElement('div');
-    row.className = 'pi-stat un-pi un-s-' + k;
-    row.innerHTML = '<span>⚑ Напряжение</span><b>' + v + ' · ' + ST[k].t +
-      (f ? ' <em class="un-trend ' + trendCls(f) + '">' + signed(f) + ' к утру</em>' : '') + '</b>';
-    rows.push(row);
+    if (v || f > 0) {                                       // спокойно и спокойным останется — не шумим
+      var k = stateOf(v), r3 = next('un-pi un-s-' + k);
+      r3.innerHTML = '<span>⚑ Напряжение</span><b>' + v + ' · ' + ST[k].t +
+        (f ? ' <em class="un-trend ' + trendCls(f) + '">' + signed(f) + ' к утру</em>' : '') + '</b>';
+    }
+  }
+
+  // ── Карточка планеты ──────────────────────────────────────────────
+  // Строки создаются сразу (из того, что уже загружено), а если данным больше минуты —
+  // перечитываются и строки обновляются на месте: условия меняются в течение дня.
+  function planetRows(systemId) {
+    if (!byId(systemId) && !cache.list) return [];
+    var rows = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
+    fillRows(systemId, rows);
+    if (Date.now() - cache.at > 60000) fetchList().then(function() { fillRows(systemId, rows); });
     return rows;
+  }
+
+  // ── Окно фракции: приписки к строке планеты ───────────────────────
+  function planetBits(systemId) {
+    var p = byId(systemId), out = [];
+    if (!p) return out;
+    var c = p.cond || {};
+    if (p.controller && (c.total | 0)) {
+      var left = (c.left || []).length;
+      out.push('<span class="fs-mood ' + (left ? 'mid' : 'good') + '">☑ ' + (c.done | 0) + '/' + (c.total | 0) + '</span>');
+    }
+    if (p.controller && (p.seen_days | 0) >= AWAY_DAYS) out.push('<span class="fs-mood bad">' + esc(seenText(p.seen_days | 0)) + '</span>');
+    return out;
   }
 
   // ── Окно фракции ──────────────────────────────────────────────────
@@ -182,6 +249,7 @@
 
   window.unSettlementHtml = settlementHtml;
   window.unPlanetRows = planetRows;
+  window.unPlanetBits = planetBits;
   window.unFetch = fetchList;
   window.fsRenderUnrest = fsRenderUnrest;
 

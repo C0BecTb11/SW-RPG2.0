@@ -40,8 +40,8 @@
   "sha": "fe11069615cc"
  },
  "css/unrest.css": {
-  "v": "1",
-  "sha": "d0bb74fde7bd"
+  "v": "2",
+  "sha": "6bb4ab863778"
  },
  "ground/ground.css": {
   "v": "6",
@@ -100,16 +100,16 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "3",
-  "sha": "2121f939e327"
+  "v": "4",
+  "sha": "9892d990557a"
  },
  "js/events.js": {
   "v": "4",
   "sha": "3843f6cfa5ad"
  },
  "js/faction-panel.js": {
-  "v": "3",
-  "sha": "d4f33115197e"
+  "v": "4",
+  "sha": "27071d072dfb"
  },
  "js/faction-senate.js": {
   "v": "2",
@@ -128,8 +128,8 @@
   "sha": "85971362cb66"
  },
  "js/ground-battle.js": {
-  "v": "3",
-  "sha": "95ad4fa28a4d"
+  "v": "4",
+  "sha": "9c5ce8e3d28e"
  },
  "js/ground-live.js": {
   "v": "17",
@@ -172,8 +172,8 @@
   "sha": "7b919c7ec0ec"
  },
  "js/unrest.js": {
-  "v": "1",
-  "sha": "d6db821949e0"
+  "v": "2",
+  "sha": "683b318ad007"
  },
  "proto/proto.css": {
   "v": "5",

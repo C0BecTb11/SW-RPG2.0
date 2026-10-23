@@ -16,8 +16,8 @@
   "sha": "1a4da42b1e82"
  },
  "css/galaxy.css": {
-  "v": "2",
-  "sha": "627a3a75d935"
+  "v": "3",
+  "sha": "f7df65175550"
  },
  "css/ground-live.css": {
   "v": "4",
@@ -148,8 +148,8 @@
   "sha": "7ce01e28bf33"
  },
  "js/quest.js": {
-  "v": "5",
-  "sha": "719e753dd70c"
+  "v": "6",
+  "sha": "1ff6d8fad9d6"
  },
  "js/reports.js": {
   "v": "3",
@@ -158,6 +158,10 @@
  "js/scene-loader.js": {
   "v": "2",
   "sha": "3ba339716db6"
+ },
+ "js/ship-cargo.js": {
+  "v": "1",
+  "sha": "8d71ca407bea"
  },
  "js/ship-control.js": {
   "v": "2",

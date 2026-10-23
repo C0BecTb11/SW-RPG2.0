@@ -522,6 +522,28 @@
 
       case 'cargo':
         if (!f.ship) return null;
+        // грузят только из площадки сброса (load_to_ship): сначала корабль в неё — на орбите столицы
+        if (!f.ship.in_transit && !f.ship.in_drop) {
+          if (window.SL) return {
+            page: 'space', system: f.ship.system, goLabel: 'На орбиту',
+            targets: [
+              { cell: qPadCell, when: qShipSelected, tip: 'Коснись площадки — корабль встанет в неё' },
+              { cell: qShipCell, tip: 'Коснись своего корабля' }
+            ],
+            marks: [{ cell: qPadCell, label: 'Площадка сброса' }],
+            shipFocus: f.ship
+          };
+          if (!qShipInZone('.orbital-drop-zone')) return {
+            page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
+            targets: [
+              { sel: '#sc-go', when: ourHud, tip: 'Подтверди ход' },
+              { sel: '.sc-tile[data-key="move"]', when: ourHud, tip: 'Ход' },
+              { sel: '.ship-sprite' + shipSel, tip: 'Веди в площадку сброса' }
+            ],
+            marks: [{ sel: '.orbital-drop-zone', label: 'Площадка сброса', all: true }],
+            shipFocus: f.ship
+          };
+        }
         return galaxy([
           { sel: '#shipcargo-list > .cargo-row:first-child .cargo-action',
             when: function() { return !!document.querySelector('#shipcargo-tab-load.active'); },

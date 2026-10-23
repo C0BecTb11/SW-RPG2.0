@@ -15,7 +15,8 @@ var HQ_POWERS = [
   { id: 'planet_controllers', name: 'Управляющие', text: 'назначает и снимает управляющих планет' },
   { id: 'orders',             name: 'Приказы',     text: 'приказ дня и цели на карте галактики' },
   { id: 'economy',            name: 'Хозяйство',   text: 'склады, добыча и постройки всех планет' },
-  { id: 'laws',               name: 'Законы',      text: 'предлагает законы Сената или Совета на голосование' }
+  { id: 'laws',               name: 'Законы',      text: 'предлагает законы Сената или Совета на голосование' },
+  { id: 'treasury',           name: 'Казна',       text: 'тратит казну фракции на проекты и выплаты игрокам' }
 ];
 
 var HQ_KINDS = {
@@ -221,6 +222,7 @@ function hqOpen(mode) {
   if (mode === 'targets' && !hqState.systems) loads.push(hqLoadSystems());
   if (mode === 'economy') loads.push(hqLoadEconomy());
   if (mode === 'laws' && typeof snFetch === 'function') loads.push(snFetch());
+  if (mode === 'treasury' && typeof tsFetch === 'function') loads.push(tsFetch());
   Promise.all(loads).then(function() { if (hqState.mode === mode) hqRenderSheet(); });
 }
 
@@ -243,6 +245,7 @@ function hqRenderSheet() {
   else if (m === 'roles') hqRenderRoles();
   else if (m === 'economy') hqRenderEconomy();
   else if (m === 'laws' && typeof snRenderSheet === 'function') snRenderSheet();
+  else if (m === 'treasury' && typeof tsRenderSheet === 'function') tsRenderSheet();
 }
 
 // Все кнопки шторки идут через один обработчик по data-hq
@@ -266,6 +269,7 @@ function hqOnClick(e) {
   else if (act === 'assign') hqAssign(id, t);
   else if (act === 'unassign') hqUnassign(t.getAttribute('data-user'), t);
   else if (act.indexOf('sn-') === 0) { if (typeof snOnSheet === 'function') snOnSheet(act, id); }
+  else if (act.indexOf('ts-') === 0) { if (typeof tsOnSheet === 'function') tsOnSheet(act, id, t); }
   else if (act === 'eco-toggle') { hqState.ecoOpen[id] = !hqState.ecoOpen[id]; hqRenderEconomy(); }
   else if (act === 'go') {
     hqClose();

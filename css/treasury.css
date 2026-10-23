@@ -1,0 +1,195 @@
+/* ===== Казна фракции =====
+   Раздел в окне фракции и шторка «Казна» (общая шторка штаба #hq-sheet).
+   Золото — деньги казны, зелёный — приход, красный — расход и долг, var(--fc) — выбор и действия.
+   Чипы эффектов (.sn-fx) — общие с законами, из senate.css. */
+
+.ts-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 12px 12px 14px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(217,169,64,0.10), transparent 60%),
+    #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d9a940;
+  border-radius: 10px;
+  color: #cfd8dc;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ts-card:active { border-color: rgba(217,169,64,0.5); border-left-color: #d9a940; }
+.ts-card.static { cursor: default; margin-bottom: 4px; }
+.ts-card.debt { border-left-color: #d94a4a; background: radial-gradient(circle at 0% 0%, rgba(217,74,74,0.10), transparent 60%), #10151e; }
+
+.ts-bal { flex: none; display: flex; flex-direction: column; gap: 4px; min-width: 92px; }
+.ts-bal b {
+  font-size: 24px;
+  font-weight: normal;
+  line-height: 1;
+  color: #d9a940;
+  text-shadow: 0 0 12px rgba(217,169,64,0.25);
+}
+.ts-card.debt .ts-bal b { color: #d94a4a; text-shadow: 0 0 12px rgba(217,74,74,0.25); }
+.ts-bal i { font-size: 9px; font-style: normal; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+
+.ts-tags { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.ts-tags em {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #161b24;
+  font-size: 9.5px;
+  font-style: normal;
+  line-height: 15px;
+  color: #55606c;
+  white-space: nowrap;
+}
+.ts-tags em.up { background: rgba(95,217,104,0.11); color: #5fd968; }
+.ts-tags em.down { background: rgba(217,74,74,0.13); color: #d94a4a; }
+.ts-tags em.on { background: rgba(var(--fc-rgb), 0.13); color: var(--fc); }
+.ts-card.static { flex-direction: column; align-items: stretch; gap: 10px; }
+.ts-card.static .ts-tags { justify-content: flex-start; }
+.ts-card.static .ts-tags em { white-space: normal; }
+
+.ts-card .fs-chev { flex: none; }
+
+.ts-mini {
+  margin-top: 6px;
+  padding: 2px 12px;
+  background: #0d1119;
+  border: 1px solid #161b24;
+  border-radius: 9px;
+}
+
+.ts-log {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #161b24;
+  font-size: 11px;
+}
+.ts-log:last-child { border-bottom: none; }
+.ts-log.mini { padding: 7px 0; font-size: 10px; }
+
+.ts-log-v { flex: none; min-width: 66px; text-align: right; font-variant-numeric: tabular-nums; }
+.ts-log-v.up { color: #5fd968; }
+.ts-log-v.down { color: #d94a4a; }
+.ts-log-t { flex: 1 1 auto; min-width: 0; color: #cfd8dc; line-height: 1.4; }
+.ts-log.mini .ts-log-t { color: #8fa8c4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ts-log-t em { font-style: normal; color: #8fa8c4; }
+.ts-log-t i { display: block; margin-top: 2px; font-size: 9.5px; font-style: normal; color: #55606c; }
+.ts-log-a { flex: none; font-size: 9px; color: #55606c; white-space: nowrap; }
+
+.ts-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ts-acts .fs-more { padding-left: 4px; padding-right: 4px; }
+
+/* ── Шторка ───────────────────────────────────────────────────── */
+.ts-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.ts-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 2px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 7px;
+  color: #55606c;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ts-tab.on { border-color: var(--fc); color: #cfd8dc; background: rgba(var(--fc-rgb), 0.08); }
+
+.ts-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.ts-chip {
+  min-height: 30px;
+  padding: 5px 11px;
+  background: #0a0d14;
+  border: 1px solid #2a3644;
+  border-radius: 15px;
+  color: #d9a940;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.ts-chip:active { border-color: #d9a940; }
+
+.ts-how {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px dashed #1c2530;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #55606c;
+}
+.ts-how b { margin-top: 4px; font-weight: normal; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #8fa8c4; }
+.ts-how b:first-child { margin-top: 0; }
+.ts-how span::before { content: '· '; color: #2a3644; }
+
+.ts-planets {
+  display: flex;
+  gap: 6px;
+  margin: 0 -14px 8px;
+  padding: 0 14px 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.ts-planets::-webkit-scrollbar { display: none; }
+.ts-planet {
+  position: relative;
+  flex: none;
+  min-height: 32px;
+  padding: 6px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 16px;
+  color: #8fa8c4;
+  font-size: 10.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ts-planet.on { border-color: var(--fc); color: #e3e9ec; background: rgba(var(--fc-rgb), 0.1); }
+.ts-planet i {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(var(--fc-rgb), 0.2);
+  color: var(--fc);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 15px;
+  text-align: center;
+}
+
+.ts-owner { margin: 0 2px 10px; font-size: 9.5px; color: #55606c; }
+
+.ts-proj {
+  margin-bottom: 8px;
+  padding: 11px 12px 12px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 10px;
+}
+.ts-proj.on { border-left-color: var(--fc); background: linear-gradient(90deg, rgba(var(--fc-rgb), 0.06), #10151e 55%); }
+
+.ts-proj-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ts-proj-head b { min-width: 0; font-size: 12px; font-weight: normal; letter-spacing: 0.5px; color: #e3e9ec; }
+.ts-proj-head span { flex: none; font-size: 11px; color: #d9a940; }
+.ts-proj-text { margin-top: 6px; font-size: 10.5px; line-height: 1.5; color: #8fa8c4; }
+.ts-proj-run { margin-top: 10px; font-size: 10px; letter-spacing: 0.5px; color: var(--fc); }
+.ts-proj .hq-small.wide { margin-top: 10px; }
+
+.sn-fx i.time { background: #161b24; color: #8fa8c4; }

@@ -282,14 +282,19 @@ begin
        from player_reports r join report_catalog c on c.id = r.report_id left join systems s on s.id = r.system_id
        where r.user_id = v_me and (r.status = 'new' or r.resolved_at > now() - interval '7 days')
        order by r.created_at desc limit 40) q),
+    -- эффекты своих планет: донесения и проекты казны фракции (sql/treasury.sql)
     'effects', (select coalesce(jsonb_agg(jsonb_build_object('system', e.system_id, 'planet', s.name, 'kind', e.kind, 'value', e.value, 'title', e.title, 'ends', e.ends_at) order by e.ends_at), '[]'::jsonb)
-       from active_effects e left join systems s on s.id = e.system_id
-       where e.ends_at > now() and e.starts_at <= now()
-         and e.system_id in (select system_id from system_control where controller_user_id = v_me)),
+       from (select system_id, kind, value, title, ends_at from active_effects where ends_at > now() and starts_at <= now()
+             union all
+             select system_id, kind, value, 'Казна · ' || title, ends_at from faction_effects
+              where system_id is not null and kind in ('mood', 'extract', 'income') and ends_at > now() and starts_at <= now()
+                and faction = (select faction from profiles where id = v_me)) e
+       left join systems s on s.id = e.system_id
+       where e.system_id in (select system_id from system_control where controller_user_id = v_me)),
     -- законы фракции (sql/laws.sql) действуют на все её планеты — показываем отдельно
     'laws', (select coalesce(jsonb_agg(jsonb_build_object('kind', fe.kind, 'value', fe.value, 'title', fe.title, 'ends', fe.ends_at, 'decree', fe.source = 'decree') order by fe.ends_at), '[]'::jsonb)
        from faction_effects fe where fe.faction = (select faction from profiles where id = v_me) and fe.starts_at <= now() and fe.ends_at > now()
-         and fe.kind in ('mood', 'extract', 'income')),
+         and fe.system_id is null and fe.kind in ('mood', 'extract', 'income')),
     'planets', (select coalesce(jsonb_agg(jsonb_build_object('system', sc.system_id, 'planet', s.name,
                   'mood', effect_sum(sc.system_id, 'mood'), 'extract', effect_sum(sc.system_id, 'extract'), 'income', effect_sum(sc.system_id, 'income'))), '[]'::jsonb)
        from system_control sc join systems s on s.id = sc.system_id where sc.controller_user_id = v_me));

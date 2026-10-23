@@ -31,6 +31,10 @@
   "v": "4",
   "sha": "de8cd473ee40"
  },
+ "css/treasury.css": {
+  "v": "1",
+  "sha": "fe11069615cc"
+ },
  "ground/ground.css": {
   "v": "6",
   "sha": "c82bbf4f47df"
@@ -92,16 +96,20 @@
   "sha": "3843f6cfa5ad"
  },
  "js/faction-panel.js": {
-  "v": "1",
-  "sha": "0343c795da54"
+  "v": "2",
+  "sha": "c6fc6696e824"
  },
  "js/faction-senate.js": {
-  "v": "1",
-  "sha": "71c477cdef4b"
+  "v": "2",
+  "sha": "8589b2077399"
  },
  "js/faction-staff.js": {
+  "v": "2",
+  "sha": "29ddf47554cb"
+ },
+ "js/faction-treasury.js": {
   "v": "1",
-  "sha": "0f3107ded55b"
+  "sha": "944bb3981ec6"
  },
  "js/ground-battle.js": {
   "v": "2",

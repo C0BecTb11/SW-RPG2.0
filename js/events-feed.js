@@ -430,7 +430,8 @@ var FEED_BOARD_END = feedSet(['boarding_captured', 'boarding_lost', 'boarding_bl
   'boarding_failed', 'boarding_held', 'boarding_broken']);
 
 // Поселение: открываем его панель
-var FEED_SETTLEMENT = feedSet(['district_built', 'district_started', 'settlement_upgrade',
+var FEED_SETTLEMENT = feedSet(['settlement_conditions', 'settlement_remind', 'unrest_level', 'unrest_calm',
+  'district_built', 'district_started', 'settlement_upgrade',
   'settlement_level_up', 'settlement_hungry', 'settlement_failed', 'settlement_gift',
   'settlement_donation', 'settlement_festival', 'settlement_income', 'capture_started',
   'planet_captured', 'marauder_raid', 'marauder_loot',
@@ -449,7 +450,7 @@ var FEED_GROUND = feedSet(['unit_deployed', 'unit_loaded', 'unit_killed', 'unit_
 
 // Поселение: события налёта и условий — сразу на вкладку «Условия»
 var FEED_STL_TASKS = feedSet(['marauder_scouted', 'marauder_approach', 'marauder_defeated',
-  'marauder_left', 'settlement_failed', 'settlement_hungry']);
+  'marauder_left', 'settlement_failed', 'settlement_hungry', 'settlement_conditions', 'settlement_remind']);
 
 // Здание: по готовности сразу открываем его занятие (наём, исследования)
 var FEED_OPEN_SLOT = feedSet(['building_built', 'research_done', 'production_idle']);

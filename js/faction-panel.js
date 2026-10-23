@@ -416,6 +416,8 @@ function fsRenderPlanets(d) {
       bits.push('<span class="fs-mood ' + mood + '">☺ ' + p.satisfaction + '</span>');
     }
     if (p.food_short) bits.push('<span class="fs-mood bad">голод</span>');
+    // условия суток и давно ли заходил управляющий (js/unrest.js)
+    if (typeof unPlanetBits === 'function') bits = bits.concat(unPlanetBits(p.id));
 
     html += '<button type="button" class="fs-planet st-' + st.cls + '" data-sys="' + fsEsc(p.id) + '" data-info="1">' +
       '<span class="fs-planet-body">' +
@@ -471,6 +473,9 @@ function fsFeedLine(e) {
       return [fsEsc(sys) + ' · ' + fsEsc(m.state_t || '') + ' · ' + fsNum(e.amount), 'наблюдение'];
     case 'unrest_calm':
       return [fsEsc(sys) + ' · напряжение ' + fsNum(e.amount), ''];
+    case 'settlement_conditions':
+    case 'settlement_remind':
+      return [fsEsc(e.subject || ''), ''];
     default:
       var a = [];
       if (e.subject && e.subject !== sys) a.push(fsEsc(e.subject));

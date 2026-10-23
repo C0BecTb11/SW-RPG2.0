@@ -124,6 +124,34 @@
 .pi-stat.un-pi b { color: var(--un); }
 .pi-stat.un-pi .un-trend { margin-left: 4px; font-size: 0.9em; }
 
+/* Строки карточки: подпись не переносится, длинное значение — справа в несколько строк */
+.pi-stat.un-pi { gap: 12px; }
+.pi-stat.un-pi > span { flex: none; white-space: nowrap; }
+.pi-stat.un-pi > b { min-width: 0; text-align: right; line-height: 1.45; }
+
+/* Условия суток и управляющий */
+.pi-stat.un-cond b { color: #cfd8dc; }
+.pi-stat.un-cond.good b { color: #5fd968; }
+.pi-stat.un-cond.mid b { color: #d9a940; }
+.pi-stat.un-cond.bad b { color: #d94a4a; }
+.pi-stat.un-away b { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; color: #d94a4a; }
+.un-pi-btn {
+  flex: none;
+  min-height: 26px;
+  padding: 3px 10px;
+  background: rgba(217,74,74,0.08);
+  border: 1px solid rgba(217,74,74,0.55);
+  border-radius: 6px;
+  color: #d94a4a;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.un-pi-btn:active { background: rgba(217,74,74,0.2); }
+
 /* ── Окно фракции ────────────────────────────────────────────────── */
 .un-pl {
   display: flex;
@@ -154,3 +182,6 @@
 .un-pl-v b { font-size: 16px; font-weight: normal; line-height: 1; color: var(--un); }
 .un-pl-v .un-trend { font-size: 9.5px; }
 .un-more { margin-top: 2px; font-size: 10px; color: #55606c; text-align: center; }
+
+/* Окно поселения, вкладка «Условия»: правило зачёта под итогом дня */
+.stl-note.un-rule { margin: -2px 0 12px; text-align: left; line-height: 1.5; }

@@ -190,6 +190,9 @@ function stlMedicalName() {
 
 var settlementTimer = null;
 
+// Зачёт условий суток — как settlement_task_gain / _loss / _bonus и settlement_no_ruler_penalty в game_settings
+var STL_GAIN = 5, STL_LOSS = 4, STL_BONUS = 5, STL_NO_RULER = 10;
+
 // ===== Развитие поселения =====
 // Уровень, кварталы, провизия и ополчение. Сводку считает сервер
 // (get_settlement_dev), клиент только показывает её и ведёт обратные
@@ -1045,17 +1048,24 @@ function renderSettlementTasks(pane, st, tasks, hasDev) {
     ' · до итогов ' + formatSettlementLeft(st.seconds_left) +
     '</div>';
 
-  // Итог дня заранее: понятно, растёт довольство или упадёт.
+  // Итог дня заранее: каждое условие в зачёт (как settlement_task_* на сервере).
   // Налёт, который ещё впереди, — не провал, а дело на вечер
   var onlyRaid = !allDone && stlOnlyRaidLeft(tasks);
-  html += '<div class="stl-verdict ' + (allDone ? 'good' : onlyRaid ? 'wait' : 'bad') + '">' +
-    (tasks.length === 0 ? 'Задач на эти сутки нет'
-      : allDone ? 'Все требования выполнены — довольство вырастет'
-      : onlyRaid ? 'Выполнено ' + doneCount + ' из ' + tasks.length +
-                   ' — осталось отбить налёт мародёров'
-                : 'Выполнено ' + doneCount + ' из ' + tasks.length +
-                  ' — при таком раскладе довольство упадёт') +
+  var dayDelta = function(done, total) { return done * STL_GAIN - (total - done) * STL_LOSS + (done === total ? STL_BONUS : 0); };
+  var dayNow = dayDelta(doneCount, tasks.length);
+  var noRuler = !st.controller;
+  html += '<div class="stl-verdict ' + (tasks.length === 0 ? (noRuler ? 'bad' : 'wait') : allDone ? 'good' : onlyRaid ? 'wait' : dayNow >= 0 ? 'wait' : 'bad') + '">' +
+    (tasks.length === 0 ? (noRuler ? 'Управляющего нет — условий нет, довольство падает на ' + STL_NO_RULER + ' в сутки'
+                                   : 'Условий на эти сутки нет')
+      : allDone ? 'Все условия выполнены — довольство +' + dayNow
+      : onlyRaid ? 'Выполнено ' + doneCount + ' из ' + tasks.length + ' — отбей налёт: +' +
+                   dayDelta(tasks.length, tasks.length) + ', иначе ' + stlSigned(dayNow)
+                : 'Выполнено ' + doneCount + ' из ' + tasks.length + ' — к итогам довольство ' + stlSigned(dayNow)) +
     '</div>';
+  if (tasks.length) {
+    html += '<div class="stl-note un-rule">Каждое выполненное условие +' + STL_GAIN + ', проваленное −' + STL_LOSS +
+      ', все — ещё +' + STL_BONUS + '. Налёт отбивает и гарнизон: своих в поселении не меньше, чем налётчиков.</div>';
+  }
 
   pane.innerHTML = html;
 

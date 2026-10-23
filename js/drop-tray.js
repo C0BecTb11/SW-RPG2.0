@@ -1,4 +1,4 @@
-// Десант: перетаскивание из трюма в полосу вторжения.
+// Десант: перетаскивание из трюма в полосу вторжения (на своей и союзной планете — в зоны высадки).
 //
 // Раньше высадка шла так: кнопка → список → выбрать строку → тыкать
 // в клетки полосы по одному. Теперь кнопка «Высадка» открывает лоток
@@ -29,6 +29,11 @@ function dtEsc(s) {
 }
 
 // Что можно высадить: истребители, техника и пехота из трюмов
+// Куда высаживать — в подсказках: при вторжении полоса внизу, на своей и союзной планете — зоны высадки
+function dtWhere(verb, onto) {
+  return verb + (iAmAttacker === true ? (onto ? ' по полосе' : ' в полосу вторжения') : (onto ? ' по зоне высадки' : ' в зону высадки'));
+}
+
 function dtItems() {
   var l = dropListFor();
   var out = [];
@@ -96,7 +101,7 @@ function dtEnsure() {
   el.innerHTML =
     '<div class="dt-head">' +
       '<span class="dt-ico">⇣</span>' +
-      '<span class="dt-titles"><b>Десант</b><i id="dt-hint">Перетащи карточку в полосу вторжения</i></span>' +
+      '<span class="dt-titles"><b>Десант</b><i id="dt-hint">' + dtWhere('Перетащи карточку') + '</i></span>' +
       '<button type="button" class="dt-x" aria-label="Закрыть">✕</button>' +
     '</div>' +
     '<div class="dt-cards" id="dt-cards"></div>';
@@ -201,8 +206,8 @@ function dtRender() {
   var hint = document.getElementById('dt-hint');
   if (hint) {
     var sel = dtSelKey ? dtItemByKey(dtSelKey) : null;
-    hint.textContent = sel ? 'Выбрано: ' + sel.name + ' — тапни по полосе или тяни карточку'
-                           : 'Перетащи карточку в полосу вторжения';
+    hint.textContent = sel ? 'Выбрано: ' + sel.name + ' — ' + dtWhere('тапни', true) + ' или тяни карточку'
+                           : dtWhere('Перетащи карточку');
   }
 }
 
@@ -218,8 +223,8 @@ function dtSelect(it) {
   var cards = document.querySelectorAll('#dt-cards .dt-card');
   for (var i = 0; i < cards.length; i++) cards[i].classList.toggle('sel', cards[i].getAttribute('data-key') === dtSelKey);
   var hint = document.getElementById('dt-hint');
-  if (hint) hint.textContent = it ? 'Выбрано: ' + it.name + ' — тапни по полосе или тяни карточку'
-                                  : 'Перетащи карточку в полосу вторжения';
+  if (hint) hint.textContent = it ? 'Выбрано: ' + it.name + ' — ' + dtWhere('тапни', true) + ' или тяни карточку'
+                                  : dtWhere('Перетащи карточку');
   redrawScene();
 }
 
@@ -423,7 +428,10 @@ function dtWhy(it, x, y) {
   if (x < 0 || y < 0 || x + it.w > GRID_SIZE || y + it.h > GRID_SIZE) return 'За краем карты';
   // Те же правила, что у сервера (unload_unit_at, unload_vehicle_at, land_fighter): при вторжении —
   // полоса вторжения, на своей планете — зоны высадки
-  if (!fighterLandCellAllowed(x, y)) return iAmAttacker ? 'Вне полосы вторжения' : 'Вне зоны высадки';
+  // техника — вся рамка внутри (сервер: is_box_in_attack_zone / is_box_in_deploy_zone)
+  for (var bx = 0; bx < it.w; bx++) for (var by = 0; by < it.h; by++) {
+    if (!fighterLandCellAllowed(x + bx, y + by)) return iAmAttacker ? 'Вне полосы вторжения' : 'Вне зоны высадки';
+  }
   // Занятость считаем раз на свежую карту, а не на каждый сдвиг пальца
   var d = dtDrag;
   var occ;
@@ -512,7 +520,7 @@ function dtTapPlace(cx, cy, fx, fy) {
   var x = cx - Math.floor((it.w - 1) / 2), y = cy - Math.floor((it.h - 1) / 2);
   var why = dtWhy(it, x, y);
   if (why) {
-    if (typeof dcFlash === 'function') dcFlash(fx, fy, why, it.kind === 'fighter' && !iAmAttacker ? 'садятся в зону высадки' : 'ставь в полосу вторжения', 'bad', 1600);
+    if (typeof dcFlash === 'function') dcFlash(fx, fy, why, iAmAttacker ? 'ставь в полосу вторжения' : it.kind === 'fighter' ? 'садятся в зону высадки' : 'ставь в зону высадки', 'bad', 1600);
     return;
   }
   dtCommit(it, x, y, fx, fy);

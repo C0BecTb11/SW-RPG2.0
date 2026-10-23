@@ -155,7 +155,8 @@
     if (window.placingStructure && typeof handleStructurePlacementTap === 'function') { handleStructurePlacementTap(cx, cy); return true; }
     if (typeof dtOpen !== 'undefined' && dtOpen && dtSelKey && (window.landingFighter || window.droppingVehicle || window.droppingUnit)) { dtTapPlace(cx, cy, px, py); return true; }
     if (typeof dtOpen !== 'undefined' && dtOpen) {
-      if (cy >= 144 - (window.ATTACK_ZONE_H || 4) && cy < 144) { if (typeof dcFlash === 'function') dcFlash(px, py, 'Тяни карточку сюда', 'или выбери её тапом в лотке', 'move', 1600); return true; }
+      // касание места высадки (полоса при вторжении, зона высадки на своей планете) — подсказка, а не закрытие лотка
+      if (typeof fighterLandCellAllowed === 'function' && fighterLandCellAllowed(cx, cy)) { if (typeof dcFlash === 'function') dcFlash(px, py, 'Тяни карточку сюда', 'или выбери её тапом в лотке', 'move', 1600); return true; }
       closeDropTray();
     }
     if (window.landingFighter && typeof handleFighterLandingTap === 'function') { handleFighterLandingTap(cx, cy); return true; }
@@ -247,11 +248,11 @@
       document.body.classList.toggle('placing', !!(window.placingStructure || window.placingOrder));   // выбор клетки — тоже
     }, 400);
     // Десант: у нападающего — всегда (лоток ведёт в полосу вторжения внизу); на своей и союзной
-    // планете — только когда есть истребители для посадки в зоны высадки (войска с орбиты высаживает
-    // только вторжение — dropListFor). Пустые трюмы — объяснение, а не лоток, который тут же закрывается.
+    // планете — когда в трюмах над ней есть войска, техника или истребители (лоток ведёт в зоны высадки).
+    // Пустые трюмы — объяснение, а не лоток, который тут же закрывается.
     var drop = mk('gl-drop', 'Десант', function() {
       var n = dropCount();
-      if (!n) { GD.toast(window.iAmAttacker === true ? 'Десантировать некого: над планетой нет твоих кораблей с войсками в трюме' : 'Садить некого: нет истребителей над планетой', 'bad'); return; }
+      if (!n) { GD.toast('Высаживать некого: над планетой нет твоих кораблей с войсками в трюме', 'bad'); return; }
       if (typeof openDropTray === 'function') openDropTray();
     });
     function dropCount() {

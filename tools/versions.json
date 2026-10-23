@@ -84,8 +84,8 @@
   "sha": "57332d2c6f9e"
  },
  "js/drop-tray.js": {
-  "v": "1",
-  "sha": "e1a37a3a70f1"
+  "v": "2",
+  "sha": "fae2692a5783"
  },
  "js/err-report.js": {
   "v": "4",
@@ -128,12 +128,12 @@
   "sha": "0cca4ca75a8e"
  },
  "js/ground-battle.js": {
-  "v": "4",
-  "sha": "9c5ce8e3d28e"
+  "v": "5",
+  "sha": "f07e21b5083b"
  },
  "js/ground-live.js": {
-  "v": "21",
-  "sha": "53ae597dd881"
+  "v": "22",
+  "sha": "9897861a64eb"
  },
  "js/planet-info.js": {
   "v": "2",

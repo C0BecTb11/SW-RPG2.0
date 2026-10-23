@@ -15,6 +15,7 @@
   var P = window.SWPlanets, U = window.SWUnits, GR = window.SWGround, F = window.SWRTFig, S = window.SWRT, V = window.SWVehicles, H = window.SWHeroes, Army = window.SWArmy, GFX = window.SPGfx, TOWN = window.SWTown, NET = window.SWGroundNet;
   var N = P.N, SQ = GR.SQUARE;
   var TEAMC = { 0: '111,184,255', 1: '255,110,90', 2: '230,200,90' };
+  var MINE_C = '240,248,255';                       // свои бойцы на мини-карте (когда рядом союзники)
   // Масштаб: клетка ≈ 2,5 м. Пехотинец ≈ 0,8 клетки, техника — по своим размерам (AT-TE 4,5 клетки).
   var FIGK = 0.85, HK = FIGK * F.FIG;
   var cv = $('sp-canvas'), ctx = cv.getContext('2d');
@@ -166,6 +167,9 @@
   }
   function onHello(h, ws) {
     LIVE.waitSince = 0; LIVE.stuckRep = false; LIVE.hadHello = true; stuckHide();
+    // кто я: приказы — только своим бойцам (старый сервер «me» не шлёт — тогда id со страницы игры)
+    G.me = h.me || (window.GL && GL.user) || null;
+    G.own = h.own != null ? !!h.own && !!G.me : !!(window.GL && GL.user);
     G.planet = h.system; G.side = h.side;
     var B = new NET.Mirror(h, h.side, function(s) {
       if (ws.readyState === 1 && LIVE.ws === ws) { ws.send(s); return; }
@@ -745,9 +749,11 @@
       var fc = FOG.getContext('2d'), img = fc.createImageData(N, N), d = img.data, sn = B.seen[G.side], al = G.fogA || (G.fogA = new Uint8Array(N * N));
       for (var i = 0; i < N * N; i++) { var v = sn[i]; al[i] = v === 2 ? 0 : v === 1 ? 110 : 215; }
       // Полоса вторжения: движок держит её открытой хозяину планеты (высадку врага видно), но
-      // подсвечивать её не нужно — там, куда не смотрят свои бойцы, она под обычной дымкой
+      // подсвечивать её не нужно — туман в ней как везде: где свои бойцы смотрят сейчас — светло,
+      // где смотрели раньше — дымка, где не были никогда — тёмный туман (своя память полосы, G.stripMem)
       if (!B.noTown && G.side === B.def) {
         var sy0 = N - P.GEO.strip, lit = null, RK = (GR && GR.RANGE_K) || 3;
+        if (!G.stripMem || G.stripMem.B !== B) { G.stripMem = new Uint8Array(N * P.GEO.strip); G.stripMem.B = B; }
         for (var j = 0; j < B.agents.length; j++) {
           var ow = B.agents[j]; if (!ow || !ow.alive || ow.team !== G.side) continue;
           var r = ow.vision || ((ow.T && ow.T.vision) || 4) * RK; if (ow.y + r < sy0) continue;
@@ -756,7 +762,11 @@
             for (var lx = Math.max(0, Math.floor(ow.x - r)); lx <= Math.min(N - 1, Math.ceil(ow.x + r)); lx++)
               if ((lx - ow.x) * (lx - ow.x) + (ly - ow.y) * (ly - ow.y) <= r * r) lit[(ly - sy0) * N + lx] = 1;
         }
-        for (var k = sy0 * N; k < N * N; k++) if (al[k] === 0 && !(lit && lit[k - sy0 * N])) al[k] = 110;
+        for (var k = sy0 * N, sm = G.stripMem; k < N * N; k++) {
+          if (al[k] !== 0) continue;                                   // не открыта движком — как есть
+          if (lit && lit[k - sy0 * N]) { sm[k - sy0 * N] = 1; continue; }
+          al[k] = sm[k - sy0 * N] ? 110 : 215;
+        }
       }
       for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
         var sum = 0, n = 0;
@@ -798,7 +808,11 @@
     c.drawImage(FOG, x0, y0, W, W);
     var tw = B.town; if (!B.noTown) { c.strokeStyle = 'rgba(217,169,64,0.7)'; c.lineWidth = 1; c.strokeRect(x0 + tw[0] * k, y0 + tw[1] * k, tw[2] * k, tw[3] * k); }
     if (window.GD_MINI) GD_MINI(c, x0, y0, k);
-    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; c.fillStyle = 'rgb(' + (TEAMC[B.ctl(a)] || TEAMC[2]) + ')'; c.fillRect(x0 + a.x * k - 1, y0 + a.y * k - 1, a.size === 2 ? 3 : 2, a.size === 2 ? 3 : 2); }
+    // свои — белым поверх, союзники — цветом стороны, враги — своим цветом
+    var mineL = [];
+    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; if (G.own && mine(a)) { mineL.push(a); continue; } c.fillStyle = 'rgb(' + (TEAMC[B.ctl(a)] || TEAMC[2]) + ')'; c.fillRect(x0 + a.x * k - 1, y0 + a.y * k - 1, a.size === 2 ? 3 : 2, a.size === 2 ? 3 : 2); }
+    c.fillStyle = 'rgb(' + MINE_C + ')';
+    for (var mi = 0; mi < mineL.length; mi++) { var ma = mineL[mi]; c.fillRect(x0 + ma.x * k - 1.25, y0 + ma.y * k - 1.25, ma.size === 2 ? 3.5 : 2.5, ma.size === 2 ? 3.5 : 2.5); }
     var a0 = toW(0, 0), b0 = toW(G.vw, G.vh); c.strokeStyle = 'rgba(255,255,255,0.7)'; c.strokeRect(x0 + a0[0] * k, y0 + a0[1] * k, (b0[0] - a0[0]) * k, (b0[1] - a0[1]) * k);
     c.strokeStyle = '#1c2530'; c.strokeRect(x0 - 0.5, y0 - 0.5, W + 1, W + 1);
     c.restore();
@@ -806,7 +820,11 @@
   }
 
   // ---------------------------------------------------------------- худ
-  function selected() { var B = G.B; return G.usel.map(function(id) { return B.agents[id]; }).filter(function(a) { return a && a.alive && B.ctl(a) === G.side; }); }
+  // Чей боец под приказами: своя сторона, а в живой игре — ещё и свой (не союзника, не ополчение).
+  // Сервер приказы чужим бойцам всё равно отбрасывает (rt-ground-net, Viewer.ids) — так их и не выбрать.
+  function mine(a) { var B = G.B; return !!a && a.alive && B.ctl(a) === G.side && (!G.own || (!a.npc && a.owner === G.me)); }
+  function ally(a) { return !!a && a.alive && G.B.ctl(a) === G.side && !mine(a); }
+  function selected() { var B = G.B; return G.usel.map(function(id) { return B.agents[id]; }).filter(mine); }
   function hud() {
     var B = G.B; if (!B) return;
     var cp = B.cap, el = $('gd-cap'), mineAtt = G.side === B.att;
@@ -816,9 +834,11 @@
     var dl = $('gd-dist'), dh = B.settle.name + (B.districts.length ? ' · ' + B.districts.map(function(d) { return '<i class="' + (d.by === G.side ? 'my' : 'foe') + '"></i>' + d.name; }).join(' ') : '');
     if (dl.innerHTML !== dh) dl.innerHTML = dh;
     // единственный свой боец — герой (охота): выбран сразу, касание земли ведёт его
-    if (!G.usel.length && !G.autoSel) { var own = B.agents.filter(function(a) { return a && a.alive && B.ctl(a) === G.side; }); if (own.length === 1 && own[0].hero) { G.usel = [own[0].id]; G.autoSel = true; } }
+    if (!G.usel.length && !G.autoSel) { var own = B.agents.filter(mine); if (own.length === 1 && own[0].hero) { G.usel = [own[0].id]; G.autoSel = true; } }
     var sel = selected(), alive = B.alive(G.side), foe = B.alive(1 - G.side);
-    var stat = '<span>Своих <b>' + alive + '</b> · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
+    // в живой игре «своих» — только мои; бойцы союзников той же стороны — отдельно
+    var allies = 0; if (G.own) { alive = 0; B.agents.forEach(function(a) { if (mine(a)) alive++; else if (ally(a)) allies++; }); }
+    var stat = '<span>Своих <b>' + alive + '</b>' + (allies ? ' · союзников <b>' + allies + '</b>' : '') + ' · врагов видно <b>' + B.agents.filter(function(a) { return a.alive && B.ctl(a) !== G.side && B.canSee(G.side, a); }).length + '</b> из ' + foe + '</span>';
     // подсказка по шагу: что сейчас сделает касание
     var one = sel.length === 1 ? sel[0] : null, oneCv = one && B.coverInfo ? B.coverInfo(one) : null;
     var tip = G.arm ? 'Цель для «' + GR.ABIL_NAME[G.arm.ab] + '»: коснись ' + (GR.ABIL[G.arm.ab][1] === 'area' ? 'места' : GR.ABIL[G.arm.ab][1] === 'ally' ? 'союзника — подойдёт сам' : 'врага — подойдёт сам')
@@ -856,12 +876,12 @@
   function unitsPanel(B, sel) {
     var html = '', selIds = {}; G.usel.forEach(function(i) { selIds[i] = 1; });
     var sqs = B.teams[G.side].squads, loose = [], byType = {};
-    B.agents.forEach(function(a) { if (!a.alive || B.ctl(a) !== G.side) return; if (!a.sq) loose.push(a); });
+    B.agents.forEach(function(a) { if (!mine(a)) return; if (!a.sq) loose.push(a); });
     html += '<div class="sp-bd-row"><span class="lab">Отряды</span>';
     sqs.forEach(function(q) { var n = 0, hp = 0, mx = 0; q.members.forEach(function(id) { var a = B.agents[id]; if (a && a.alive) { n++; hp += a.hp; mx += a.hpMax; } }); var on = q.members.length && q.members.every(function(id) { return selIds[id]; }); html += '<button class="sp-chip' + (on ? ' on' : '') + (n ? '' : ' dead') + '" data-sq="' + q.id + '"><b>' + q.id + '</b> ' + n + '<em> · ' + Math.round(hp / Math.max(1, mx) * 100) + '%</em></button>'; });
     html += '<button class="sp-chip' + (loose.length && loose.every(function(a) { return selIds[a.id]; }) ? ' on' : '') + '" data-sq="loose">без отряда <em>' + loose.length + '</em></button></div>';
     // по видам
-    B.agents.forEach(function(a) { if (!a.alive || B.ctl(a) !== G.side) return; (byType[a.tid] = byType[a.tid] || []).push(a); });
+    B.agents.forEach(function(a) { if (!mine(a)) return; (byType[a.tid] = byType[a.tid] || []).push(a); });
     html += '<div class="gd-units">';
     Object.keys(byType).forEach(function(tid) { var L = byType[tid], Ty = U.type(tid), on = L.every(function(a) { return selIds[a.id]; }), hp = 0, mx = 0; L.forEach(function(a) { hp += a.hp; mx += a.hpMax; }); html += '<button class="sp-chip' + (on ? ' on' : '') + '" data-type="' + tid + '">' + Ty.name + ' <em>×' + L.length + '</em><i><b class="' + (hp / mx < 0.4 ? 'low' : '') + '" style="width:' + Math.round(hp / mx * 100) + '%"></b></i></button>'; });
     html += '</div>';
@@ -947,10 +967,13 @@
       else err = 'нужна цель';
       if (err) toast(err, 'bad'); G.arm = null; hud(); return;
     }
-    if (a && B.ctl(a) === G.side) {
+    // союзный боец: не выбирается; с выбранными — касание его клетки ведёт туда своих
+    if (a && ally(a) && !sel.length) { toast('Союзник · ' + (a.name || a.T.name) + ' · ' + Math.round(a.hp) + ' / ' + a.hpMax, 'gold'); return; }
+    if (a && ally(a)) a = null;
+    if (a && mine(a)) {
       var now = performance.now(), dbl = G.lastTap && G.lastTap[0] === hit && now - G.lastTap[1] < 400;
       G.lastTap = [hit, now];
-      if (dbl) { G.usel = []; if (a.sq) { var q = B.squadOf(G.side, a.sq); if (q) G.usel = q.members.slice(); } else B.agents.forEach(function(b) { if (b.alive && B.ctl(b) === G.side && b.tid === a.tid) G.usel.push(b.id); }); }
+      if (dbl) { G.usel = []; if (a.sq) { var q = B.squadOf(G.side, a.sq); if (q) G.usel = q.members.filter(function(id) { return mine(B.agents[id]); }); } else B.agents.forEach(function(b) { if (mine(b) && b.tid === a.tid) G.usel.push(b.id); }); }
       else { var k = G.usel.indexOf(hit); if (k >= 0) G.usel.splice(k, 1); else G.usel.push(hit); }
       hud(); return;
     }
@@ -964,7 +987,7 @@
   function boxSelect(b) {
     var B = G.B, x0 = Math.min(b[0], b[2]), y0 = Math.min(b[1], b[3]), x1 = Math.max(b[0], b[2]), y1 = Math.max(b[1], b[3]);
     G.usel = [];
-    for (var i = 0; i < B.agents.length && G.usel.length < 160; i++) { var a = B.agents[i]; if (!a.alive || B.ctl(a) !== G.side) continue; var p = toS(a.x, a.y); if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) G.usel.push(i); }
+    for (var i = 0; i < B.agents.length && G.usel.length < 160; i++) { var a = B.agents[i]; if (!mine(a)) continue; var p = toS(a.x, a.y); if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) G.usel.push(i); }
     hud();
   }
   function bind() {
@@ -996,7 +1019,7 @@
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('wheel', function(e) { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
     $('sp-view').onclick = fitAll;
-    $('gd-all').onclick = function() { var B = G.B; if (G.usel.length) G.usel = []; else B.agents.forEach(function(a) { if (a.alive && B.ctl(a) === G.side) G.usel.push(a.id); }); hud(); };
+    $('gd-all').onclick = function() { var B = G.B; if (G.usel.length) G.usel = []; else B.agents.forEach(function(a) { if (mine(a)) G.usel.push(a.id); }); hud(); };
     $('sp-pause').onclick = function() { setSpeed(G.speed === 0 ? (G.lastSpd || 1) : 0); };
     $('sp-spd').onclick = function() { var c = G.speed || G.lastSpd || 1; setSpeed(c === 1 ? 2 : c === 2 ? 4 : 1); };
     $('sp-gfx-b').onclick = function() { GFX.open(G.fps); };
@@ -1014,8 +1037,8 @@
         hud(); return;
       }
       if (t.hasAttribute('data-as')) { var r = B.assign(G.side, G.usel, +t.getAttribute('data-as')); if (r === false) toast('Отрядов уже ' + 12, 'bad'); hud(); return; }
-      if (t.hasAttribute('data-sq')) { var sq = t.getAttribute('data-sq'); if (sq === 'loose') { G.usel = []; B.agents.forEach(function(a) { if (a.alive && B.ctl(a) === G.side && !a.sq) G.usel.push(a.id); }); } else { var q = B.squadOf(G.side, +sq); G.usel = q ? q.members.slice() : []; } hud(); return; }
-      if (t.hasAttribute('data-type')) { var tid = t.getAttribute('data-type'); G.usel = []; B.agents.forEach(function(a) { if (a.alive && B.ctl(a) === G.side && a.tid === tid) G.usel.push(a.id); }); hud(); return; }
+      if (t.hasAttribute('data-sq')) { var sq = t.getAttribute('data-sq'); if (sq === 'loose') { G.usel = []; B.agents.forEach(function(a) { if (mine(a) && !a.sq) G.usel.push(a.id); }); } else { var q = B.squadOf(G.side, +sq); G.usel = q ? q.members.filter(function(id) { return mine(B.agents[id]); }) : []; } hud(); return; }
+      if (t.hasAttribute('data-type')) { var tid = t.getAttribute('data-type'); G.usel = []; B.agents.forEach(function(a) { if (mine(a) && a.tid === tid) G.usel.push(a.id); }); hud(); return; }
       if (t.hasAttribute('data-ab')) {
         var ab = t.getAttribute('data-ab'), sel = selected(), hero = sel.filter(function(a) { return a.hero; })[0]; if (!hero) return;
         var A = GR.ABIL[ab];

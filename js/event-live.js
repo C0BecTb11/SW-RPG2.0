@@ -43,7 +43,7 @@
   function start(srv, room, token) {
     window.GD_TOKEN = token;
     window.GD_LIVE = { system: 'ev', room: room, srv: srv, ws: null, tries: 0 };
-    var s = document.createElement('script'); s.src = '../ground/ground.js?v=23'; document.body.appendChild(s);
+    var s = document.createElement('script'); s.src = '../ground/ground.js?v=24'; document.body.appendChild(s);
   }
 
   // ---------------------------------------------------------------- бой открылся

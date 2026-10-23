@@ -41,10 +41,10 @@
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=23'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=24'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=23'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=24'; document.body.appendChild(s);
     });
   }
   var toastQ = [];
@@ -246,7 +246,24 @@
       document.body.classList.toggle('build', !!window.buildMode);          // стройка: боевой низ не нужен
       document.body.classList.toggle('placing', !!(window.placingStructure || window.placingOrder));   // выбор клетки — тоже
     }, 400);
-    mk('gl-drop', 'Десант', function() { if (typeof openDropTray === 'function') openDropTray(); });
+    // Десант: у нападающего — всегда (лоток ведёт в полосу вторжения внизу); на своей и союзной
+    // планете — только когда есть истребители для посадки в зоны высадки (войска с орбиты высаживает
+    // только вторжение — dropListFor). Пустые трюмы — объяснение, а не лоток, который тут же закрывается.
+    var drop = mk('gl-drop', 'Десант', function() {
+      var n = dropCount();
+      if (!n) { GD.toast(window.iAmAttacker === true ? 'Десантировать некого: над планетой нет твоих кораблей с войсками в трюме' : 'Садить некого: нет истребителей над планетой', 'bad'); return; }
+      if (typeof openDropTray === 'function') openDropTray();
+    });
+    function dropCount() {
+      try { return typeof dtItems === 'function' ? dtItems().length : 0; } catch (e) { return 0; }
+    }
+    setInterval(function() {
+      var n = dropCount(), att = window.iAmAttacker === true;
+      drop.hidden = !att && !n;
+      var t = 'Десант' + (n ? ' · ' + n : '');
+      if (drop.textContent !== t) drop.textContent = t;
+      drop.classList.toggle('gl-drop-empty', att && !n);
+    }, 700);
     window.GD_COMPACT = true;                    // верхней панели нет: захват площади — в нижней полосе
     $('sp-bottom').addEventListener('pointerdown', onSheetClick);
     // лоток десанта открыт — низ нового экрана уступает место

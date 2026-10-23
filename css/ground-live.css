@@ -31,3 +31,5 @@ body.placing #placement-hint { bottom: calc(14px + env(safe-area-inset-bottom, 0
   .sp-dock .sp-btn { flex: 1 1 22%; font-size: 10.5px; }
   #placement-hint, #order-queue { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
 }
+/* Десант без войск в трюмах — кнопка приглушена (касание объясняет почему) */
+.sp-dock .sp-btn.gl-drop-empty { opacity: 0.55; }

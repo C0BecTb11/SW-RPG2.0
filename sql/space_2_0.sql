@@ -262,21 +262,21 @@ begin
 
   -- трофеи: как boarding_capture_ship, без строки абордажа; защитники на борту — потеряны
   for r in
-    select (x->>'id')::uuid as id, (x->>'by')::uuid as by, x->>'faction' as faction
+    select (x->>'id')::uuid as id, (x->>'by')::uuid as captor, x->>'faction' as faction
     from jsonb_array_elements(coalesce(p_captured, '[]'::jsonb)) x
   loop
-    if r.by is null or r.faction not in ('republic', 'cis') then continue; end if;
+    if r.captor is null or r.faction not in ('republic', 'cis') then continue; end if;
     if not exists (select 1 from rt_battle_locks l where l.obj_kind = 'ship' and l.obj_id = r.id and l.battle_id = p_battle) then continue; end if;
     select t.max_hp + coalesce(s.bonus_hp, 0) into v_max from ships s join ship_types t on t.id = s.ship_type where s.id = r.id;
     update unit_positions set hp = 0, updated_at = now() where carrier_ship_id = r.id and carrier_unit_id is null;
     perform set_config('app.owner_transfer', '1', true);
-    update ships set owner_user_id = r.by, faction = r.faction, commander_id = null,
+    update ships set owner_user_id = r.captor, faction = r.faction, commander_id = null,
                      hp = least(hp, greatest(1, ceil(coalesce(v_max, hp) * 0.25)::integer)),
                      shield_fore = 0, shield_aft = 0, shield_port = 0, shield_starboard = 0, shields_updated_at = now(),
                      trophy = true, jump_lock_until = now() + make_interval(hours => greatest(0, game_setting_int('trophy_jump_lock_hours', 12))),
                      overwatch = false, tractor_until = null, tractor_by = null, boarding_eff = null
      where id = r.id;
-    update ships set owner_user_id = r.by, faction = r.faction where carrier_ship_id = r.id;
+    update ships set owner_user_id = r.captor, faction = r.faction where carrier_ship_id = r.id;
     perform set_config('app.owner_transfer', '', true);
     update ships set tractor_until = null, tractor_by = null where tractor_by = r.id;
     update repair_orders set delivered = true where ship_id = r.id and not delivered;

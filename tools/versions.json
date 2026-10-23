@@ -147,6 +147,10 @@
   "v": "3",
   "sha": "15de3a2fcd85"
  },
+ "js/scene-loader.js": {
+  "v": "1",
+  "sha": "94a8634c7ef6"
+ },
  "js/ship-control.js": {
   "v": "2",
   "sha": "b9e1bc3a5d69"

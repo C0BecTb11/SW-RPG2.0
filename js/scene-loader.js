@@ -21,6 +21,38 @@
   var settleTimer = null;
   var labels = {};
 
+  // Замер долгой загрузки: когда какой шаг готов, самая длинная «заморозка» страницы
+  // (поток занят, таймеры не идут) и сворачивали ли её. Загрузка дольше SLOW_MS или уход со
+  // страницы до конца загрузки — строка в журнал ошибок (DEV → «Ошибки») с подробностями:
+  // так видно, на чём встаёт слабый телефон. Свёрнутая страница тоже «замерзает» — это помечено.
+  var SLOW_MS = 9000;
+  var at = {};
+  var gapMax = 0, gapAt = 0, tickLast = Date.now(), wasHidden = !!document.hidden;
+  var ticker = setInterval(function() {
+    var now = Date.now(), gap = now - tickLast - 250;
+    if (gap > gapMax) { gapMax = gap; gapAt = now - started; }
+    tickLast = now;
+    if (document.hidden) wasHidden = true;
+  }, 250);
+  document.addEventListener('visibilitychange', function() { if (document.hidden) wasHidden = true; });
+  var reported = false;
+  function slowReport(why) {
+    if (reported || !window.errReport) return;
+    var total = Date.now() - started;
+    if (total < (why === 'ушёл со страницы' ? 5000 : SLOW_MS)) return;
+    reported = true;
+    var steps = need.map(function(k) { return k + ' ' + (got[k] ? (at[k] / 1000).toFixed(1) + ' с' : 'нет'); });
+    var nav = navigator || {};
+    var info = [
+      'Итог: ' + why + ', ' + (total / 1000).toFixed(1) + ' с',
+      'Шаги: ' + (steps.join(', ') || '—'),
+      'Самая долгая заморозка: ' + (gapMax / 1000).toFixed(1) + ' с (на ' + (gapAt / 1000).toFixed(1) + ' с)' + (wasHidden ? ', страницу сворачивали' : ''),
+      'Устройство: ядер ' + (nav.hardwareConcurrency || '?') + ', память ' + (nav.deviceMemory || '?') + ' ГБ, экран ' +
+        (window.innerWidth || 0) + '×' + (window.innerHeight || 0) + ' ×' + (window.devicePixelRatio || 1)
+    ].join('\n');
+    try { errReport({ message: 'Долгая загрузка сцены · ' + (location.pathname.split('/').pop() || ''), stack: info }, 'scene.slow'); } catch (e) {}
+  }
+
   var bar = el.querySelector('.sl-bar i');
   var stepEl = el.querySelector('.sl-step');
 
@@ -34,9 +66,11 @@
     if (stepEl) stepEl.textContent = next ? (labels[next] || '') : 'Готово';
   }
 
-  function hide() {
+  function hide(why) {
     if (finished) return;
     finished = true;
+    clearInterval(ticker);
+    slowReport(typeof why === 'string' ? why : (need.some(function(k) { return !got[k]; }) ? 'не дождались' : 'готово'));
     if (bar) bar.style.width = '100%';
     el.classList.add('sl-out');
     setTimeout(function() {
@@ -64,6 +98,7 @@
     mark: function(key) {
       if (finished || got[key]) return;
       got[key] = true;
+      at[key] = Date.now() - started;
       paint();
       tryFinish();
     },
@@ -96,5 +131,8 @@
   // Ошибка страницы видна поверх экрана: прячем его, чтобы не мешал читать
   window.addEventListener('error', function() { setTimeout(hide, 0); });
 
-  setTimeout(hide, MAX_MS);
+  setTimeout(function() { hide('по таймеру ' + MAX_MS / 1000 + ' с'); }, MAX_MS);
+  // Ушёл, не дождавшись: строку — раньше, чем журнал отправит накопленное на уходе
+  // (слушатель с захватом срабатывает первым)
+  window.addEventListener('pagehide', function() { if (!finished) slowReport('ушёл со страницы'); }, true);
 })();

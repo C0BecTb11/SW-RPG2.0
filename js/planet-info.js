@@ -153,6 +153,11 @@ function openPlanetInfo(systemId) {
         gePlanetRows(systemId).forEach(function(row) { stats.appendChild(row); });
       }
 
+      // Напряжение на своей планете (js/unrest.js) — когда оно есть или вырастет к утру
+      if (sameFaction && typeof unPlanetRows === 'function') {
+        unPlanetRows(systemId).forEach(function(row) { stats.appendChild(row); });
+      }
+
       if (sameFaction) {
         stats.appendChild(makePiStat('Постройки', buildings.length + ' / ' + slotCap));
         stats.appendChild(makePiStat('Орбитальная станция', station ? 'есть' : 'нет'));

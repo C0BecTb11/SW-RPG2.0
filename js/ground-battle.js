@@ -447,6 +447,8 @@ function loadSettlementPanel() {
     stlSafe(supabase.rpc('get_settlement_dev', { p_system_id: systemId })),
     stlLevels ? null : stlSafe(supabase.from('settlement_levels').select('*').order('level')),
     stlDistrictTypes ? null : stlSafe(supabase.from('district_types').select('*').order('sort_order')),
+    // Напряжение на планете (js/unrest.js): нет функции на сервере — блок просто не рисуется
+    typeof unSettlementHtml === 'function' ? stlSafe(supabase.rpc('unrest_state', { p_system: systemId })) : null,
     // Названия сырья для требований и цен: справочник грузится один раз
     new Promise(function(done) {
       if (typeof loadResourceNames === 'function') loadResourceNames(done); else done();
@@ -487,7 +489,8 @@ function loadSettlementPanel() {
 
     // Время получения храним вместе с данными: от него считаются концы
     // отсчётов, и опрос карты его не сдвигает
-    stlLast = { st: st, tasks: tasks, dev: dev, devErr: devErr, at: Date.now() };
+    var unrest = (r[5] && !r[5].error) ? r[5].data : null;
+    stlLast = { st: st, tasks: tasks, dev: dev, devErr: devErr, unrest: unrest, at: Date.now() };
     renderSettlementPanel();
   });
 }
@@ -650,6 +653,9 @@ function stlDevHtml(L) {
     html += '<div class="stl-track-cap"><span>0</span>' +
       '<em style="left:' + need + '%">порог ' + need + '</em><span>100</span></div>';
   }
+
+  // Напряжение: шкала, прогноз на утро, история (js/unrest.js)
+  if (typeof unSettlementHtml === 'function') html += unSettlementHtml(L.unrest);
 
   // Доход: множитель уровня и рынок — чтобы было понятно, откуда цифра
   var market = (d.districts || []).some(function(x) { return x.id === 'market' && !x.building; });

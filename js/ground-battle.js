@@ -4195,6 +4195,13 @@ function openUnitPanel(building) {
                            '<div class="intel-empty">Загрузка...</div>';
       list.appendChild(intelBox);
       loadIntel(building, intelBox);
+      // тайные операции: диверсионные группы штаба (js/spy-ops.js)
+      if (typeof soBox === 'function') {
+        var soEl = document.createElement('div');
+        soEl.className = 'so-box';
+        list.appendChild(soEl);
+        soBox(building, soEl);
+      }
     }
 
     // Медцентр и ремцех штопают пехоту, заводы техники — машины.

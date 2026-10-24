@@ -5,8 +5,8 @@
 -- участка цели) → действие → отход 10 мин + перелёт → отдых 12 ч. Шанс считается в момент действия:
 -- 75 % − 12 % за охранника (+1 от «Казарм ополчения») − 20 % за караул − 10 % за «Узел связи» + 10 % ночью
 -- (22–06 по серверу) + 5 % за успех группы (до трёх), в пределах 10–90 %.
--- Операции: подрыв (износ +30 %, смена обрывается), подстрекательство (люди бастуют 6 ч, напряжение +4 на сутки),
--- вирус (половина дроидов сбоит 6 ч, с «Мастерскими» — 3 ч), порча пайка (−25 % еды планеты, до 40; ближайшая
+-- Операции: саботаж оборудования (износ +30 %, смена обрывается), подстрекательство (люди бастуют 6 ч, напряжение +4 на сутки),
+-- вирус (половина дроидов сбоит 6 ч, с «Мастерскими» — 3 ч), срыв снабжения (−25 % еды планеты, до 40; ближайшая
 -- смена людей без пайка), кража (30 % ресурса участка со склада планеты, до 120 — уходит на планету штаба).
 -- Поймали — группа пропадает, хозяину награда 300 кр и имя сразу. Удалась — хозяин видит происшествие сразу,
 -- а кто это — по итогам следствия через 8 ч («Узел связи» — 3 ч, охрана на посту — вдвое быстрее).
@@ -46,8 +46,8 @@ create table if not exists public.spy_ops (
   target_building uuid not null,
   target_system text not null,
   victim uuid,
-  kind text not null,                             -- blast | strike | virus | poison | theft
-  spot integer not null default -1,               -- место работы (подрыв, вирус); −1 склад, −2 барак
+  kind text not null,                             -- blast (саботаж) | strike | virus | poison (срыв снабжения) | theft
+  spot integer not null default -1,               -- место работы (саботаж, вирус); −1 склад, −2 барак
   jumps integer not null,
   seed integer not null,
   launched_at timestamptz not null default now(),
@@ -140,8 +140,8 @@ $$;
 
 create or replace function public.spy_kind_name(p_kind text) returns text
 language sql immutable set search_path to 'public', 'pg_temp' as $$
-  select case p_kind when 'blast' then 'Подрыв оборудования' when 'strike' then 'Подстрекательство' when 'virus' then 'Вирус в дроидах'
-                     when 'poison' then 'Порча пайка' when 'theft' then 'Кража со склада' else p_kind end;
+  select case p_kind when 'blast' then 'Саботаж оборудования' when 'strike' then 'Подстрекательство' when 'virus' then 'Вирус в дроидах'
+                     when 'poison' then 'Срыв снабжения' when 'theft' then 'Кража со склада' else p_kind end;
 $$;
 
 -- штаб игрока: готовый, своей фракции, на его планете
@@ -156,12 +156,13 @@ language sql stable set search_path to 'public', 'pg_temp' as $$
 $$;
 
 -- ---------------------------------------------------------------- для окна участка: что видно хозяину
--- Подход виден, как только группа на месте; что за операция — только после действия; кто — после следствия или поимки
+-- Подход виден, как только группа на месте; что за операция — только после действия (и место цели тоже: по нему
+-- угадывается операция — барак, склад или установка); кто — после следствия или поимки
 create or replace function public.spy_site_ops(p_building uuid) returns jsonb
 language sql stable security definer set search_path to 'public', 'pg_temp' as $$
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', o.id, 'approach_at', o.approach_at, 'act_at', o.act_at, 'acted_at', o.acted_at, 'seed', o.seed,
-           'side', o.attacker_faction, 'spot', o.spot,
+           'side', o.attacker_faction, 'spot', case when o.acted_at is not null then o.spot end,
            'kind', case when o.acted_at is not null then o.kind end,
            'name', case when o.acted_at is not null then spy_kind_name(o.kind) end,
            'result', o.result, 'effect', case when o.acted_at is not null then o.effect end,
@@ -221,7 +222,7 @@ begin
     update mine_sites set wear = least(100, wear + 30) where building_id = s.building_id;
     if v_sh.id is not null then perform mine_finish(v_sh.id, 'stopped'); end if;
     v_eff := jsonb_build_object('wear', 30, 'shift', v_sh.id is not null);
-    v_txt := 'взрыв у места №' || (o.spot + 1) || ': износ +30 %' || case when v_sh.id is not null then ', смена оборвана' else '' end;
+    v_txt := 'установка №' || (o.spot + 1) || ' выведена из строя: износ +30 %' || case when v_sh.id is not null then ', смена оборвана' else '' end;
   elsif o.kind = 'strike' then
     if s.humans > 0 then
       if v_sh.id is not null and v_sh.humans > 0 then perform mine_finish(v_sh.id, 'stopped'); end if;
@@ -248,7 +249,7 @@ begin
     if v_n > 0 then update planet_stock set amount = amount - v_n where system_id = s.system_id and resource = 'food'; end if;
     update mine_sites set spoiled_until = now() + interval '12 hours' where building_id = s.building_id;
     v_eff := jsonb_build_object('food', v_n);
-    v_txt := 'пайки испорчены: −' || coalesce(v_n, 0) || ' еды, ближайшая смена людей без пайка';
+    v_txt := 'снабжение сорвано: −' || coalesce(v_n, 0) || ' еды, ближайшая смена людей без пайка';
   else
     select coalesce(amount, 0) into v_have from planet_stock where system_id = s.system_id and resource = s.resource for update;
     v_take := least(120, floor(coalesce(v_have, 0) * 0.3))::integer;
@@ -567,6 +568,12 @@ begin
       'hire_t', round($b$);
     d := replace(d, $a$'survey', 0, 'maint', 0)$a$, $b$'survey', 0, 'maint', 0, 'guard', mine_task_k('guard'))$b$);
     execute d;
+  end if;
+  -- время сервера в состоянии: сцена ведёт фигурки группы по нему, а не по часам телефона
+  d := pg_get_functiondef('public.mine_site_state(uuid)'::regprocedure);
+  if position($a$'now', now(), 'building_id', p_building,$a$ in d) = 0 then
+    if position($a$    'building_id', p_building, 'system_id', s.system_id, 'refine', v_ref,$a$ in d) = 0 then raise exception 'mine_site_state: место правки (now) не найдено'; end if;
+    execute replace(d, $a$    'building_id', p_building, 'system_id', s.system_id, 'refine', v_ref,$a$, $b$    'now', now(), 'building_id', p_building, 'system_id', s.system_id, 'refine', v_ref,$b$);
   end if;
 
   -- напряжение: подстрекатели на участках планеты за сутки

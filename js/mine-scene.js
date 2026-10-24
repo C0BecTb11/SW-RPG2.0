@@ -345,6 +345,7 @@
   }
   function step(dt) {
     S.t += dt;
+    if (!S.st) return;                       // кадр пришёл раньше первого состояния с сервера
     var acc = accNow();
     if (acc != null) {
       var whole = Math.floor(acc);

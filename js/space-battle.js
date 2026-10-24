@@ -536,28 +536,6 @@ function isBuildMode() {
   return params.get('mode') === 'build';
 }
 
-function initBuildSwitcher() {
-  if (!buildMode) return;
-
-  var bar = document.createElement('div');
-  bar.id = 'build-switcher';
-  bar.innerHTML =
-    '<button class="build-switch-btn" data-go="ground">Земля</button>' +
-    '<button class="build-switch-btn active" data-go="space">Космос</button>' +
-    '<button class="build-switch-btn" data-go="galaxy">Галактика</button>';
-  document.body.appendChild(bar);
-
-  bar.addEventListener('click', function(e) {
-    var target = e.target.getAttribute('data-go');
-    if (!target) return;
-    if (target === 'ground') {
-      window.location.href = 'ground-battle.html?system=' + systemId + '&mode=build';
-    } else if (target === 'galaxy') {
-      window.location.href = 'galaxy-map.html';
-    }
-  });
-}
-
 function applyTransform() {
   grid.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')';
   if (typeof sxSyncScale === 'function') sxSyncScale();
@@ -886,7 +864,6 @@ function initSpaceBattle() {
       loadStation();
       loadShips();
       if (!window.SL) { centerGridInitially(); initPanAndZoom(); }
-      initBuildSwitcher();
       initBuildToggle(true);
       subscribeToSpaceChanges();
       // Пока вкладка спала, реалтайм мог пропустить события. Слушаем

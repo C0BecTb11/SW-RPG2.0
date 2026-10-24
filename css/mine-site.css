@@ -140,6 +140,7 @@
 .mn-kpis b { font-size: 16px; color: #cfd8dc; }
 .mn-kpis b small { font-size: 10px; color: #55606c; font-weight: normal; }
 .mn-kpis span { font-size: 9px; color: #55606c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mn-kpis span.warn { color: #d9a940; }
 
 .mn-eff { margin-top: 8px; font-size: 10px; }
 .mn-eff.up { color: #5fd968; }

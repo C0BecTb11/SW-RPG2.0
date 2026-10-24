@@ -373,7 +373,27 @@ SystemRoom.prototype.pullNow = function() {
     self.state = st;
     self.setEyes();
     self.applyShips(st.ships || []);
+    return self.takeOrders();
   }).catch(function(e) { self.cfg.log('error', 'rt_space_pull', { room: self.name, err: e.message }); });
+};
+// Приказы из игры для кораблей этой орбиты (rt_space_orders): например, рейс снабжения ведёт флот к своей
+// полосе гиперпространства, пока орбиту смотрят (sql/supply_zone_live.sql). Цель — в метрах, центр корабля.
+SystemRoom.prototype.takeOrders = function() {
+  var self = this;
+  if (this.noOrders) return Promise.resolve();
+  return this.rpc('rt_space_orders_take', { p_battle: this.battleId, p_system: this.system }).then(function(list) {
+    (Array.isArray(list) ? list : []).forEach(function(o) {
+      var n = self.byId[o.ship_id], sh = n != null ? self.B.ships[n] : null;
+      if (!sh || sh.dead || !isFinite(+o.x) || !isFinite(+o.y)) return;
+      if (sh.dormant) self.B.wake(sh);
+      sh.dock = null;
+      self.B.order(n, +o.x, self.clampY(sh.side, +o.y), false);
+    });
+  }).catch(function(e) {
+    // база без этой функции (старый снимок) — больше не спрашиваем до перезапуска комнаты
+    if (/rt_space_orders_take|does not exist|Could not find|PGRST202/i.test(e.message || '')) self.noOrders = true;
+    else self.cfg.log('warn', 'rt_space_orders_take', { room: self.name, err: e.message });
+  });
 };
 SystemRoom.prototype.kick = function(msg) {
   this.clients.slice().forEach(function(c) { try { c.ws.send(JSON.stringify({ t: 'reset', msg: msg })); c.ws.close(4008); } catch (e) {} });

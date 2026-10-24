@@ -1261,7 +1261,10 @@ body > .sup-toast { z-index: 2400; }
     grid-template-columns: minmax(0, 1fr) min(430px, 54vw);
     grid-template-rows: auto minmax(0, 1fr);
   }
-  #sup-head { grid-column: 2; grid-row: 1; padding-top: 10px; padding-bottom: 10px; }
+  #sup-head { grid-column: 2; grid-row: 1; padding-top: 10px; padding-bottom: 10px; padding-right: calc(14px + env(safe-area-inset-right)); }
+  .sup-body, .sup-ed-body, .sup-ed-foot { padding-right: calc(14px + env(safe-area-inset-right)); }
+  .sup-tabs { padding-right: calc(6px + env(safe-area-inset-right)); }
+  .sup-hud { left: calc(10px + env(safe-area-inset-left)); }
   #sup-main, #sup-editor { grid-column: 2; grid-row: 2; }
   #sup-stage,
   #supply-screen.editing #sup-stage {

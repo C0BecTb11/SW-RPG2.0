@@ -379,7 +379,8 @@
     // тап, которым открыли окно, браузер досылает щелчком по фону — закрываем только касание, начатое на фоне
     el.addEventListener('pointerdown', function(e) { downBack = e.target === el; });
     el.addEventListener('click', function(e) {
-      if (e.target === el && downBack && Date.now() - openAt > 400) closeSupplyScreen();
+      // черновик рейса случайным щелчком мимо окна не теряем — конструктор закрывается своей кнопкой
+      if (e.target === el && downBack && Date.now() - openAt > 400 && !ed) closeSupplyScreen();
       downBack = false;
     });
     el.querySelector('#sup-tabs').addEventListener('click', function(e) {
@@ -539,8 +540,10 @@
       dot = hudMsg.dot; txt = hudMsg.text;
     } else if (ed) {
       dot = 'on';
-      txt = ed.stops.length >= maxStops() ? 'Остановок максимум — убери лишнюю, чтобы добавить'
-        : 'Тап по планете — ' + (ed.stops.some(function(s) { return !s.system_id; }) ? 'выбрать остановку' : 'добавить остановку');
+      var gap = ed.stops.some(function(s) { return !s.system_id; });
+      txt = gap ? 'Тап по планете — выбрать остановку'
+        : ed.stops.length >= maxStops() ? 'Остановок максимум — убери лишнюю, чтобы добавить'
+        : 'Тап по планете — добавить остановку';
     } else if (st.mapRoute) {
       var f = mapFleet(st.mapRoute), r = findRoute(st.mapRoute);
       var stt = r ? routeState(r) : null;
@@ -586,10 +589,18 @@
     st.mapRoute = st.mapRoute === id ? null : id;
     mapSync();
     if (!st.mapRoute) { markSel(); return; }
-    if (st.tab !== 'routes') { switchTab('routes'); return; }
-    markSel();
-    var card = document.querySelector('#sup-body .sup-route[data-route="' + cssEsc(id) + '"]');
-    if (card) bodyEl().scrollTop = Math.max(0, card.offsetTop - 8);
+    function toCard() {
+      markSel();
+      var card = document.querySelector('#sup-body .sup-route[data-route="' + cssEsc(id) + '"]');
+      if (card) bodyEl().scrollTop = Math.max(0, card.offsetTop - 8);
+    }
+    if (st.tab !== 'routes') {
+      switchTab('routes');
+      // рейсы уже в памяти (их грузят при открытии) — список нарисован сразу; иначе — после загрузки
+      if (st.routes) toCard(); else load(['routes'], function() { if (st.open && st.tab === 'routes' && st.mapRoute === id) { render(); toCard(); } });
+      return;
+    }
+    toCard();
   }
 
   // подсветка выбранного на карте в списке — без перерисовки списка
@@ -2518,8 +2529,9 @@
 
   // Тап по планете на карте: заполнить первую пустую остановку или добавить новую
   function addStopFromMap(id) {
-    if (!ed) return;
-    var ok = (st.systems || []).some(function(s) { return s.id === id; });
+    if (!ed || ed.sending) return;
+    if (!st.systems) { hudSay('Список планет ещё грузится — секунду'); return; }
+    var ok = st.systems.some(function(s) { return s.id === id; });
     if (!ok) { hudSay('Остановка — только на планете своей стороны', 'alarm'); return; }
     var empty = -1;
     for (var i = 0; i < ed.stops.length; i++) if (!ed.stops[i].system_id) { empty = i; break; }

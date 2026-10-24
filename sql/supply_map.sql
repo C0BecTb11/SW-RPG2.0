@@ -1,6 +1,6 @@
 -- Снабжение, шаг 4: живая карта сети в окне «Снабжение» (js/supply-map.js).
 -- Одним запросом: планеты своей стороны (и чужие или дальние, если там стоит или куда летит флот на рейсе),
--- гиперпути между ними, постройки снабжения на планетах и флоты моих живых рейсов —
+-- гиперпути между ними, хабы на своих планетах и флоты моих живых рейсов —
 -- откуда и куда летят, когда вылетели и когда прибудут. Нужды и излишки карта берёт из get_supply_network.
 -- Только чтение; SECURITY DEFINER, как остальные get_supply_*: таблицы снабжения закрыты для прямого чтения.
 
@@ -35,16 +35,11 @@ begin
                     'id', s.id, 'name', s.name, 'tex', s.texture, 'x', s.world_x, 'y', s.world_y,
                     'faction', s.faction, 'deep', s.is_deep_space,
                     'mine', exists (select 1 from system_control sc where sc.system_id = s.id and sc.controller_user_id = v_me),
-                    -- постройки снабжения работают только у нынешней стороны планеты (sql/supply_fixes.sql)
-                    'hub', exists (select 1 from buildings b join building_types bt on bt.id = b.building_type_id
+                    -- хаб — только на планетах своей стороны: чужие постройки закрыты туманом (can_see_building),
+                    -- а постройки снабжения работают только у нынешней стороны планеты (sql/supply_fixes.sql)
+                    'hub', s.faction = v_fac and exists (select 1 from buildings b join building_types bt on bt.id = b.building_type_id
                                     where b.system_id = s.id and bt.code in ('rep_logistics', 'cis_logistics')
-                                      and b.faction = s.faction and (b.completes_at is null or b.completes_at <= now())),
-                    'trade', exists (select 1 from buildings b join building_types bt on bt.id = b.building_type_id
-                                      where b.system_id = s.id and bt.code in ('rep_trade', 'cis_trade')
-                                        and b.faction = s.faction and (b.completes_at is null or b.completes_at <= now())),
-                    'depots', (select count(*)::integer from buildings b join building_types bt on bt.id = b.building_type_id
-                                where b.system_id = s.id and bt.storage_bonus > 0
-                                  and b.faction = s.faction and (b.completes_at is null or b.completes_at <= now()))
+                                      and b.faction = s.faction and (b.completes_at is null or b.completes_at <= now()))
                   ) order by s.name), '[]'::jsonb) from sy s),
       'lanes', (select coalesce(jsonb_agg(jsonb_build_array(h.system_a, h.system_b)), '[]'::jsonb) from hyperlanes h
                  where h.system_a in (select sy.id from sy) and h.system_b in (select sy.id from sy)),

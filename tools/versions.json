@@ -45,7 +45,7 @@
  },
  "css/ground-battle.css": {
   "v": "3",
-  "sha": "83c630fdf229"
+  "sha": "b1ef7ead0500"
  },
  "css/ground-live.css": {
   "v": "4",
@@ -101,7 +101,7 @@
  },
  "css/supply.css": {
   "v": "3",
-  "sha": "31baa43094ce"
+  "sha": "a3484502b25d"
  },
  "css/transfer.css": {
   "v": "1",
@@ -357,11 +357,11 @@
  },
  "js/supply-map.js": {
   "v": "1",
-  "sha": "8fb12dbe7f2e"
+  "sha": "30106420e278"
  },
  "js/supply.js": {
   "v": "4",
-  "sha": "8ea64734fe49"
+  "sha": "d77adf436edd"
  },
  "js/troop-transfer.js": {
   "v": "1",

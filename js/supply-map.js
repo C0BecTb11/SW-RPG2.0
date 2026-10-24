@@ -25,8 +25,8 @@
       var x = q.shift(), n = S.adj[x] || [];
       for (var i = 0; i < n.length; i++) {
         var y = n[i], s = S.sys[y];
-        if (y in prev || !s) continue;
-        if (y !== b && (s.deep || s.faction !== fac)) continue;
+        if (y in prev || !s || s.deep) continue;                 // в дальний космос рейсы не ходят (как convoy_route_to)
+        if (y !== b && s.faction !== fac) continue;
         prev[y] = x;
         if (y === b) { q = []; break; }
         q.push(y);
@@ -38,7 +38,10 @@
   }
 
   function layout() {
-    var r = S.box.getBoundingClientRect(), w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+    // размер окна читаем раз в полсекунды и при перестройке набора планет, а не каждый кадр
+    var tnow = Date.now();
+    if (!S.w || !S.sizeAt || tnow - S.sizeAt > 500) { var rr = S.box.getBoundingClientRect(); S.bw = rr.width; S.bh = rr.height; S.sizeAt = tnow; }
+    var w = Math.max(1, Math.round(S.bw)), h = Math.max(1, Math.round(S.bh));
     S.dpr = Math.min(window.devicePixelRatio || 1, 2);
     if (w !== S.w || h !== S.h || S.cv.width !== Math.round(w * S.dpr)) {
       S.w = w; S.h = h; S.cv.width = Math.round(w * S.dpr); S.cv.height = Math.round(h * S.dpr);
@@ -210,7 +213,7 @@
     (d.lanes || []).forEach(function(l) { var a = S.xy[l[0]], b = S.xy[l[1]]; if (!a || !b) return; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); });
 
     // черновик нового рейса: золотой бегущий пунктир через выбранные остановки
-    var draft = (v.draft || []).filter(function(id) { return !!S.xy[id]; });
+    var draft = (v.draft || []).filter(function(id) { return !!S.sys[id] && !!S.xy[id]; });
     if (draft.length > 1) routeLegs(draft, v.draftLoop).forEach(function(leg) { polyline(c, pts(leg), 'rgba(217,169,64,0.85)', 1.8, [6, 6], t); });
 
     // рейсы: весь путь — тусклым пунктиром, текущий перелёт — ярким бегущим.
@@ -276,6 +279,7 @@
     if (!S.on) return;
     S.raf = requestAnimationFrame(loop);
     if (document.hidden) { S.last = now; return; }
+    if (S.last && now - S.last < 30) return;                // ~30 кадров в секунду: карте больше не нужно, телефону легче
     var dt = Math.min(0.1, (now - (S.last || now)) / 1000); S.last = now; S.t += dt;
     try { draw(); } catch (e) {
       if (S.cv) S.cv.width = S.cv.width;                  // сбросить «залипшие» save() и трансформации
@@ -288,7 +292,7 @@
     if (!S.d) return;
     var r = S.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
     var bp = null, dp = Infinity, bf = null, df = Infinity;
-    Object.keys(S.xy).forEach(function(id) { var p = S.xy[id], d = Math.sqrt((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y)); if (d < dp) { dp = d; bp = id; } });
+    Object.keys(S.sys).forEach(function(id) { var p = S.xy[id]; if (!p) return; var d = Math.sqrt((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y)); if (d < dp) { dp = d; bp = id; } });
     S.marks.forEach(function(m) { if (!m.p) return; var d = Math.sqrt((m.p[0] - x) * (m.p[0] - x) + (m.p[1] - y) * (m.p[1] - y)); if (d < df) { df = d; bf = m.f.id; } });
     var onPlanet = bp && dp <= rad(S.sys[bp]) + 3;
     if (!onPlanet && bf && df <= 18 && S.h_.fleet) { S.h_.fleet(bf); return; }
@@ -302,11 +306,11 @@
         S.cv = document.createElement('canvas'); S.cv.className = 'sup-cv'; box.insertBefore(S.cv, box.firstChild);
         S.c = S.cv.getContext('2d'); S.cv.addEventListener('click', onTap);
       }
-      S.w = 0;
+      S.w = 0; S.sizeAt = 0;
       if (!S.on) { S.on = true; S.last = 0; S.raf = requestAnimationFrame(loop); }
     },
     set: function(d) {
-      S.d = d || null; S.sys = {}; S.adj = {}; S.labKey = '';
+      S.d = d || null; S.sys = {}; S.adj = {}; S.xy = {}; S.lab = {}; S.labKey = '';
       S.skew = d && d.now ? Date.parse(d.now) - Date.now() : 0;
       if (isNaN(S.skew)) S.skew = 0;
       ((d && d.systems) || []).forEach(function(s) {

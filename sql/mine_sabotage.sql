@@ -1,7 +1,7 @@
 -- Диверсии на участках и цехах — шаг 4а (24.10.2026). План — claude/sabotage-plan.md.
 --
 -- Штаб (rep_hq) и центр управления (cis_control) готовят диверсионные группы (до двух на игрока). Группа идёт
--- на чужую планету в пределах двух гиперпутей: перелёт (30 мин на путь) → подход 15 мин (его видно в сцене
+-- на чужую планету в пределах трёх гиперпутей (spy_max_jumps): перелёт (30 мин на путь) → подход 15 мин (его видно в сцене
 -- участка цели) → действие → отход 10 мин + перелёт → отдых 12 ч. Шанс считается в момент действия:
 -- 75 % − 12 % за охранника (+1 от «Казарм ополчения») − 20 % за караул − 10 % за «Узел связи» + 10 % ночью
 -- (22–06 по серверу) + 5 % за успех группы (до трёх), в пределах 10–90 %.
@@ -17,7 +17,7 @@ insert into public.game_settings (key, value) values
   ('spy_group_cost', '1200'), ('spy_group_electronics', '20'), ('spy_train_min', '120'), ('spy_max_groups', '2'),
   ('spy_op_cost', '200'), ('spy_jump_min', '30'), ('spy_approach_min', '15'), ('spy_exit_min', '10'), ('spy_rest_h', '12'),
   ('spy_base_pct', '75'), ('spy_guard_pct', '12'), ('spy_watch_pct', '20'), ('spy_comms_pct', '10'), ('spy_night_pct', '10'),
-  ('spy_vet_pct', '5'), ('spy_reveal_h', '8'), ('spy_reveal_comms_h', '3'), ('spy_bounty', '300'),
+  ('spy_vet_pct', '5'), ('spy_reveal_h', '8'), ('spy_reveal_comms_h', '3'), ('spy_bounty', '300'), ('spy_max_jumps', '3'),
   ('mine_hire_guard', '350')
 on conflict (key) do nothing;
 
@@ -126,7 +126,7 @@ language sql stable set search_path to 'public', 'pg_temp' as $$
               then game_setting_int('spy_comms_pct', 10) else 0 end));
 $$;
 
--- гиперпути между планетами, не дальше двух
+-- гиперпути между планетами, не дальше spy_max_jumps (3)
 create or replace function public.spy_jumps(p_a text, p_b text) returns integer
 language sql stable set search_path to 'public', 'pg_temp' as $$
   with recursive w(sys, d) as (
@@ -134,7 +134,7 @@ language sql stable set search_path to 'public', 'pg_temp' as $$
     union
     select case when h.system_a = w.sys then h.system_b else h.system_a end, w.d + 1
       from w join hyperlanes h on h.system_a = w.sys or h.system_b = w.sys
-     where w.d < 2)
+     where w.d < game_setting_int('spy_max_jumps', 3))
   select min(d) from w where sys = p_b;
 $$;
 
@@ -352,7 +352,7 @@ begin
                 left join buildings bd on bd.id = o.target_building left join building_types bt on bt.id = bd.building_type_id
                where o.attacker = v_me and o.result is not null and o.launched_at > now() - interval '7 days'
                order by o.launched_at desc limit 12) q),
-    -- карта операций: штабы и группы, всё в двух гиперпутях от них, пути между этими планетами
+    -- карта операций: штабы и группы, всё в spy_max_jumps гиперпутях от них, пути между этими планетами
     'map', (with bases as (
               select bd.system_id s from buildings bd join building_types bt on bt.id = bd.building_type_id
                where bt.code in ('rep_hq', 'cis_control') and spy_hq_ok(bd.id, v_me)
@@ -368,7 +368,7 @@ begin
     'cfg', jsonb_build_object(
       'cost', game_setting_int('spy_group_cost', 1200), 'electronics', game_setting_int('spy_group_electronics', 20),
       'train_min', game_setting_int('spy_train_min', 120), 'op_cost', game_setting_int('spy_op_cost', 200),
-      'jump_min', game_setting_int('spy_jump_min', 30), 'approach_min', game_setting_int('spy_approach_min', 15),
+      'jump_min', game_setting_int('spy_jump_min', 30), 'max_jumps', game_setting_int('spy_max_jumps', 3), 'approach_min', game_setting_int('spy_approach_min', 15),
       'exit_min', game_setting_int('spy_exit_min', 10), 'rest_h', game_setting_int('spy_rest_h', 12),
       'base', game_setting_int('spy_base_pct', 75), 'guard', game_setting_int('spy_guard_pct', 12),
       'watch', game_setting_int('spy_watch_pct', 20), 'comms', game_setting_int('spy_comms_pct', 10),
@@ -403,7 +403,7 @@ begin
 end;
 $$;
 
--- цели группы: чужие участки и цеха в пределах двух гиперпутей от штаба
+-- цели группы: чужие участки и цеха в пределах spy_max_jumps гиперпутей от штаба
 create or replace function public.spy_targets(p_group uuid) returns jsonb
 language plpgsql security definer set search_path to 'public', 'pg_temp' as $$
 declare v_me uuid := auth.uid(); g spy_groups;
@@ -429,7 +429,7 @@ begin
                         where ms.system_id = sy.id and not ms.gone and bd.faction is not distinct from sy.faction)) p
       from systems sy join system_control sc on sc.system_id = sy.id
      where sy.id <> g.base_system and sc.controller_user_id is not null and sc.controller_user_id <> v_me
-       and sy.faction is distinct from g.faction and spy_jumps(g.base_system, sy.id) between 1 and 2
+       and sy.faction is distinct from g.faction and spy_jumps(g.base_system, sy.id) between 1 and game_setting_int('spy_max_jumps', 3)
        and exists (select 1 from mine_sites ms where ms.system_id = sy.id and not ms.gone)) q);
 end;
 $$;
@@ -451,7 +451,7 @@ begin
   select sc.controller_user_id, sy.faction into v_ctl, v_sfac from systems sy left join system_control sc on sc.system_id = sy.id where sy.id = s.system_id;
   if v_ctl is null or v_ctl = v_me or v_sfac is not distinct from g.faction then raise exception 'Диверсия — только против чужой планеты'; end if;
   v_j := spy_jumps(g.base_system, s.system_id);
-  if v_j is null or v_j < 1 then raise exception 'Цель дальше двух гиперпутей от штаба группы'; end if;
+  if v_j is null or v_j < 1 then raise exception 'Цель дальше % гиперпутей от штаба группы', game_setting_int('spy_max_jumps', 3); end if;
   select max(launched_at) + interval '24 hours' into v_until from spy_ops
    where target_building = p_building and launched_at > now() - interval '24 hours' and result is distinct from 'void';
   if v_until is not null then raise exception 'По этой цели уже работали — следующая операция не раньше чем через % ч', ceil(extract(epoch from v_until - now()) / 3600); end if;

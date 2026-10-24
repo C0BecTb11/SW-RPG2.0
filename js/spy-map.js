@@ -1,4 +1,4 @@
-// Карта операций для окна «Тайные операции» (js/spy-ops.js). Штабы игрока, планеты в двух гиперпутях от них,
+// Карта операций для окна «Тайные операции» (js/spy-ops.js). Штабы игрока, планеты в досягаемости групп (spy_max_jumps),
 // гиперпути; группы в деле идут по пути от штаба к цели и обратно — по серверному времени операции.
 // На выборе цели подсвечены планеты-цели, выбранная — в прицеле, путь к ней — бегущим пунктиром.
 // Кадры идут, только пока окно открыто и вкладка видна. ES5, только браузер.
@@ -8,7 +8,7 @@
 
   var TAU = Math.PI * 2;
   var S = { box: null, cv: null, c: null, dpr: 1, w: 0, h: 0, st: null, skew: 0, opt: {}, sys: {}, adj: {}, img: {},
-            on: false, raf: 0, t: 0, last: 0, pick: null, xy: {}, stars: null, err: 0 };
+            on: false, raf: 0, t: 0, last: 0, pick: null, xy: {}, stars: null, err: 0, r: 12, lab: {}, labKey: '' };
 
   function rng(seed) { var s = seed >>> 0 || 1; return function() { s += 0x6D2B79F5; var t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function rgba(hex, a) { var v = parseInt(hex.slice(1), 16); return 'rgba(' + ((v >> 16) & 255) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')'; }
@@ -38,9 +38,55 @@
     var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     list.forEach(function(s) { x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y); });
     var pl = 46, pr = 46, pt = 52, pb = 30, sw = Math.max(1, x1 - x0), sh = Math.max(1, y1 - y0);
-    var k = Math.min((S.w - pl - pr) / sw, (S.h - pt - pb) / sh);
-    var ox = pl + (S.w - pl - pr - sw * k) / 2, oy = pt + (S.h - pt - pb - sh * k) / 2;
-    list.forEach(function(s) { S.xy[s.id] = [ox + (s.x - x0) * k, oy + (s.y - y0) * k]; });
+    // широкая карта в высоком окне (и наоборот): свободную ось растягиваем, но не больше чем в 1,6 раза — расклад узнаваем
+    var kx = (S.w - pl - pr) / sw, ky = (S.h - pt - pb) / sh, k = Math.min(kx, ky);
+    kx = Math.min(kx, k * 1.6); ky = Math.min(ky, k * 1.6);
+    var ox = pl + (S.w - pl - pr - sw * kx) / 2, oy = pt + (S.h - pt - pb - sh * ky) / 2;
+    list.forEach(function(s) { S.xy[s.id] = [ox + (s.x - x0) * kx, oy + (s.y - y0) * ky]; });
+    var key = S.w + 'x' + S.h + ':' + list.length;
+    if (key !== S.labKey) { S.labKey = key; place(list); }
+  }
+
+  // Радиус планет — по самому тесному соседству; подписи — снизу, сверху, справа или слева, где не налезут
+  // на чужие планеты и подписи. Считается один раз на размер окна и набор планет.
+  function place(list) {
+    var dmin = Infinity, i, j;
+    for (i = 0; i < list.length; i++) for (j = i + 1; j < list.length; j++) {
+      var a = S.xy[list[i].id], b = S.xy[list[j].id], d = Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
+      if (d < dmin) dmin = d;
+    }
+    S.r = Math.max(7, Math.min(15, S.w / 34, isFinite(dmin) ? dmin * 0.34 : 15));
+    var c = S.c, fs = S.r < 10 ? 9 : 10, boxes = [], out = {};
+    function hit(q) {
+      var o = 0;
+      if (q.x0 < 2 || q.x1 > S.w - 2 || q.y0 < 2 || q.y1 > S.h - 2) o += 400;
+      list.forEach(function(s) {
+        var p = S.xy[s.id], rr = (s.base ? S.r + 2 : S.r) + 3;
+        var cx = Math.max(q.x0, Math.min(p[0], q.x1)), cy = Math.max(q.y0, Math.min(p[1], q.y1));
+        var dx = p[0] - cx, dy = p[1] - cy; if (dx * dx + dy * dy < rr * rr) o += 3 * (rr * rr - dx * dx - dy * dy);   // подпись поверх планеты хуже, чем поверх подписи
+      });
+      boxes.forEach(function(b) { var w = Math.min(q.x1, b.x1) - Math.max(q.x0, b.x0), h = Math.min(q.y1, b.y1) - Math.max(q.y0, b.y0); if (w > 0 && h > 0) o += w * h; });
+      return o;
+    }
+    // штабы и цели раскладываем первыми — им лучшие места
+    var tg = S.opt.targets || [];
+    list.slice().sort(function(a, b) { return ((b.base ? 2 : 0) + (tg.indexOf(b.id) >= 0 ? 1 : 0)) - ((a.base ? 2 : 0) + (tg.indexOf(a.id) >= 0 ? 1 : 0)); }).forEach(function(s) {
+      var p = S.xy[s.id], r = (s.base ? S.r + 2 : S.r);
+      c.font = 'bold ' + fs + 'px "Courier New", monospace';
+      var w = c.measureText(s.name).width + 4, h = fs + 3, best = null;
+      var dg = r * 0.72 + 2;                                   // снизу, сверху, справа, слева, затем по диагоналям
+      [['c', 't', 0, r + 4], ['c', 'b', 0, -r - 4], ['l', 'm', r + 5, 0], ['r', 'm', -r - 5, 0],
+       ['l', 't', dg, dg], ['r', 't', -dg, dg], ['l', 'b', dg, -dg], ['r', 'b', -dg, -dg]].forEach(function(v) {
+        var x = p[0] + v[2], y = p[1] + v[3];
+        var q = { x0: v[0] === 'c' ? x - w / 2 : v[0] === 'l' ? x : x - w, y0: v[1] === 't' ? y : v[1] === 'b' ? y - h : y - h / 2 };
+        q.x1 = q.x0 + w; q.y1 = q.y0 + h; q.v = v; q.o = hit(q);
+        if (!best || q.o < best.o) best = q;
+      });
+      boxes.push(best);
+      out[s.id] = { dx: best.v[2], dy: best.v[3], al: best.v[0] === 'c' ? 'center' : best.v[0] === 'l' ? 'left' : 'right',
+                    bl: best.v[1] === 't' ? 'top' : best.v[1] === 'b' ? 'bottom' : 'middle', fs: fs };
+    });
+    S.lab = out;
   }
 
   function planet(c, s, p, r, t) {
@@ -67,9 +113,11 @@
       c.beginPath(); c.moveTo(p[0] - r - 14, p[1]); c.lineTo(p[0] - r - 6, p[1]); c.moveTo(p[0] + r + 6, p[1]); c.lineTo(p[0] + r + 14, p[1]);
       c.moveTo(p[0], p[1] - r - 14); c.lineTo(p[0], p[1] - r - 6); c.moveTo(p[0], p[1] + r + 6); c.lineTo(p[0], p[1] + r + 14); c.stroke();
     }
-    c.font = (s.base || pick ? 'bold ' : '') + '10px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'top';
-    c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(5,7,11,0.9)'; c.strokeText(s.name, p[0], p[1] + r + 5);
-    c.fillStyle = pick ? '#d9a940' : s.base ? '#e8d9a8' : targ ? '#ffb4a8' : '#8fa8c4'; c.fillText(s.name, p[0], p[1] + r + 5);
+    var L = S.lab[s.id] || { dx: 0, dy: r + 4, al: 'center', bl: 'top', fs: 10 }, lx = p[0] + L.dx, ly = p[1] + L.dy;
+    if (pick && L.bl !== 'middle') ly += L.bl === 'top' ? 4 : -4;            // подпись выбранной цели — из-под прицела
+    c.font = (s.base || pick ? 'bold ' : '') + L.fs + 'px "Courier New", monospace'; c.textAlign = L.al; c.textBaseline = L.bl;
+    c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(5,7,11,0.9)'; c.strokeText(s.name, lx, ly);
+    c.fillStyle = pick ? '#d9a940' : s.base ? '#e8d9a8' : targ ? '#ffb4a8' : '#8fa8c4'; c.fillText(s.name, lx, ly);
   }
 
   // где сейчас группа: по пути туда (перелёт), у цели (подход, действие, отход), по пути обратно
@@ -101,7 +149,7 @@
   function draw() {
     var c = S.c, st = S.st; if (!c || !st) return;
     layout();
-    var t = S.t, now = Date.now() + S.skew, r = Math.max(9, Math.min(15, S.w / 34));
+    var t = S.t, now = Date.now() + S.skew, r = S.r;
     c.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
     var g = c.createRadialGradient(S.w * 0.5, S.h * 0.45, 10, S.w * 0.5, S.h * 0.5, Math.max(S.w, S.h) * 0.75);
     g.addColorStop(0, '#111a26'); g.addColorStop(1, '#06080d');
@@ -169,12 +217,13 @@
       if (!S.on) { S.on = true; S.last = 0; S.raf = requestAnimationFrame(loop); }
     },
     set: function(st, skew, opt) {
-      S.st = st; S.skew = skew || 0; S.opt = opt || {}; S.sys = {}; S.adj = {};
+      S.st = st; S.skew = skew || 0; S.opt = opt || {}; S.sys = {}; S.adj = {}; S.labKey = '';
       ((st.map && st.map.systems) || []).forEach(function(s) {
         S.sys[s.id] = s;
         if (s.tex && !S.img[s.tex]) { var im = new Image(); im.src = '../' + s.tex; S.img[s.tex] = im; }
       });
       ((st.map && st.map.lanes) || []).forEach(function(l) { (S.adj[l[0]] = S.adj[l[0]] || []).push(l[1]); (S.adj[l[1]] = S.adj[l[1]] || []).push(l[0]); });
+      if (S.box && S.box.classList) S.box.classList.toggle('dense', Object.keys(S.sys).length > 14);   // css/spy-ops.css: карте выше
     },
     sys: function(id) { return S.sys[id] || null; },
     stop: function() { S.on = false; if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }

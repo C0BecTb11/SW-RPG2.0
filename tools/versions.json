@@ -40,8 +40,8 @@
   "sha": "de8cd473ee40"
  },
  "css/spy-ops.css": {
-  "v": "1",
-  "sha": "ecfb1276a012"
+  "v": "2",
+  "sha": "0c825d569c9b"
  },
  "css/treasury.css": {
   "v": "1",
@@ -196,12 +196,12 @@
   "sha": "51abd60d3d18"
  },
  "js/spy-map.js": {
-  "v": "1",
-  "sha": "333de5ec3882"
+  "v": "2",
+  "sha": "ffeded052e99"
  },
  "js/spy-ops.js": {
-  "v": "1",
-  "sha": "89d54647d12c"
+  "v": "2",
+  "sha": "c25e62b45b9d"
  },
  "js/supabase-client.js": {
   "v": "2",

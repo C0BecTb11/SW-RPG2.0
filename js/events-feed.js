@@ -453,9 +453,9 @@ var FEED_GROUND = feedSet(['unit_deployed', 'unit_loaded', 'unit_killed', 'unit_
 var FEED_STL_TASKS = feedSet(['marauder_scouted', 'marauder_approach', 'marauder_defeated',
   'marauder_left', 'settlement_failed', 'settlement_hungry', 'settlement_conditions', 'settlement_remind']);
 
-// Здание: по готовности сразу открываем его занятие (наём, исследования); диверсии на участке — окно участка
+// Здание: по готовности сразу открываем его занятие (наём, исследования); диверсии и налёты на участке — окно участка
 var FEED_OPEN_SLOT = feedSet(['building_built', 'research_done', 'production_idle',
-  'sabotage_incident', 'sabotage_revealed', 'sabotage_caught']);
+  'sabotage_incident', 'sabotage_revealed', 'sabotage_caught', 'mine_raid_warn', 'mine_raid_repelled', 'mine_raid_lost']);
 
 function feedTarget(e) {
   var m = e.meta || {};

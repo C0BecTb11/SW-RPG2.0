@@ -121,8 +121,9 @@ SystemRoom.prototype.applyShips = function(list) {
     if (!hasPlan(s.ship_type)) { self.cfg.log('warn', 'нет плана корабля', { type: s.ship_type }); return; }
     var p = plan(s.ship_type);
     var army = Army.fromGame(s, type, s.units || [], s.craft || [], { regenSec: (self.state.settings && self.state.settings.regen) || 30 });
-    var box = boxOf(type, s.facing), side = sideOf(s.faction);
-    var sh = B.addShip({ cls: s.ship_type, plan: p, side: side, x: (s.x + box.w / 2) * CELL_M, y: (s.y + box.h / 2) * CELL_M, hd: hdOf(s.facing),
+    var box = boxOf(type, s.facing), side = sideOf(s.faction), pose = self.poseOf(s, type);
+    var sh = B.addShip({ cls: s.ship_type, plan: p, side: side,
+                         x: pose ? pose.x : (s.x + box.w / 2) * CELL_M, y: pose ? pose.y : (s.y + box.h / 2) * CELL_M, hd: pose ? pose.hd : hdOf(s.facing),
                          figMap: FIG.crewFigs(p.faction, ALL), figIds: FIG_IDS, army: army, name: army.name, id: s.id, owner: s.owner_user_id || null,
                          faction: s.faction, dormant: true, stands: s.troop_posts && typeof s.troop_posts === 'object' ? s.troop_posts : null });
     sh.gameId = s.id; sh.trophy = !!s.trophy; sh.commander = s.commander_id || null;
@@ -294,6 +295,19 @@ SystemRoom.prototype.wakeStep = function() {
   }
 };
 
+// Точная поза из прошлой орбиты (ships.rt_x / rt_y / rt_hd, sql/rt_space_pose.sql): корабль встаёт ровно там и так,
+// как его оставили. Берём её, только если она даёт ту же клетку и разворот, что в базе: иначе корабль за это
+// время двигала сама игра (автоход, прыжок, верфь) — тогда по клетке, как раньше.
+SystemRoom.prototype.poseOf = function(s, type) {
+  var q = s.rt_pose;
+  if (!Array.isArray(q) || q.length < 3 || !isFinite(+q[0]) || !isFinite(+q[1]) || !isFinite(+q[2])) return null;
+  var x = +q[0], y = +q[1], hd = +q[2], fc = facingOf(hd), box = boxOf(type, fc);
+  var cx = Math.max(0, Math.min(this.grid - box.w, Math.round(x / CELL_M - box.w / 2)));
+  var cy = Math.max(0, Math.min(this.grid - box.h, Math.round(y / CELL_M - box.h / 2)));
+  if (cx !== s.x || cy !== s.y || fc !== ((s.facing || 0) % 360)) return null;
+  return { x: x, y: y, hd: hd };
+};
+
 // ---- снимок в базу
 // Запись в базу — строго по очереди: два запроса вперемешку могли бы записать старое поверх нового
 SystemRoom.prototype.sync = function() {
@@ -320,9 +334,12 @@ SystemRoom.prototype.syncNow = function() {
     var hp = sh.dead ? 0 : Math.max(1, Math.round(maxHp * sh.hull / sh.hullMax));
     var shv = [0, 1, 2, 3].map(function(i) { return sh.dead ? 0 : Math.round(maxSh * Math.max(0, Math.min(1, sh.sh[i] / sh.shMax))); });
     var fire = self.hitAt[sh.n] != null && B.t - self.hitAt[sh.n] < FIRE_HOLD;
-    var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0);
+    // точная поза (метры и курс) — чтобы при новом открытии орбиты корабль стоял там и так, как его оставили
+    var mx = Math.round(sh.x), my = Math.round(sh.y), hd = Math.round(sh.hd * 1000) / 1000;
+    var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0) + ',' +
+              Math.round(mx / 20) + ',' + Math.round(my / 20) + ',' + Math.round(hd * 50);
     var last = self.lastSync[sh.gameId];
-    if (!last || last.key !== key) { ships.push({ id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire }); self.lastSync[sh.gameId] = { key: key, hp: hp }; }
+    if (!last || last.key !== key) { ships.push({ id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, mx: mx, my: my, hd: hd }); self.lastSync[sh.gameId] = { key: key, hp: hp }; }
     // бойцы на борту: по телам экипажа (uid), пока экипаж спит — как были
     if (sh.dead) { (sh.units || []).forEach(function(u) { if (self.unitHp[u.id] !== 0) { units.push({ id: u.id, hp: 0 }); self.unitHp[u.id] = 0; } }); sh.craftIds.forEach(function(id) { if (self.craftHp[id] !== 0) { craft.push({ id: id, hp: 0 }); self.craftHp[id] = 0; } }); sh.synced = true; return; }
     if (!sh.dormant) {

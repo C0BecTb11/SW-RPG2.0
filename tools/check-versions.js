@@ -5,7 +5,8 @@
 // старый код смешивается с новым (так ломалось: rt-vehicles.js без V.check). Проверка:
 //   1) один и тот же файл везде с одной версией (страницы, загрузчики в JS, воркеры);
 //   2) содержимое файла не менялось при той же версии — сверка с tools/versions.json
-//      (там отпечаток содержимого каждого файла на его текущей версии).
+//      (там отпечаток содержимого каждого файла на его текущей версии);
+//   3) нет подключений без ?v= вовсе (их браузер держит в кэше сколько угодно).
 //
 //   node tools/check-versions.js            — проверить (код выхода 1 при ошибке)
 //   node tools/check-versions.js --update   — после поднятия версий записать отпечатки
@@ -38,6 +39,18 @@ for (const f of files) {
     (refs[target] = refs[target] || []).push({ from: f, v: m[2] });
   }
 }
+// 3) подключение без ?v= вообще: такой файл браузер держит в кэше сколько угодно — правка до игрока не доходит.
+//    Страницы: src/href на свой .js/.css; скрипты: loadScript(…), new Worker(…), importScripts(…).
+const bare = /\b(?:src|href)\s*=\s*"([^"?#:]+\.(?:js|css))"|(?:loadScript|new Worker|importScripts)\(\s*['"]([^'"?#:]+\.(?:js|css))['"]/g;
+for (const f of files) {
+  const txt = fs.readFileSync(path.join(root, f), 'utf8');
+  let m;
+  while ((m = bare.exec(txt))) {
+    const url = m[1] || m[2];
+    const target = path.posix.normalize(path.posix.join(path.posix.dirname(f), url));
+    if (fs.existsSync(path.join(root, target))) (refs['!' + target] = refs['!' + target] || []).push({ from: f, v: '' });
+  }
+}
 const sha = f => crypto.createHash('sha1').update(fs.readFileSync(path.join(root, f))).digest('hex').slice(0, 12);
 let man = {}; try { man = JSON.parse(fs.readFileSync(MANIFEST, 'utf8')); } catch (e) {}
 const update = process.argv.includes('--update');
@@ -47,6 +60,7 @@ const next = {};
 Object.keys(refs).sort().forEach(t => {
   const list = refs[t], vs = Array.from(new Set(list.map(r => r.v)));
   if (t[0] === '?') return err('нет файла ' + t.slice(1) + ' (ссылка из ' + list.map(r => r.from).join(', ') + ')');
+  if (t[0] === '!') return err(t.slice(1) + ': подключён без ?v= в ' + Array.from(new Set(list.map(r => r.from))).join(', ') + ' — поставь ту же версию, что в остальных местах (или v=1)');
   if (vs.length > 1) err(t + ': разные версии — ' + vs.map(v => 'v=' + v + ' в ' + list.filter(r => r.v === v).map(r => r.from).join(', ')).join('; '));
   const v = String(Math.max.apply(null, vs.map(Number))), h = sha(t), was = man[t];
   next[t] = { v: v, sha: h };

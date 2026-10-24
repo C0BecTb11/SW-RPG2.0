@@ -24,8 +24,8 @@
   "sha": "aafae6e1d7f2"
  },
  "css/mine-site.css": {
-  "v": "7",
-  "sha": "99e022a1c48d"
+  "v": "8",
+  "sha": "6595fbba7fc9"
  },
  "css/reports.css": {
   "v": "2",
@@ -108,8 +108,8 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "7",
-  "sha": "34b99111d713"
+  "v": "8",
+  "sha": "e133cd235b01"
  },
  "js/events.js": {
   "v": "4",
@@ -148,12 +148,12 @@
   "sha": "40edf2e28ad0"
  },
  "js/mine-scene.js": {
-  "v": "6",
-  "sha": "8fd88a738c94"
+  "v": "7",
+  "sha": "b1ca83f9f3ab"
  },
  "js/mine-site.js": {
-  "v": "8",
-  "sha": "bf4f9c81318e"
+  "v": "9",
+  "sha": "e914b4fc79fc"
  },
  "js/planet-info.js": {
   "v": "2",

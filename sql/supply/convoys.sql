@@ -374,12 +374,13 @@ begin
 
   v_stops := jsonb_build_array(jsonb_build_object('system_id', v_pickup, 'actions', jsonb_build_array(
                jsonb_build_object('op', 'pickup', 'order_id', p_order_id, 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left))));
+  -- выгружается только сама покупка: другой груз в трюмах флота остаётся при нём
   if p_to_system = v_pickup then
     v_stops := jsonb_set(v_stops, '{0,actions}', (v_stops -> 0 -> 'actions')
-                 || jsonb_build_array(jsonb_build_object('op', 'unload', 'resource', '*', 'mode', 'all', 'amount', null)));
+                 || jsonb_build_array(jsonb_build_object('op', 'unload', 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left)));
   else
     v_stops := v_stops || jsonb_build_array(jsonb_build_object('system_id', p_to_system, 'actions', jsonb_build_array(
-                 jsonb_build_object('op', 'unload', 'resource', '*', 'mode', 'all', 'amount', null))));
+                 jsonb_build_object('op', 'unload', 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left))));
   end if;
   if coalesce(p_return_home, false) and cm.current_system not in (p_to_system, v_pickup) then
     if convoy_route(p_to_system, cm.current_system, v_faction) is null then
@@ -399,8 +400,12 @@ begin
   perform log_event(v_user, v_faction, cm.current_system, 'convoy_departed', cm.name, o.amount_left, 'private',
                     jsonb_build_object('pickup', v_pickup, 'to', p_to_system, 'resource', v_res, 'route_id', v_id));
 
-  -- первый шаг сразу, не дожидаясь такта: прыжок или погрузка, если флот уже у продавца
+  -- первый шаг сразу, не дожидаясь такта: прыжок или погрузка, если флот уже у продавца.
+  -- Встал на первом же шаге (флот не в зоне прыжка и т. п.) — отправка не состоялась, причина игроку
   perform supply_route_step(v_id);
+  if (select status from supply_routes where id = v_id) = 'stalled' then
+    raise exception '%', (select last_note from supply_routes where id = v_id);
+  end if;
   return v_id;
 end;
 $function$

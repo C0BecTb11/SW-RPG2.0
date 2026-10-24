@@ -115,7 +115,11 @@ begin
       and cm.moving_to is null and cm.current_system is not null
     for update of s skip locked
   loop
-    perform place_ship_in_hyperspace(sh.id, sh.current_system);
+    begin
+      perform place_ship_in_hyperspace(sh.id, sh.current_system);
+    exception when others then
+      perform err_db('finish_due_commander_moves.place', sqlstate, sqlerrm, true);
+    end;
   end loop;
 end;
 $function$

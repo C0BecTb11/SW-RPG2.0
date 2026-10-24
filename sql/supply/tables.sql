@@ -1,8 +1,8 @@
 -- Снимок таблиц снабжения (схема public), проект zqqaxhhajhgspaiwlyhy, 24.10.2026
 -- Восстановлено по pg_attribute / pg_constraint / pg_indexes / pg_trigger / pg_policies. Справка, а не миграция.
--- У всех таблиц включён RLS. С sql/supply_fixes.sql у anon и authenticated на таблицы снабжения и рынка только SELECT
--- (convoys, market_lots, market_orders, planet_stock, supply_*); на ship_cargo и ship_resource_cargo права прежние
--- (SELECT, INSERT, UPDATE, TRUNCATE по умолчанию Supabase) — в них пишет абордаж.
+-- У всех таблиц включён RLS. С sql/supply_fixes.sql на таблицы снабжения и рынка (convoys, market_lots, market_orders,
+-- planet_stock, supply_*) у authenticated только SELECT, у anon прав нет; ship_cargo и ship_resource_cargo не трогали —
+-- в них пишет абордаж, права там остались выданными Supabase по умолчанию.
 
 CREATE TABLE public.convoys (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

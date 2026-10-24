@@ -729,9 +729,9 @@
         var toward = r.phase === 'travel' && r.status !== 'stopped' && i === idx;
         chain += '<span class="sup-link' + (toward ? (stt.cls === 'travel' ? ' moving' : ' toward') : '') + '"></span>';
       }
-      // Разовый рейс «и домой»: последняя остановка без действий на первой планете
-      var home = !r.loop && i > 0 && i === stops.length - 1 && stops[0] && s.system_id === stops[0].system_id &&
-        !(s.actions || []).length;
+      // Разовый рейс «и домой»: последняя остановка без действий — на первой планете или (у вывоза покупки) там, откуда вылетел
+      var home = !r.loop && i > 0 && i === stops.length - 1 && !(s.actions || []).length &&
+        ((stops[0] && s.system_id === stops[0].system_id) || isPickupRoute(r));
       chain += '<div class="' + cls + (home ? ' home' : '') + '"><span class="sup-node-dot">' + (home ? '↩' : (i + 1)) + '</span>' +
         '<span class="sup-node-name">' + esc(shortName(stopName(s))) + '</span></div>';
     });
@@ -766,7 +766,7 @@
     if (open) {
       detail = '<div class="sup-detail"><div class="sup-plan">' + stops.map(function(s, i) {
         return '<div class="sup-plan-stop"><span>' + (i + 1) + '</span><div><b>' + esc(stopName(s)) + '</b> — ' +
-          (s.actions || []).map(actionText).join('; ') + '</div></div>';
+          ((s.actions || []).map(actionText).join('; ') || 'вернуться домой') + '</div></div>';
       }).join('') + '</div><span class="sup-label">Журнал</span>' + renderLog(r.id) + '</div>';
     }
 
@@ -1427,7 +1427,7 @@
           : '<button type="button" class="sup-btn buy wide" data-act="pick-open" data-id="' + id + '">Вывезти флотом</button>';
       }
     } else {
-      h += '<div class="sup-order-left">Флот уже летит — смотри «Конвои в пути» во вкладке «Рейсы»</div>';
+      h += '<div class="sup-order-left">Флот уже летит — рейс вывоза во вкладке «Рейсы»</div>';
     }
     return h + '</div>';
   }
@@ -1596,8 +1596,8 @@
       st.pick.sending = false;
       if (res.error) { toast(errText(res.error), true); render(); return; }
       st.pick = null;
-      toast('Флот вылетел за покупкой — следи в «Рейсах», раздел «Конвои в пути»');
-      load(['orders', 'convoys'], function() { updateTabCounts(); if (st.tab === 'market') render(); });
+      toast('Флот вылетел за покупкой — рейс вывоза во вкладке «Рейсы»');
+      load(['orders', 'routes'], function() { updateTabCounts(); if (st.tab === 'market') render(); });
     });
   }
 
@@ -1802,8 +1802,11 @@
     btn.disabled = true;
     call('cancel_market_lot', { p_lot_id: id }).then(function(res) {
       if (res.error) { btn.disabled = false; toast(errText(res.error), true); return; }
+      // что не влезло на склад, сервер оставляет в лоте — он продолжает продаваться
       var fit = num(res.data), left = l ? num(l.amount_left) : fit;
-      toast(fit < left ? 'Лот снят — на склад влезло ' + fit + ' из ' + left : 'Лот снят — остаток вернулся на склад');
+      toast(fit <= 0 ? 'На складе нет места — лот остался на продаже'
+        : fit < left ? 'На склад вернулось ' + fit + ' — места больше нет, ' + (left - fit) + ' осталось в лоте'
+        : 'Лот снят — остаток вернулся на склад');
       load(['mylots', 'planets', 'lots'], function() { updateTabCounts(); if (st.tab === 'market') render(); });
     });
   }

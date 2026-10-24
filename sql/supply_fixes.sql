@@ -344,12 +344,13 @@ begin
 
   v_stops := jsonb_build_array(jsonb_build_object('system_id', v_pickup, 'actions', jsonb_build_array(
                jsonb_build_object('op', 'pickup', 'order_id', p_order_id, 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left))));
+  -- выгружается только сама покупка: другой груз в трюмах флота остаётся при нём
   if p_to_system = v_pickup then
     v_stops := jsonb_set(v_stops, '{0,actions}', (v_stops -> 0 -> 'actions')
-                 || jsonb_build_array(jsonb_build_object('op', 'unload', 'resource', '*', 'mode', 'all', 'amount', null)));
+                 || jsonb_build_array(jsonb_build_object('op', 'unload', 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left)));
   else
     v_stops := v_stops || jsonb_build_array(jsonb_build_object('system_id', p_to_system, 'actions', jsonb_build_array(
-                 jsonb_build_object('op', 'unload', 'resource', '*', 'mode', 'all', 'amount', null))));
+                 jsonb_build_object('op', 'unload', 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left))));
   end if;
   if coalesce(p_return_home, false) and cm.current_system not in (p_to_system, v_pickup) then
     if convoy_route(p_to_system, cm.current_system, v_faction) is null then
@@ -369,8 +370,12 @@ begin
   perform log_event(v_user, v_faction, cm.current_system, 'convoy_departed', cm.name, o.amount_left, 'private',
                     jsonb_build_object('pickup', v_pickup, 'to', p_to_system, 'resource', v_res, 'route_id', v_id));
 
-  -- первый шаг сразу, не дожидаясь такта: прыжок или погрузка, если флот уже у продавца
+  -- первый шаг сразу, не дожидаясь такта: прыжок или погрузка, если флот уже у продавца.
+  -- Встал на первом же шаге (флот не в зоне прыжка и т. п.) — отправка не состоялась, причина игроку
   perform supply_route_step(v_id);
+  if (select status from supply_routes where id = v_id) = 'stalled' then
+    raise exception '%', (select last_note from supply_routes where id = v_id);
+  end if;
   return v_id;
 end;
 $$;
@@ -566,15 +571,14 @@ create or replace function public.supply_cleanup()
 returns void language plpgsql security definer set search_path to 'public', 'pg_temp' as $$
 declare v_del text := 'del' || 'ete from ';
 begin
+  -- журналы рейсов и supply_takes старше 7 дней и так чистит cleanup_old_records; здесь — то, что держат ссылки
   execute v_del || 'convoys where departed_at < now() - interval ''14 days''';
-  execute v_del || 'supply_route_log where at < now() - interval ''14 days''';
   execute v_del || 'supply_route_log l using supply_routes r where l.route_id = r.id and r.status = ''stopped'' and r.updated_at < now() - interval ''14 days''';
   execute v_del || 'supply_routes where status = ''stopped'' and updated_at < now() - interval ''14 days''';
   execute v_del || 'market_orders o where o.status <> ''reserved'' and o.created_at < now() - interval ''14 days''
                      and not exists (select 1 from supply_routes r where r.order_id = o.id)';
   execute v_del || 'market_lots l where not l.active and l.created_at < now() - interval ''14 days''
                      and not exists (select 1 from market_orders o where o.lot_id = l.id)';
-  execute v_del || 'supply_takes where taken_at < now() - interval ''14 days''';
   execute v_del || 'supply_grants where status in (''revoked'', ''declined'') and coalesce(decided_at, created_at) < now() - interval ''30 days''';
 exception when others then
   perform err_db('supply_cleanup', sqlstate, sqlerrm, true);
@@ -591,3 +595,146 @@ begin
 end $$;
 
 select cron.schedule('supply-cleanup', '35 4 * * *', $$select public.supply_cleanup()$$);
+
+-- =========================================================================================== 11. по итогам вычитки
+-- Захват: ставки покупателей — новый тип события, а не «бронь просрочена»
+insert into public.event_types (type, category, title, tone, jumpable)
+values ('market_order_cancelled', 'build', 'Покупка отменена — планету захватили', 'warn', false)
+on conflict (type) do nothing;
+
+-- живая ли бронь у остановки «забрать покупку»
+create or replace function public.supply_pickup_live(p_stop jsonb)
+returns boolean language sql stable security definer set search_path to 'public', 'pg_temp' as $$
+  select exists (select 1 from jsonb_array_elements(coalesce(p_stop -> 'actions', '[]'::jsonb)) a
+                 join market_orders o on o.id = (a.value ->> 'order_id')::uuid
+                  where a.value ->> 'op' = 'pickup' and o.status = 'reserved');
+$$;
+revoke all on function public.supply_pickup_live(jsonb) from public, anon, authenticated;
+
+-- Захват: брони блокируются раньше лотов (тот же порядок, что у market_expire_tick — без взаимной блокировки);
+-- товар лота остаётся на планете целиком, и сверх предела склада тоже; покупателю — своё событие
+do $$
+declare d text; a text; b text;
+begin
+  d := pg_get_functiondef('public.refund_pending_on_capture(text)'::regprocedure);
+  if position('market_order_cancelled' in d) > 0 then return; end if;
+  a := $q$  v_goods integer;
+begin$q$;
+  b := $q$  v_goods integer;
+  v_fit integer;
+begin$q$;
+  if position(a in d) = 0 then raise exception 'refund_pending_on_capture: объявления не найдены'; end if;
+  d := replace(d, a, b);
+  a := $q$  for r in
+    select l.* from market_lots l where l.system_id = p_system_id and l.active for update
+  loop$q$;
+  b := $q$  perform 1 from market_orders mo join market_lots l on l.id = mo.lot_id
+   where l.system_id = p_system_id and l.active and mo.status = 'reserved'
+   order by mo.id for update of mo;
+  for r in
+    select l.* from market_lots l where l.system_id = p_system_id and l.active order by l.id for update
+  loop$q$;
+  if position(a in d) = 0 then raise exception 'refund_pending_on_capture: цикл лотов не найден'; end if;
+  d := replace(d, a, b);
+  a := $q$      perform log_event(o.buyer_user_id, null, p_system_id, 'market_expired', null, v_back, 'private',$q$;
+  b := $q$      perform log_event(o.buyer_user_id, null, p_system_id, 'market_order_cancelled', null, v_back, 'private',$q$;
+  if position(a in d) = 0 then raise exception 'refund_pending_on_capture: событие покупателя не найдено'; end if;
+  d := replace(d, a, b);
+  a := $q$    perform add_planet_stock(p_system_id, r.resource, v_goods);$q$;
+  b := $q$    -- ресурсы при захвате остаются на планете целиком — и то, что выше предела склада (как запас, внесённый вручную)
+    v_fit := add_planet_stock(p_system_id, r.resource, v_goods);
+    if v_goods > v_fit then
+      update planet_stock set amount = amount + (v_goods - v_fit)
+       where system_id = p_system_id and resource = r.resource;
+    end if;$q$;
+  if position(a in d) = 0 then raise exception 'refund_pending_on_capture: возврат товара не найден'; end if;
+  execute replace(d, a, b);
+end $$;
+
+-- Рейс вывоза: к закрытой брони не летим, потерянные свои остановки пропускаем — у вывоза нет «Изменить»,
+-- поэтому вставать с просьбой изменить рейс ему нельзя
+do $$
+declare d text; a text; b text;
+begin
+  d := pg_get_functiondef('public.supply_route_step(uuid)'::regprocedure);
+  if position('supply_pickup_live' in d) > 0 then return; end if;
+  a := $q$    v_tfac := null; v_tname := null;
+    select s.faction, s.name into v_tfac, v_tname from systems s where s.id = v_target;
+$q$;
+  b := $q$    v_tfac := null; v_tname := null;
+    select s.faction, s.name into v_tfac, v_tname from systems s where s.id = v_target;
+
+    if r.order_id is not null
+       and ((supply_stop_is_pickup(r.stops -> r.stop_index) and not supply_pickup_live(r.stops -> r.stop_index))
+            or (v_tfac is distinct from v_fac and not supply_stop_is_pickup(r.stops -> r.stop_index))) then
+      perform supply_log(r.id, v_here,
+        case when supply_stop_is_pickup(r.stops -> r.stop_index) then 'Покупка закрыта — к продавцу не летим'
+             else coalesce(v_tname, v_target) || ' больше не планета фракции — остановка пропущена' end, 0);
+      if r.stop_index + 1 < v_n then
+        update supply_routes set stop_index = r.stop_index + 1, phase = 'travel', updated_at = now() where id = r.id;
+        continue;
+      end if;
+      update supply_routes
+         set status = 'stopped', phase = 'at_stop',
+             last_note = case when supply_hold_total(cm.id) > 0 then 'Рейс завершён — груз остался в трюме' else 'Рейс завершён' end,
+             updated_at = now()
+       where id = r.id;
+      perform supply_log(r.id, v_here, 'Рейс завершён: дальше лететь некуда', 0);
+      exit;
+    end if;
+$q$;
+  if position(a in d) = 0 then raise exception 'supply_route_step: чтение остановки не найдено'; end if;
+  execute replace(d, a, b);
+end $$;
+
+-- Подлёт: «покупатель» — только пока бронь жива; закрытая бронь — обычный флот
+do $$
+declare d text; a text; b text;
+begin
+  d := pg_get_functiondef('public.approach_warning_tick()'::regprocedure);
+  if position('supply_pickup_live' in d) > 0 then return; end if;
+  a := $q$          and supply_stop_is_pickup(sr.stops -> sr.stop_index));$q$;
+  b := $q$          and supply_pickup_live(sr.stops -> sr.stop_index));$q$;
+  if position(a in d) = 0 then raise exception 'approach_warning_tick: проверка покупателя не найдена'; end if;
+  execute replace(d, a, b);
+end $$;
+
+-- Передача кораблей: флот на рейсе снабжения (в том числе на вывозе покупки) не передаётся
+do $$
+declare d text; a text; b text;
+begin
+  d := pg_get_functiondef('public.transfer_block_ship(uuid)'::regprocedure);
+  if position('supply_routes' in d) > 0 then return; end if;
+  a := $q$  if s.commander_id is not null and exists (
+       select 1 from convoys where commander_id = s.commander_id
+         and status in ('in_flight','stalled')) then
+    return 'идёт в конвое';
+  end if;$q$;
+  b := $q$  if s.commander_id is not null and exists (
+       select 1 from supply_routes where commander_id = s.commander_id
+         and status <> 'stopped') then
+    return 'работает на рейсе снабжения';
+  end if;$q$;
+  if position(a in d) = 0 then raise exception 'transfer_block_ship: проверка конвоя не найдена'; end if;
+  execute replace(d, a, b);
+end $$;
+
+-- Такт прибытий: и расстановка кораблей по одному — сбой одного не останавливает остальных
+do $$
+declare d text; a text; b text;
+begin
+  d := pg_get_functiondef('public.finish_due_commander_moves()'::regprocedure);
+  if position('err_db(''finish_due_commander_moves.place''' in d) > 0 then return; end if;
+  a := $q$  loop
+    perform place_ship_in_hyperspace(sh.id, sh.current_system);
+  end loop;$q$;
+  b := $q$  loop
+    begin
+      perform place_ship_in_hyperspace(sh.id, sh.current_system);
+    exception when others then
+      perform err_db('finish_due_commander_moves.place', sqlstate, sqlerrm, true);
+    end;
+  end loop;$q$;
+  if position(a in d) = 0 then raise exception 'finish_due_commander_moves: расстановка кораблей не найдена'; end if;
+  execute replace(d, a, b);
+end $$;

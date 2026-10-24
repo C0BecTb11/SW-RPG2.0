@@ -102,6 +102,25 @@ begin
 
     v_tfac := null; v_tname := null;
     select s.faction, s.name into v_tfac, v_tname from systems s where s.id = v_target;
+
+    if r.order_id is not null
+       and ((supply_stop_is_pickup(r.stops -> r.stop_index) and not supply_pickup_live(r.stops -> r.stop_index))
+            or (v_tfac is distinct from v_fac and not supply_stop_is_pickup(r.stops -> r.stop_index))) then
+      perform supply_log(r.id, v_here,
+        case when supply_stop_is_pickup(r.stops -> r.stop_index) then 'Покупка закрыта — к продавцу не летим'
+             else coalesce(v_tname, v_target) || ' больше не планета фракции — остановка пропущена' end, 0);
+      if r.stop_index + 1 < v_n then
+        update supply_routes set stop_index = r.stop_index + 1, phase = 'travel', updated_at = now() where id = r.id;
+        continue;
+      end if;
+      update supply_routes
+         set status = 'stopped', phase = 'at_stop',
+             last_note = case when supply_hold_total(cm.id) > 0 then 'Рейс завершён — груз остался в трюме' else 'Рейс завершён' end,
+             updated_at = now()
+       where id = r.id;
+      perform supply_log(r.id, v_here, 'Рейс завершён: дальше лететь некуда', 0);
+      exit;
+    end if;
     if v_tfac is distinct from v_fac and not supply_stop_is_pickup(r.stops -> r.stop_index) then
       perform supply_route_stall(r.id, 'Остановка ' || (r.stop_index + 1) || ' ('
         || coalesce(v_tname, v_target) || ') больше не планета фракции — измени рейс');
@@ -1197,17 +1216,28 @@ CREATE OR REPLACE FUNCTION public.supply_cleanup()
 AS $function$
 declare v_del text := 'del' || 'ete from ';
 begin
+  -- журналы рейсов и supply_takes старше 7 дней и так чистит cleanup_old_records; здесь — то, что держат ссылки
   execute v_del || 'convoys where departed_at < now() - interval ''14 days''';
-  execute v_del || 'supply_route_log where at < now() - interval ''14 days''';
   execute v_del || 'supply_route_log l using supply_routes r where l.route_id = r.id and r.status = ''stopped'' and r.updated_at < now() - interval ''14 days''';
   execute v_del || 'supply_routes where status = ''stopped'' and updated_at < now() - interval ''14 days''';
   execute v_del || 'market_orders o where o.status <> ''reserved'' and o.created_at < now() - interval ''14 days''
                      and not exists (select 1 from supply_routes r where r.order_id = o.id)';
   execute v_del || 'market_lots l where not l.active and l.created_at < now() - interval ''14 days''
                      and not exists (select 1 from market_orders o where o.lot_id = l.id)';
-  execute v_del || 'supply_takes where taken_at < now() - interval ''14 days''';
   execute v_del || 'supply_grants where status in (''revoked'', ''declined'') and coalesce(decided_at, created_at) < now() - interval ''30 days''';
 exception when others then
   perform err_db('supply_cleanup', sqlstate, sqlerrm, true);
 end;
+$function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.supply_pickup_live(p_stop jsonb)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select exists (select 1 from jsonb_array_elements(coalesce(p_stop -> 'actions', '[]'::jsonb)) a
+                 join market_orders o on o.id = (a.value ->> 'order_id')::uuid
+                  where a.value ->> 'op' = 'pickup' and o.status = 'reserved');
 $function$

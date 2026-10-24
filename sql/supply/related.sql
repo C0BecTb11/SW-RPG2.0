@@ -119,6 +119,7 @@ declare
   o record;
   v_back integer;
   v_goods integer;
+  v_fit integer;
 begin
   -- Юниты в производстве
   for r in
@@ -186,8 +187,11 @@ begin
 
   -- Рынок: лоты на захваченной планете закрываются. Покупателям — деньги по броням,
   -- товар (непроданный и забронированный) остаётся на складе планеты: ресурсы при захвате остаются на ней
+  perform 1 from market_orders mo join market_lots l on l.id = mo.lot_id
+   where l.system_id = p_system_id and l.active and mo.status = 'reserved'
+   order by mo.id for update of mo;
   for r in
-    select l.* from market_lots l where l.system_id = p_system_id and l.active for update
+    select l.* from market_lots l where l.system_id = p_system_id and l.active order by l.id for update
   loop
     v_goods := r.amount_left;
     for o in
@@ -197,10 +201,15 @@ begin
       update profiles set credits = credits + v_back where id = o.buyer_user_id;
       update market_orders set status = 'cancelled', amount_left = 0 where id = o.id;
       v_goods := v_goods + o.amount_left;
-      perform log_event(o.buyer_user_id, null, p_system_id, 'market_expired', null, v_back, 'private',
+      perform log_event(o.buyer_user_id, null, p_system_id, 'market_order_cancelled', null, v_back, 'private',
                         jsonb_build_object('reason', 'capture'));
     end loop;
-    perform add_planet_stock(p_system_id, r.resource, v_goods);
+    -- ресурсы при захвате остаются на планете целиком — и то, что выше предела склада (как запас, внесённый вручную)
+    v_fit := add_planet_stock(p_system_id, r.resource, v_goods);
+    if v_goods > v_fit then
+      update planet_stock set amount = amount + (v_goods - v_fit)
+       where system_id = p_system_id and resource = r.resource;
+    end if;
     update market_lots set active = false, amount_left = 0 where id = r.id;
     perform log_event(r.seller_user_id, r.seller_faction, p_system_id, 'market_cancelled', r.resource, v_goods, 'private',
                       jsonb_build_object('reason', 'capture'));
@@ -440,7 +449,7 @@ begin
         select 1 from supply_routes sr
         where sr.commander_id = c.id and sr.status = 'active' and sr.order_id is not null
           and sr.stops -> sr.stop_index ->> 'system_id' = c.moving_to
-          and supply_stop_is_pickup(sr.stops -> sr.stop_index));
+          and supply_pickup_live(sr.stops -> sr.stop_index));
 
       if v_trade then
         perform log_event(v_owner,
@@ -473,3 +482,45 @@ $function$
 --     insert into planet_stock (system_id, resource, amount) values (sh.system_id, k, v_back)
 --     on conflict (system_id, resource) do update set amount = planet_stock.amount + v_back;
 --   end if;
+
+-- ----------------------------------------
+-- Передача кораблей между игроками: что запрещает передачу (флот на рейсе снабжения — с sql/supply_fixes.sql)
+CREATE OR REPLACE FUNCTION public.transfer_block_ship(p_ship_id uuid)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare s record;
+begin
+  select * into s from ships where id = p_ship_id;
+  if not found then return 'корабля больше нет'; end if;
+
+  if s.carrier_ship_id is not null then return 'в ангаре носителя'; end if;
+  if s.in_transit then return 'в гиперпространстве'; end if;
+  if ship_active_boarding(p_ship_id) is not null then return 'сцеплен абордажем'; end if;
+  if s.tractor_until is not null and s.tractor_until > now() then return 'пойман лучом'; end if;
+  if s.commander_id is not null and exists (
+       select 1 from commanders where id = s.commander_id and moving_to is not null) then
+    return 'командир в пути';
+  end if;
+  if s.commander_id is not null and exists (
+       select 1 from supply_routes where commander_id = s.commander_id
+         and status <> 'stopped') then
+    return 'работает на рейсе снабжения';
+  end if;
+  if exists (select 1 from repair_orders r
+             where not r.delivered
+               and (r.ship_id = p_ship_id
+                    or r.ship_id in (select f.id from ships f where f.carrier_ship_id = p_ship_id))) then
+    return 'в ремонте или модернизации';
+  end if;
+  if exists (select 1 from transfer_ship_inside(p_ship_id) i
+             join unit_positions c on c.id = i.id
+             join unit_types ct on ct.id = c.unit_type
+             where ct.is_hero or c.hero_id is not null or c.control_until is not null) then
+    return 'на борту одарённый — высади его';
+  end if;
+  return null;
+end;
+$function$

@@ -202,8 +202,7 @@ begin
       v_used := v_used || jsonb_build_object(k, case when p_status = 'lost' then (sh.input ->> k)::integer else v_n end);
       v_back := (sh.input ->> k)::integer - v_n;
       if p_status <> 'lost' and v_back > 0 then
-        insert into planet_stock (system_id, resource, amount) values (sh.system_id, k, v_back)
-        on conflict (system_id, resource) do update set amount = planet_stock.amount + v_back;
+        perform add_planet_stock(sh.system_id, k, v_back);   -- в пределах склада планеты, как вся добыча
       end if;
     end loop;
     update mine_shifts set input_used = v_used where id = p_shift;

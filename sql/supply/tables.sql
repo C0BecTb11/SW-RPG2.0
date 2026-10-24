@@ -1,7 +1,8 @@
 -- Снимок таблиц снабжения (схема public), проект zqqaxhhajhgspaiwlyhy, 24.10.2026
 -- Восстановлено по pg_attribute / pg_constraint / pg_indexes / pg_trigger / pg_policies. Справка, а не миграция.
--- У всех таблиц включён RLS. У роли authenticated права SELECT, INSERT, UPDATE, TRUNCATE (выдача Supabase по умолчанию);
--- запись закрыта RLS — политик INSERT/UPDATE нет.
+-- У всех таблиц включён RLS. С sql/supply_fixes.sql на таблицы снабжения и рынка (convoys, market_lots, market_orders,
+-- planet_stock, supply_*) у authenticated только SELECT, у anon прав нет; ship_cargo и ship_resource_cargo не трогали —
+-- в них пишет абордаж, права там остались выданными Supabase по умолчанию.
 
 CREATE TABLE public.convoys (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -170,11 +171,14 @@ CREATE TABLE public.supply_routes (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   transit_wait_since timestamptz,
+  order_id uuid,                       -- вывоз покупки: бронь, за которой летит рейс (sql/supply_fixes.sql)
   CONSTRAINT supply_routes_pkey PRIMARY KEY (id),
+  CONSTRAINT supply_routes_order_id_fkey FOREIGN KEY (order_id) REFERENCES market_orders(id),
   CONSTRAINT supply_routes_phase_check CHECK (phase = ANY (ARRAY['travel','at_stop','waiting'])),
   CONSTRAINT supply_routes_status_check CHECK (status = ANY (ARRAY['active','paused','stalled','stopped']))
 );
 CREATE UNIQUE INDEX supply_routes_one_per_commander ON public.supply_routes USING btree (commander_id) WHERE (status <> 'stopped');
+CREATE INDEX supply_routes_order_idx ON public.supply_routes USING btree (order_id) WHERE (status <> 'stopped');
 CREATE INDEX supply_routes_owner  ON public.supply_routes USING btree (owner_user_id);
 CREATE INDEX supply_routes_status ON public.supply_routes USING btree (status);
 -- политик нет: только через RPC
@@ -228,12 +232,13 @@ CREATE INDEX supply_takes_sys_res_at ON public.supply_takes USING btree (system_
 --   approach_warn_pct    = 80       (approach_warning_tick)
 --   mine_site_cap = 300, capture_seconds = 21600, deploy_capacity = 72 (к снабжению не относятся)
 -- district_types 'warehouses'.effect_value = 300 (прибавка к пределу склада планеты)
--- building_types: rep_depot/cis_depot storage_bonus = 800 (цена 1800); rep_logistics (1500) / cis_logistics (3000) и
+-- building_types: rep_depot/cis_depot storage_bonus = 800 (цена 1800); rep_logistics / cis_logistics — 2000 (до sql/supply_fixes.sql 1500 / 3000) и
 --   rep_trade / cis_trade (2000) — storage_bonus 0. На 24.10.2026 ни одной из этих шести построек в мире нет.
 --
 -- такты pg_cron, связанные со снабжением (за последние 2 суток все прошли без ошибок):
 --   supply-tick            20 seconds   select supply_tick()
 --   market-expiry          */5 * * * *  select market_expire_tick()
+--   supply-cleanup         35 4 * * *   select supply_cleanup()   (с sql/supply_fixes.sql: журналы и завершённое старше 14 дней)
 --   finish-commander-moves 30 seconds   select finish_due_commander_moves()   -> finish_commander_move -> unload_convoy_on_arrival
 --   interceptions          15 seconds   select interception_tick()
 --   approach-warnings      15 seconds   select approach_warning_tick()

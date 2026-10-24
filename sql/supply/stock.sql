@@ -11,19 +11,15 @@ AS $function$
 declare v_cap integer; v_have integer; v_fit integer;
 begin
   if p_amount <= 0 then return 0; end if;
-
   v_cap := planet_stock_cap(p_system_id);
-  select coalesce(amount, 0) into v_have
-  from planet_stock where system_id = p_system_id and resource = p_resource;
-
+  -- строка склада под блокировкой: два одновременных пополнения не поднимут запас выше предела
+  insert into planet_stock (system_id, resource, amount) values (p_system_id, p_resource, 0)
+  on conflict (system_id, resource) do nothing;
+  select amount into v_have from planet_stock
+   where system_id = p_system_id and resource = p_resource for update;
   v_fit := least(p_amount, greatest(0, v_cap - coalesce(v_have, 0)));
   if v_fit = 0 then return 0; end if;
-
-  insert into planet_stock (system_id, resource, amount)
-  values (p_system_id, p_resource, v_fit)
-  on conflict (system_id, resource) do update
-    set amount = planet_stock.amount + v_fit;
-
+  update planet_stock set amount = amount + v_fit where system_id = p_system_id and resource = p_resource;
   return v_fit;
 end;
 $function$
@@ -149,8 +145,10 @@ AS $function$
        + coalesce((
            select sum(bt.storage_bonus)::integer
            from buildings b join building_types bt on bt.id = b.building_type_id
+           join systems sy on sy.id = b.system_id
            where b.system_id = p_system_id
              and (b.completes_at is null or b.completes_at <= now())
+             and b.faction = sy.faction
          ), 0);
 $function$
 

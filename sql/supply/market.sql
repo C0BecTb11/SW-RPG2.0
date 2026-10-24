@@ -59,18 +59,23 @@ AS $function$
 declare v_user uuid := auth.uid(); l record; v_fit integer;
 begin
   select * into l from market_lots where id = p_lot_id for update;
-  if not found then raise exception 'Лот не найден'; end if;
+  if not found or not l.active then raise exception 'Лот не найден'; end if;
   if l.seller_user_id <> v_user then raise exception 'Это не твой лот'; end if;
-
-  -- Пока есть оплаченные брони, снимать нельзя: покупатель уже в пути
-  if exists (select 1 from market_orders o
-             where o.lot_id = p_lot_id and o.status = 'reserved') then
+  -- товар возвращается на склад планеты — только если планета всё ещё твоя
+  if not exists (select 1 from system_control sc where sc.system_id = l.system_id and sc.controller_user_id = v_user) then
+    raise exception 'Планета больше не под твоим контролем — товар лота остался на ней';
+  end if;
+  -- пока есть оплаченные брони, снимать нельзя: покупатель уже в пути
+  if exists (select 1 from market_orders o where o.lot_id = p_lot_id and o.status = 'reserved') then
     raise exception 'По лоту есть неисполненные брони — дождись вывоза или их истечения';
   end if;
 
+  -- что не влезло на склад, остаётся в лоте — не сгорает
   v_fit := add_planet_stock(l.system_id, l.resource, l.amount_left);
-
-  update market_lots set active = false, amount_left = 0 where id = p_lot_id;
+  update market_lots
+     set amount_left = amount_left - v_fit,
+         active = (amount_left - v_fit) > 0
+   where id = p_lot_id;
   return v_fit;
 end;
 $function$
@@ -181,7 +186,7 @@ AS $function$
          l.system_id, s.name, o.expires_at,
          greatest(0, ceil(extract(epoch from o.expires_at - now()))::integer),
          o.status,
-         exists (select 1 from convoys c where c.order_id = o.id and c.status = 'in_flight')
+         exists (select 1 from supply_routes sr where sr.order_id = o.id and sr.status <> 'stopped')
   from market_orders o
   join market_lots l on l.id = o.lot_id
   join resources r on r.id = l.resource
@@ -269,16 +274,21 @@ AS $function$
 declare o record; v_back integer;
 begin
   for o in
-    select * from market_orders where status = 'reserved' and expires_at <= now()
+    select * from market_orders mo
+     where mo.status = 'reserved' and mo.expires_at <= now()
+       and not (mo.expires_at > now() - interval '6 hours'
+                and exists (select 1 from supply_routes sr where sr.order_id = mo.id and sr.status = 'active'))
+     for update skip locked
   loop
-    v_back := o.amount_left * o.price_per_unit;
-
-    update profiles set credits = credits + v_back where id = o.buyer_user_id;
-    update market_lots set amount_left = amount_left + o.amount_left where id = o.lot_id;
-    update market_orders set status = 'expired', amount_left = 0 where id = o.id;
-
-    perform log_event(o.buyer_user_id, null, null, 'market_expired',
-                      null, v_back, 'private', null);
+    begin
+      v_back := o.amount_left * o.price_per_unit;
+      update profiles set credits = credits + v_back where id = o.buyer_user_id;
+      update market_lots set amount_left = amount_left + o.amount_left where id = o.lot_id;
+      update market_orders set status = 'expired', amount_left = 0 where id = o.id;
+      perform log_event(o.buyer_user_id, null, null, 'market_expired', null, v_back, 'private', null);
+    exception when others then
+      perform err_db('market_expire_tick', sqlstate, sqlerrm, true);
+    end;
   end loop;
 end;
 $function$

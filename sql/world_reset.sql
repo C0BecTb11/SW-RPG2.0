@@ -63,8 +63,8 @@ delete from buildings;
 delete from space_stations;
 delete from player_research;
 delete from commander_inventory;
+delete from market_orders;     -- брони ссылаются на лоты: сначала брони
 delete from market_lots;
-delete from market_orders;
 delete from planet_requests;
 delete from faction_targets;
 delete from faction_directives;

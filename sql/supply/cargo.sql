@@ -100,7 +100,11 @@ begin
     select id from commanders
     where moving_to is not null and arrives_at <= now()
   loop
-    perform finish_commander_move(c.id);
+    begin
+      perform finish_commander_move(c.id);
+    exception when others then
+      perform err_db('finish_due_commander_moves', sqlstate, sqlerrm, true);
+    end;
   end loop;
 
   for sh in
@@ -111,7 +115,11 @@ begin
       and cm.moving_to is null and cm.current_system is not null
     for update of s skip locked
   loop
-    perform place_ship_in_hyperspace(sh.id, sh.current_system);
+    begin
+      perform place_ship_in_hyperspace(sh.id, sh.current_system);
+    exception when others then
+      perform err_db('finish_due_commander_moves.place', sqlstate, sqlerrm, true);
+    end;
   end loop;
 end;
 $function$

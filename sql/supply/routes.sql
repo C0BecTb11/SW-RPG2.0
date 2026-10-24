@@ -102,7 +102,26 @@ begin
 
     v_tfac := null; v_tname := null;
     select s.faction, s.name into v_tfac, v_tname from systems s where s.id = v_target;
-    if v_tfac is distinct from v_fac then
+
+    if r.order_id is not null
+       and ((supply_stop_is_pickup(r.stops -> r.stop_index) and not supply_pickup_live(r.stops -> r.stop_index))
+            or (v_tfac is distinct from v_fac and not supply_stop_is_pickup(r.stops -> r.stop_index))) then
+      perform supply_log(r.id, v_here,
+        case when supply_stop_is_pickup(r.stops -> r.stop_index) then 'Покупка закрыта — к продавцу не летим'
+             else coalesce(v_tname, v_target) || ' больше не планета фракции — остановка пропущена' end, 0);
+      if r.stop_index + 1 < v_n then
+        update supply_routes set stop_index = r.stop_index + 1, phase = 'travel', updated_at = now() where id = r.id;
+        continue;
+      end if;
+      update supply_routes
+         set status = 'stopped', phase = 'at_stop',
+             last_note = case when supply_hold_total(cm.id) > 0 then 'Рейс завершён — груз остался в трюме' else 'Рейс завершён' end,
+             updated_at = now()
+       where id = r.id;
+      perform supply_log(r.id, v_here, 'Рейс завершён: дальше лететь некуда', 0);
+      exit;
+    end if;
+    if v_tfac is distinct from v_fac and not supply_stop_is_pickup(r.stops -> r.stop_index) then
       perform supply_route_stall(r.id, 'Остановка ' || (r.stop_index + 1) || ' ('
         || coalesce(v_tname, v_target) || ') больше не планета фракции — измени рейс');
       exit;
@@ -115,7 +134,8 @@ begin
         continue;
       end if;
 
-      v_route := convoy_route(v_here, v_target, v_fac);
+      v_route := case when v_tfac is distinct from v_fac then convoy_route_to(v_here, v_target, v_fac)
+                      else convoy_route(v_here, v_target, v_fac) end;
       if v_route is null or array_length(v_route, 1) < 2 then
         perform supply_route_stall(r.id, 'Нет пути через миры своей стороны: '
           || coalesce(v_hname, v_here) || ' → ' || coalesce(v_tname, v_target));
@@ -304,7 +324,7 @@ begin
   v_stop := r.stops -> r.stop_index;
   v_quiet := r.idle_cycles > 0;   -- повторные пустые круги не засоряют журнал
 
-  if v_sys_fac is distinct from v_fac then
+  if v_sys_fac is distinct from v_fac and not supply_stop_is_pickup(v_stop) then
     perform supply_log(r.id, p_here, 'Планета больше не наша — остановка пропущена · ' || v_sys_name, 0);
     return 0;
   end if;
@@ -313,6 +333,12 @@ begin
 
   for a in select value from jsonb_array_elements(coalesce(v_stop -> 'actions', '[]'::jsonb)) loop
     v_res := a ->> 'resource';
+
+    -- ================= ЗАБРАТЬ ПОКУПКУ =================
+    if a ->> 'op' = 'pickup' then
+      v_moved := v_moved + supply_pickup_load(r.id, p_here, (a ->> 'order_id')::uuid);
+      continue;
+    end if;
 
     -- ================= ПОГРУЗКА =================
     if a ->> 'op' = 'load' then
@@ -334,9 +360,16 @@ begin
         continue;
       end if;
 
-      perform take_planet_stock(p_here, v_res, v_amt);
+      -- сначала в трюмы, потом со склада — ровно столько, сколько легло (половинки слотов не ломают погрузку)
       v_put := supply_put_cargo(r.commander_id, p_here, v_res, v_amt);
-      if v_put <> v_amt then raise exception 'Не удалось разместить груз по трюмам'; end if;
+      if v_put <= 0 then
+        if not v_quiet then
+          perform supply_log(r.id, p_here, 'Трюм полон — ' || supply_res_gen(v_res) || ' не погрузить · ' || v_sys_name, 0);
+        end if;
+        continue;
+      end if;
+      perform take_planet_stock(p_here, v_res, v_put);
+      v_amt := v_put;
 
       if ti.controller is distinct from r.owner_user_id then
         insert into supply_takes (system_id, resource, taker_user_id, owner_user_id, amount, route_id)
@@ -541,11 +574,13 @@ AS $function$
     select 1
     from buildings b
     join building_types bt on bt.id = b.building_type_id
+    join systems sy on sy.id = b.system_id
     join profiles p on p.id = p_user
     left join system_control sc on sc.system_id = b.system_id
     where bt.code = case when p.faction = 'republic' then 'rep_logistics' else 'cis_logistics' end
       and (b.completes_at is null or b.completes_at <= now())
       and b.faction = p.faction
+      and sy.faction = p.faction
       and (b.owner_user_id = p_user or sc.controller_user_id = p_user));
 $function$
 
@@ -890,6 +925,9 @@ begin
     from supply_routes x where x.id = p_route_id and x.owner_user_id = v_user for update;
   if v_status is null then raise exception 'Рейс не найден'; end if;
   if v_status = 'stopped' then raise exception 'Рейс уже завершён'; end if;
+  if exists (select 1 from supply_routes x where x.id = p_route_id and x.order_id is not null) then
+    raise exception 'Вывоз покупки не меняется — заверши его и отправь флот заново';
+  end if;
   select faction into v_fac from profiles where id = v_user;
 
   v_loop := coalesce(p_loop, v_old_loop);
@@ -967,7 +1005,7 @@ begin
                    left join systems sy on sy.id = x.st ->> 'system_id'), '[]'::jsonb),
          r.loop, r.status, r.stop_index, r.phase,
          case when c.moving_to is null then c.current_system end,
-         case when c.moving_to is null then hs.name end,
+         hs.name,
          ns.name,
          (case when c.moving_to is not null and c.arrives_at is not null
                 then greatest(0, ceil(extract(epoch from c.arrives_at - now())))
@@ -1097,3 +1135,109 @@ begin
   order by t.taken_at desc
   limit 30;
 end $function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.supply_stop_is_pickup(p_stop jsonb)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select exists (select 1 from jsonb_array_elements(coalesce(p_stop -> 'actions', '[]'::jsonb)) a
+                  where a.value ->> 'op' = 'pickup');
+$function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.supply_pickup_load(p_route_id uuid, p_here text, p_order_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare r record; o record; l record; v_free integer; v_put integer; v_pay integer; v_sys text; v_buyer_fac text;
+begin
+  select * into r from supply_routes where id = p_route_id;
+  select name into v_sys from systems where id = p_here;
+  select * into o from market_orders where id = p_order_id for update;
+  if not found or o.status <> 'reserved' or o.amount_left <= 0 then
+    perform supply_log(r.id, p_here, 'Покупку уже не забрать — '
+      || case coalesce(o.status, '')
+           when 'expired' then 'бронь истекла, деньги вернулись'
+           when 'cancelled' then 'планету захватили, деньги вернулись'
+           when 'collected' then 'она уже вывезена'
+           else 'брони больше нет' end || ' · ' || coalesce(v_sys, p_here), 0);
+    return 0;
+  end if;
+  -- пока за бронью летит флот, рынок держит её до 6 ч сверх срока (market_expire_tick) — здесь то же окно
+  if o.expires_at <= now() - interval '6 hours' then
+    perform supply_log(r.id, p_here, 'Бронь истекла — деньги вернутся с ближайшим тактом рынка · ' || coalesce(v_sys, p_here), 0);
+    return 0;
+  end if;
+
+  select * into l from market_lots where id = o.lot_id;
+  if l.system_id is distinct from p_here then
+    perform supply_log(r.id, p_here, 'Товар лежит не здесь — покупка не забрана', 0);
+    return 0;
+  end if;
+
+  v_free := supply_fleet_free(r.commander_id, p_here);
+  v_put := supply_put_cargo(r.commander_id, p_here, l.resource, least(o.amount_left, v_free));
+  if v_put <= 0 then
+    perform supply_log(r.id, p_here, 'Трюм полон — покупку не забрать · ' || coalesce(v_sys, p_here), 0);
+    return 0;
+  end if;
+
+  v_pay := v_put * o.price_per_unit;
+  update profiles set credits = credits + v_pay where id = l.seller_user_id;
+  update market_orders
+     set amount_left = amount_left - v_put,
+         status = case when amount_left - v_put <= 0 then 'collected' else 'reserved' end
+   where id = o.id;
+
+  select faction into v_buyer_fac from profiles where id = r.owner_user_id;
+  perform log_event(l.seller_user_id, l.seller_faction, l.system_id, 'market_paid',
+                    l.resource, v_put, 'private', jsonb_build_object('credits', v_pay));
+  perform log_event(r.owner_user_id, v_buyer_fac, l.system_id, 'market_collected',
+                    l.resource, v_put, 'private', jsonb_build_object('route_id', r.id));
+  perform supply_log(r.id, p_here, 'Покупка забрана: ' || v_put || ' ' || supply_res_gen(l.resource)
+    || ' · ' || coalesce(v_sys, p_here)
+    || case when v_put < o.amount_left
+            then ' — не влезло ' || (o.amount_left - v_put) || ', остаток ждёт по брони' else '' end, v_put);
+  return v_put;
+end;
+$function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.supply_cleanup()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v_del text := 'del' || 'ete from ';
+begin
+  -- журналы рейсов и supply_takes старше 7 дней и так чистит cleanup_old_records; здесь — то, что держат ссылки
+  execute v_del || 'convoys where departed_at < now() - interval ''14 days''';
+  execute v_del || 'supply_route_log l using supply_routes r where l.route_id = r.id and r.status = ''stopped'' and r.updated_at < now() - interval ''14 days''';
+  execute v_del || 'supply_routes where status = ''stopped'' and updated_at < now() - interval ''14 days''';
+  execute v_del || 'market_orders o where o.status <> ''reserved'' and o.created_at < now() - interval ''14 days''
+                     and not exists (select 1 from supply_routes r where r.order_id = o.id)';
+  execute v_del || 'market_lots l where not l.active and l.created_at < now() - interval ''14 days''
+                     and not exists (select 1 from market_orders o where o.lot_id = l.id)';
+  execute v_del || 'supply_grants where status in (''revoked'', ''declined'') and coalesce(decided_at, created_at) < now() - interval ''30 days''';
+exception when others then
+  perform err_db('supply_cleanup', sqlstate, sqlerrm, true);
+end;
+$function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.supply_pickup_live(p_stop jsonb)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select exists (select 1 from jsonb_array_elements(coalesce(p_stop -> 'actions', '[]'::jsonb)) a
+                 join market_orders o on o.id = (a.value ->> 'order_id')::uuid
+                  where a.value ->> 'op' = 'pickup' and o.status = 'reserved');
+$function$

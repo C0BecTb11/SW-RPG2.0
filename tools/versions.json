@@ -44,8 +44,8 @@
   "sha": "f7df65175550"
  },
  "css/ground-battle.css": {
-  "v": "1",
-  "sha": "c7caff247ece"
+  "v": "2",
+  "sha": "0621d58cced8"
  },
  "css/ground-live.css": {
   "v": "4",
@@ -100,8 +100,8 @@
   "sha": "fcbc0147b451"
  },
  "css/supply.css": {
-  "v": "1",
-  "sha": "1020a28affce"
+  "v": "2",
+  "sha": "bc066e5af1b7"
  },
  "css/transfer.css": {
   "v": "1",
@@ -268,8 +268,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "8",
-  "sha": "5e0043cbe0f5"
+  "v": "9",
+  "sha": "612e6f303633"
  },
  "js/ground-live.js": {
   "v": "25",
@@ -300,8 +300,8 @@
   "sha": "a26ef5a0d47b"
  },
  "js/planets.js": {
-  "v": "4",
-  "sha": "7ce01e28bf33"
+  "v": "5",
+  "sha": "23b95cb1f7b4"
  },
  "js/processes.js": {
   "v": "1",
@@ -356,8 +356,8 @@
   "sha": "a7be2f16aef2"
  },
  "js/supply.js": {
-  "v": "2",
-  "sha": "1dc8d6813b0f"
+  "v": "3",
+  "sha": "a47f3cad8b67"
  },
  "js/troop-transfer.js": {
   "v": "1",

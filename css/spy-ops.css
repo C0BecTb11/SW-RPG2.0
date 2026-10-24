@@ -89,6 +89,8 @@
   overflow: hidden;
 }
 #so-stage .so-cv { position: absolute; inset: 0; display: block; }
+/* много планет в досягаемости (два штаба, дальние цели) — карте больше места, чтобы планеты и подписи не теснились */
+#so-stage.dense { height: 42vh; max-height: 400px; }
 .so-hud {
   position: absolute;
   left: 10px;
@@ -369,8 +371,10 @@
   #so-head { grid-column: 2; grid-row: 1; }
   #so-body { grid-column: 2; grid-row: 2; }
   #so-stage { grid-column: 1; grid-row: 1 / span 2; height: auto; max-height: none; min-height: 0; border-bottom: none; border-right: 1px solid #1c2530; }
+  #so-stage.dense { height: auto; max-height: none; }
 }
 @media (min-width: 900px) and (min-height: 700px) {
   #so-box { max-width: 760px; }
   #so-stage { height: 40vh; max-height: 440px; }
+  #so-stage.dense { height: 46vh; max-height: 500px; }
 }

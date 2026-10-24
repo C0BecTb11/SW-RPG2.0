@@ -1,7 +1,7 @@
 // Тайные операции (шаг 4а плана claude/sabotage-plan.md): диверсионные группы штаба и операции против
 // чужих участков и цехов. Всё решает база (sql/mine_sabotage.sql: spy_state, spy_train, spy_targets,
 // spy_launch, spy_tick); окно показывает её числа и между опросами ведёт таймеры по серверному времени.
-// Сверху — карта операций (js/spy-map.js): штабы, планеты в двух гиперпутях, группы в пути. Префикс — so-/so*.
+// Сверху — карта операций (js/spy-map.js): штабы, планеты в досягаемости (cfg.max_jumps гиперпутей), группы в пути. Префикс — so-/so*.
 // Вход — карточка «Тайные операции» в окне штаба (rep_hq) или центра управления (cis_control).
 
 var soState = null;       // последнее состояние с сервера
@@ -54,7 +54,14 @@ function soLeft(ms) {
   return s + ' с';
 }
 function soMin(m) { return m >= 60 ? (m % 60 ? Math.floor(m / 60) + ' ч ' + (m % 60) + ' мин' : (m / 60) + ' ч') : m + ' мин'; }
-function soJumps(n) { return n + (n === 1 ? ' гиперпуть' : ' гиперпути'); }
+function soJumps(n) { var a = n % 10, b = n % 100; return n + (a === 1 && b !== 11 ? ' гиперпуть' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? ' гиперпути' : ' гиперпутей'); }
+// Досягаемость группы словами: «не дальше трёх гиперпутей» (gen) и «в трёх гиперпутях» (loc) — по настройке базы spy_max_jumps
+var SO_NUM_GEN = { 1: 'одного гиперпути', 2: 'двух гиперпутей', 3: 'трёх гиперпутей', 4: 'четырёх гиперпутей', 5: 'пяти гиперпутей' };
+var SO_NUM_LOC = { 1: 'одном гиперпути', 2: 'двух гиперпутях', 3: 'трёх гиперпутях', 4: 'четырёх гиперпутях', 5: 'пяти гиперпутях' };
+function soReach(loc) {
+  var n = (soState && soState.cfg && +soState.cfg.max_jumps) || 3;
+  return (loc ? SO_NUM_LOC : SO_NUM_GEN)[n] || n + (loc ? ' гиперпутях' : ' гиперпутей');
+}
 function soFace() { return SO_FACE[soState && soState.faction === 'cis' ? 'cis' : 'republic']; }
 function soGroupById(id) { var a = (soState && soState.groups) || []; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
 function soKind(id) { for (var i = 0; i < SO_KINDS.length; i++) if (SO_KINDS[i].id === id) return SO_KINDS[i]; return null; }
@@ -268,7 +275,7 @@ function soHomeHtml() {
 
   html += '<div class="so-sec">Как это работает</div>' +
     '<div class="so-rules">' +
-      '<div><b>Цель</b> — чужой участок или цех не дальше двух гиперпутей от штаба группы. Перелёт — ' + c.jump_min + ' мин на гиперпуть, подход — ' + c.approach_min + ' мин: в это время хозяин может увидеть группу в сцене участка.</div>' +
+      '<div><b>Цель</b> — чужой участок или цех не дальше ' + soReach() + ' от штаба группы. Перелёт — ' + c.jump_min + ' мин на гиперпуть, подход — ' + c.approach_min + ' мин: в это время хозяин может увидеть группу в сцене участка.</div>' +
       '<div><b>Шанс</b> — ' + c.base + ' %, считается в момент действия: охранник −' + c.guard + ' %, караул −' + c.watch + ' %, узел связи −' + c.comms + ' %; ночью (22–06) +' + c.night + ' %, опыт группы до +' + 3 * c.vet + ' %.</div>' +
       '<div><b>Провал</b> — группа схвачена, хозяин сразу знает, чья она. <b>Успех</b> — хозяин видит последствия, а кто это был, узнаёт по итогам следствия через несколько часов.</div>' +
       '<div><b>Потолки</b> — по одной цели не чаще раза в сутки, одному хозяину не больше двух операций за сутки; после операции группа отдыхает ' + c.rest_h + ' ч.</div>' +
@@ -286,7 +293,7 @@ function soTargetHtml() {
   // не дошло — так и пишем, а не «целей нет»
   if (soPick.tErr) return html + '<div class="so-empty bad">' + soEsc(soPick.tErr) + '</div>' +
     '<button type="button" class="so-back" data-so="op-start" data-g="' + soEsc(soPick.group) + '">Спросить ещё раз</button>';
-  if (!soPick.targets.length) return html + '<div class="so-note">В двух гиперпутях от планеты ' + soEsc(g ? g.base_name : '') + ' нет чужих планет с участками и цехами.</div>';
+  if (!soPick.targets.length) return html + '<div class="so-note">В ' + soReach(true) + ' от планеты ' + soEsc(g ? g.base_name : '') + ' нет чужих планет с участками и цехами.</div>';
   html += '<div class="so-hint">Тапни планету на карте или выбери участок в списке.</div>';
   soPick.targets.forEach(function(p) {
     var ms = window.SOMap ? SOMap.sys(p.system_id) : null;

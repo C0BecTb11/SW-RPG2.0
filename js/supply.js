@@ -675,6 +675,11 @@
   }
 
   function actionText(a) {
+    // вывоз покупки с рынка — рейс в одну сторону с действием «забрать покупку» (sql/supply_fixes.sql)
+    if (a.op === 'pickup') {
+      return '<span class="sup-plan-act load">забрать покупку </span>' + esc(resInfo(a.resource).name.toLowerCase()) +
+        (a.amount ? ' · ' + num(a.amount) : '');
+    }
     var load = a.op === 'load';
     var what = a.resource === '*' ? 'всё' : resInfo(a.resource).name.toLowerCase();
     var how;
@@ -683,6 +688,10 @@
     else how = load ? ' · сколько можно' : (a.resource === '*' ? '' : ' · всё');
     return '<span class="sup-plan-act ' + (load ? 'load' : 'unload') + '">' + (load ? 'погрузить ' : 'выгрузить ') + '</span>' +
       esc(what) + how;
+  }
+
+  function isPickupRoute(r) {
+    return stopsOf(r).some(function(s) { return (s.actions || []).some(function(a) { return a.op === 'pickup'; }); });
   }
 
   function statusLine(r, stt) {
@@ -745,8 +754,9 @@
         ? '<button type="button" class="sup-btn" data-act="route-status" data-id="' + esc(r.id) + '" data-st="paused">Пауза</button>'
         : '<button type="button" class="sup-btn ' + (r.status === 'stalled' ? 'gold' : 'blue') + '" data-act="route-status" data-id="' +
             esc(r.id) + '" data-st="active">Продолжить</button>';
+      // вывоз покупки не редактируется: у него остановка на чужой планете — только пауза и «Завершить»
       actions = '<div class="sup-actions">' + toggle +
-        '<button type="button" class="sup-btn" data-act="route-edit" data-id="' + esc(r.id) + '">Изменить</button>' +
+        (isPickupRoute(r) ? '' : '<button type="button" class="sup-btn" data-act="route-edit" data-id="' + esc(r.id) + '">Изменить</button>') +
         '<button type="button" class="sup-btn danger" data-act="route-stop" data-id="' + esc(r.id) + '">Завершить</button>' +
       '</div>';
     }

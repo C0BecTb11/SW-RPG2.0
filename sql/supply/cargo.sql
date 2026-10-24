@@ -100,7 +100,11 @@ begin
     select id from commanders
     where moving_to is not null and arrives_at <= now()
   loop
-    perform finish_commander_move(c.id);
+    begin
+      perform finish_commander_move(c.id);
+    exception when others then
+      perform err_db('finish_due_commander_moves', sqlstate, sqlerrm, true);
+    end;
   end loop;
 
   for sh in

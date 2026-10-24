@@ -303,107 +303,8 @@ CREATE OR REPLACE FUNCTION public.dispatch_convoy(p_commander_id uuid, p_to_syst
  SECURITY DEFINER
  SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
-declare
-  v_user uuid := auth.uid();
-  cm record; v_faction text; v_hub text; v_to_faction text;
-  v_total integer := 0; v_free integer; k text; v_need integer;
-  sh record; v_left integer; v_fit integer; v_id uuid; v_route text[];
-  v_unit integer := game_setting_int('cargo_units_per_slot', 2);
 begin
-  if v_user is null then raise exception 'Не авторизован'; end if;
-  if p_cargo is null or p_cargo = '{}'::jsonb then raise exception 'Не выбран груз'; end if;
-
-  select * into cm from commanders where id = p_commander_id and user_id = v_user;
-  if not found then raise exception 'Командир не найден'; end if;
-  if not cm.unlocked then raise exception 'Командир ещё не открыт'; end if;
-  if cm.moving_to is not null then raise exception 'Командир уже в пути'; end if;
-  if exists (select 1 from supply_routes sr where sr.commander_id = p_commander_id
-             and sr.status in ('active','paused','stalled')) then
-    raise exception 'Флот работает на рейсе снабжения — останови рейс';
-  end if;
-
-  if not exists (select 1 from system_control sc
-                 where sc.system_id = cm.current_system and sc.controller_user_id = v_user) then
-    raise exception 'Командир стоит не на твоей планете';
-  end if;
-
-  select faction into v_faction from profiles where id = v_user;
-  v_hub := case when v_faction = 'republic' then 'rep_logistics' else 'cis_logistics' end;
-
-  if not exists (
-    select 1 from buildings b join building_types bt on bt.id = b.building_type_id
-    where b.system_id = cm.current_system and bt.code = v_hub
-      and (b.completes_at is null or b.completes_at <= now())
-      and b.faction = (select faction from systems where id = cm.current_system)
-  ) then
-    raise exception 'На этой планете нет достроенного логистического узла';
-  end if;
-
-  select faction into v_to_faction from systems where id = p_to_system and not is_deep_space;
-  if v_to_faction is null then raise exception 'Такой планеты нет'; end if;
-  if v_to_faction is distinct from v_faction then
-    raise exception 'Конвой везут только на планету своей стороны';
-  end if;
-
-  v_route := convoy_route(cm.current_system, p_to_system, v_faction);
-  if v_route is null then
-    raise exception 'До этой планеты нет пути через миры своей стороны';
-  end if;
-
-  for k in select jsonb_object_keys(p_cargo) loop
-    v_need := coalesce((p_cargo ->> k)::integer, 0);
-    if v_need < 0 then raise exception 'Некорректное количество'; end if;
-    v_total := v_total + v_need;
-  end loop;
-  if v_total < 1 then raise exception 'Не выбран груз'; end if;
-
-  v_free := commander_free_cargo(p_commander_id);
-  if v_total > v_free then
-    raise exception 'Во флот не влезет: груз % ед., свободно % ед.', v_total, v_free;
-  end if;
-
-  for k in select jsonb_object_keys(p_cargo) loop
-    v_need := coalesce((p_cargo ->> k)::integer, 0);
-    continue when v_need <= 0;
-
-    perform take_planet_stock(cm.current_system, k, v_need);
-
-    v_left := v_need;
-    for sh in
-      select s.id, st.capacity - ship_load_used(s.id) as free_slots
-      from ships s cross join lateral ship_stats(s.id) st
-      where s.commander_id = p_commander_id and not s.in_transit
-      order by s.id
-    loop
-      exit when v_left <= 0;
-      v_fit := least(v_left, greatest(0, sh.free_slots) * v_unit);
-      continue when v_fit <= 0;
-
-      insert into ship_resource_cargo (ship_id, resource, amount)
-      values (sh.id, k, v_fit)
-      on conflict (ship_id, resource) do update
-        set amount = ship_resource_cargo.amount + excluded.amount;
-
-      v_left := v_left - v_fit;
-    end loop;
-
-    if v_left > 0 then raise exception 'Не удалось разместить груз по трюмам'; end if;
-  end loop;
-
-  -- Упадёт прыжок — откатится и погрузка, и списание со склада
-  perform start_commander_move(p_commander_id, v_route[2]);
-
-  insert into convoys (owner_user_id, faction, from_system, to_system, commander_id,
-                       cargo, arrives_at, route, kind, home_system, return_home, stage)
-  values (v_user, v_faction, cm.current_system, p_to_system, p_commander_id,
-          p_cargo, (select arrives_at from commanders where id = p_commander_id),
-          v_route, 'transfer', cm.current_system, coalesce(p_return_home, false), 'to_dest')
-  returning id into v_id;
-
-  perform log_event(v_user, v_faction, cm.current_system, 'convoy_departed',
-                    cm.name, v_total, 'private',
-                    jsonb_build_object('to', p_to_system, 'cargo', p_cargo));
-  return v_id;
+  raise exception 'Разовые конвои заменены рейсами снабжения: «Снабжение» → «Рейсы» → «Новый рейс» в одну сторону';
 end;
 $function$
 
@@ -416,76 +317,90 @@ CREATE OR REPLACE FUNCTION public.dispatch_market_pickup(p_commander_id uuid, p_
 AS $function$
 declare
   v_user uuid := auth.uid();
-  cm record; o record; v_pickup text; v_faction text; v_to_faction text;
-  v_free integer; v_route text[]; v_id uuid; v_res text;
+  cm record; o record; v_pickup text; v_res text; v_faction text; v_pfac text; v_to_faction text; v_to_name text;
+  v_free integer; v_ships integer; v_path text[]; v_back text[]; v_hops integer; v_sec integer; v_stops jsonb;
+  v_id uuid; v_name text; v_pname text;
 begin
   if v_user is null then raise exception 'Не авторизован'; end if;
 
-  select * into o from market_orders where id = p_order_id;
+  select * into o from market_orders where id = p_order_id for update;
   if not found or o.buyer_user_id <> v_user then raise exception 'Бронь не найдена'; end if;
   if o.status <> 'reserved' or o.amount_left <= 0 then raise exception 'Бронь уже закрыта'; end if;
   if o.expires_at <= now() then raise exception 'Срок брони истёк'; end if;
-
-  if exists (select 1 from convoys
-             where order_id = p_order_id and status = 'in_flight') then
+  if exists (select 1 from supply_routes sr where sr.order_id = p_order_id and sr.status <> 'stopped') then
     raise exception 'За этой покупкой уже отправлен флот';
   end if;
 
-  select l.system_id, l.resource into v_pickup, v_res
-  from market_lots l where l.id = o.lot_id;
-
-  select * into cm from commanders where id = p_commander_id and user_id = v_user;
-  if not found then raise exception 'Командир не найден'; end if;
-  if not cm.unlocked then raise exception 'Командир ещё не открыт'; end if;
-  if cm.moving_to is not null then raise exception 'Командир уже в пути'; end if;
-  if exists (select 1 from supply_routes sr where sr.commander_id = p_commander_id
-             and sr.status in ('active','paused','stalled')) then
-    raise exception 'Флот работает на рейсе снабжения — останови рейс';
-  end if;
-
+  select l.system_id, l.resource into v_pickup, v_res from market_lots l where l.id = o.lot_id;
+  select s.faction, s.name into v_pfac, v_pname from systems s where s.id = v_pickup;
   select faction into v_faction from profiles where id = v_user;
 
-  select faction into v_to_faction from systems where id = p_to_system and not is_deep_space;
-  if v_to_faction is null then raise exception 'Такой планеты нет'; end if;
-  if v_to_faction is distinct from v_faction then
-    raise exception 'Выгружать можно только на планету своей стороны';
+  select * into cm from commanders where id = p_commander_id and user_id = v_user for update;
+  if not found then raise exception 'Командир не найден'; end if;
+  if not cm.unlocked then raise exception 'Командир ещё не открыт'; end if;
+  if cm.moving_to is not null then raise exception 'Командир в пути — дождись прибытия'; end if;
+  if cm.current_system is null then raise exception 'Неизвестно, где стоит флот'; end if;
+  if exists (select 1 from supply_routes sr where sr.commander_id = p_commander_id and sr.status <> 'stopped') then
+    raise exception 'У этого командира уже есть рейс — заверши его';
   end if;
+  select count(*)::integer into v_ships from ships s where s.commander_id = p_commander_id and s.carrier_ship_id is null;
+  if v_ships = 0 then raise exception 'У командира не осталось кораблей'; end if;
 
-  -- Весь заказ должен влезть: иначе часть осталась бы у продавца
+  select faction, name into v_to_faction, v_to_name from systems where id = p_to_system and not is_deep_space;
+  if v_to_name is null then raise exception 'Такой планеты нет'; end if;
+  if v_to_faction is distinct from v_faction then raise exception 'Выгружать можно только на планету своей стороны'; end if;
+
+  -- весь заказ должен влезть: иначе часть осталась бы у продавца
   v_free := commander_free_cargo(p_commander_id);
   if o.amount_left > v_free then
     raise exception 'Во флот не влезет: куплено % ед., свободно % ед.', o.amount_left, v_free;
   end if;
 
-  if cm.current_system = v_pickup then
-    v_route := array[v_pickup];
+  -- путь к продавцу через свои миры (сама планета продавца может быть чужой) и от него к месту выгрузки
+  if cm.current_system = v_pickup then v_path := array[v_pickup];
+  elsif v_pfac is distinct from v_faction then v_path := convoy_route_to(cm.current_system, v_pickup, v_faction);
+  else v_path := convoy_route(cm.current_system, v_pickup, v_faction); end if;
+  if v_path is null then raise exception 'До продавца нет пути через миры своей стороны'; end if;
+  if p_to_system <> v_pickup and convoy_route(v_pickup, p_to_system, v_faction) is null then
+    raise exception 'От продавца до % нет пути через миры своей стороны', v_to_name;
+  end if;
+
+  -- успеет ли флот до конца брони (по времени прыжков без событий)
+  v_hops := coalesce(array_length(v_path, 1), 1) - 1;
+  v_sec := v_hops * game_setting_int('travel_seconds', 60);
+  if now() + make_interval(secs => v_sec) >= o.expires_at then
+    raise exception 'Флот не успеет до конца брони: лететь около % мин', ceil(v_sec / 60.0);
+  end if;
+
+  v_stops := jsonb_build_array(jsonb_build_object('system_id', v_pickup, 'actions', jsonb_build_array(
+               jsonb_build_object('op', 'pickup', 'order_id', p_order_id, 'resource', v_res, 'mode', 'amount', 'amount', o.amount_left))));
+  if p_to_system = v_pickup then
+    v_stops := jsonb_set(v_stops, '{0,actions}', (v_stops -> 0 -> 'actions')
+                 || jsonb_build_array(jsonb_build_object('op', 'unload', 'resource', '*', 'mode', 'all', 'amount', null)));
   else
-    v_route := convoy_route_to(cm.current_system, v_pickup, v_faction);
-    if v_route is null then
-      raise exception 'До продавца нет пути через миры своей стороны';
+    v_stops := v_stops || jsonb_build_array(jsonb_build_object('system_id', p_to_system, 'actions', jsonb_build_array(
+                 jsonb_build_object('op', 'unload', 'resource', '*', 'mode', 'all', 'amount', null))));
+  end if;
+  if coalesce(p_return_home, false) and cm.current_system not in (p_to_system, v_pickup) then
+    if convoy_route(p_to_system, cm.current_system, v_faction) is null then
+      raise exception 'От % нет пути домой через миры своей стороны', v_to_name;
     end if;
+    v_stops := v_stops || jsonb_build_array(jsonb_build_object('system_id', cm.current_system, 'actions', '[]'::jsonb));
   end if;
 
-  insert into convoys (owner_user_id, faction, from_system, to_system, commander_id,
-                       arrives_at, route, kind, order_id, pickup_system,
-                       home_system, return_home, stage)
-  values (v_user, v_faction, cm.current_system, p_to_system, p_commander_id,
-          now(), v_route, 'market', p_order_id, v_pickup,
-          cm.current_system, coalesce(p_return_home, false), 'to_pickup')
+  v_name := left('Вывоз: ' || lower(coalesce((select name from resources where id = v_res), v_res)) || ' с ' || v_pname, 40);
+  insert into supply_routes (owner_user_id, commander_id, name, stops, loop, status, stop_index, phase,
+                             expect_system, last_note, order_id)
+  values (v_user, p_commander_id, v_name, v_stops, false, 'active', 0, 'travel',
+          cm.current_system, 'Флот отправлен за покупкой', p_order_id)
   returning id into v_id;
+  perform supply_log(v_id, cm.current_system, 'Флот отправлен за покупкой: ' || o.amount_left || ' '
+    || supply_res_gen(v_res) || ' · ' || v_pname || ' → ' || v_to_name, 0);
+  perform log_event(v_user, v_faction, cm.current_system, 'convoy_departed', cm.name, o.amount_left, 'private',
+                    jsonb_build_object('pickup', v_pickup, 'to', p_to_system, 'resource', v_res, 'route_id', v_id));
 
-  if cm.current_system = v_pickup then
-    -- Флот уже у продавца: грузимся сразу и идём к получателю
-    perform unload_convoy_on_arrival(p_commander_id);
-  else
-    perform start_commander_move(p_commander_id, v_route[2]);
-    update convoys set arrives_at = (select arrives_at from commanders where id = p_commander_id)
-    where id = v_id;
-  end if;
-
-  perform log_event(v_user, v_faction, cm.current_system, 'convoy_departed',
-                    cm.name, o.amount_left, 'private',
-                    jsonb_build_object('pickup', v_pickup, 'to', p_to_system, 'resource', v_res));
+  -- первый шаг сразу, не дожидаясь такта: прыжок или погрузка, если флот уже у продавца
+  perform supply_route_step(v_id);
   return v_id;
 end;
 $function$

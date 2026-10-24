@@ -8368,9 +8368,10 @@ function openTradePanel(building) {
   renderTradePanel();
 }
 
-// Торговый пост: продажа излишков склада планеты NPC. Строка ресурса — в две линии (название и цена сверху,
-// счётчик и «Продать» снизу), чтобы влезала в телефон. Ответ продажи приходит, даже если панель уже закрыли —
-// тогда его просто не рисуем. Итог продажи и ошибки — строкой в самой панели.
+// Торговый пост: продажа излишков склада планеты NPC. Сверху — из чего цена (доля базовой и поправка событий
+// галактики), ниже — карточка на ресурс: ромб и цена, сколько на складе и сколько дадут за выбранное число,
+// счётчик и «Продать». Ответ продажи приходит, даже если панель уже закрыли — тогда его просто не рисуем.
+// Итог продажи и ошибки — строкой в самой панели.
 function renderTradePanel(msg) {
   var building = logiBuilding;
   if (!building) return;
@@ -8378,17 +8379,32 @@ function renderTradePanel(msg) {
   var body = document.getElementById('logi-body');
   if (!msg) body.innerHTML = '<div class="logi-empty">Загрузка...</div>';
 
-  supabase.rpc('get_trade_prices', { p_system_id: sysId })
-    .then(function(res) {
+  Promise.all([
+    supabase.rpc('get_trade_prices', { p_system_id: sysId }),
+    supabase.rpc('get_trade_post_info').then(null, function() { return { data: null }; })
+  ]).then(function(res) {
       if (logiBuilding !== building) return;                      // панель закрыли или открыли другую
-      if (res.error) {
+      if (res[0].error) {
         body.innerHTML = '<div class="logi-empty">Цены не загрузились — закрой и открой пост ещё раз</div>';
         return;
       }
 
-      var rows = (res.data || []).filter(function(r) { return r.amount > 0; });
+      var rows = (res[0].data || []).filter(function(r) { return r.amount > 0; });
+      var info = res[1] && res[1].data;
 
       body.innerHTML = '';
+      if (info) {
+        var mod = Number(info.mod) || 0;
+        var head = document.createElement('div');
+        head.className = 'eco-card trade-head';
+        head.innerHTML =
+          '<div class="eco-what">Пост платит <b>' + (Number(info.pct) || 60) + '%</b> базовой цены</div>' +
+          '<div class="eco-status ' + (mod > 0 ? 'ok' : mod < 0 ? 'bad' : 'dim') + '">' +
+            (mod > 0 ? 'Событие в галактике: цены выше на ' + mod + '%'
+             : mod < 0 ? 'Событие в галактике: цены ниже на ' + (-mod) + '%'
+             : 'События в галактике цены сейчас не двигают') + '</div>';
+        body.appendChild(head);
+      }
       body.appendChild(logiSection('Скупка излишков'));
 
       var line = document.createElement('div');
@@ -8399,26 +8415,39 @@ function renderTradePanel(msg) {
       if (!rows.length) {
         var e = document.createElement('div');
         e.className = 'logi-empty';
-        e.textContent = 'На складе планеты пусто';
+        e.textContent = 'На складе планеты пусто — продавать нечего';
         body.appendChild(e);
         return;
       }
 
       rows.forEach(function(r) {
         var row = document.createElement('div');
-        row.className = 'logi-row trade';
-        if (r.color) row.style.borderLeft = '3px solid ' + r.color;
-        row.style.paddingLeft = r.color ? '8px' : '';
+        row.className = 'trade-row';
+        if (r.color) row.style.borderLeftColor = r.color;
 
-        var info = document.createElement('div');
-        info.className = 'logi-info';
-        info.innerHTML =
-          '<div class="logi-name">' + escHtml(r.name) + ' · ' + r.price + ' кр за ед.</div>' +
-          '<div class="logi-sub">На складе ' + r.amount + ' · за всё ' + r.total + ' кр</div>';
-        row.appendChild(info);
+        var top = document.createElement('div');
+        top.className = 'trade-top';
+        top.innerHTML =
+          '<span class="trade-name"><i' + (r.color ? ' style="background:' + escHtml(r.color) + '"' : '') + '></i>' + escHtml(r.name) + '</span>' +
+          '<span class="trade-price"><b>' + r.price + '</b> кр/ед</span>';
+        row.appendChild(top);
 
+        var sub = document.createElement('div');
+        sub.className = 'trade-sub';
+        row.appendChild(sub);
+
+        var ctl = document.createElement('div');
+        ctl.className = 'trade-ctl';
         var qty = logiAmount(r.amount);
-        row.appendChild(qty);
+        ctl.appendChild(qty);
+
+        // сколько дадут — за то число, что сейчас на счётчике
+        function paintSum() {
+          var n = parseInt(qty.valueEl.textContent, 10) || 0;
+          sub.innerHTML = 'на складе ' + r.amount + ' · за ' + n + ' дадут <b>' + (n * r.price) + ' кр</b>';
+        }
+        qty.addEventListener('click', function() { setTimeout(paintSum, 0); });
+        paintSum();
 
         var sell = document.createElement('button');
         sell.className = 'logi-go small';
@@ -8446,7 +8475,8 @@ function renderTradePanel(msg) {
               line.textContent = 'Нет связи с сервером';
             });
         });
-        row.appendChild(sell);
+        ctl.appendChild(sell);
+        row.appendChild(ctl);
 
         body.appendChild(row);
       });
@@ -8455,6 +8485,9 @@ function renderTradePanel(msg) {
       note.className = 'logi-note';
       note.textContent = 'Пост платит меньше, чем можно выручить на рынке. Зато сразу и без перевозки.';
       body.appendChild(note);
+    }, function() {
+      if (logiBuilding !== building) return;
+      body.innerHTML = '<div class="logi-empty">Нет связи с сервером</div>';
     });
 }
 
@@ -8624,11 +8657,12 @@ function openEconomyPanel(building) {
   var body = document.getElementById('logi-body');
   body.innerHTML = '<div class="logi-empty">Загрузка...</div>';
 
-  var done = 0, status = null;
+  var done = 0, status = null, capParts = null;
   function step() {
     done++;
-    if (done < 3) return;
-    renderEconomyPanel(body, status);
+    if (done < 4) return;
+    if (logiBuilding !== building) return;                       // панель закрыли или открыли другую
+    renderEconomyPanel(body, status, capParts);
   }
 
   supabase.rpc('get_building_status', { p_building_id: building.id }).then(function(res) {
@@ -8637,9 +8671,14 @@ function openEconomyPanel(building) {
   });
   loadPlanetStock(step);
   loadResourceNames(step);
+  // из чего сложился предел склада (sql/supply_buildings.sql) — главное, что показывает окно склада
+  supabase.rpc('get_stock_cap_parts', { p_system_id: building.system_id }).then(function(res) {
+    capParts = res.error ? null : res.data;
+    step();
+  }, step);
 }
 
-function renderEconomyPanel(body, st) {
+function renderEconomyPanel(body, st, capParts) {
   body.innerHTML = '';
 
   // --- что постройка делает ---
@@ -8697,7 +8736,22 @@ function renderEconomyPanel(body, st) {
 
   // --- склад планеты ---
   var cap = planetStock.length ? planetStock[0].cap : 0;
+  if (!cap && capParts) cap = Number(capParts.total) || 0;
   body.appendChild(logiSection('Склад планеты · предел ' + cap));
+
+  // предел по частям: база, район «Склады», склады нынешней стороны планеты
+  if (capParts) {
+    var parts = ['<span><b>' + (Number(capParts.base) || 0) + '</b> база</span>'];
+    if (Number(capParts.district) > 0) parts.push('<span><b>+' + Number(capParts.district) + '</b> район «Склады»</span>');
+    var dn = Number(capParts.depot_count) || 0;
+    parts.push(dn > 0
+      ? '<span class="on"><b>+' + (Number(capParts.depots) || 0) + '</b> ' + dn + ' ' + (dn === 1 ? 'склад' : dn < 5 ? 'склада' : 'складов') + '</span>'
+      : '<span class="dim">складов нет</span>');
+    var cp = document.createElement('div');
+    cp.className = 'eco-cap';
+    cp.innerHTML = parts.join('<i>·</i>') + '<em>по каждому ресурсу</em>';
+    body.appendChild(cp);
+  }
 
   var rows = planetStock.filter(function(r) {
     return r.amount > 0 || r.per_day > 0 || r.is_primary || r.is_secondary;
@@ -8724,7 +8778,7 @@ function renderEconomyPanel(body, st) {
 
     row.innerHTML =
       '<div class="eco-stock-top">' +
-        '<span class="eco-stock-name">' + r.name + '</span>' +
+        '<span class="eco-stock-name"><i style="background:' + escHtml(color) + '"></i>' + escHtml(r.name) + '</span>' +
         '<span class="eco-stock-val' + (r.amount >= cap ? ' full' : '') + '">' +
           r.amount + '</span>' +
       '</div>' +

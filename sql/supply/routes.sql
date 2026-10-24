@@ -40,7 +40,12 @@ begin
         exit;
       end if;
       if cm.arrives_at is not null and cm.arrives_at <= now() then
-        perform finish_commander_move(cm.id);
+        begin
+          perform finish_commander_move(cm.id);
+        exception when others then
+          if sqlerrm like '%в бою 2.0%' or sqlerrm like '%под огнём%' then exit; end if;
+          raise;
+        end;
         continue;
       end if;
       exit;

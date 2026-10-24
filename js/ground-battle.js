@@ -1665,32 +1665,6 @@ function isBuildMode() {
   return params.get('mode') === 'build';
 }
 
-// Переключатель между наземной и орбитальной картой — нужен только
-// в режиме стройки, чтобы не бегать через меню планеты ради каждого здания.
-function initBuildSwitcher() {
-  if (!buildMode) return;
-
-  var bar = document.createElement('div');
-  bar.id = 'build-switcher';
-  bar.innerHTML =
-    '<button class="build-switch-btn active" data-go="ground">Земля</button>' +
-    '<button class="build-switch-btn" data-go="space">Космос</button>' +
-    '<button class="build-switch-btn" data-go="galaxy">Галактика</button>';
-  document.body.appendChild(bar);
-  var dropBtn = document.getElementById('drop-btn');
-  if (dropBtn) dropBtn.classList.add('raised');
-
-  bar.addEventListener('click', function(e) {
-    var target = e.target.getAttribute('data-go');
-    if (!target) return;
-    if (target === 'space') {
-      window.location.href = 'space-battle.html?system=' + systemId + '&mode=build';
-    } else if (target === 'galaxy') {
-      window.location.href = 'galaxy-map.html';
-    }
-  });
-}
-
 // Простой детерминированный хэш строки -> число, для сида генератора
 function hashStringToSeed(str) {
   var h = 0;
@@ -3974,7 +3948,6 @@ function initGroundBattle() {
         gbSoon('structures', loadStructures, 50);
       });
       if (!window.GL) { centerGridInitially(); initPanAndZoom(); }
-      initBuildSwitcher();
       initBuildToggle(false);
       subscribeToGroundChanges();
       if (typeof amInit === 'function' && !window.GL) amInit();

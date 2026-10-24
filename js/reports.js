@@ -22,7 +22,7 @@
     clone: 'Гарнизон', smuggler: 'Контрабанда', plague: 'Медицина', festival: 'Жители', pirates: 'Наёмники и пираты',
     science: 'Наука', weather: 'Стихия', bank: 'Банкиры', politics: 'Политика', factory: 'Производство',
     trade: 'Торговля', military: 'Военные', wildlife: 'Фауна', droid: 'Дроиды', sith: 'Тёмная сторона',
-    food: 'Продовольствие', hutt: 'Хатты'
+    food: 'Продовольствие', hutt: 'Хатты', site: 'Участок'
   };
 
   // Справочник ресурсов — как в «Снабжении»
@@ -297,6 +297,10 @@
   function textOf(r) {
     var name = '<b>' + esc(r.planet || r.system || '') + '</b>';
     var t = esc(r.data && r.data.text || '');
+    // донесение с участка (sql/mine_reports.sql): «на участке «{site}» {planet}» → «на участке «Рудник» планеты Куат».
+    // Участок снесли после доставки — названия нет, остаётся просто «участок». Замены — функциями: «$» в названии не трогаем
+    var site = r.site ? '<b>' + esc(r.site) + '</b>' : 'участок';
+    t = t.replace(/\{site\}/g, function() { return site; }).replace(/»(\s+)\{planet\}/g, function(m, sp) { return '»' + sp + 'планеты ' + name; });
     // «вернулся на…», «прилетел на…» — куда: «на планету»
     t = t.replace(/([А-Яа-яЁё]+)(\s+)(на)(\s+)\{planet\}/g, function(m, verb, s1, na, s2) {
       return MOTION.test(verb) ? verb + s1 + na + s2 + 'планету ' + name : m;
@@ -306,7 +310,7 @@
       if (w.indexOf('сектор') === 0 || w === 'планета' || w === 'планеты') return pre + word + sp + name;
       return pre + word + sp + (PLANET_FORM[w] || 'планеты') + ' ' + name;
     });
-    return t.replace(/\{planet\}/g, name);
+    return t.replace(/\{planet\}/g, function() { return name; });
   }
 
   function leftChip(r) {
@@ -344,7 +348,7 @@
     var h = '<div class="rep-card' + (r.chain ? ' chain' : '') + '" data-id="' + esc(r.id) + '">' +
       '<div class="rep-top">' + catLine(r) + leftChip(r) + '</div>' +
       '<div class="rep-name">' + esc(r.data && r.data.title) + '</div>' +
-      '<div class="rep-planet"><i></i>' + esc(r.planet || r.system) + '</div>' +
+      '<div class="rep-planet"><i></i>' + esc(r.planet || r.system) + (r.site ? ' · ' + esc(r.site) : '') + '</div>' +
       '<div class="rep-text">' + textOf(r) + '</div>' +
       '<div class="rep-opts">';
     opts.forEach(function(o, i) {
@@ -389,6 +393,15 @@
       h += '<span class="rep-got ' + (n > 0 ? 'up' : 'down') + '">' + sign(n) + ' ' + esc((RES[k] || { name: k }).name.toLowerCase()) + '</span>';
     });
     if (got.raid) { down++; h += '<span class="rep-got down">банда мародёров · ' + got.raid + '</span>'; }
+    // донесение с участка: что стало с участком
+    var mn = got.mine || {};
+    if (mn.wear) { if (mn.wear > 0) down++; else up++; h += '<span class="rep-got ' + (mn.wear > 0 ? 'down' : 'up') + '">износ ' + sign(mn.wear) + ' %</span>'; }
+    if (mn.prep) { up++; h += '<span class="rep-got up">+' + mn.prep + ' % к следующей смене</span>'; }
+    if (mn.vein) { up++; h += '<span class="rep-got up">жила +40 % · ' + hoursText(mn.vein) + '</span>'; }
+    (mn.hurt || []).forEach(function(x) {
+      var what = x.why === 'strike' ? 'бастуют' : x.why === 'virus' ? 'сбой дроидов' : x.k === 'h' ? 'травмы' : 'поломки';
+      down++; h += '<span class="rep-got down">' + what + ' · ' + (x.n | 0) + ' · ' + hoursText(x.h | 0) + '</span>';
+    });
     if (got.gift) { up++; h += '<span class="rep-got up">+ ' + (got.gift === 'veh' ? 'техника' : 'боец') + ' на планете</span>'; }
     if (next) h += '<span class="rep-got next">продолжение — через сутки</span>';
     return { html: h ? '<div class="rep-gots">' + h + '</div>' : '', tone: up && down ? 'mixed' : up ? 'good' : down ? 'bad' : '' };
@@ -403,7 +416,7 @@
     return '<div class="rep-card done ' + g.tone + (fresh ? ' fresh' : '') + (r.chain ? ' chain' : '') + '" data-id="' + esc(r.id) + '">' +
       '<div class="rep-top">' + catLine(r) + '<span class="rep-when">' + esc(whenText(r.resolved || r.at)) + '</span></div>' +
       '<div class="rep-name">' + esc(r.data && r.data.title) + '</div>' +
-      '<div class="rep-planet"><i></i>' + esc(r.planet || r.system) + '</div>' +
+      '<div class="rep-planet"><i></i>' + esc(r.planet || r.system) + (r.site ? ' · ' + esc(r.site) : '') + '</div>' +
       (fresh ? '<div class="rep-text">' + textOf(r) + '</div>' : '') +
       '<div class="rep-out ' + g.tone + '"><div class="rep-out-k">' + who + '</div>' +
         '<div class="rep-out-text">' + esc(out.text || '') + '</div>' + g.html + '</div>' +

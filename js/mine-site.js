@@ -381,7 +381,7 @@ function mnRender() {
   html += '<div class="mn-card" style="border-left-color:' + col + '">' +
     '<div class="mn-res"><i style="background:' + col + '"></i><b>' + mnEsc(res.name) + '</b><span>' + dep + '</span></div>' +
     '<div class="mn-kpis">' +
-      '<div><em>в сутки</em><b>' + (st.auto.on ? '≈ ' + st.day : '—') + '</b><span>' + (st.auto.on ? 'по автосмене' : 'автосмена выкл.') + '</span></div>' +
+      '<div><em>в сутки</em><b>' + (st.auto.on ? '≈ ' + st.day : '—') + '</b>' + mnDaySub(st) + '</div>' +
       '<div><em>бригада</em><b>' + (st.humans + st.droids) + '<small>/' + st.staff_max + '</small></b><span>мест работы ' + st.places + '</span></div>' +
       '<div><em>' + mnW('склад участка', 'склад цеха') + '</em><b>' + st.stock + '<small>/' + st.site_cap + '</small></b><span>планета ' + st.planet.res + '/' + st.planet.cap + '</span></div>' +
     '</div>' +
@@ -446,6 +446,16 @@ function mnRender() {
   html += '<div class="mn-err" id="mn-err"></div>';
   body.innerHTML = html;
   mnLive();
+}
+
+// Подпись под «в сутки»: у цеха суточная оценка — при полной загрузке; сырья на складе планеты меньше — так и пишем
+function mnDaySub(st) {
+  if (!st.auto.on) return '<span>автосмена выкл.</span>';
+  if (st.refine) {
+    var room = mnRoom(0);
+    if (room < (st.day || 0)) return '<span class="warn">сырья на ' + room + '</span>';
+  }
+  return '<span>по автосмене</span>';
 }
 
 // Состояние участка: оборудование, опыт бригады, жила, вскрыша — и что это даёт к выработке

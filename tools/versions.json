@@ -24,8 +24,8 @@
   "sha": "aafae6e1d7f2"
  },
  "css/mine-site.css": {
-  "v": "6",
-  "sha": "53b2ef0b7ce6"
+  "v": "7",
+  "sha": "99e022a1c48d"
  },
  "css/reports.css": {
   "v": "2",
@@ -136,24 +136,24 @@
   "sha": "0cca4ca75a8e"
  },
  "js/ground-battle.js": {
-  "v": "7",
-  "sha": "3c9adfa274e9"
+  "v": "8",
+  "sha": "5e0043cbe0f5"
  },
  "js/ground-live.js": {
   "v": "25",
   "sha": "7b77119422bd"
  },
  "js/map-layer.js": {
-  "v": "1",
-  "sha": "e9f945119426"
+  "v": "2",
+  "sha": "40edf2e28ad0"
  },
  "js/mine-scene.js": {
   "v": "6",
   "sha": "8fd88a738c94"
  },
  "js/mine-site.js": {
-  "v": "7",
-  "sha": "6b0bca0574d9"
+  "v": "8",
+  "sha": "bf4f9c81318e"
  },
  "js/planet-info.js": {
   "v": "2",
@@ -172,8 +172,8 @@
   "sha": "1ff6d8fad9d6"
  },
  "js/reports.js": {
-  "v": "3",
-  "sha": "15de3a2fcd85"
+  "v": "4",
+  "sha": "9de4a45e83c8"
  },
  "js/scene-loader.js": {
   "v": "2",
@@ -188,8 +188,8 @@
   "sha": "b9e1bc3a5d69"
  },
  "js/space-battle.js": {
-  "v": "3",
-  "sha": "7e15b780b865"
+  "v": "4",
+  "sha": "cd8dc1ed5935"
  },
  "js/space-live.js": {
   "v": "16",

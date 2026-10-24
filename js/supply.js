@@ -889,10 +889,19 @@
 
   // ── Вкладка «Рейсы» ────────────────────────────────────────────────
 
+  // Флот стоит у планеты, но вне полосы прыжка: рейс сам ведёт корабли к гиперлинии (sql/supply_zone.sql) —
+  // это видно и на карте космоса. Признак — заметка рейса, которую ставит сервер
+  var ZONE_NOTE = 'Флот выходит к гиперлинии';
+  var ZONE_HINT = 'Флот вне полосы прыжка — перед вылетом корабли сами выйдут к гиперлинии (видно на карте космоса)';
+  function toZone(r) {
+    return r.status === 'active' && r.phase === 'travel' && !!r.here_system_id && String(r.last_note || '').indexOf(ZONE_NOTE) === 0;
+  }
+
   function routeState(r) {
     if (r.status === 'stalled') return { cls: 'stalled', label: 'встал' };
     if (r.status === 'paused') return { cls: 'paused', label: 'пауза' };
     if (r.status === 'stopped') return { cls: 'stopped', label: 'завершён' };
+    if (r.phase === 'travel' && toZone(r)) return { cls: 'travel', label: 'к гиперлинии' };
     if (r.phase === 'travel') return { cls: 'travel', label: 'в пути' };
     if (r.phase === 'waiting') return { cls: 'waiting', label: 'ждёт груз' };
     return { cls: 'stop', label: 'на погрузке' };
@@ -932,6 +941,7 @@
 
   function statusLine(r, stt) {
     var here = esc(r.here_name || '—'), next = esc(r.next_name || '—');
+    if (stt.cls === 'travel' && toZone(r)) return 'Корабли идут к гиперлинии у ' + here + ' — потом прыжок к <b>' + next + '</b>';
     var left = '<span class="sup-left" data-left="' + esc(r.id) + '">' + leftOf(r) + '</span>';
     if (stt.cls === 'travel') return '<div class="sup-status-line"><span>' + here + ' → <b>' + next + '</b></span>' + left + '</div>';
     if (stt.cls === 'waiting') return '<div class="sup-status-line"><span>Стоит на ' + here + ', повтор через</span>' + left + '</div>';
@@ -943,6 +953,7 @@
 
   function leftOf(r) {
     if (r.seconds_left > 0) return leftText(r.seconds_left);
+    if (toZone(r)) return '';
     return r.status === 'active' && r.phase === 'travel' ? 'прибывает' : '';
   }
 
@@ -976,7 +987,7 @@
       chain += '<span class="sup-link' + (back ? (stt.cls === 'travel' ? ' moving' : ' toward') : '') + '"></span><span class="sup-loop" title="по кругу">↻</span>';
     }
 
-    var note = (stt.cls !== 'stalled' && r.last_note) ? '<div class="sup-status-note">' + esc(r.last_note) + '</div>' : '';
+    var note = (stt.cls !== 'stalled' && r.last_note && !toZone(r)) ? '<div class="sup-status-note">' + esc(r.last_note) + '</div>' : '';
     if (stt.cls === 'stalled') {
       note = '<div class="sup-status-note">Флот: ' + esc(r.here_name || '—') +
         (r.next_name ? ' · цель: ' + esc(r.next_name) : '') +
@@ -1680,9 +1691,11 @@
     scr.scrollTop = Math.max(0, el.offsetTop - 12);           // #sup-body — position: relative, offsetTop от него
   }
 
-  // Готовый свободный флот с местом под весь заказ; из хаба — тот, что у хаба
+  // Свободный флот с местом под весь заказ, стоящий в полосе прыжка — первым (остальные сами выйдут к гиперлинии);
+  // из хаба — тот, что у хаба
   function pickPickupCommander(list, need) {
-    var ok = (list || []).filter(function(c) { return !c.busy && c.ready && num(c.free_cargo) >= need; });
+    var ok = (list || []).filter(function(c) { return !c.busy && num(c.ships) > 0 && num(c.free_cargo) >= need; })
+      .sort(function(a, b) { return (b.ready ? 1 : 0) - (a.ready ? 1 : 0); });
     if (st.hub) {
       var here = ok.filter(function(c) { return c.system_id === st.hub.id; });
       if (here.length) return here[0].commander_id;
@@ -1725,7 +1738,7 @@
     var cv = hubCommanders(st.cmds, p.commanderId, p.showAll);
     h += cv.shown.map(function(c) {
       var s = cmdState(c);
-      if (!c.busy && c.ready && num(c.free_cargo) < need) s = { cls: 'warn', text: 'мало места' };
+      if (!c.busy && num(c.ships) > 0 && num(c.free_cargo) < need) s = { cls: 'warn', text: 'мало места' };
       var on = c.commander_id === p.commanderId;
       return '<button type="button" class="sup-cmd' + (on ? ' on' : '') + '" data-act="pick-cmd" data-id="' + esc(c.commander_id) + '"' +
         (c.busy ? ' disabled' : '') + '><span class="sup-radio"></span><div class="sup-cmd-info">' +
@@ -1768,13 +1781,13 @@
     if (!c) why = 'Выбери флот';
     else if (c.busy) why = 'Этот флот занят';
     else if (!num(c.ships)) why = 'У командира нет кораблей';
-    else if (!c.ready) why = 'Флот не в зоне прыжка — выведи весь флот в полосу у края орбиты';
     else if (num(c.free_cargo) < need) why = 'Не влезет: покупка ' + need + ', свободно ' + num(c.free_cargo);
     else if (!dest) why = 'Выбери планету выгрузки';
 
     h += '<div class="sup-pick-fit' + (c && num(c.free_cargo) < need ? ' over' : '') + '">' +
       (c ? 'Покупка <b>' + need + '</b> · свободно в трюме <b>' + num(c.free_cargo) + '</b>' : '') + '</div>';
     if (why && c) h += '<div class="sup-hint warn">' + esc(why) + '</div>';
+    else if (c && !c.ready) h += '<div class="sup-hint">' + esc(ZONE_HINT) + '</div>';
     h += errLine('pick');
     h += '<div class="sup-pick-btns">' +
       '<button type="button" class="sup-btn ghost" data-act="pick-close">Отмена</button>' +
@@ -2475,8 +2488,8 @@
   function pickCommander(list) {
     var free = (list || []).filter(function(c) { return !c.busy; });
     if (st.hub) {
-      var here = free.filter(function(c) { return c.system_id === st.hub.id && c.ready; })
-        .sort(function(a, b) { return num(b.free_cargo) - num(a.free_cargo); });
+      var here = free.filter(function(c) { return c.system_id === st.hub.id && num(c.ships) > 0; })
+        .sort(function(a, b) { return ((b.ready ? 1 : 0) - (a.ready ? 1 : 0)) || (num(b.free_cargo) - num(a.free_cargo)); });
       if (here.length) return here[0].commander_id;
     }
     return free.length === 1 ? free[0].commander_id : null;
@@ -2523,7 +2536,8 @@
   function cmdState(c) {
     if (c.busy === 'route') return { cls: '', text: 'на рейсе' };
     if (c.busy === 'moving') return { cls: '', text: 'в перелёте' };
-    if (!c.ready) return { cls: 'warn', text: 'не готов' };
+    if (!num(c.ships)) return { cls: 'warn', text: 'нет кораблей' };
+    if (!c.ready) return { cls: 'warn', text: 'вне полосы' };
     return { cls: 'ok', text: 'готов' };
   }
 
@@ -2786,7 +2800,7 @@
     var c = selectedCommander();
     if (c) {
       if (!num(c.ships)) errs.push('У командира нет кораблей — выбери другой флот');
-      else if (!c.ready) warns.push('Флот не в зоне прыжка — рейс встанет на первом перелёте');
+      else if (!c.ready) warns.push(ZONE_HINT);
       if (loadTotal > num(c.free_cargo) && !loadAll) warns.push('Погрузка больше трюма (' + num(c.free_cargo) + ') — возьмёт сколько влезет');
     }
     return { errs: errs, warns: warns };

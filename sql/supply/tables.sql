@@ -136,6 +136,7 @@ CREATE TABLE public.supply_routes (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   transit_wait_since timestamptz,
+  zone_tries smallint NOT NULL DEFAULT 0,   -- попытки вывести флот к гиперлинии (sql/supply_zone.sql)
   order_id uuid,                       -- вывоз покупки: бронь, за которой летит рейс (sql/supply_fixes.sql)
   CONSTRAINT supply_routes_pkey PRIMARY KEY (id),
   CONSTRAINT supply_routes_order_id_fkey FOREIGN KEY (order_id) REFERENCES market_orders(id),

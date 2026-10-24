@@ -48,7 +48,8 @@ var MN_OP_ICON = {
   poison: '<svg viewBox="0 0 20 20"><path d="M3.5 7 10 3.8 16.5 7v6.5L10 16.7l-6.5-3.2z"/><path d="M3.5 7 10 10.2 16.5 7M10 10.2v6.5"/><path d="m12.6 12 2.4 1.2m0-1.2-2.4 1.2"/></svg>',
   theft: '<svg viewBox="0 0 20 20"><path d="M3.5 8 10 4.8 16.5 8v7L10 18.2 3.5 15z"/><path d="M3.5 8 10 11.2 16.5 8M10 11.2v7"/><path d="M13.2 2.2h3v3M16.2 2.2l-3.4 3.4"/></svg>',
   near: '<svg viewBox="0 0 20 20"><path d="M2.5 10s2.8-4.5 7.5-4.5 7.5 4.5 7.5 4.5-2.8 4.5-7.5 4.5S2.5 10 2.5 10z"/><circle cx="10" cy="10" r="2.2"/></svg>',
-  caught: '<svg viewBox="0 0 20 20"><path d="M10 2.8 4 5v4.6c0 3.7 2.6 6.4 6 7.6 3.4-1.2 6-3.9 6-7.6V5z"/><path d="m7.2 10 2 2 3.8-4"/></svg>'
+  caught: '<svg viewBox="0 0 20 20"><path d="M10 2.8 4 5v4.6c0 3.7 2.6 6.4 6 7.6 3.4-1.2 6-3.9 6-7.6V5z"/><path d="m7.2 10 2 2 3.8-4"/></svg>',
+  raid: '<svg viewBox="0 0 20 20"><path d="M3 15.5 12.5 6M5.5 17l-2-2 1.4-1.4 2 2zM12.5 6l1.6-2.6L16.6 6 14 7.6z"/><path d="M17 15.5 7.5 6M14.5 17l2-2-1.4-1.4-2 2z"/><path d="m7.5 6-1.6-2.6L3.4 6 6 7.6"/></svg>'
 };
 var MN_SIDE = { republic: 'Республика', cis: 'КНС' };
 var MN_KIND = {
@@ -92,7 +93,13 @@ function mnWorkers(n, kind) {
 // Время сервера и «сколько осталось» до его отметки
 function mnSrvNow() { return Date.now() + mnSkew; }
 function mnLeftAt(iso) { return mnLeft((iso ? Date.parse(iso) : 0) - mnSrvNow()); }
-function mnHm(iso) { return iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''; }
+// время — по часам сервера, как в ленте и в «18–23 по серверу» (js/credits-bar.js → svFormatTime)
+function mnHm(iso) {
+  if (!iso) return '';
+  var t = Date.parse(iso);
+  if (typeof svFormatTime === 'function') { try { var f = svFormatTime(t); if (f) return f; } catch (e) {} }
+  return new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
 
 // Выбывшие по причинам: rush — травмы и поломки после аврала, strike — бастуют, virus — сбой дроидов
 function mnHurt(st, kind) {
@@ -129,9 +136,11 @@ function mnOpEffect(o, st) {
 
 // Карточки происшествий: подход, следствие, итоги; самые свежие сверху (так их отдаёт база)
 function mnOpsHtml(st) {
-  var ops = st.ops || []; if (!ops.length) return '';
-  var now = mnSrvNow(), html = '<div class="mn-sec">Происшествия</div><div class="mn-ops">';
+  var ops = st.ops || [], raids = st.raids || []; if (!ops.length && !raids.length) return '';
+  var now = mnSrvNow(), cards = [];
+  raids.forEach(function(r) { cards.push({ t: Date.parse(r.acted_at || r.raid_at) || 0, html: mnRaidCard(r, st, now) }); });
   ops.forEach(function(o) {
+    var html = '';
     var ph = mnOpPhase(o, now), side = MN_SIDE[o.side] || '';
     var cls = ph === 'approach' || ph === 'acting' ? 'near' : ph === 'caught' ? 'caught' : o.revealed ? 'known' : 'probe';
     var ico = ph === 'approach' || ph === 'acting' ? MN_OP_ICON.near : ph === 'caught' ? MN_OP_ICON.caught : MN_OP_ICON[o.kind] || MN_OP_ICON.near;
@@ -142,15 +151,7 @@ function mnOpsHtml(st) {
         ? '<span class="mn-op-t" data-at="' + Date.parse(o.act_at) + '" data-pre="Подбираются к цели · действие через " data-done="Группа у цели…">Подбираются к цели</span>'
         : 'Группа у цели…';
       // остановить нельзя, но шанс считается в момент действия — охрана и караул ещё успеют
-      if (ph === 'approach') {
-        var run = st.run, gFull = (st.guards || 0) >= (st.guards_max || 0);
-        var watchOn = run && run.task === 'guard', watchBusy = run && run.task !== 'guard';
-        foot = '<div class="mn-op-note">Остановить группу уже нельзя, но охрана и караул, выставленные сейчас, ещё успеют: шанс считается в момент действия.</div>' +
-          '<div class="mn-op-btns">' +
-            '<button type="button" class="mn-btn" data-mn="op-guard"' + (gFull ? ' disabled' : '') + '>' + (gFull ? 'Охрана полная' : '+ Нанять охрану') + (gFull ? '' : '<small>' + st.cfg.hire_g + ' кр</small>') + '</button>' +
-            '<button type="button" class="mn-btn" data-mn="op-watch"' + (watchOn || watchBusy ? ' disabled' : '') + '>' + (watchOn ? 'Караул стоит' : 'Поставить караул') + (watchBusy ? '<small>идёт смена</small>' : '') + '</button>' +
-          '</div>';
-      }
+      if (ph === 'approach') foot = '<div class="mn-op-note">Остановить группу уже нельзя, но охрана и караул, выставленные сейчас, ещё успеют: шанс считается в момент действия.</div>' + mnDefendBtns(st);
     } else if (ph === 'caught') {
       title = 'Диверсанты задержаны';
       body = 'Охрана взяла группу на подходе: готовили «' + mnEsc(o.name || '') + '».';
@@ -162,15 +163,67 @@ function mnOpsHtml(st) {
         ? '<div class="mn-op-who">Итоги следствия: диверсия. Исполнитель — группа игрока <b>' + mnEsc(o.who || '?') + '</b>' + (side ? ' (' + side + ')' : '') + '</div>'
         : '<div class="mn-op-who probe"><i>?</i><span class="mn-op-t" data-at="' + Date.parse(o.reveal_at) + '" data-pre="Причина выясняется · итоги следствия через " data-done="Следствие заканчивается…">Причина выясняется</span></div>';
     }
-    html += '<div class="mn-op ' + cls + '">' +
-      '<div class="mn-op-ico">' + ico + '</div>' +
-      '<div class="mn-op-info">' +
-        '<div class="mn-op-top"><b>' + title + '</b><span>' + mnHm(o.acted_at || o.approach_at) + '</span></div>' +
-        '<div class="mn-op-body">' + body + '</div>' + foot +
-      '</div></div>';
+    html = mnOpCard(cls, ico, title, mnHm(o.acted_at || o.approach_at), body, foot);
+    cards.push({ t: Date.parse(o.acted_at || o.approach_at) || 0, html: html });
   });
-  return html + '</div>';
+  cards.sort(function(a, b) { return b.t - a.t; });
+  return '<div class="mn-sec">Происшествия</div><div class="mn-ops">' + cards.map(function(c) { return c.html; }).join('') + '</div>';
 }
+function mnOpCard(cls, ico, title, hm, body, foot) {
+  return '<div class="mn-op ' + cls + '">' +
+    '<div class="mn-op-ico">' + ico + '</div>' +
+    '<div class="mn-op-info">' +
+      '<div class="mn-op-top"><b>' + title + '</b><span>' + hm + '</span></div>' +
+      '<div class="mn-op-body">' + body + '</div>' + (foot || '') +
+    '</div></div>';
+}
+// Охрана и караул прямо из карточки угрозы: успевают, пока группа или банда только подходит
+function mnDefendBtns(st) {
+  var run = st.run, gFull = (st.guards || 0) >= (st.guards_max || 0);
+  var watchOn = run && run.task === 'guard', watchBusy = run && run.task !== 'guard';
+  return '<div class="mn-op-btns">' +
+    '<button type="button" class="mn-btn" data-mn="op-guard"' + (gFull ? ' disabled' : '') + '>' + (gFull ? 'Охрана полная' : '+ Нанять охрану') + (gFull ? '' : '<small>' + st.cfg.hire_g + ' кр</small>') + '</button>' +
+    '<button type="button" class="mn-btn" data-mn="op-watch"' + (watchOn || watchBusy ? ' disabled' : '') + '>' + (watchOn ? 'Караул стоит' : 'Поставить караул') + (watchBusy ? '<small>идёт смена</small>' : '') + '</button>' +
+  '</div>';
+}
+
+// Защитники участка сейчас (как mine_raid_defense в базе): охрана на посту, «Казармы ополчения», караул
+function mnDefense(st) {
+  return Math.min(st.guards || 0, st.guards_max || 0) + (st.garrison ? 1 : 0) + (st.run && st.run.task === 'guard' ? 1 : 0);
+}
+function mnRaidChance(d, n) { return d >= Math.max(1, n) ? 100 : Math.round(80 * Math.max(0, d) / Math.max(1, n)); }
+
+// Налёт мародёров (sql/mine_raids.sql): предупреждение → банда у участка → бой → итог
+function mnRaidPhase(r, now) {
+  if (r.acted_at) return r.result === 'repelled' ? 'repelled' : 'lost';
+  var ta = Date.parse(r.raid_at);
+  return now < Date.parse(r.approach_at) ? 'warn' : now < ta ? 'near' : 'fight';
+}
+function mnRaidCard(r, st, now) {
+  var ph = mnRaidPhase(r, now), n = r.n || 0, band = mnRaiders(n), cfg = st.cfg.raid || {};
+  if (ph === 'repelled')
+    return mnOpCard('caught', MN_OP_ICON.caught, 'Налёт отбит', mnHm(r.acted_at),
+      'Охрана отбила ' + band + ' — на посту ' + mnDefenders(r.defense || 0) + '.',
+      '<div class="mn-op-who">Трофеи · +' + (r.bounty || 0) + ' кр</div>');
+  if (ph === 'lost') {
+    var rn = st.res && st.res.id === r.loot_res ? st.res.name : r.loot_res, parts = [];
+    if (r.loot > 0) parts.push('−' + r.loot + (rn ? ' ' + mnEsc(rn).toLowerCase() : '') + ' со склада планеты');
+    if (r.shift_cut) parts.push('смена оборвана');
+    parts.push('износ +' + (cfg.wear || 10) + ' %');
+    return mnOpCard('known', MN_OP_ICON.raid, r.loot > 0 ? 'Налёт: банда ушла с добычей' : 'Налёт: банда прорвалась', mnHm(r.acted_at),
+      band.charAt(0).toUpperCase() + band.slice(1) + ' против ' + mnDefenders(r.defense || 0) + ': ' + parts.join(', ') + '.', '');
+  }
+  var d = mnDefense(st), ch = mnRaidChance(d, n);
+  var odds = ch >= 100 ? '<b class="ok">отобьёте</b>' : ch > 0 ? 'шанс отбиться <b>' + ch + ' %</b>' : '<b class="bad">отбиться некому</b>';
+  var t = ph === 'warn' ? '<span class="mn-op-t" data-at="' + Date.parse(r.raid_at) + '" data-pre="' + band.charAt(0).toUpperCase() + band.slice(1) + ' будут около ' + mnHm(r.raid_at) + ' · через " data-done="Банда у ' + mnW('участка', 'цеха') + '">' + band + '</span>'
+        : ph === 'near' ? '<span class="mn-op-t" data-at="' + Date.parse(r.raid_at) + '" data-pre="Банда у ' + mnW('участка', 'цеха') + ' · налёт через " data-done="Бой у склада…">Банда у ' + mnW('участка', 'цеха') + '</span>'
+        : 'Бой у склада…';
+  return mnOpCard('near', MN_OP_ICON.raid, ph === 'warn' ? 'Банда идёт к ' + mnW('участку', 'цеху') : 'Налёт', mnHm(r.raid_at), t,
+    ph === 'fight' ? '' :
+    '<div class="mn-op-note">Защитников на посту: ' + d + ' из ' + n + ' нужных — ' + odds + '. Не отобьёте — смена оборвётся, банда унесёт ' + (cfg.loot_pct || 20) + ' % ресурса со склада планеты (до ' + (cfg.loot_max || 60) + '), износ +' + (cfg.wear || 10) + ' %. Отобьёте — ' + (cfg.bounty || 40) + ' кр за налётчика.</div>' + mnDefendBtns(st));
+}
+function mnDefenders(n) { var a = n % 10, b = n % 100; return n + (a === 1 && b !== 11 ? ' защитника' : ' защитников'); }
+function mnRaiders(n) { var a = n % 10, b = n % 100; return n + (a === 1 && b !== 11 ? ' налётчик' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? ' налётчика' : ' налётчиков'); }
 
 // Охрана и защита от диверсий: кто на посту, караул, узел связи — насколько это снижает шанс диверсанта
 function mnGuardHtml(st) {
@@ -189,6 +242,7 @@ function mnGuardHtml(st) {
       '<div class="mn-guard-rows">' + rows.map(function(r) {
         return '<div class="' + (r.on ? 'on' : '') + '"><i>' + (r.on ? '✓' : '·') + '</i><span>' + r.t + '</span><em>' + r.v + '</em></div>';
       }).join('') + '</div>' +
+      '<div class="mn-note">Против налётов мародёров (вечером, 18–23 по серверу) стоят те же защитники: охрана на посту, ополчение и караул — один за охранника. Их не меньше, чем налётчиков (2–4 по размеру ' + mnW('участка', 'цеха') + '), — налёт отбит наверняка; меньше — шанс 80 % × защитники / налётчики.</div>' +
       '<div class="mn-note">Ночью (22–06 по серверу) диверсантам проще. Шанс считается в момент действия группы, поэтому охрана и караул помогают, даже если выставлены, пока она подбирается.' +
       (st.garrison ? '' : ' «Казармы ополчения» поселения дают ещё одного охранника бесплатно.') + '</div>' +
     '</div>';
@@ -624,7 +678,7 @@ function mnLive() {
   // момент действия или конец следствия прошёл — база решает это тактом раз в минуту, спрашиваем чаще обычного
   var wait = (st.ops || []).some(function(o) {
     return (!o.acted_at && srv > Date.parse(o.act_at)) || (o.result === 'ok' && !o.revealed && srv > Date.parse(o.reveal_at));
-  });
+  }) || (st.raids || []).some(function(r) { return !r.acted_at && srv > Date.parse(r.raid_at); });
   // первые восемь раз — каждые 8 с, дальше раз в минуту (если такт базы застрял, окно не долбит её); в фоне — нет
   if (!wait) mnWaitN = 0;
   else if (!document.hidden && !mnBusy && now - mnAt > 8000 && now - mnWaitAt > (mnWaitN < 8 ? 8000 : 60000)) { mnWaitAt = now; mnWaitN++; mnLoad(); }
@@ -634,12 +688,21 @@ function mnLive() {
 // Строка поверх сцены: что сейчас на участке
 function mnHud(now) {
   var el = document.getElementById('mn-hud'), st = mnState; if (!el || !st) return;
-  var html, srv = mnSrvNow(), near = null, fresh = null;
+  var html, srv = mnSrvNow(), near = null, fresh = null, band = null, bandDone = null;
   (st.ops || []).forEach(function(o) {
     if (!o.acted_at) { if (!near) near = o; }
     else if (!fresh && srv - Date.parse(o.acted_at) < 120000) fresh = o;
   });
-  if (near) {
+  (st.raids || []).forEach(function(r) {
+    if (!r.acted_at) { if (!band && srv >= Date.parse(r.approach_at)) band = r; }
+    else if (!bandDone && srv - Date.parse(r.acted_at) < 120000) bandDone = r;
+  });
+  if (band) {
+    var tr = Date.parse(band.raid_at);
+    html = '<i class="alarm"></i>Банда у ' + mnW('участка', 'цеха') + ' · ' + (srv < tr ? 'налёт через ' + mnLeft(tr - srv) : 'бой у склада');
+  } else if (bandDone) {
+    html = bandDone.result === 'repelled' ? '<i class="on"></i>Налёт отбит · +' + (bandDone.bounty || 0) + ' кр' : '<i class="alarm"></i>Налёт · банда ушла с добычей';
+  } else if (near) {
     var ta = Date.parse(near.act_at);
     html = '<i class="alarm"></i>Чужие у ' + mnW('участка', 'цеха') + ' · ' + (srv < ta ? 'действие через ' + mnLeft(ta - srv) : 'группа у цели');
   } else if (fresh) {

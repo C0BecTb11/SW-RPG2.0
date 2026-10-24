@@ -144,8 +144,8 @@
   "sha": "7b77119422bd"
  },
  "js/map-layer.js": {
-  "v": "1",
-  "sha": "e9f945119426"
+  "v": "2",
+  "sha": "40edf2e28ad0"
  },
  "js/mine-scene.js": {
   "v": "6",
@@ -173,7 +173,7 @@
  },
  "js/reports.js": {
   "v": "4",
-  "sha": "da24dcea2088"
+  "sha": "9de4a45e83c8"
  },
  "js/scene-loader.js": {
   "v": "2",

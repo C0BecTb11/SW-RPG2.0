@@ -297,8 +297,10 @@
   function textOf(r) {
     var name = '<b>' + esc(r.planet || r.system || '') + '</b>';
     var t = esc(r.data && r.data.text || '');
-    // донесение с участка (sql/mine_reports.sql): «на участке «{site}» {planet}» → «на участке «Рудник» планеты Куат»
-    if (r.site) t = t.replace(/\{site\}/g, '<b>' + esc(r.site) + '</b>').replace(/»(\s+)\{planet\}/g, '»$1планеты ' + name);
+    // донесение с участка (sql/mine_reports.sql): «на участке «{site}» {planet}» → «на участке «Рудник» планеты Куат».
+    // Участок снесли после доставки — названия нет, остаётся просто «участок». Замены — функциями: «$» в названии не трогаем
+    var site = r.site ? '<b>' + esc(r.site) + '</b>' : 'участок';
+    t = t.replace(/\{site\}/g, function() { return site; }).replace(/»(\s+)\{planet\}/g, function(m, sp) { return '»' + sp + 'планеты ' + name; });
     // «вернулся на…», «прилетел на…» — куда: «на планету»
     t = t.replace(/([А-Яа-яЁё]+)(\s+)(на)(\s+)\{planet\}/g, function(m, verb, s1, na, s2) {
       return MOTION.test(verb) ? verb + s1 + na + s2 + 'планету ' + name : m;
@@ -308,7 +310,7 @@
       if (w.indexOf('сектор') === 0 || w === 'планета' || w === 'планеты') return pre + word + sp + name;
       return pre + word + sp + (PLANET_FORM[w] || 'планеты') + ' ' + name;
     });
-    return t.replace(/\{planet\}/g, name);
+    return t.replace(/\{planet\}/g, function() { return name; });
   }
 
   function leftChip(r) {

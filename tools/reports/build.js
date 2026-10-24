@@ -86,6 +86,7 @@ var sql = '-- Каталог донесений. Собрано tools/reports/bu
   'insert into public.report_catalog (id, side, cat, chain, w, def, data) values\n' + rows.join(',\n') +
   '\non conflict (id) do update set side = excluded.side, cat = excluded.cat, chain = excluded.chain, w = excluded.w, def = excluded.def, data = excluded.data, active = true;\n' +
   '-- убранные из каталога больше не выпадают\n' +
-  'update public.report_catalog set active = false where id not in (' + LIST.map(function(r) { return q(r.id); }).join(', ') + ');\n';
+  // донесения участков (cat = 'site', sql/mine_reports.sql) живут вне republic.js / cis.js — не выключать их
+  'update public.report_catalog set active = false where cat <> \'site\' and id not in (' + LIST.map(function(r) { return q(r.id); }).join(', ') + ');\n';
 fs.writeFileSync(path.join(__dirname, '..', '..', 'sql', 'reports_catalog.sql'), sql);
 console.log('✓ sql/reports_catalog.sql — ' + LIST.length + ' донесений, ' + Math.round(sql.length / 1024) + ' КБ');

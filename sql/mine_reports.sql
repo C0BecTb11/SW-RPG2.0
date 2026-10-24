@@ -20,7 +20,7 @@ insert into public.report_catalog (id, side, cat, chain, w, def, active, data) v
      "outs": [{"p": 1, "fx": {}, "text": "Завал разобрали за смену, все целы."}]},
     {"label": "Пустить дроидов", "cost": null, "risk": "luck", "bad": 60,
      "outs": [{"p": 4, "fx": {}, "text": "Дроиды расчистили забой без потерь."},
-              {"p": 6, "fx": {"mine": {"hurt": [{"k": "d", "n": 2, "h": 8, "why": "rush"}]}}, "text": "Завал разобрали, но двух дроидов придавило — в ремонте 8 ч."}]},
+              {"p": 6, "fx": {"mine": {"hurt": [{"k": "d", "n": 2, "h": 8, "why": "rush"}]}}, "text": "Завал разобрали, но дроидов придавило — до двух в ремонте 8 ч."}]},
     {"label": "Закрыть забой", "cost": null, "risk": "risky", "bad": 100,
      "outs": [{"p": 1, "fx": {"mine": {"wear": 15}}, "text": "Забой стоит под завалом, оборудование ржавеет: износ +15 %."}]}
   ]}$j$::jsonb),
@@ -41,7 +41,7 @@ insert into public.report_catalog (id, side, cat, chain, w, def, active, data) v
   "text": "Бригада участка «{site}» {planet} требует премию за переработки — иначе грозит выйти за ворота.",
   "opts": [
     {"label": "Выплатить", "cost": {"cr": 200}, "risk": "sure", "bad": 0,
-     "outs": [{"p": 1, "fx": {"mine": {"prep": 25}}, "text": "Бригада довольна и работает с огоньком: следующая смена добычи +25 %."}]},
+     "outs": [{"p": 1, "fx": {"mine": {"prep": 25}}, "text": "Бригада довольна и работает с огоньком: следующая смена +25 %."}]},
     {"label": "Пообещать к выдаче", "cost": null, "risk": "luck", "bad": 40,
      "outs": [{"p": 6, "fx": {}, "text": "Поверили на слово и вернулись к работе."},
               {"p": 4, "fx": {"mine": {"hurt": [{"k": "h", "pct": 100, "h": 4, "why": "strike"}]}}, "text": "Не поверили: люди бастуют 4 ч."}]},
@@ -72,19 +72,24 @@ insert into public.report_catalog (id, side, cat, chain, w, def, active, data) v
     {"label": "Работать как есть", "cost": null, "risk": "risky", "bad": 100,
      "outs": [{"p": 1, "fx": {"mine": {"hurt": [{"k": "d", "pct": 50, "h": 6, "why": "virus"}], "wear": 5}}, "text": "Сбой разошёлся: половина дроидов встала на 6 ч, износ +5 %."}]}
   ]}$j$::jsonb)
-on conflict (id) do nothing;
+on conflict (id) do update set data = excluded.data, cat = excluded.cat;   -- правки текстов из файла доходят до базы
 
 -- ---------------------------------------------------------------- последствия на участке
 -- Возвращает, что реально сделано: { wear, prep, vein, hurt: [{k, n, h, why}] }. Участка больше нет — ничего.
 create or replace function public.mine_report_fx(p_building uuid, p_fx jsonb) returns jsonb
 language plpgsql security definer set search_path to 'public', 'pg_temp' as $$
 declare s mine_sites; sh mine_shifts; h jsonb; v_out jsonb := '{}'::jsonb; v_hurt jsonb := '[]'::jsonb; v_n integer; v_tot integer; v_k text;
+  v_w numeric;
 begin
+  -- порядок блокировок как у mine_finish и mine_tick (смена, потом участок), иначе возможна взаимная блокировка
+  select * into sh from mine_shifts where building_id = p_building and status = 'run' for update;
   select * into s from mine_sites where building_id = p_building for update;
   if not found or s.gone or p_fx is null then return v_out; end if;
   if p_fx ? 'wear' then
-    update mine_sites set wear = least(100, greatest(0, wear + (p_fx->>'wear')::numeric)) where building_id = p_building;
-    v_out := v_out || jsonb_build_object('wear', (p_fx->>'wear')::integer);
+    v_w := least(100, greatest(0, s.wear + (p_fx->>'wear')::numeric));
+    update mine_sites set wear = v_w where building_id = p_building;
+    -- в итог — сколько реально прибавилось (у потолка 100 % меньше заявленного)
+    if round(v_w - s.wear) <> 0 then v_out := v_out || jsonb_build_object('wear', round(v_w - s.wear)::integer); end if;
   end if;
   -- как вскрыша (у цеха — наладка линии): к следующей смене основной работы
   if p_fx ? 'prep' then
@@ -98,12 +103,16 @@ begin
   for h in select * from jsonb_array_elements(coalesce(p_fx->'hurt', '[]'::jsonb)) loop
     v_k := h->>'k';
     continue when v_k not in ('h', 'd');
-    v_tot := case when v_k = 'h' then s.humans else s.droids end;
+    -- считаем от тех, кто ещё не выбыл (уже бастующих или сломанных второй раз не считаем)
+    v_tot := greatest(0, case when v_k = 'h' then s.humans else s.droids end
+                         - coalesce((select sum(n) from mine_hurt where building_id = p_building and kind = v_k and until > now()), 0))::integer;
     v_n := least(v_tot, coalesce((h->>'n')::integer, ceil(v_tot * coalesce((h->>'pct')::numeric, 0) / 100.0)::integer));
     continue when coalesce(v_n, 0) <= 0;
     -- выбывших не держат на смене: если они там — смена обрывается (сделанное сохраняется), как при диверсии
-    select * into sh from mine_shifts where building_id = p_building and status = 'run';
-    if sh.id is not null and (case when v_k = 'h' then sh.humans else sh.droids end) > 0 then perform mine_finish(sh.id, 'stopped'); end if;
+    if sh.id is not null and (case when v_k = 'h' then sh.humans else sh.droids end) > 0 then
+      perform mine_finish(sh.id, 'stopped');
+      sh := null;                                                  -- смена закрыта: второй выбывший её не трогает
+    end if;
     insert into mine_hurt (building_id, kind, n, until, reason)
     values (p_building, v_k, v_n, now() + make_interval(hours => greatest(1, coalesce((h->>'h')::integer, 4))), coalesce(h->>'why', 'rush'));
     v_hurt := v_hurt || jsonb_build_object('k', v_k, 'n', v_n, 'h', greatest(1, coalesce((h->>'h')::integer, 4)), 'why', coalesce(h->>'why', 'rush'));
@@ -137,7 +146,7 @@ begin
         join buildings bd on bd.id = ms.building_id join systems sy on sy.id = ms.system_id
        where not ms.gone and bd.faction is not distinct from sy.faction
        order by random() limit 1;
-      continue when s.building_id is null;
+      continue when s.building_id is null or is_capture_active(s.system_id);
       v_opts := array[case when s.refine then 's_line_fault' else 's_cave_in' end];
       if s.humans > 0 then v_opts := array_append(v_opts, 's_bonus'); end if;
       if not s.refine and coalesce(s.vein_until, now()) <= now() then v_opts := array_append(v_opts, 's_vein'); end if;
@@ -174,6 +183,19 @@ $b$ || '  ' || v_at);
   if position('''site''' in d) = 0 then
     if position('and not c.chain' in d) = 0 then raise exception 'report_pick: место правки не найдено'; end if;
     execute replace(d, 'and not c.chain', 'and not c.chain and c.cat <> ''site''');
+  end if;
+
+  -- DEV-отправка донесения: запасной подбор тоже не берёт донесения участков (им нужен участок)
+  d := pg_get_functiondef('public.dev_report_send(uuid,text)'::regprocedure);
+  if position('''site''' in d) = 0 then
+    if position('and not chain' in d) = 0 or position('  v_id := report_deliver(p_user, v_pick, v_sys, null);' in d) = 0 then
+      raise exception 'dev_report_send: место правки не найдено';
+    end if;
+    d := replace(d, 'and not chain', 'and not chain and cat <> ''site''');
+    d := replace(d, '  v_id := report_deliver(p_user, v_pick, v_sys, null);',
+      '  if (select cat from report_catalog where id = v_pick) = ''site'' then raise exception ''Донесения участков приходят сами — им нужен участок''; end if;' || chr(10) ||
+      '  v_id := report_deliver(p_user, v_pick, v_sys, null);');
+    execute d;
   end if;
 
   d := pg_get_functiondef('public.report_list()'::regprocedure);

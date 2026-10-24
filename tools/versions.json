@@ -44,8 +44,8 @@
   "sha": "f7df65175550"
  },
  "css/ground-battle.css": {
-  "v": "3",
-  "sha": "b1ef7ead0500"
+  "v": "4",
+  "sha": "71ffc3156745"
  },
  "css/ground-live.css": {
   "v": "4",
@@ -100,8 +100,8 @@
   "sha": "fcbc0147b451"
  },
  "css/supply.css": {
-  "v": "3",
-  "sha": "a3484502b25d"
+  "v": "4",
+  "sha": "0c4d4b30eac4"
  },
  "css/transfer.css": {
   "v": "1",
@@ -268,8 +268,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "10",
-  "sha": "549eaf7665f3"
+  "v": "11",
+  "sha": "3c385cd21810"
  },
  "js/ground-live.js": {
   "v": "25",
@@ -360,8 +360,8 @@
   "sha": "30106420e278"
  },
  "js/supply.js": {
-  "v": "4",
-  "sha": "d77adf436edd"
+  "v": "5",
+  "sha": "f0b0366cdda7"
  },
  "js/troop-transfer.js": {
   "v": "1",

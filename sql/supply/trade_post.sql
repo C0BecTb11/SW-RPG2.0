@@ -86,3 +86,14 @@ AS $function$
   select greatest(1, round(r.base_price * game_setting_int('trade_post_pct', 60) / 100.0 * (100 + ge_trade_mod()) / 100.0)::integer)
   from resources r where r.id = p_resource;
 $function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.get_trade_post_info()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select case when auth.uid() is null then null else
+    jsonb_build_object('pct', game_setting_int('trade_post_pct', 60), 'mod', ge_trade_mod()) end;
+$function$

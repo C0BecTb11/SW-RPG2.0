@@ -980,12 +980,37 @@ html, body {
 
 .logi-info { flex: 1; min-width: 60%; }
 
-/* Торговый пост: название и цена — строкой сверху, счётчик и «Продать» — снизу (влезает в телефон 360) */
-.logi-row.trade { flex-wrap: wrap; row-gap: 7px; }
-.logi-row.trade .logi-info { flex: 1 1 100%; min-width: 0; }
-.logi-row.trade .logi-qty { flex: 1 1 auto; }
-.logi-row.trade .logi-qty-btn { min-height: 32px; }
-.logi-row.trade .logi-go.small { min-height: 32px; padding: 0 16px; }
+/* Торговый пост — в языке окон снабжения и участка: сверху карточка «из чего цена», ниже карточка на ресурс —
+   ромб и цена, на складе и сколько дадут, счётчик и «Продать» (влезает в телефон 360) */
+.trade-head { margin-bottom: 4px; }
+.trade-head .eco-what b { font-weight: normal; color: #d9a940; }
+.trade-row {
+  margin-bottom: 7px;
+  padding: 9px 11px 10px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 8px;
+}
+.trade-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.trade-name { min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cfd8dc; }
+.trade-name i { flex: none; width: 6px; height: 6px; border-radius: 1px; background: #8fa8c4; transform: rotate(45deg); }
+.trade-price { flex: none; font-size: 10px; color: #55606c; }
+.trade-price b { font-weight: normal; font-size: 13px; color: #d9a940; }
+.trade-sub { margin-top: 3px; font-size: 10px; color: #55606c; }
+.trade-sub b { font-weight: normal; color: #d9a940; }
+.trade-ctl { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.trade-ctl .logi-qty { flex: 1 1 auto; min-width: 0; max-width: 300px; margin-right: auto; }
+.trade-ctl .logi-qty-btn { min-height: 32px; background: #10151e; border: 1px solid #1c2530; }
+.trade-ctl .logi-go.small { min-height: 32px; padding: 0 16px; }
+
+/* Окно склада: из чего сложился предел */
+.eco-cap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: -2px 0 9px; font-size: 10px; color: #55606c; }
+.eco-cap b { font-weight: normal; color: #cfd8dc; }
+.eco-cap .on b { color: #5fd968; }
+.eco-cap .dim { color: #3a4654; }
+.eco-cap i { font-style: normal; color: #2a3644; }
+.eco-cap em { flex: 1 1 100%; font-style: normal; font-size: 9px; color: #3a4654; }
 .logi-trade-msg { margin: 0 0 6px; font-size: 11px; line-height: 1.5; color: #55606c; }
 .logi-trade-msg:empty { display: none; }
 .logi-trade-msg.ok { color: #5fd968; }
@@ -1207,7 +1232,8 @@ html, body {
   justify-content: space-between;
 }
 
-.eco-stock-name { font-size: 11px; color: #8fa8c4; }
+.eco-stock-name { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: #8fa8c4; }
+.eco-stock-name i { flex: none; width: 6px; height: 6px; border-radius: 1px; transform: rotate(45deg); }
 .eco-stock-val { font-size: 15px; color: #cfd8dc; }
 .eco-stock-val.full { color: #d94a4a; }
 

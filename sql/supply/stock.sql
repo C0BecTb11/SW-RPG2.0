@@ -277,3 +277,26 @@ begin
   return v_fit;
 end;
 $function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.get_stock_cap_parts(p_system_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_temp'
+AS $function$
+declare v_base integer; v_dist integer; v_dep integer; v_n integer;
+begin
+  if auth.uid() is null then raise exception 'Не авторизован'; end if;
+  v_base := game_setting_int('planet_stock_base_cap', 200);
+  v_dist := case when settlement_has_district(p_system_id, 'warehouses')
+                 then (select effect_value from district_types where id = 'warehouses') else 0 end;
+  select coalesce(sum(bt.storage_bonus), 0)::integer, count(*)::integer into v_dep, v_n
+    from buildings b join building_types bt on bt.id = b.building_type_id
+    join systems sy on sy.id = b.system_id
+   where b.system_id = p_system_id and bt.storage_bonus > 0
+     and (b.completes_at is null or b.completes_at <= now())
+     and b.faction = sy.faction;
+  return jsonb_build_object('base', v_base, 'district', coalesce(v_dist, 0), 'depots', v_dep, 'depot_count', v_n,
+                            'total', planet_stock_cap(p_system_id));
+end $function$

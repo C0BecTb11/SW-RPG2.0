@@ -15,6 +15,11 @@
 //
 // Экран — единственный интерфейс логистики: старая панель хаба (конвои и
 // рынок) перенесена сюда целиком, торговый пост и добыча живут отдельно.
+//
+// Окно — в языке окон участка и тайных операций (css/supply.css): по центру над
+// затемнённой картой, сверху живая карта сети (js/supply-map.js, get_supply_map),
+// телефон боком — карта слева, управление справа. Конструктор рейса открывается в том
+// же окне: карта показывает черновик, тап по планете добавляет остановку.
 
 (function() {
 
@@ -68,7 +73,11 @@
     pick: null,                      // открытая форма вывоза покупки
     cmds: null, cmdsError: null,     // командиры для вывоза
     hubs: {},                        // планета → есть ли достроенный хаб (true/false)
-    lotForm: null                    // черновик нового лота
+    lotForm: null,                   // черновик нового лота
+    map: null,                       // живая карта: планеты, гиперпути, флоты рейсов (get_supply_map)
+    mapSel: null,                    // планета, выбранная на карте
+    mapRoute: null,                  // рейс, выбранный на карте или в списке
+    errs: {}                         // ошибки действий, которые переживают перерисовку: 'lot:<id>' | 'pick' | 'lotform'
   };
 
   var timer = null, ticks = 0, badgeTimer = null, toastTimer = null;
@@ -166,18 +175,35 @@
   function screenEl() { return document.getElementById('supply-screen'); }
   function bodyEl() { return document.getElementById('sup-body'); }
 
+  // Короткий отклик — строкой внизу окна (внутри него, а не поверх игры). Ошибку действия
+  // показываем у самой кнопки (inlineErr); сюда — только то, чему в окне места нет
   function toast(msg, bad) {
     var t = document.getElementById('sup-toast');
     if (!t) {
       t = document.createElement('div');
       t.id = 'sup-toast';
       t.className = 'sup-toast';
-      document.body.appendChild(t);
+      (document.getElementById('sup-box') || document.body).appendChild(t);
     }
     t.textContent = msg;
     t.className = 'sup-toast show' + (bad ? ' bad' : '');
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function() { t.className = 'sup-toast' + (bad ? ' bad' : ''); }, bad ? 4200 : 2400);
+  }
+
+  function errLine(key) { return st.errs[key] ? '<div class="sup-err">' + esc(st.errs[key]) + '</div>' : ''; }
+
+  // Ошибка действия — красной строкой в той же карточке, под кнопкой; пропадёт с перерисовкой
+  function inlineErr(btn, msg) {
+    var card = btn && document.body.contains(btn) &&
+      btn.closest('.sup-route, .sup-person, .sup-lot, .sup-order, .sup-res, .sup-form, .sup-pcard, .sup-lock');
+    if (!card) { toast(msg, true); return; }
+    var old = card.querySelector(':scope > .sup-err');
+    if (old) old.parentNode.removeChild(old);
+    var el = document.createElement('div');
+    el.className = 'sup-err';
+    el.textContent = msg;
+    card.appendChild(el);
   }
 
   // ── Загрузка ───────────────────────────────────────────────────────
@@ -191,7 +217,8 @@
     convoys:  'get_my_convoys',
     lots:     { fn: 'get_market_lots', args: { p_resource: null } },
     orders:   'get_my_market_orders',
-    mylots:   'get_my_market_lots'
+    mylots:   'get_my_market_lots',
+    map:      'get_supply_map'
   };
 
   var TAB_KEYS = {
@@ -241,6 +268,10 @@
           if (k === 'planets') {
             Object.keys(st.drafts).forEach(function(dk) { if (!st.drafts[dk].dirty) delete st.drafts[dk]; });
           }
+          if (k === 'map') { st.map = res.data || null; mapData(); }
+          // карта видит нужды сети и состояние рейсов; после действия с рейсом — и свежие флоты
+          if (k === 'network' || k === 'routes') mapSync();
+          if (k === 'routes' && force) refreshMap(true);
         }
         var w = waiters[k];
         waiters[k] = [];
@@ -311,6 +342,8 @@
 
   // ── Открытие и каркас ──────────────────────────────────────────────
 
+  var openAt = 0, downBack = false;
+
   function buildShell() {
     var el = screenEl();
     if (!el) {
@@ -322,22 +355,34 @@
     if (el.getAttribute('data-ready')) return el;
     el.setAttribute('data-ready', '1');
     el.innerHTML =
-      '<div class="sup-head">' +
-        '<div class="sup-head-row">' +
-          '<div class="sup-title-box"><span class="sup-title">Снабжение</span>' +
-            '<span class="sup-sub" id="sup-sub"></span></div>' +
+      '<div id="sup-box">' +
+        '<div id="sup-head">' +
+          '<div class="sup-ttl"><b>Снабжение</b><span class="sup-sub" id="sup-sub"></span></div>' +
           '<button type="button" class="sup-close" id="sup-close" aria-label="Закрыть">✕</button>' +
         '</div>' +
-        '<div class="sup-tabs" id="sup-tabs">' +
-          TABS.map(function(t) {
-            return '<button type="button" class="sup-tab" data-tab="' + t.id + '">' + t.label +
-              '<i class="sup-tab-n" data-n="' + t.id + '"></i></button>';
-          }).join('') +
+        '<div id="sup-stage"><div class="sup-hud" id="sup-hud"></div>' +
+          '<div class="sup-legend"><span><i class="take"></i>забрать</span><span><i class="need"></i>нужда</span><span><i class="hub"></i>' +
+            '<em id="sup-leg-hub">хаб</em></span></div></div>' +
+        '<div id="sup-main">' +
+          '<div class="sup-tabs" id="sup-tabs">' +
+            TABS.map(function(t) {
+              return '<button type="button" class="sup-tab" data-tab="' + t.id + '">' + t.label +
+                '<i class="sup-tab-n" data-n="' + t.id + '"></i></button>';
+            }).join('') +
+          '</div>' +
+          '<div class="sup-body" id="sup-body"></div>' +
         '</div>' +
-      '</div>' +
-      '<div class="sup-body" id="sup-body"></div>';
+        '<div id="sup-editor" style="display:none"></div>' +
+      '</div>';
 
     el.querySelector('#sup-close').addEventListener('click', closeSupplyScreen);
+    // тап, которым открыли окно, браузер досылает щелчком по фону — закрываем только касание, начатое на фоне
+    el.addEventListener('pointerdown', function(e) { downBack = e.target === el; });
+    el.addEventListener('click', function(e) {
+      // черновик рейса случайным щелчком мимо окна не теряем — конструктор закрывается своей кнопкой
+      if (e.target === el && downBack && Date.now() - openAt > 400 && !ed) closeSupplyScreen();
+      downBack = false;
+    });
     el.querySelector('#sup-tabs').addEventListener('click', function(e) {
       var b = e.target.closest('.sup-tab');
       if (b) switchTab(b.getAttribute('data-tab'));
@@ -345,12 +390,17 @@
     el.querySelector('#sup-body').addEventListener('click', onBodyClick);
     el.querySelector('#sup-body').addEventListener('input', onBodyInput);
     el.querySelector('#sup-body').addEventListener('change', onBodyInput);
+    var edEl = el.querySelector('#sup-editor');
+    edEl.addEventListener('click', onEditorClick);
+    edEl.addEventListener('change', onEditorChange);
+    edEl.addEventListener('input', onEditorInput);
     return el;
   }
 
   function openSupplyScreen(tab, ctx) {
     var el = buildShell();
     if (tab && TAB_KEYS[tab]) st.tab = tab;
+    if (ed) closeEditor();
 
     // Из хаба — склады этой планеты и рейсы отсюда; без контекста — вся сеть
     var hubId = ctx && ctx.hub ? String(ctx.hub) : null;
@@ -364,20 +414,31 @@
     }
     st.pick = null;
     st.lotForm = null;
-    paintSubtitle();
+    st.errs = {};
+    st.mapSel = hubId;
+    st.mapRoute = null;
 
     st.open = true;
-    el.style.display = 'block';
-    el.scrollTop = 0;
+    openAt = Date.now(); downBack = false;
+    el.style.display = 'flex';
+    paintSubtitle();
+    bodyEl().scrollTop = 0;
     markTabs();
     bodyEl().innerHTML = '<div class="sup-loading">Загрузка…</div>';
+    if (window.SupMap) {
+      try { SupMap.mount(document.getElementById('sup-stage'), { planet: onMapPlanet, fleet: onMapFleet }); }
+      catch (e) { if (window.errReport) errReport(e, 'supply.map'); }
+    }
+    mapData();
 
     ensureBasics(function() {
+      paintSubtitle();
       // Имя планеты хаба знает справочник систем — на наземной карте его больше негде взять
       if (st.hub && !st.hub.name) loadSystems(function() { if (st.hub) { st.hub.name = sysName(st.hub.id); paintSubtitle(); if (st.open) render(); } });
       // Остальные вкладки — фоном, ради счётчиков на них
       load(['routes', 'grants', 'network', 'planets', 'orders'], function() { if (st.open) { updateTabCounts(); updateNavBadge(); } });
       refreshTab();
+      refreshMap(false);
       // Есть ли штаб снабжения: без него «Новый рейс» неактивен (сервер всё равно проверит при запуске)
       call('get_supply_hub').then(function(res) {
         if (res.error) return;
@@ -391,7 +452,10 @@
     ticks = 0;
     timer = setInterval(function() {
       ticks++;
-      if (ticks % 30 === 0 && (st.tab === 'routes' || st.tab === 'network')) { refreshTab(true); return; }
+      if (ticks % 30 === 0) {
+        if (!document.hidden) refreshMap(false);
+        if (st.tab === 'routes' || st.tab === 'network') { refreshTab(true); return; }
+      }
       tickRoutes();
     }, 1000);
   }
@@ -401,7 +465,153 @@
     var el = screenEl();
     if (el) el.style.display = 'none';
     closeEditor();
+    if (window.SupMap) SupMap.stop();
     if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  // ── Живая карта сети ───────────────────────────────────────────────
+  // Карта рисует сама (js/supply-map.js); окно говорит ей, что выбрано и что в сети нужно.
+
+  function refreshMap(force) {
+    if (!st.open || !window.SupMap) return;
+    load(['map'], null, force);
+  }
+
+  function mapData() {
+    if (!window.SupMap) return;
+    try { SupMap.set(st.map); } catch (e) { if (window.errReport) errReport(e, 'supply.map'); }
+    mapSync();
+  }
+
+  // Нужды и излишки по планетам — из тех же строк сети, что и вкладка «Сеть»
+  function netBySys() {
+    var out = {};
+    (st.network || []).forEach(function(r) {
+      var o = out[r.system_id] || (out[r.system_id] = { take: 0, need: 0 });
+      if (r.available > 0 && (r.can_take || r.is_mine)) o.take++;
+      if (r.need > 0) o.need++;
+    });
+    return out;
+  }
+
+  function mapFleet(id) {
+    var list = (st.map && st.map.fleets) || [];
+    for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return list[i];
+    return null;
+  }
+  function mapSys(id) {
+    var list = (st.map && st.map.systems) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+
+  function mapSync() {
+    if (!st.open) return;
+    var draft = null;
+    if (ed) {
+      draft = ed.stops.map(function(s) { return s.system_id; }).filter(function(x) { return !!x; });
+      if (homeStopNeeded()) draft.push(ed.stops[0].system_id);
+    }
+    if (st.mapRoute && !mapFleet(st.mapRoute)) st.mapRoute = null;
+    if (window.SupMap) {
+      try {
+        SupMap.view({ net: netBySys(), sel: ed ? null : st.mapSel, route: ed ? null : st.mapRoute,
+                      draft: draft, draftLoop: !!(ed && ed.loop) });
+      } catch (e) { if (window.errReport) errReport(e, 'supply.map'); }
+    }
+    paintHud();
+  }
+
+  // Короткая подсказка в строке над картой (ответ на тап по карте), потом — обычная строка
+  var hudMsg = null, hudTimer = null;
+  function hudSay(text, dot) {
+    hudMsg = { text: text, dot: dot || '' };
+    paintHud();
+    if (hudTimer) clearTimeout(hudTimer);
+    hudTimer = setTimeout(function() { hudMsg = null; paintHud(); }, 2600);
+  }
+
+  // Строка над картой: что выбрано, а без выбора — как идут рейсы
+  function paintHud() {
+    var el = document.getElementById('sup-hud');
+    if (!el) return;
+    var dot = '', txt = '';
+    if (hudMsg) {
+      dot = hudMsg.dot; txt = hudMsg.text;
+    } else if (ed) {
+      dot = 'on';
+      var gap = ed.stops.some(function(s) { return !s.system_id; });
+      txt = gap ? 'Тап по планете — выбрать остановку'
+        : ed.stops.length >= maxStops() ? 'Остановок максимум — убери лишнюю, чтобы добавить'
+        : 'Тап по планете — добавить остановку';
+    } else if (st.mapRoute) {
+      var f = mapFleet(st.mapRoute), r = findRoute(st.mapRoute);
+      var stt = r ? routeState(r) : null;
+      dot = stt && stt.cls === 'stalled' ? 'alarm' : stt && stt.cls === 'paused' ? '' : 'on';
+      txt = (f ? (f.commander || f.name) : 'Рейс') + (stt ? ' · ' + stt.label : '') +
+        (r && r.next_name && stt && stt.cls === 'travel' ? ' → ' + r.next_name : '');
+    } else if (st.mapSel) {
+      var s = mapSys(st.mapSel), n = netBySys()[st.mapSel];
+      if (s) {
+        dot = n && n.need ? 'need' : n && n.take ? 'take' : '';
+        txt = s.name + (s.mine ? ' · моя' : '') + (s.hub ? ' · ' + hubWord() : '') +
+          (n && n.take ? ' · забрать ' + n.take : '') + (n && n.need ? ' · ' + plural(n.need, 'нужда', 'нужды', 'нужд') + ' ' + n.need : '');
+      }
+    }
+    if (!txt) {
+      var fl = (st.map && st.map.fleets) || [];
+      var bad = fl.filter(function(x) { return x.status === 'stalled'; }).length;
+      var go = fl.filter(function(x) { return x.status === 'active'; }).length;
+      if (bad) { dot = 'alarm'; txt = bad + ' ' + plural(bad, 'рейс встал', 'рейса встали', 'рейсов встало') + (go ? ' · в пути ' + go : ''); }
+      else if (go) { dot = 'on'; txt = 'В пути ' + go + ' ' + plural(go, 'рейс', 'рейса', 'рейсов'); }
+      else if (st.map) txt = fl.length ? 'Рейсы на паузе' : 'Рейсов нет · тап по планете — что на ней';
+      else if (st.errors.map) { dot = 'alarm'; txt = 'Карта сети не загрузилась — обновится сама'; }
+    }
+    el.innerHTML = txt ? '<i class="' + dot + '"></i>' + esc(txt) : '';
+  }
+
+  function onMapPlanet(id) {
+    if (!st.open) return;
+    if (ed) { if (id) addStopFromMap(id); return; }
+    st.mapRoute = null;
+    st.mapSel = id && id !== st.mapSel ? id : null;
+    mapSync();
+    if (!st.mapSel) return;
+    // в списке — к карточке этой планеты
+    var card = document.querySelector('#sup-body [data-psys="' + cssEsc(st.mapSel) + '"]');
+    markSel();
+    if (card) bodyEl().scrollTop = Math.max(0, card.offsetTop - 8);
+  }
+
+  function onMapFleet(id) {
+    if (!st.open || ed) return;
+    st.mapSel = null;
+    st.mapRoute = st.mapRoute === id ? null : id;
+    mapSync();
+    if (!st.mapRoute) { markSel(); return; }
+    function toCard() {
+      markSel();
+      var card = document.querySelector('#sup-body .sup-route[data-route="' + cssEsc(id) + '"]');
+      if (card) bodyEl().scrollTop = Math.max(0, card.offsetTop - 8);
+    }
+    if (st.tab !== 'routes') {
+      switchTab('routes');
+      // рейсы уже в памяти (их грузят при открытии) — список нарисован сразу; иначе — после загрузки
+      if (st.routes) toCard(); else load(['routes'], function() { if (st.open && st.tab === 'routes' && st.mapRoute === id) { render(); toCard(); } });
+      return;
+    }
+    toCard();
+  }
+
+  // подсветка выбранного на карте в списке — без перерисовки списка
+  function markSel() {
+    var a = document.querySelectorAll('#sup-body .sup-sel');
+    for (var i = 0; i < a.length; i++) a[i].classList.remove('sup-sel');
+    var q = st.mapRoute ? '#sup-body .sup-route[data-route="' + cssEsc(st.mapRoute) + '"]'
+      : st.mapSel ? '#sup-body [data-psys="' + cssEsc(st.mapSel) + '"]' : null;
+    if (!q) return;
+    var b = document.querySelectorAll(q);
+    for (var j = 0; j < b.length; j++) b[j].classList.add('sup-sel');
   }
 
   // Постройка-штаб снабжения своей стороны: у Республики «логистический хаб», у КНС «транспортный узел»
@@ -417,20 +627,19 @@
   function paintSubtitle() {
     var el = document.getElementById('sup-sub');
     if (!el) return;
-    if (st.hub) {
-      el.innerHTML = '<i></i>' + esc(hubWord(false, true)) + ' · <b>' + esc(hubName()) + '</b>';
-      el.style.display = '';
-    } else {
-      el.innerHTML = '';
-      el.style.display = 'none';
-    }
+    if (st.hub) el.innerHTML = '<i></i>' + esc(hubWord(false, true)) + ' · <b>' + esc(hubName()) + '</b>';
+    else el.textContent = st.faction === 'cis' ? 'Склады и рейсы Конфедерации' : st.faction ? 'Склады и рейсы Республики' : 'Склады и рейсы фракции';
+    var leg = document.getElementById('sup-leg-hub');
+    if (leg) leg.textContent = st.faction === 'cis' ? 'узел' : 'хаб';
   }
 
   function switchTab(tab) {
     if (!TAB_KEYS[tab]) return;
     st.tab = tab;
+    st.errs = {};
     markTabs();
-    screenEl().scrollTop = 0;
+    bodyEl().scrollTop = 0;
+    mapSync();
     var have = TAB_KEYS[tab].every(function(k) { return st[k] !== null || st.errors[k]; });
     if (have) render();
     else bodyEl().innerHTML = '<div class="sup-loading">Загрузка…</div>';
@@ -537,6 +746,7 @@
     else if (st.tab === 'routes') body.innerHTML = renderRoutes();
     else if (st.tab === 'stores') body.innerHTML = renderStores();
     else body.innerHTML = renderAccess();
+    markSel();
   }
 
   function chip(cls, res, inner) {
@@ -626,7 +836,7 @@
           (trusted && trusted.status === 'active' ? ' <span class="sup-tag trust">доверяет</span>' : '');
 
       var cls = 'sup-pcard' + (p.mine ? ' mine' : '') + (need.length ? ' has-need' : (take.length ? ' has-take' : ''));
-      h += '<div class="' + cls + '">' +
+      h += '<div class="' + cls + '" data-psys="' + esc(p.id) + '">' +
         '<div class="sup-phead">' +
           '<button type="button" class="sup-pname" data-act="focus" data-sys="' + esc(p.id) + '">' +
             '<span class="sup-pname-t">' + esc(p.name) + '</span><em>⌖</em></button>' +
@@ -780,7 +990,7 @@
     if (live) {
       var toggle = r.status === 'active'
         ? '<button type="button" class="sup-btn" data-act="route-status" data-id="' + esc(r.id) + '" data-st="paused">Пауза</button>'
-        : '<button type="button" class="sup-btn ' + (r.status === 'stalled' ? 'gold' : 'blue') + '" data-act="route-status" data-id="' +
+        : '<button type="button" class="sup-btn primary" data-act="route-status" data-id="' +
             esc(r.id) + '" data-st="active">Продолжить</button>';
       // вывоз покупки не редактируется: у него остановка на чужой планете — только пауза и «Завершить»
       actions = '<div class="sup-actions">' + toggle +
@@ -799,7 +1009,7 @@
     }
 
     return '<div class="sup-route ' + stt.cls + '" data-route="' + esc(r.id) + '">' +
-      '<div class="sup-route-top">' +
+      '<div class="sup-route-top" data-act="route-map" data-id="' + esc(r.id) + '">' +
         '<div><div class="sup-route-name">' + esc(r.name || 'Рейс') + '</div>' +
         '<div class="sup-route-sub"><b>' + esc(r.commander_name || 'Командир') + '</b> · ' +
           num(r.ships) + ' ' + plural(num(r.ships), 'корабль', 'корабля', 'кораблей') +
@@ -1000,8 +1210,8 @@
       });
       if (st.showAll[sysId]) { main = list; rest = []; }
 
-      h += '<div class="sup-planet-h"><button type="button" class="sup-pname" data-act="focus" data-sys="' + esc(sysId) + '">' +
-        esc(list[0].system_name) + '<em>⌖</em></button>' +
+      h += '<div class="sup-planet-h" data-psys="' + esc(sysId) + '"><button type="button" class="sup-pname" data-act="focus" data-sys="' + esc(sysId) + '">' +
+        '<span class="sup-pname-t">' + esc(list[0].system_name) + '</span><em>⌖</em></button>' +
         (shared ? '<span class="sup-count green">в сети ' + shared + '</span>' : '<span class="sup-count">закрыт</span>') + '</div>';
 
       h += main.map(renderResRow).join('');
@@ -1026,7 +1236,7 @@
 
     var h = '<div class="sup-res' + (d.share ? '' : ' off') + '" data-rule="' + esc(k) + '" style="border-left-color:' + esc(color) + '">' +
       '<div class="sup-res-top">' +
-        '<span class="sup-res-name">' + esc(p.resource_name || resInfo(p.resource).name) + '</span>' +
+        '<span class="sup-res-name">' + resDot(p.resource, color) + esc(p.resource_name || resInfo(p.resource).name) + '</span>' +
         '<span class="sup-res-val">' + stock + '<em> / ' + num(p.cap) + '</em></span>' +
         '<button type="button" class="sup-toggle' + (d.share ? ' on' : '') + '" data-act="share" data-k="' + esc(k) + '"' +
           (st.saving[k] ? ' disabled' : '') + '><i></i>В сеть</button>' +
@@ -1047,7 +1257,7 @@
         '</div></div>' +
         '<div class="sup-rule-foot">' +
           '<span class="sup-rule-preview">' + previewText(p, d) + '</span>' +
-          '<button type="button" class="sup-btn ' + (d.dirty ? 'gold' : '') + '" data-act="rule-save" data-k="' + esc(k) + '"' +
+          '<button type="button" class="sup-btn ' + (d.dirty ? 'primary' : '') + '" data-act="rule-save" data-k="' + esc(k) + '"' +
             (st.saving[k] ? ' disabled' : '') + '>' + (st.saving[k] ? 'Сохраняю…' : 'Сохранить') + '</button>' +
         '</div>' +
       '</div>';
@@ -1126,7 +1336,7 @@
     var pv = el.querySelector('.sup-rule-preview');
     if (pv) pv.innerHTML = previewText(p, d);
     var sv = el.querySelector('[data-act="rule-save"]');
-    if (sv) sv.className = 'sup-btn' + (d.dirty ? ' gold' : '');
+    if (sv) sv.className = 'sup-btn' + (d.dirty ? ' primary' : '');
   }
 
   function cssEsc(s) { return String(s).replace(/["\\]/g, '\\$&'); }
@@ -1150,8 +1360,9 @@
       if (res.error) {
         // Переключатель не сохранился — возвращаем его к тому, что на сервере
         if (fromToggle) d.share = !!p.share;
-        toast(errText(res.error), true);
         rerenderRule(k);
+        var rr = document.querySelector('#sup-body .sup-res[data-rule="' + cssEsc(k) + '"] .sup-res-top');
+        inlineErr(rr, errText(res.error));
         return;
       }
       if (fromToggle) p.share = d.share;
@@ -1357,7 +1568,7 @@
     var id = esc(l.lot_id);
     return '<div class="sup-lot' + (l.foreign_side ? ' foreign' : '') + '" data-lot="' + id + '" style="border-left-color:' + esc(color) + '">' +
       '<div class="sup-lot-top">' +
-        '<span class="sup-lot-res">' + esc(l.resource_name || resInfo(l.resource).name) + '</span>' +
+        '<span class="sup-lot-res">' + resDot(l.resource, color) + esc(l.resource_name || resInfo(l.resource).name) + '</span>' +
         '<span class="sup-lot-price"><b>' + money(l.price_per_unit) + '</b> кр/ед</span>' +
       '</div>' +
       '<div class="sup-lot-sub"><b>' + esc(l.seller_name || '—') + '</b> · ' + esc(l.system_name || '—') +
@@ -1372,6 +1583,7 @@
         '<button type="button" class="sup-btn buy" data-act="buy" data-id="' + id + '"' + (q > 0 ? '' : ' disabled') + '>Купить</button>' +
       '</div>' +
       '<div class="sup-lot-cost" data-cost="' + id + '">' + costText(l, q, false) + '</div>' +
+      errLine('lot:' + l.lot_id) +
     '</div>';
   }
 
@@ -1410,9 +1622,10 @@
     }
     btn.disabled = true;
     btn.textContent = 'Покупаю…';
+    delete st.errs['lot:' + l.lot_id];
     call('buy_market_lot', { p_lot_id: l.lot_id, p_amount: q }).then(function(res) {
       if (res.error) {
-        toast(errText(res.error), true);
+        st.errs['lot:' + l.lot_id] = errText(res.error);
         load(['lots'], function() { if (st.tab === 'market') render(); }, true);
         return;
       }
@@ -1455,7 +1668,7 @@
 
     var h = '<div class="sup-order' + (o.fleet_sent ? ' sent' : '') + (open ? ' open' : '') + '" data-order="' + id + '"' +
       ' style="border-left-color:' + esc(resInfo(o.resource).color) + '">' +
-      '<div class="sup-lot-top"><span class="sup-lot-res">' + esc(o.resource_name || resInfo(o.resource).name) +
+      '<div class="sup-lot-top"><span class="sup-lot-res">' + resDot(o.resource) + esc(o.resource_name || resInfo(o.resource).name) +
         ' <b>' + num(o.amount_left) + '</b></span>' + pill + '</div>' +
       '<div class="sup-lot-sub">У продавца на <b>' + esc(o.system_name || '—') + '</b> · оплачено ' + money(o.paid) + ' кр</div>';
 
@@ -1492,11 +1705,10 @@
   function scrollToPick() {
     if (!st.pick || !st.pick.scroll) return;
     var el = document.querySelector('#sup-body .sup-order.open');
-    var scr = screenEl();
+    var scr = bodyEl();
     if (!el || !scr) return;
     if (st.cmds !== null) st.pick.scroll = false;
-    var head = scr.querySelector('.sup-head');
-    scr.scrollTop = Math.max(0, el.offsetTop - (head ? head.offsetHeight : 0) - 12);
+    scr.scrollTop = Math.max(0, el.offsetTop - 12);           // #sup-body — position: relative, offsetTop от него
   }
 
   // Готовый свободный флот с местом под весь заказ; из хаба — тот, что у хаба
@@ -1594,9 +1806,10 @@
     h += '<div class="sup-pick-fit' + (c && num(c.free_cargo) < need ? ' over' : '') + '">' +
       (c ? 'Покупка <b>' + need + '</b> · свободно в трюме <b>' + num(c.free_cargo) + '</b>' : '') + '</div>';
     if (why && c) h += '<div class="sup-hint warn">' + esc(why) + '</div>';
+    h += errLine('pick');
     h += '<div class="sup-pick-btns">' +
       '<button type="button" class="sup-btn ghost" data-act="pick-close">Отмена</button>' +
-      '<button type="button" class="sup-btn gold" data-act="pick-go"' + (why || p.sending ? ' disabled' : '') + '>' +
+      '<button type="button" class="sup-btn primary" data-act="pick-go"' + (why || p.sending ? ' disabled' : '') + '>' +
         (p.sending ? 'Отправляю…' : 'Отправить за покупкой') + '</button></div>';
     return h + '</div>';
   }
@@ -1627,6 +1840,7 @@
     var dest = pickDest();
     if (!p || !c || !dest || p.sending) return;
     p.sending = true;
+    delete st.errs.pick;
     if (btn) { btn.disabled = true; btn.textContent = 'Отправляю…'; }
     call('dispatch_market_pickup', {
       p_commander_id: c.commander_id,
@@ -1636,7 +1850,7 @@
     }).then(function(res) {
       if (!st.pick) return;
       st.pick.sending = false;
-      if (res.error) { toast(errText(res.error), true); render(); return; }
+      if (res.error) { st.errs.pick = errText(res.error); render(); return; }
       st.pick = null;
       toast('Флот вылетел за покупкой — рейс вывоза во вкладке «Рейсы»');
       load(['orders', 'routes'], function() { updateTabCounts(); if (st.tab === 'market') render(); }, true);
@@ -1759,6 +1973,7 @@
           '<div class="sup-lot-cost" id="sup-lot-sum">' + lotSummary(f) + '</div>' +
           '<button type="button" class="sup-go" data-act="lot-create"' + (lotFormError(f, s.max) || noHub || f.sending ? ' disabled' : '') + '>' +
             (f.sending ? 'Выставляю…' : 'Выставить лот') + '</button>' +
+          errLine('lotform') +
         '</div>';
       }
     }
@@ -1799,7 +2014,7 @@
     var reserved = num(l.reserved);
     return '<div class="sup-lot mine" style="border-left-color:' + esc(resInfo(l.resource).color) + '">' +
       '<div class="sup-lot-top">' +
-        '<span class="sup-lot-res">' + esc(l.resource_name || resInfo(l.resource).name) + ' <b>' + num(l.amount_left) + '</b></span>' +
+        '<span class="sup-lot-res">' + resDot(l.resource) + esc(l.resource_name || resInfo(l.resource).name) + ' <b>' + num(l.amount_left) + '</b></span>' +
         '<span class="sup-lot-price"><b>' + money(l.price_per_unit) + '</b> кр/ед</span>' +
       '</div>' +
       '<div class="sup-lot-sub">' + esc(l.system_name || '—') +
@@ -1819,12 +2034,13 @@
     var row = findBy(stockRows(f.sys), 'resource', f.res);
     if (lotFormError(f, row ? num(row.stock) : 0)) { refreshLotFormLive(); return; }
     f.sending = true;
+    delete st.errs.lotform;
     if (btn) { btn.disabled = true; btn.textContent = 'Выставляю…'; }
     call('create_market_lot', {
       p_system_id: f.sys, p_resource: f.res, p_amount: num(f.amount), p_price: num(f.price), p_open_to: f.aud
     }).then(function(res) {
       f.sending = false;
-      if (res.error) { toast(errText(res.error), true); if (st.tab === 'market') render(); return; }
+      if (res.error) { st.errs.lotform = errText(res.error); if (st.tab === 'market') render(); return; }
       toast('Лот выставлен: ' + resInfo(f.res).name.toLowerCase() + ' ' + num(f.amount) + ' по ' + money(f.price) + ' кр');
       f.amount = 10;
       load(['mylots', 'planets', 'lots'], function() { updateTabCounts(); if (st.tab === 'market') render(); }, true);
@@ -1843,7 +2059,7 @@
     var l = findBy(st.mylots, 'lot_id', id);
     btn.disabled = true;
     call('cancel_market_lot', { p_lot_id: id }).then(function(res) {
-      if (res.error) { btn.disabled = false; toast(errText(res.error), true); return; }
+      if (res.error) { btn.disabled = false; inlineErr(btn, errText(res.error)); return; }
       // что не влезло на склад, сервер оставляет в лоте — он продолжает продаваться
       var fit = num(res.data), left = l ? num(l.amount_left) : fit;
       toast(fit <= 0 ? 'На складе нет места — лот остался на продаже'
@@ -1951,7 +2167,7 @@
       var group = b.getAttribute('data-group'), val = b.getAttribute('data-val');
       if (group === 'filter') { st.filter = val; render(); return; }
       if (group === 'scope') { st.storeSys = (val === 'hub' && st.hub) ? st.hub.id : null; render(); return; }
-      if (group === 'mkt') { st.mkt = val; st.pick = null; screenEl().scrollTop = 0; render(); return; }
+      if (group === 'mkt') { st.mkt = val; st.pick = null; bodyEl().scrollTop = 0; render(); return; }
       if (group === 'mktres') { st.mktRes = val; render(); return; }
       if (group === 'lotaud') { lotForm().aud = val; render(); return; }
       if (group.indexOf('aud:') === 0) {
@@ -1969,6 +2185,14 @@
     if (act === 'route-new') { openNewRoute(); return; }
     if (act === 'route-edit') { openEditor(findRoute(b.getAttribute('data-id'))); return; }
 
+    if (act === 'route-map') {
+      // карточка рейса ↔ его флот на карте
+      var mid = b.getAttribute('data-id');
+      st.mapSel = null;
+      st.mapRoute = st.mapRoute === mid ? null : (mapFleet(mid) ? mid : null);
+      mapSync(); markSel();
+      return;
+    }
     if (act === 'route-status') { setRouteStatus(b.getAttribute('data-id'), b.getAttribute('data-st'), b); return; }
 
     if (act === 'route-stop') {
@@ -2125,7 +2349,7 @@
     call('set_supply_route_status', { p_route_id: id, p_status: status }).then(function(res) {
       if (res.error) {
         if (btn) btn.disabled = false;
-        toast(errText(res.error), true);
+        inlineErr(btn, errText(res.error));
         return;
       }
       toast(status === 'paused' ? 'Рейс на паузе' : status === 'stopped' ? 'Рейс завершён, командир свободен' : 'Рейс продолжен');
@@ -2138,7 +2362,7 @@
     call(fn, args).then(function(res) {
       if (res.error) {
         if (btn) btn.disabled = false;
-        toast(errText(res.error), true);
+        inlineErr(btn, errText(res.error));
         return;
       }
       toast(okText);
@@ -2229,22 +2453,17 @@
     openEditor(null, stops);
   }
 
+  // Конструктор — в том же окне, на месте вкладок: карта над ним показывает черновик рейса
   function showEditor() {
+    buildShell();
     var el = document.getElementById('sup-editor');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'sup-editor';
-      document.body.appendChild(el);
-      el.addEventListener('click', onEditorClick);
-      el.addEventListener('change', onEditorChange);
-      el.addEventListener('input', onEditorInput);
-    }
+    var main = document.getElementById('sup-main');
+    if (main) main.style.display = 'none';
     el.style.display = 'flex';
+    screenEl().classList.add('editing');
     el.innerHTML =
-      '<div class="sup-head"><div class="sup-head-row" style="padding-bottom:16px">' +
-        '<span class="sup-title">' + (ed.routeId ? 'Изменить рейс' : 'Новый рейс') + '</span>' +
-        '<button type="button" class="sup-close" data-ed="close" aria-label="Закрыть">✕</button>' +
-      '</div></div>' +
+      '<div class="sup-ed-head"><button type="button" class="sup-back" data-ed="close">‹ ' + esc(st.tab === 'routes' ? 'Рейсы' : 'Назад') + '</button>' +
+        '<b>' + (ed.routeId ? 'Изменить рейс' : 'Новый рейс') + '</b></div>' +
       '<div class="sup-ed-body" id="sup-ed-body"><div class="sup-loading">Загрузка…</div></div>' +
       '<div class="sup-ed-foot"><div class="sup-hints" id="sup-ed-hints"></div>' +
         '<button type="button" class="sup-go" id="sup-ed-go" data-ed="go" disabled>' + (ed.routeId ? 'Сохранить рейс' : 'Запустить рейс') + '</button></div>';
@@ -2297,7 +2516,39 @@
   function closeEditor() {
     var el = document.getElementById('sup-editor');
     if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+    var main = document.getElementById('sup-main');
+    if (main) main.style.display = '';
+    var scr = screenEl();
+    if (scr) scr.classList.remove('editing');
+    var tst = document.getElementById('sup-toast');
+    if (tst && ed) tst.className = 'sup-toast';                  // отклик конструктора к списку не относится
+    var was = !!ed;
     ed = null;
+    if (was) mapSync();
+  }
+
+  // Тап по планете на карте: заполнить первую пустую остановку или добавить новую
+  function addStopFromMap(id) {
+    if (!ed || ed.sending) return;
+    if (!st.systems) { hudSay('Список планет ещё грузится — секунду'); return; }
+    var ok = st.systems.some(function(s) { return s.id === id; });
+    if (!ok) { hudSay('Остановка — только на планете своей стороны', 'alarm'); return; }
+    var empty = -1;
+    for (var i = 0; i < ed.stops.length; i++) if (!ed.stops[i].system_id) { empty = i; break; }
+    if (empty < 0) {
+      if (ed.stops.length >= maxStops()) { hudSay('Остановок уже ' + ed.stops.length + ' — больше не уместить', 'alarm'); return; }
+      var last = ed.stops[ed.stops.length - 1];
+      if (last && last.system_id === id) { hudSay('Эта планета уже последняя остановка'); return; }   // та же планета подряд — не остановка
+      ed.stops.push({ system_id: id, actions: [newAction('unload')] });
+      empty = ed.stops.length - 1;
+    } else ed.stops[empty].system_id = id;
+    renderEditor();
+    var card = document.querySelector('#sup-ed-body .sup-stop[data-stop="' + empty + '"]');
+    var body = document.getElementById('sup-ed-body');
+    if (card && body) {
+      body.scrollTop = Math.max(0, card.offsetTop - 8);
+      card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+    }
   }
 
   function cmdState(c) {
@@ -2452,6 +2703,7 @@
     body.innerHTML = h;
     body.scrollTop = keep;
     renderHints();
+    mapSync();
   }
 
   function renderStop(s, i) {
@@ -2731,7 +2983,12 @@
     p.then(function(res) {
       if (!ed) return;
       ed.sending = false;
-      if (res.error) { renderHints(); toast(errText(res.error), true); return; }
+      if (res.error) {
+        renderHints();
+        var hb = document.getElementById('sup-ed-hints');
+        if (hb) hb.innerHTML = '<div class="sup-hint">' + esc(errText(res.error)) + '</div>' + hb.innerHTML;
+        return;
+      }
       closeEditor();
       toast(editing ? 'Рейс обновлён — флот начинает с остановки 1' : 'Рейс запущен — флот вылетает на первую остановку');
       if (st.open) {

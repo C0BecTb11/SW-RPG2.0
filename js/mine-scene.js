@@ -1,7 +1,8 @@
-// Живая сцена участка добычи (шаг 2 плана claude/mining-plan.md).
+// Живая сцена участка добычи и перерабатывающего цеха (план claude/mining-plan.md).
 //
 // Участок сверху: забои (вышки, жилы, грядки — по ресурсу) по числу мест работы, дорога, склад участка,
-// барак. Рабочие — те, что в бригаде: на смене стоят у своих мест и работают, отдыхающие и выбывшие —
+// барак. Цех: цеховой зал с печами, реакторами или сборочными столами, приёмка сырья и лента к местам
+// (по ней идёт сырьё, пока смена перерабатывает взятое со склада планеты). Рабочие — те, что в бригаде: на смене стоят у своих мест и работают, отдыхающие и выбывшие —
 // в бараке, свободные — во дворе. Сцена не выдумывает цифры: добытое за смену считает база
 // (mine_site_state.run.accrued + rate), и каждый раз, когда оно переходит через целое, один рабочий
 // относит единицу на склад — над складом «+1». Склад участка наполняется по stock из базы.
@@ -21,8 +22,14 @@
     ore:      { g: '#3b342c', g2: '#463d33', pit: '#2a241e', rock: '#5b5147', acc: '#b08968', lit: '#f0c486', name: 'Рудник' },
     gas:      { g: '#2c3634', g2: '#36423f', pit: '#232b2a', rock: '#4f5b58', acc: '#4ad9c8', lit: '#9ff3e8', name: 'Газовый промысел' },
     crystals: { g: '#241f2c', g2: '#2e2839', pit: '#1a1622', rock: '#3d3550', acc: '#b46cf0', lit: '#e2b8ff', name: 'Кристальная выработка' },
-    food:     { g: '#26331f', g2: '#2f3f28', pit: '#1e2a19', rock: '#4b5a40', acc: '#5fd968', lit: '#c6ffb0', name: 'Ферма' }
+    food:     { g: '#26331f', g2: '#2f3f28', pit: '#1e2a19', rock: '#4b5a40', acc: '#5fd968', lit: '#c6ffb0', name: 'Ферма' },
+    // цеха: fab — вид места работы, raw — цвет сырья на ленте и в приёмке
+    durasteel:   { g: '#2b2e33', g2: '#353940', pit: '#22262b', rock: '#555b63', acc: '#8fa8c4', lit: '#ffb15a', raw: '#b08968', fab: 'furnace', name: 'Плавильный цех' },
+    cells:       { g: '#2a302f', g2: '#333b3a', pit: '#212726', rock: '#4f5a58', acc: '#d9a940', lit: '#ffe08a', raw: '#4ad9c8', fab: 'reactor', name: 'Топливный цех' },
+    electronics: { g: '#262b33', g2: '#303641', pit: '#1e232a', rock: '#4a5260', acc: '#4a90d9', lit: '#9fd2ff', raw: '#b08968', raw2: '#a34ad9', fab: 'bench', name: 'Сборочный цех' }
   };
+  var RAW = { x: 6.5, y: 9.1, w: 3.6, h: 3.3, feed: 8.3 };      // приёмка сырья цеха и подача к ленте
+  var BELT = ROAD - 0.78;
 
   var S = { box: null, cv: null, c: null, dpr: 1, px: 20, ox: 0, oy: 0, cw: 0, ch: 0, bg: null, bgKey: '',
             st: null, at: 0, kind: 'ore', agents: [], pops: [], parts: [], rings: [], raf: 0, last: 0, t: 0, seen: null, rr: 0, ro: null, on: false };
@@ -76,6 +83,7 @@
     c.fillStyle = 'rgba(0,0,0,0.12)'; rr(c, YARD[0], YARD[1] - 0.1, YARD[2] - YARD[0], YARD[3] - YARD[1] + 0.2, 0.3); c.fill();
     if (kind === 'ore') rails(c);
     if (kind === 'gas') pipes(c, T, sp);
+    if (T.fab) { belt(c, T, sp); machines(c, T, sp); rawBin(c, T); }
     storeBase(c, T, kind);
     barrack(c, T);
     // свет с северо-запада и виньетка
@@ -101,9 +109,83 @@
     sp.forEach(function(s) { c.strokeStyle = '#6d7a78'; c.lineWidth = 0.11; c.beginPath(); c.moveTo(s.x + 0.55, s.y + 0.2); c.lineTo(s.x + 0.55, ROAD - 0.7); c.stroke(); });
     c.strokeStyle = '#6d7a78'; c.lineWidth = 0.13; c.beginPath(); c.moveTo(1.6, ROAD - 0.7); c.lineTo(1.6, STORE.y + 0.4); c.stroke();
   }
+  // лента цеха: от приёмки вверх к ряду мест и вдоль него, ролики поперёк
+  function belt(c, T, sp) {
+    c.lineCap = 'butt';
+    c.strokeStyle = '#15181c'; c.lineWidth = 0.42; c.beginPath(); c.moveTo(RAW.feed, RAW.y); c.lineTo(RAW.feed, BELT); c.stroke();
+    c.beginPath(); c.moveTo(1.4, BELT); c.lineTo(W - 1.4, BELT); c.stroke();
+    c.strokeStyle = '#2c3137'; c.lineWidth = 0.32; c.beginPath(); c.moveTo(RAW.feed, RAW.y); c.lineTo(RAW.feed, BELT); c.stroke();
+    c.beginPath(); c.moveTo(1.4, BELT); c.lineTo(W - 1.4, BELT); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,0.07)'; c.lineWidth = 0.03;
+    for (var x = 1.5; x < W - 1.4; x += 0.3) { c.beginPath(); c.moveTo(x, BELT - 0.15); c.lineTo(x, BELT + 0.15); c.stroke(); }
+    for (var y = BELT + 0.2; y < RAW.y; y += 0.3) { c.beginPath(); c.moveTo(RAW.feed - 0.15, y); c.lineTo(RAW.feed + 0.15, y); c.stroke(); }
+    // отводы ленты к местам работы
+    sp.forEach(function(s) { c.strokeStyle = '#3a4047'; c.lineWidth = 0.08; c.beginPath(); c.moveTo(s.x + 0.5, s.y + 0.15); c.lineTo(s.x + 0.5, BELT - 0.2); c.stroke(); });
+  }
+  function rawBin(c, T) {
+    var b = RAW;
+    c.fillStyle = 'rgba(0,0,0,0.38)'; rr(c, b.x + 0.12, b.y + 0.15, b.w, b.h, 0.18); c.fill();
+    c.fillStyle = '#4b5158'; rr(c, b.x, b.y, b.w, b.h, 0.18); c.fill();
+    c.fillStyle = '#23272c'; rr(c, b.x + 0.22, b.y + 0.25, b.w - 0.44, b.h - 0.45, 0.1); c.fill();
+    // косые полосы «опасно» по краю приёмки
+    c.save(); rr(c, b.x, b.y, b.w, 0.2, 0.05); c.clip();
+    for (var x = b.x - 0.4; x < b.x + b.w; x += 0.4) { c.fillStyle = '#d9a940'; c.beginPath(); c.moveTo(x, b.y + 0.2); c.lineTo(x + 0.2, b.y); c.lineTo(x + 0.4, b.y); c.lineTo(x + 0.2, b.y + 0.2); c.closePath(); c.fill(); }
+    c.restore();
+    c.strokeStyle = 'rgba(255,255,255,0.08)'; c.lineWidth = 0.05; rr(c, b.x, b.y, b.w, b.h, 0.18); c.stroke();
+  }
+  // цеховой зал: стена из листов с полосой «опасно», пол из плит; места — печи, реакторы, сборочные столы
+  function hall(c, T, sp, R) {
+    var i, x;
+    c.fillStyle = shade(T.pit, 1.15); c.fillRect(0, 1.3, W, 5.0);
+    c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 0.035;
+    for (x = 0; x <= W; x += 1.5) { c.beginPath(); c.moveTo(x, 1.3); c.lineTo(x, 6.3); c.stroke(); }
+    for (var y = 1.3; y <= 6.3; y += 1.25) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+    for (i = 0; i < 60; i++) { c.fillStyle = 'rgba(255,255,255,' + (0.02 + R() * 0.03) + ')'; dot(c, R() * W, 1.4 + R() * 4.8, 0.03 + R() * 0.05); }
+    var wg = c.createLinearGradient(0, 0, 0, 1.3); wg.addColorStop(0, shade(T.rock, 1.0)); wg.addColorStop(1, shade(T.rock, 0.6));
+    c.fillStyle = wg; c.fillRect(0, 0, W, 1.3);
+    c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 0.04;
+    for (x = 0.3; x < W; x += 0.3) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 1.12); c.stroke(); }
+    c.save(); c.beginPath(); c.rect(0, 1.12, W, 0.18); c.clip();
+    for (x = -0.4; x < W; x += 0.5) { c.fillStyle = '#d9a940'; c.beginPath(); c.moveTo(x, 1.3); c.lineTo(x + 0.18, 1.12); c.lineTo(x + 0.43, 1.12); c.lineTo(x + 0.25, 1.3); c.closePath(); c.fill(); }
+    c.restore();
+    c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(0, 1.3, W, 0.12);
+  }
+  // станки цеха — поверх дорожек к местам, чтобы дорожка не резала печь или стол
+  function machines(c, T, sp) {
+    sp.forEach(function(s) {
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      if (T.fab === 'furnace') {
+        rr(c, s.x - 0.62, s.y - 1.0, 1.32, 1.36, 0.14); c.fill();
+        var fg = c.createLinearGradient(s.x - 0.65, 0, s.x + 0.65, 0); fg.addColorStop(0, '#3d4249'); fg.addColorStop(0.5, '#646b74'); fg.addColorStop(1, '#3d4249');
+        c.fillStyle = fg; rr(c, s.x - 0.65, s.y - 1.08, 1.3, 1.3, 0.14); c.fill();
+        c.fillStyle = '#2a2e33'; rr(c, s.x - 0.25, s.y - 1.32, 0.5, 0.32, 0.06); c.fill();             // труба
+        c.fillStyle = '#16191d'; rr(c, s.x - 0.36, s.y - 0.35, 0.72, 0.5, 0.08); c.fill();              // устье
+        c.strokeStyle = 'rgba(255,255,255,0.12)'; c.lineWidth = 0.04; rr(c, s.x - 0.65, s.y - 1.08, 1.3, 1.3, 0.14); c.stroke();
+      } else if (T.fab === 'reactor') {
+        c.beginPath(); c.arc(s.x + 0.06, s.y - 0.36, 0.66, 0, TAU); c.fill();
+        var rg = c.createRadialGradient(s.x - 0.2, s.y - 0.6, 0.05, s.x, s.y - 0.42, 0.66); rg.addColorStop(0, '#7c8786'); rg.addColorStop(1, '#3a4241');
+        c.fillStyle = rg; c.beginPath(); c.arc(s.x, s.y - 0.42, 0.64, 0, TAU); c.fill();
+        c.strokeStyle = '#26302f'; c.lineWidth = 0.08; c.beginPath(); c.arc(s.x, s.y - 0.42, 0.44, 0, TAU); c.stroke();
+        c.fillStyle = '#1b2120'; c.beginPath(); c.arc(s.x, s.y - 0.42, 0.26, 0, TAU); c.fill();
+        for (var b = 0; b < 4; b++) { var aa = b * Math.PI / 2 + 0.4; c.fillStyle = '#596463'; dot(c, s.x + Math.cos(aa) * 0.56, s.y - 0.42 + Math.sin(aa) * 0.56, 0.05); }
+      } else {
+        rr(c, s.x - 0.7, s.y - 0.95, 1.46, 1.08, 0.1); c.fill();
+        c.fillStyle = '#5a616b'; rr(c, s.x - 0.72, s.y - 1.0, 1.44, 1.04, 0.1); c.fill();
+        c.fillStyle = '#3a4049'; rr(c, s.x - 0.64, s.y - 0.92, 1.28, 0.88, 0.07); c.fill();
+        for (var k = 0; k < 2; k++) {
+          var bx = s.x - 0.56 + k * 0.6;
+          c.fillStyle = '#1f5a3a'; rr(c, bx, s.y - 0.8, 0.5, 0.6, 0.04); c.fill();
+          c.strokeStyle = 'rgba(201,214,120,0.55)'; c.lineWidth = 0.02;
+          c.beginPath(); c.moveTo(bx + 0.06, s.y - 0.7); c.lineTo(bx + 0.3, s.y - 0.7); c.lineTo(bx + 0.3, s.y - 0.4); c.moveTo(bx + 0.1, s.y - 0.3); c.lineTo(bx + 0.42, s.y - 0.3); c.stroke();
+          c.fillStyle = '#20242a'; c.fillRect(bx + 0.14, s.y - 0.6, 0.18, 0.14);
+        }
+      }
+    });
+  }
   // забои / вышки / жилы / грядки
   function workZone(c, T, kind, sp, R) {
     var i;
+    if (T.fab) { hall(c, T, sp, R); return; }
     if (kind === 'ore' || kind === 'crystals') {
       // карьер / пещера: уступы, ниже к стене
       for (var b = 0; b < 3; b++) {
@@ -258,7 +340,8 @@
   function accNow() {
     var r = S.st && S.st.run; if (!r) return null;
     var t1 = new Date(r.ends_at).getTime(), now = Date.now();
-    return r.accrued + r.rate * Math.max(0, Math.min(now, t1) - S.at) / 3600000;
+    var v = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - S.at) / 3600000;
+    return r.cap != null ? Math.min(r.cap, v) : v;
   }
   function step(dt) {
     S.t += dt;
@@ -351,10 +434,20 @@
       if (S.kind === 'gas') { c.fillStyle = rgba(T.acc, 0.25 + 0.5 * k); dot(c, s.x, s.y - 0.38, 0.2); if (on) { c.fillStyle = rgba(T.lit, 0.12 * k); dot(c, s.x, s.y - 0.38, 0.75); } }
       else if (S.kind === 'crystals') { c.fillStyle = rgba(T.acc, 0.08 + 0.2 * k); dot(c, s.x, s.y - 0.3, 0.8); }
       else if (S.kind === 'ore' && on) { c.fillStyle = rgba(T.lit, 0.07 * k); dot(c, s.x, s.y - 0.1, 0.9); }
+      else if (T.fab === 'furnace') {                 // устье печи: горит, пока у печи работают
+        var fk = on ? 0.55 + 0.45 * Math.sin(t * 5 + i * 1.7) * Math.sin(t * 2.3 + i) : 0.12;
+        c.fillStyle = rgba(T.lit, 0.25 + 0.6 * fk); rr(c, s.x - 0.3, s.y - 0.3, 0.6, 0.4, 0.07); c.fill();
+        if (on) { c.fillStyle = rgba(T.lit, 0.1 * fk); dot(c, s.x, s.y - 0.1, 1.0); }
+      } else if (T.fab === 'reactor') {
+        c.fillStyle = rgba(T.lit, on ? 0.35 + 0.45 * k : 0.12); dot(c, s.x, s.y - 0.42, 0.22);
+        if (on) { c.strokeStyle = rgba(T.acc, 0.5 * k); c.lineWidth = 0.04; c.beginPath(); c.arc(s.x, s.y - 0.42, 0.33, t * 2 + i, t * 2 + i + 2.4); c.stroke(); }
+      } else if (T.fab === 'bench') {
+        for (var l = 0; l < 3; l++) { var lk = on ? (Math.sin(t * 6 + i * 2 + l * 2.1) > 0.2 ? 1 : 0.2) : 0.15; c.fillStyle = rgba(l === 1 ? '#5fd968' : T.lit, 0.3 + 0.6 * lk); dot(c, s.x - 0.4 + l * 0.4, s.y + 0.06, 0.04); }
+      }
       if (!on && run) { c.fillStyle = 'rgba(0,0,0,0.25)'; dot(c, s.x, s.y - 0.1, 0.55); }
     });
     // богатая жила: золотые прожилки по скальной стене, мерцают
-    if (st.vein_until) {
+    if (st.vein_until && !T.fab) {
       var VR = rng(hash('vein' + S.kind)); c.lineCap = 'round'; c.lineJoin = 'round';
       for (var v = 0; v < 9; v++) {
         var vx = 1 + v * (W - 2) / 8 + (VR() - 0.5) * 0.8, vy = 0.55 + VR() * 0.7, vk = 0.5 + 0.5 * Math.sin(t * 1.4 + v * 1.7);
@@ -364,7 +457,14 @@
         c.fillStyle = 'rgba(255,246,200,' + (0.5 * vk) + ')'; dot(c, vx + 0.2, vy + 0.05, 0.05);
       }
     }
+    // цех: отлаженный режим — зелёные лампы по стене зала
+    if (T.fab && st.vein_until) for (var lp = 0; lp < 8; lp++) {
+      var lx = 1.2 + lp * (W - 2.4) / 7, lk2 = 0.5 + 0.5 * Math.sin(t * 2 + lp);
+      c.fillStyle = 'rgba(95,217,104,' + (0.1 * lk2) + ')'; dot(c, lx, 0.6, 0.45);
+      c.fillStyle = 'rgba(160,255,170,' + (0.55 + 0.4 * lk2) + ')'; dot(c, lx, 0.6, 0.07);
+    }
     if (!run) { c.fillStyle = 'rgba(5,8,13,0.28)'; c.fillRect(0, 0, W, 6.3); }
+    if (T.fab) beltLoad(c, T, st, t);
     storeHeap(c, T, st);
     // рабочие: по глубине
     var vis = S.agents.filter(function(a) { return !a.inside; }).sort(function(a, b) { return a.y - b.y; });
@@ -382,9 +482,23 @@
       c.restore();
     });
   }
+  // по ленте идёт сырьё: из приёмки вверх и вдоль ряда мест, пока смена перерабатывает взятое
+  function beltLoad(c, T, st, t) {
+    var r = st.run, acc = accNow();
+    if (!r || !r.input || (r.task !== 'extract' && r.task !== 'prep') || (r.cap != null && acc != null && acc >= r.cap - 0.001)) return;
+    var up = RAW.y - BELT, len = up + (W - 2.8), N = 16, cols = st.refine ? st.refine.inputs.map(function(x) { return x.color; }) : [T.raw];
+    for (var i = 0; i < N; i++) {
+      var u = ((t * 0.55 + i / N) % 1) * len, x, y;
+      if (u < up) { x = RAW.feed; y = RAW.y - u; }
+      else { var v = u - up, side = i % 2 ? 1 : -1; x = RAW.feed + side * v * 0.62; y = BELT; if (x < 1.5 || x > W - 1.5) continue; }
+      c.fillStyle = 'rgba(0,0,0,0.35)'; rr(c, x - 0.1, y - 0.06, 0.22, 0.18, 0.04); c.fill();
+      c.fillStyle = cols[i % cols.length] || T.raw; rr(c, x - 0.12, y - 0.1, 0.22, 0.18, 0.04); c.fill();
+    }
+  }
   function storeHeap(c, T, st) {
     var s = STORE, f = Math.max(0, Math.min(1, st.stock / Math.max(1, st.site_cap)));
     var cx = s.x + s.w / 2, cy = s.y + s.h / 2 + 0.1;
+    if (T.fab) { fabStore(c, T, st, f); return; }
     if (S.kind === 'gas') {
       for (var i = 0; i < 3; i++) {
         var x = s.x + 0.85 + i * 1.35, y = cy;
@@ -421,6 +535,43 @@
     c.fillStyle = '#5b5f63'; rr(c, tx - 0.48, ROAD - 0.34, 0.9, 0.6, 0.08); c.fill();
     c.fillStyle = shade(T.acc, 0.8); rr(c, tx - 0.4, ROAD - 0.27, 0.74, 0.46, 0.06); c.fill();
   }
+  // цех: готовое на складе — слитки, ячейки или ящики; в приёмке — сырьё по запасу планеты
+  function fabStore(c, T, st, f) {
+    var s = STORE, n = Math.round(f * 12), k;
+    for (k = 0; k < Math.max(1, n); k++) {
+      var bx = s.x + 0.45 + (k % 4) * 0.92, by = s.y + 0.45 + Math.floor(k / 4) * 0.85;
+      c.globalAlpha = n ? 1 : 0.25;
+      if (T.fab === 'furnace') {                      // слитки дюрастали стопкой
+        for (var j = 0; j < 3; j++) {
+          c.fillStyle = 'rgba(0,0,0,0.3)'; rr(c, bx + 0.05, by + j * 0.2 + 0.05, 0.74, 0.17, 0.04); c.fill();
+          var ig = c.createLinearGradient(0, by + j * 0.2, 0, by + j * 0.2 + 0.17); ig.addColorStop(0, '#c9d6e3'); ig.addColorStop(1, '#6f8296');
+          c.fillStyle = ig; rr(c, bx, by + j * 0.2, 0.74, 0.17, 0.04); c.fill();
+        }
+      } else if (T.fab === 'reactor') {               // топливные ячейки
+        for (var q = 0; q < 2; q++) {
+          c.fillStyle = 'rgba(0,0,0,0.3)'; dot(c, bx + 0.2 + q * 0.36 + 0.04, by + 0.36, 0.17);
+          c.fillStyle = '#5a5340'; dot(c, bx + 0.2 + q * 0.36, by + 0.32, 0.17);
+          c.fillStyle = rgba(T.acc, 0.85); dot(c, bx + 0.2 + q * 0.36, by + 0.32, 0.09);
+        }
+      } else {                                        // ящики электроники
+        c.fillStyle = 'rgba(0,0,0,0.35)'; rr(c, bx + 0.06, by + 0.06, 0.74, 0.66, 0.06); c.fill();
+        c.fillStyle = '#34465e'; rr(c, bx, by, 0.74, 0.66, 0.06); c.fill();
+        c.fillStyle = rgba(T.acc, 0.8); c.fillRect(bx + 0.14, by + 0.28, 0.46, 0.1);
+      }
+      c.globalAlpha = 1;
+    }
+    // приёмка: сколько сырья на складе планеты относительно его предела
+    var r = st.refine, cap = Math.max(1, st.planet.cap), have = 0;
+    if (r && r.inputs.length) r.inputs.forEach(function(x, i) {
+      var fr = Math.max(0, Math.min(1, x.have / cap)), col = x.color || (i ? T.raw2 : T.raw), w = (RAW.w - 0.6) / r.inputs.length;
+      var x0 = RAW.x + 0.3 + i * w, hh = (RAW.h - 0.6) * Math.sqrt(fr);
+      if (fr > 0) {
+        var g = c.createLinearGradient(0, RAW.y + RAW.h - 0.3 - hh, 0, RAW.y + RAW.h - 0.3); g.addColorStop(0, shade(col, 1.15)); g.addColorStop(1, shade(col, 0.55));
+        c.fillStyle = g; c.beginPath(); c.ellipse(x0 + w / 2, RAW.y + RAW.h - 0.3, w / 2 - 0.05, Math.max(0.12, hh), 0, Math.PI, TAU); c.fill();
+      }
+      have += x.have;
+    });
+  }
   function text(c, s, x, y, size, col, w) {
     c.save(); c.scale(1 / S.px, 1 / S.px);
     c.font = (w || 'normal') + ' ' + Math.round(size * S.px) + 'px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -430,6 +581,10 @@
   }
   function labels(c, T, st) {
     text(c, st.stock + '/' + st.site_cap, STORE.x + STORE.w / 2, STORE.y + STORE.h + 0.42, 0.42, '#cfd8dc');
+    if (T.fab && st.refine) {
+      var low = st.refine.inputs.some(function(x) { return x.have < x.k; });
+      text(c, 'сырьё ' + st.refine.inputs.map(function(x) { return x.have; }).join(' · '), RAW.x + RAW.w / 2, RAW.y + RAW.h + 0.42, 0.42, low ? '#ff8a7a' : '#cfd8dc');
+    }
     var cn = counts(st), inH = cn.h.rest + cn.h.hurt, inD = cn.d.rest + cn.d.hurt, now = Date.now();
     var parts = [];
     if (cn.h.rest || cn.d.rest) {
@@ -443,7 +598,7 @@
     // сон над бараком
     if (cn.h.rest + cn.d.rest) { var zk = (S.t * 0.5) % 1; c.save(); c.globalAlpha = 1 - zk; text(c, 'z', BARR.x + BARR.w - 0.6 + zk * 0.4, BARR.y - 0.2 - zk * 0.8, 0.45, '#cfd8dc', 'bold'); c.restore(); }
     if (cn.h.hurt + cn.d.hurt) { c.fillStyle = '#d94a4a'; c.fillRect(BARR.x + 0.3, BARR.y - 0.55, 0.12, 0.42); c.fillRect(BARR.x + 0.15, BARR.y - 0.4, 0.42, 0.12); }
-    if (!st.run) text(c, st.res_k > 0 ? 'смены нет' : 'залежи нет', W / 2, 5.6, 0.5, '#8fa8c4');
+    if (!st.run) text(c, st.res_k <= 0 ? 'залежи нет' : T.fab && st.refine && st.refine.room < 1 ? 'нет сырья' : 'смены нет', W / 2, 5.6, 0.5, T.fab && st.refine && st.refine.room < 1 ? '#ff8a7a' : '#8fa8c4');
   }
 
   // Человек сверху: каска, плечи в спецовке, инструмент по ресурсу
@@ -498,6 +653,12 @@
     } else if (S.kind === 'gas') {
       c.strokeStyle = '#b9c2c1'; c.lineWidth = 0.05; c.beginPath(); c.moveTo(0.12, -0.28); c.lineTo(0.12, -0.52); c.stroke();
       c.strokeStyle = '#d9a940'; c.lineWidth = 0.04; c.beginPath(); c.arc(0.12, -0.56, 0.06, 0, TAU); c.stroke();
+    } else if (THEME[S.kind] && THEME[S.kind].fab === 'furnace') {   // кочерга с раскалённым концом
+      c.strokeStyle = '#6d737a'; c.lineWidth = 0.045; c.beginPath(); c.moveTo(0.12, -0.28); c.lineTo(0.1, -0.7); c.stroke();
+      c.fillStyle = rgba(T.lit, 0.55 + 0.45 * Math.abs(swing)); dot(c, 0.1, -0.72, 0.04);
+    } else if (THEME[S.kind] && THEME[S.kind].fab) {                // паяльник / ключ с огоньком
+      c.strokeStyle = '#4a4f57'; c.lineWidth = 0.05; c.beginPath(); c.moveTo(0.12, -0.28); c.lineTo(0.12, -0.5); c.stroke();
+      c.fillStyle = rgba(T.lit, 0.5 + 0.5 * Math.abs(swing)); dot(c, 0.12, -0.53, 0.035);
     } else if (S.kind === 'crystals') {
       c.strokeStyle = '#4a4f57'; c.lineWidth = 0.06; c.beginPath(); c.moveTo(0.12, -0.28); c.lineTo(0.12, -0.5); c.stroke();
       c.strokeStyle = rgba(T.lit, 0.5 + 0.5 * Math.abs(swing)); c.lineWidth = 0.025; c.beginPath(); c.moveTo(0.12, -0.5); c.lineTo(0.12, -0.72); c.stroke();

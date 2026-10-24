@@ -156,12 +156,13 @@ language sql stable set search_path to 'public', 'pg_temp' as $$
 $$;
 
 -- ---------------------------------------------------------------- для окна участка: что видно хозяину
--- Подход виден, как только группа на месте; что за операция — только после действия; кто — после следствия или поимки
+-- Подход виден, как только группа на месте; что за операция — только после действия (и место цели тоже: по нему
+-- угадывается операция — барак, склад или установка); кто — после следствия или поимки
 create or replace function public.spy_site_ops(p_building uuid) returns jsonb
 language sql stable security definer set search_path to 'public', 'pg_temp' as $$
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', o.id, 'approach_at', o.approach_at, 'act_at', o.act_at, 'acted_at', o.acted_at, 'seed', o.seed,
-           'side', o.attacker_faction, 'spot', o.spot,
+           'side', o.attacker_faction, 'spot', case when o.acted_at is not null then o.spot end,
            'kind', case when o.acted_at is not null then o.kind end,
            'name', case when o.acted_at is not null then spy_kind_name(o.kind) end,
            'result', o.result, 'effect', case when o.acted_at is not null then o.effect end,

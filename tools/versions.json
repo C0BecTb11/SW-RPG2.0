@@ -41,7 +41,7 @@
  },
  "css/spy-ops.css": {
   "v": "1",
-  "sha": "55c7a9180ea4"
+  "sha": "ecfb1276a012"
  },
  "css/treasury.css": {
   "v": "1",
@@ -145,11 +145,11 @@
  },
  "js/mine-scene.js": {
   "v": "5",
-  "sha": "02eb8fbea3df"
+  "sha": "b1ca83f9f3ab"
  },
  "js/mine-site.js": {
   "v": "6",
-  "sha": "726e3968ccef"
+  "sha": "952fab0db401"
  },
  "js/planet-info.js": {
   "v": "2",
@@ -193,11 +193,11 @@
  },
  "js/spy-map.js": {
   "v": "1",
-  "sha": "53cf08e7a2fa"
+  "sha": "333de5ec3882"
  },
  "js/spy-ops.js": {
   "v": "1",
-  "sha": "4f0cca9f4e64"
+  "sha": "89d54647d12c"
  },
  "js/supabase-client.js": {
   "v": "2",

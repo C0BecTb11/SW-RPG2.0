@@ -153,6 +153,7 @@
   flex: none;
   align-self: center;
   min-width: 92px;
+  min-height: 32px;
   padding: 9px 10px;
   background: #4a90d9;
   border: none;
@@ -164,8 +165,9 @@
 }
 .so-btn:disabled { background: #1c2530; color: #55606c; }
 .so-back {
+  min-height: 32px;
   margin-bottom: 4px;
-  padding: 6px 0;
+  padding: 6px 10px 6px 0;
   background: none;
   border: none;
   color: #8fa8c4;

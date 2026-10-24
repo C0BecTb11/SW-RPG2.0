@@ -66,20 +66,23 @@ function soBox(building, box) {
   box.innerHTML = '<div class="so-box-head">Тайные операции</div><div class="so-box-empty">Загрузка…</div>';
   supabase.rpc('spy_state').then(function(r) {
     if (r.error || !r.data) { box.innerHTML = '<div class="so-box-head">Тайные операции</div><div class="so-box-empty">Не удалось прочитать</div>'; return; }
-    var st = r.data, now = Date.parse(st.now);
-    var busy = st.groups.filter(function(g) { return g.status === 'mission'; }).length;
-    var ready = st.groups.filter(function(g) { return g.status === 'home' && soT(g.ready_at) <= now; }).length;
-    var line = st.groups.length
-      ? 'Групп ' + st.groups.length + ' из ' + st.max + (busy ? ' · в деле ' + busy : '') + (ready ? ' · готовы ' + ready : '')
-      : 'Групп пока нет: штаб готовит диверсантов для операций против чужих участков и цехов';
-    box.innerHTML = '<div class="so-box-head">Тайные операции</div>' +
-      '<div class="so-box-row">' +
-        '<div class="so-box-face">' + SO_FACE[st.faction === 'cis' ? 'cis' : 'republic'] + '</div>' +
-        '<div class="so-box-info">' + soEsc(line) + '</div>' +
-      '</div>' +
-      '<button type="button" class="so-box-go">Открыть операции</button>';
-    box.querySelector('.so-box-go').addEventListener('click', function() { openSpyOps(building); });
-  });
+    soBoxFill(building, box, r.data);
+  }, function() { box.innerHTML = '<div class="so-box-head">Тайные операции</div><div class="so-box-empty">Нет связи с сервером</div>'; });
+}
+function soBoxFill(building, box, st) {
+  var now = Date.parse(st.now);
+  var busy = st.groups.filter(function(g) { return g.status === 'mission'; }).length;
+  var ready = st.groups.filter(function(g) { return g.status === 'home' && soT(g.ready_at) <= now; }).length;
+  var line = st.groups.length
+    ? 'Групп ' + st.groups.length + ' из ' + st.max + (busy ? ' · в деле ' + busy : '') + (ready ? ' · готовы ' + ready : '')
+    : 'Групп пока нет: штаб готовит диверсантов для операций против чужих участков и цехов';
+  box.innerHTML = '<div class="so-box-head">Тайные операции</div>' +
+    '<div class="so-box-row">' +
+      '<div class="so-box-face">' + SO_FACE[st.faction === 'cis' ? 'cis' : 'republic'] + '</div>' +
+      '<div class="so-box-info">' + soEsc(line) + '</div>' +
+    '</div>' +
+    '<button type="button" class="so-box-go">Открыть операции</button>';
+  box.querySelector('.so-box-go').addEventListener('click', function() { openSpyOps(building); });
 }
 
 // ---------------------------------------------------------------- окно
@@ -354,14 +357,16 @@ function soOpHtml() {
 function soCall(fn, args, after) {
   if (soBusy) return;
   soBusy = true; soErr('');
+  var seq = ++soSeq;                         // опрос, начатый раньше, не перетрёт свежий ответ действия
   supabase.rpc(fn, args).then(function(r) {
     soBusy = false;
-    if (r.error) { soErr(r.error.message); return; }
+    if (r.error) { if (seq === soSeq) soErr(r.error.message); return; }
     if (typeof refreshCreditsSoon === 'function') refreshCreditsSoon();
     if (typeof loadPlanetStock === 'function') loadPlanetStock();
+    if (seq !== soSeq) return;               // окно закрыли (или открыли заново) — не трогать
     if (after) after();
     soSet(r.data);
-  }, function() { soBusy = false; soErr('Нет связи с сервером'); });
+  }, function() { soBusy = false; if (seq === soSeq) soErr('Нет связи с сервером'); });
 }
 
 function soClick(e) {

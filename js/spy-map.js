@@ -114,7 +114,7 @@
     for (var y = 0; y < S.h; y += 40) { c.beginPath(); c.moveTo(0, y + 0.5); c.lineTo(S.w, y + 0.5); c.stroke(); }
     // гиперпути
     c.strokeStyle = 'rgba(143,168,196,0.2)'; c.lineWidth = 1.2;
-    (st.map.lanes || []).forEach(function(l) { var a = S.xy[l[0]], b = S.xy[l[1]]; if (!a || !b) return; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); });
+    ((st.map && st.map.lanes) || []).forEach(function(l) { var a = S.xy[l[0]], b = S.xy[l[1]]; if (!a || !b) return; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); });
     // путь к выбранной цели
     if (S.opt.from && S.opt.pick) { var pp = path(S.opt.from, S.opt.pick); if (pp) lanePath(c, pp, t, 'rgba(217,169,64,0.85)'); }
     // пути групп в деле

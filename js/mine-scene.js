@@ -364,7 +364,7 @@
     cis: { body: '#2a2e34', hi: '#4f5660', helm: '#17191d', visor: '#ff6a3c', visor2: '#ff6a3c', leg: '#1b1e22', arm: '#3a3f46' }
   };
   var OP_WORK = { blast: 10, virus: 14, strike: 16, poison: 14, theft: 16 };   // с у цели после действия
-  var OP_LEAVE = 45, OP_BOOM = 22, OP_FIRE = 150;                            // отход; взрыв и пожар — с от действия
+  var OP_REACH = 12, OP_LEAVE = 45, OP_BOOM = 22, OP_FIRE = 150;            // путь к цели после действия; отход; взрыв и пожар — с от прихода к цели
   var AL_RUN = 6, AL_LEAD = 10, AL_ESC = 40, AL_BACK = 12, AL_END = 90;      // тревога: подбег, увод в барак, возврат, сирены
 
   function srvNow() { return Date.now() + S.skew; }
@@ -391,7 +391,8 @@
     a.ang = Math.atan2(4.6 - a.y, W / 2 - a.x) + Math.sin(a.look * 0.7 + a.ph) * 0.75;
     a.wait -= dt; if (a.wait > 0) return;
     a.leg = 1 - (a.leg || 0);
-    a.path = [post[a.leg].slice()];
+    var to = post[a.leg];                                      // далеко от поста (только вышел из барака) — по дороге, не сквозь постройки
+    a.path = dist([a.x, a.y], to) > 2.5 ? route([a.x, a.y], to.slice(), 0) : [to.slice()];
     a.wait = 3 + Math.random() * 4;
   }
 
@@ -405,29 +406,49 @@
     if (o.spot === -2) return { x: BARR.x - 0.4, y: BARR.y + 1.5, face: 0, at: [BARR.x + 0.6, BARR.y + 1.5], low: true };
     return { x: STORE.x + STORE.w + 0.4, y: STORE.y + 1.5, face: Math.PI, at: [STORE.x + STORE.w - 0.6, STORE.y + 1.5], low: true };
   }
-  // План операции: путь тенями (по краю зала или карьера, к складу и бараку — по нижнему краю, за постройками)
-  // с остановками в укрытиях, обратный путь и следы. Всё из seed операции — одинаково у всех, кто смотрит
+  function polyLen(pts) { var len = [0]; for (var i = 1; i < pts.length; i++) len.push(len[i - 1] + dist(pts[i - 1], pts[i])); return len; }
+  // План операции. До действия база не говорит, куда идёт группа (по цели угадывалась бы операция), поэтому
+  // подход у всех одинаковый: тенями по верхней кромке зала или карьера, с остановками в укрытиях — к точке
+  // ожидания. После действия место известно: оттуда — к цели (к складу и бараку — по краю и за постройками),
+  // потом отход тем же краем. Всё из seed операции — одинаково у всех, кто смотрит
   function opPlan(o, st) {
-    var key = o.id + ':' + st.places;
+    var known = o.spot != null && o.acted_at, key = o.id + ':' + st.places + ':' + (known ? o.spot : '?');
     if (S.plans[key]) return S.plans[key];
-    var from = (o.seed & 1) ? 1 : -1, T = opTarget(o, st, from), R = rng((o.seed >>> 0) || 1);
+    var from = (o.seed & 1) ? 1 : -1, R = rng((o.seed >>> 0) || 1), i;
     // в два ряда места стоят почти у стены — тогда группа крадётся по самой кромке, над первым рядом
-    var ey = T.low ? H - 0.35 : st.places > 8 ? 0.8 : 1.8, ex = from < 0 ? -0.8 : W + 0.8, cx = from < 0 ? 0.45 : W - 0.45;
-    var pts = [[ex, ey], [cx, ey]], n = Math.max(1, Math.round(Math.abs(T.x - cx) / 3)), i;
-    for (i = 1; i < n; i++) pts.push([cx + (T.x - cx) * i / n + (R() - 0.5) * 0.4, ey + (R() - 0.5) * 0.25]);
-    pts.push([T.x, ey]); pts.push([T.x, T.y]);
-    // ключи пути: движение по длине, в укрытиях — пауза; подход занимает 4–84 % окна, дальше — у цели
-    var keys = [{ w: 0, x: pts[0][0], y: pts[0][1], mv: 1 }], acc = 0;
+    var ey = st.places > 8 ? 0.8 : 1.8, ex = from < 0 ? -0.8 : W + 0.8, cx = from < 0 ? 0.45 : W - 0.45;
+    var hx = from < 0 ? 3 + R() * (W / 2 - 3) : W / 2 + R() * (W / 2 - 3), C = { x: hx, y: ey };
+    var pts = [[ex, ey], [cx, ey]], n = Math.max(1, Math.round(Math.abs(hx - cx) / 3));
+    for (i = 1; i < n; i++) pts.push([cx + (hx - cx) * i / n + (R() - 0.5) * 0.4, ey + (R() - 0.5) * 0.25]);
+    pts.push([hx, ey]);
+    // ключи подхода: движение по длине, в укрытиях — пауза (взгляд — куда шли); подход занимает 4–84 % окна
+    var keys = [{ w: 0, x: pts[0][0], y: pts[0][1], mv: 1, ang: from < 0 ? 0 : Math.PI }], acc = 0, ang = keys[0].ang;
     for (i = 1; i < pts.length; i++) {
-      acc += dist(pts[i - 1], pts[i]); keys.push({ w: acc, x: pts[i][0], y: pts[i][1], mv: 1 });
-      if (i > 1 && i < pts.length - 1) { acc += 2.2; keys.push({ w: acc, x: pts[i][0], y: pts[i][1], mv: 0 }); }
+      acc += dist(pts[i - 1], pts[i]); ang = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+      keys.push({ w: acc, x: pts[i][0], y: pts[i][1], mv: 1, ang: ang });
+      if (i > 1 && i < pts.length - 1) { acc += 2.2; keys.push({ w: acc, x: pts[i][0], y: pts[i][1], mv: 0, ang: ang }); }
     }
     keys.forEach(function(k) { k.u = 0.04 + 0.8 * k.w / Math.max(0.01, acc); });
-    var back = pts.slice().reverse(), bl = [0];
-    for (i = 1; i < back.length; i++) bl.push(bl[i - 1] + dist(back[i - 1], back[i]));
-    // следы: пары отпечатков вдоль пути, внутри сцены
+    var leafR = [];                                              // листовки: куда лягут (у цели)
+    for (i = 0; i < 14; i++) leafR.push([R(), R(), R()]);
+    // пойманных уводят от точки ожидания к дороге и вдоль неё к двери барака
+    var esc = [[hx, ey], [hx, ROAD + 0.45], [BARR.door[0], ROAD + 0.45], [BARR.door[0], BARR.door[1] - 0.1]];
+    var plan = { from: from, C: C, keys: keys, esc: esc, el: polyLen(esc), T: null, steps: [] };
+    if (known) {
+      var T = opTarget(o, st, from), lowY = H - 0.35;
+      var reach = T.low ? [[hx, ey], [cx, ey], [cx, lowY], [T.x, lowY], [T.x, T.y]] : [[hx, ey], [T.x, ey], [T.x, T.y]];
+      var back = T.low ? [[T.x, T.y], [T.x, lowY], [cx, lowY], [ex, lowY]] : [[T.x, T.y], [T.x, ey], [cx, ey], [ex, ey]];
+      plan.T = T; plan.reach = reach; plan.rl = polyLen(reach); plan.back = back; plan.bl = polyLen(back);
+      plan.leaf = leafR.map(function(r) { return [T.at[0] - 1.8 + r[0] * 2.2, T.at[1] - 2.1 + r[1] * 1.3, r[2] * TAU]; });
+      plan.steps = footprints(pts.concat(reach.slice(1)));
+    }
+    S.plans[key] = plan;
+    return plan;
+  }
+  // следы: пары отпечатков вдоль пути, внутри сцены
+  function footprints(pts) {
     var steps = [], side = 1;
-    for (i = 1; i < pts.length; i++) {
+    for (var i = 1; i < pts.length; i++) {
       var d = dist(pts[i - 1], pts[i]), m = Math.floor(d / 0.42);
       for (var j = 0; j < m; j++) {
         var p = lerp2(pts[i - 1], pts[i], j / Math.max(1, m)), nx = -(pts[i][1] - pts[i - 1][1]) / Math.max(0.01, d), ny = (pts[i][0] - pts[i - 1][0]) / Math.max(0.01, d);
@@ -435,22 +456,14 @@
         if (p[0] > 0.2 && p[0] < W - 0.2) steps.push([p[0] + nx * 0.08 * side, p[1] + ny * 0.08 * side]);
       }
     }
-    // увод пленных: от цели к дороге и вдоль неё к двери барака
-    var esc = [[T.x, T.y], [T.x, ROAD + 0.45], [BARR.door[0], ROAD + 0.45], [BARR.door[0], BARR.door[1] - 0.1]], el = [0];
-    for (i = 1; i < esc.length; i++) el.push(el[i - 1] + dist(esc[i - 1], esc[i]));
-    // листовки подстрекателей: куда легли
-    var leaf = [];
-    for (i = 0; i < 14; i++) leaf.push([T.at[0] - 1.8 + R() * 2.2, T.at[1] - 2.1 + R() * 1.3, R() * TAU]);
-    var plan = { T: T, from: from, keys: keys, back: back, bl: bl, steps: steps, esc: esc, el: el, leaf: leaf };
-    S.plans[key] = plan;
-    return plan;
+    return steps;
   }
   function keyAt(keys, u) {
     for (var i = 1; i < keys.length; i++) if (u <= keys[i].u) {
-      var a = keys[i - 1], b = keys[i], k = (u - a.u) / Math.max(1e-6, b.u - a.u);
-      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, ang: Math.atan2(b.y - a.y, b.x - a.x), mv: b.mv && (b.x !== a.x || b.y !== a.y) ? 1 : 0 };
+      var a = keys[i - 1], b = keys[i], k = (u - a.u) / Math.max(1e-6, b.u - a.u), mv = b.mv && (b.x !== a.x || b.y !== a.y) ? 1 : 0;
+      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, ang: b.ang, mv: mv };
     }
-    var z = keys[keys.length - 1]; return { x: z.x, y: z.y, ang: 0, mv: 0 };
+    var z = keys[keys.length - 1]; return { x: z.x, y: z.y, ang: z.ang, mv: 0 };
   }
   function polyAt(pts, len, k) {
     var L = len[len.length - 1] * clamp01(k);
@@ -461,39 +474,46 @@
     var z = pts[pts.length - 1]; return { x: z[0], y: z[1], ang: 0 };
   }
   function atTarget(T, m) { return T.low ? [T.x, T.y + (m ? 0.42 : -0.12)] : [T.x, T.y + (m ? 0.46 : 0)]; }
+  function atHold(C, m) { return [C.x - (m ? 0.5 : 0), C.y + (m ? 0.32 : 0)]; }
 
-  // Что от операции на сцене сейчас: фигурки и позы, затемнение, время с действия (с)
+  // Что от операции на сцене сейчас: фигурки и позы, затемнение, dt — с от действия, da — с от прихода к цели
   function opNow(o, st, now) {
     var tA = tms(o.approach_at), tX = tms(o.act_at), tD = tms(o.acted_at);
     if (tA == null || tX == null || now < tA) return null;
-    var P = opPlan(o, st), T = P.T, out = { o: o, P: P, figs: [], dark: 0, dt: tD != null ? (now - tD) / 1000 : -1 }, m, q;
-    if (tD == null) {                                            // подход и ожидание итога у цели
-      var u = clamp01((now - tA) / Math.max(1, tX - tA)), end = P.keys[P.keys.length - 1].u;
+    var P = opPlan(o, st), C = P.C, out = { o: o, P: P, figs: [], dark: 0, dt: tD != null ? (now - tD) / 1000 : -1, da: null }, m, q;
+    if (tD == null) {                                            // подход и ожидание итога у точки ожидания
+      var u = clamp01((now - tA) / Math.max(1, tX - tA)), end = P.keys[P.keys.length - 1].u, last = P.keys[P.keys.length - 1].ang;
       out.dark = clamp01((now - tA) / 20000);
       for (m = 0; m < 2; m++) {
         var um = u - m * 0.014;
         if (um < P.keys[0].u) continue;
-        if (um >= end) { q = atTarget(T, m); out.figs.push({ x: q[0], y: q[1], ang: T.face, pose: 'work', m: m, mv: 0 }); continue; }
+        if (um >= end) { q = atHold(C, m); out.figs.push({ x: q[0], y: q[1], ang: last, pose: 'hide', m: m, mv: 0 }); continue; }
         var kk = keyAt(P.keys, um);
-        out.figs.push({ x: kk.x, y: kk.y + (m ? (T.low ? -0.36 : 0.36) : 0), ang: kk.ang, pose: kk.mv ? 'sneak' : 'hide', m: m, mv: kk.mv });
+        out.figs.push({ x: kk.x, y: kk.y + (m ? 0.36 : 0), ang: kk.ang, pose: kk.mv ? 'sneak' : 'hide', m: m, mv: kk.mv });
       }
       return out;
     }
     var dt = out.dt; if (dt < 0) dt = 0;
-    if (o.result === 'caught') {                                 // тревога: стоят, руки вверх; потом их уводят в барак
+    if (o.result === 'caught' || !P.T) {                         // тревога: стоят, руки вверх; потом их уводят в барак
       out.dark = 1 - clamp01((dt - 60) / 20);
-      if (dt < AL_LEAD) for (m = 0; m < 2; m++) { q = atTarget(T, m); out.figs.push({ x: q[0], y: q[1], ang: T.face + Math.PI, pose: dt < 1.5 ? 'work' : 'hands', m: m, mv: 0 }); }
+      if (o.result !== 'caught') return out;
+      if (dt < AL_LEAD) for (m = 0; m < 2; m++) { q = atHold(C, m); out.figs.push({ x: q[0], y: q[1], ang: Math.PI / 2, pose: dt < 1.5 ? 'hide' : 'hands', m: m, mv: 0 }); }
       else if (dt < AL_LEAD + AL_ESC) for (m = 0; m < 2; m++) {
         var pe = polyAt(P.esc, P.el, ease((dt - AL_LEAD) / AL_ESC) - m * 0.05);
         out.figs.push({ x: pe.x, y: pe.y, ang: pe.ang, pose: 'led', m: m, mv: 1 });
       }
       return out;
     }
-    var w1 = OP_WORK[o.kind] || 12;
-    out.dark = 1 - clamp01((dt - w1 - 20) / 20);
-    if (dt < w1) for (m = 0; m < 2; m++) { q = atTarget(T, m); out.figs.push({ x: q[0], y: q[1], ang: T.face, pose: 'work', m: m, mv: 0, kind: o.kind }); }
-    else if (dt < w1 + OP_LEAVE) for (m = 0; m < 2; m++) {
-      var pb = polyAt(P.back, P.bl, (dt - w1) / OP_LEAVE - m * 0.03);
+    var T = P.T, w1 = OP_WORK[o.kind] || 12, da = dt - OP_REACH;
+    out.da = da;
+    out.dark = 1 - clamp01((da - w1 - 20) / 20);
+    if (da < 0) for (m = 0; m < 2; m++) {                       // от точки ожидания — к цели
+      var pr = polyAt(P.reach, P.rl, dt / OP_REACH - m * 0.04);
+      out.figs.push({ x: pr.x, y: pr.y + (m ? (T.low ? -0.3 : 0.3) : 0), ang: pr.ang, pose: 'sneak', m: m, mv: 1 });
+    }
+    else if (da < w1) for (m = 0; m < 2; m++) { q = atTarget(T, m); out.figs.push({ x: q[0], y: q[1], ang: T.face, pose: 'work', m: m, mv: 0, kind: o.kind }); }
+    else if (da < w1 + OP_LEAVE) for (m = 0; m < 2; m++) {
+      var pb = polyAt(P.back, P.bl, (da - w1) / OP_LEAVE - m * 0.03);
       out.figs.push({ x: pb.x, y: pb.y + (m ? (T.low ? -0.3 : 0.3) : 0), ang: pb.ang, pose: o.kind === 'theft' ? 'carry' : 'sneak', m: m, mv: 1 });
     }
     return out;
@@ -505,8 +525,9 @@
     (st.ops || []).forEach(function(o) { var x = opNow(o, st, now); if (x) list.push(x); });
     S.cur = list;
     list.forEach(function(x) {
-      var o = x.o, d0 = x.dt, at = x.P.T.at;
-      if (d0 < 0 || o.result !== 'ok') return;
+      var o = x.o, d0 = x.da;
+      if (o.result !== 'ok' || d0 == null || d0 < 0 || !x.P.T) return;
+      var at = x.P.T.at;
       if (o.kind === 'blast') {
         if (d0 >= OP_BOOM && d0 < OP_BOOM + 2 && !S.boom[o.id]) { S.boom[o.id] = 1; burst(at); }
         var fire = d0 >= OP_BOOM && d0 < OP_FIRE;
@@ -533,7 +554,7 @@
     list.forEach(function(x) { if (!al && x.o.result === 'caught' && x.dt >= 0 && x.dt < AL_LEAD + AL_ESC + AL_BACK) al = x; });
     S.escort = null;
     if (!al) return;
-    var T = al.P.T, dt = al.dt, g = null;
+    var T = al.P.C, dt = al.dt, g = null;
     S.agents.forEach(function(a) { if (a.k === 'g' && !g) g = a; });
     var me = g || { k: 'g', i: 0, ph: 0, x: BARR.door[0], y: BARR.door[1], role: 'post' };
     if (me.alarmOp !== al.o.id) { me.alarmOp = al.o.id; me.ax0 = g ? [g.x, g.y] : BARR.door.slice(); }
@@ -554,10 +575,11 @@
   // Рисунок: следы и улики до конца следствия, летящие листовки
   function opsUnder(c) {
     (S.cur || []).forEach(function(x) {
-      var o = x.o, P = x.P, d0 = x.dt, w1 = OP_WORK[o.kind] || 12, at = P.T.at;
-      if (o.result !== 'ok' || d0 < 0) return;
-      var ev = !o.revealed, i;
-      if (ev && d0 >= w1) {
+      var o = x.o, P = x.P, d0 = x.da, w1 = OP_WORK[o.kind] || 12;
+      if (o.result !== 'ok' || d0 == null || !P.T) return;
+      var at = P.T.at, ev = !o.revealed, i;
+      if (d0 < 0) return;
+      if (ev && d0 >= w1) {                                        // следы — когда группа уже отходит, вдоль всего пути
         c.fillStyle = 'rgba(12,10,8,0.22)';
         P.steps.forEach(function(s2) { c.beginPath(); c.ellipse(s2[0], s2[1], 0.06, 0.04, 0, 0, TAU); c.fill(); });
       }
@@ -637,7 +659,7 @@
   // Поверх всего: вспышка взрыва, сирены, «!» над охранником, выстрелы, «?» у места до конца следствия
   function opsOver(c, t) {
     (S.cur || []).forEach(function(x) {
-      var o = x.o, d0 = x.dt, at = x.P.T.at, w1 = OP_WORK[o.kind] || 12;
+      var o = x.o, d0 = x.dt, w1 = OP_WORK[o.kind] || 12;
       if (d0 < 0) return;                                          // итога ещё нет: что за операция, хозяину не видно
       if (o.result === 'caught') {
         if (d0 < AL_END) {
@@ -652,12 +674,15 @@
         if (gd && d0 < 3) text(c, '!', gd.x, gd.y - 1.0 - Math.abs(Math.sin(d0 * 6)) * 0.2, 0.75, '#ff4a3c', 'bold');
         if (gd) [1.5, 2.4, 3.3].forEach(function(t0, i) {
           var k = (d0 - t0) / 0.3; if (k < 0 || k > 1) return;
-          var tx = x.P.T.x + (i - 1) * 0.5, ty = x.P.T.y - 0.6, a = lerp2([gd.x, gd.y - 0.2], [tx, ty], k), b = lerp2([gd.x, gd.y - 0.2], [tx, ty], Math.max(0, k - 0.25));
+          var tx = x.P.C.x + (i - 1) * 0.5, ty = x.P.C.y - 0.3, a = lerp2([gd.x, gd.y - 0.2], [tx, ty], k), b = lerp2([gd.x, gd.y - 0.2], [tx, ty], Math.max(0, k - 0.25));
           c.strokeStyle = 'rgba(255,90,74,0.95)'; c.lineWidth = 0.07; c.lineCap = 'round'; c.beginPath(); c.moveTo(b[0], b[1]); c.lineTo(a[0], a[1]); c.stroke();
           if (k > 0.9) { c.fillStyle = 'rgba(255,200,150,0.7)'; dot(c, tx, ty, 0.14); }
         });
         return;
       }
+      if (!x.P.T || x.da == null) return;
+      var at = x.P.T.at;
+      d0 = x.da;                                                   // дальше — от прихода к цели
       if (o.kind === 'blast') {
         if (d0 < OP_BOOM && d0 >= 3) {                           // заряд мигает чаще и чаще
           var bk = Math.sin(t * (6 + (d0 - 3) * 1.2)) > 0.2;
@@ -887,7 +912,7 @@
   // по ленте идёт сырьё: из приёмки вверх и вдоль ряда мест, пока смена перерабатывает взятое
   function beltLoad(c, T, st, t) {
     var r = st.run, acc = accNow();
-    if (!r || !r.input || (r.task !== 'extract' && r.task !== 'prep') || (r.cap != null && acc != null && acc >= r.cap - 0.001)) return;
+    if (!r || !r.input || (r.task !== 'extract' && r.task !== 'prep' && r.task !== 'guard') || (r.cap != null && acc != null && acc >= r.cap - 0.001)) return;
     var up = RAW.y - BELT, len = up + (W - 2.8), N = 16, cols = st.refine ? st.refine.inputs.map(function(x) { return x.color; }) : [T.raw];
     for (var i = 0; i < N; i++) {
       var u = ((t * 0.55 + i / N) % 1) * len, x, y;

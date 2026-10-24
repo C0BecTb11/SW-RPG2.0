@@ -10,7 +10,7 @@ var mnState = null;        // последнее состояние с серв�
 var mnBuilding = null;     // строка постройки
 var mnAt = 0;              // когда пришло состояние (мс, часы клиента)
 var mnSkew = 0;            // часы сервера − часы клиента, мс (st.now)
-var mnWaitAt = 0;          // когда последний раз переспросили базу, ожидая итог операции
+var mnWaitAt = 0, mnWaitN = 0;   // ожидание итога операции: когда последний раз переспросили базу и сколько раз
 var mnPoll = null, mnTick = null, mnBusy = false, mnSeq = 0;
 var mnOpenAt = 0, mnDownBack = false;   // касание фона закрывает шторку, только если оно на фоне и началось
 var mnForm = { len: 8, pace: 'normal', task: 'extract', h: 0, d: 0, touched: false };
@@ -228,7 +228,7 @@ function mnPanel() {
 }
 
 function openMineSite(building) {
-  mnBuilding = building; mnOpenAt = Date.now(); mnDownBack = false;
+  mnBuilding = building; mnOpenAt = Date.now(); mnDownBack = false; mnWaitN = 0;
   mnState = null;
   mnForm = { len: 8, pace: 'normal', task: 'extract', h: 0, d: 0, touched: false };
   var p = mnPanel();
@@ -625,8 +625,10 @@ function mnLive() {
   var wait = (st.ops || []).some(function(o) {
     return (!o.acted_at && srv > Date.parse(o.act_at)) || (o.result === 'ok' && !o.revealed && srv > Date.parse(o.reveal_at));
   });
-  if (wait && !mnBusy && now - mnAt > 8000 && now - mnWaitAt > 8000) { mnWaitAt = now; mnLoad(); }
-  else if (due && !mnBusy && now - mnAt > 3000) mnLoad();
+  // первые восемь раз — каждые 8 с, дальше раз в минуту (если такт базы застрял, окно не долбит её); в фоне — нет
+  if (!wait) mnWaitN = 0;
+  else if (!document.hidden && !mnBusy && now - mnAt > 8000 && now - mnWaitAt > (mnWaitN < 8 ? 8000 : 60000)) { mnWaitAt = now; mnWaitN++; mnLoad(); }
+  if (!wait && due && !mnBusy && now - mnAt > 3000) mnLoad();
 }
 
 // Строка поверх сцены: что сейчас на участке

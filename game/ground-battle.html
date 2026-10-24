@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="../css/supply.css">
 <link rel="stylesheet" href="../css/lease.css">
 <link rel="stylesheet" href="../css/overwatch.css">
-<link rel="stylesheet" href="../space/space.css?v=21">
+<link rel="stylesheet" href="../space/space.css?v=22">
 <link rel="stylesheet" href="../ground/ground.css?v=8">
 <link rel="stylesheet" href="../css/ground-live.css?v=4">
 <link rel="stylesheet" href="../css/mine-site.css?v=5">
@@ -42,7 +42,11 @@
 <!-- Наземка 2.0: карта планеты и бой в реальном времени (ground/ground.js), поверх — панели планеты -->
 <canvas id="sp-canvas"></canvas>
 
-<a id="sp-back" href="galaxy-map.html">← Галактика</a>
+<!-- верхний левый угол: в галактику и на другое пространство этой же планеты (js/map-layer.js) -->
+<nav id="sp-nav">
+  <a id="sp-back" href="galaxy-map.html" title="Галактика">← <span class="sp-back-t">Галактика</span></a>
+  <a id="sp-layer" href="space-battle.html" data-page="space-battle.html" title="Космическое пространство планеты" aria-label="Космическое пространство планеты"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><ellipse cx="8" cy="8" rx="7" ry="2.6" transform="rotate(-20 8 8)"/></svg><span>Космос</span></a>
+</nav>
 <div id="sp-tr">
   <div class="sp-speed" role="group" aria-label="Скорость боя">
     <button id="sp-pause" type="button" title="Пауза">❚❚</button>
@@ -226,6 +230,7 @@
 <script src="../js/err-report.js?v=4"></script>
 <script src="../js/scene-loader.js?v=2"></script>
 <script src="../js/credits-bar.js?v=7"></script>
+<script src="../js/map-layer.js?v=1"></script>
 <script src="../js/game-confirm.js"></script>
 <script src="../js/drag-command.js"></script>
 <script src="../js/production-lease.js"></script>

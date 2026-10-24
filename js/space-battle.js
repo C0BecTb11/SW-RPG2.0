@@ -393,6 +393,9 @@ function loadHyperspaceZone() {
       if (sysFaction === 'neutral') sysFaction = null;
 
       if (isDeepSpace) markDeepSpace(r[1].data.name);
+      // переход на поверхность (js/map-layer.js): система известна, у пустоты его нет — body.deep-space
+      var layer = document.getElementById('sp-layer');
+      if (layer && r[1].data) layer.classList.remove('wait');
 
       (r[2].data || []).forEach(function(row) {
         if (row.key === 'hyperspace_zone_height') ZONE_HEIGHT = parseInt(row.value, 10) || 14;

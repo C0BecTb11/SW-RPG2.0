@@ -464,6 +464,101 @@
   font-size: 11px;
 }
 
+/* --- диверсии: происшествия на участке (sql/mine_sabotage.sql, spy_site_ops) */
+.mn-hud i.alarm { background: #d94a4a; box-shadow: 0 0 7px rgba(217, 74, 74, 0.85); animation: mn-pulse 0.9s ease-in-out infinite; }
+
+.mn-ops { display: flex; flex-direction: column; gap: 7px; }
+
+.mn-op {
+  display: flex;
+  gap: 10px;
+  padding: 10px 11px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #d9a940;
+  border-radius: 8px;
+}
+
+.mn-op.near { border-color: rgba(217, 74, 74, 0.45); border-left-color: #d94a4a; background: linear-gradient(90deg, rgba(217, 74, 74, 0.08), rgba(10, 13, 20, 0) 70%), #0a0d14; }
+.mn-op.known { border-left-color: #e06a5a; }
+.mn-op.caught { border-left-color: #5fd968; }
+
+.mn-op-ico {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+}
+
+.mn-op-ico svg { width: 18px; height: 18px; fill: none; stroke: #d9a940; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.mn-op.near .mn-op-ico { border-color: rgba(217, 74, 74, 0.5); animation: mn-pulse 1.2s ease-in-out infinite; }
+.mn-op.near .mn-op-ico svg, .mn-op.known .mn-op-ico svg { stroke: #ff8a7a; }
+.mn-op.caught .mn-op-ico svg { stroke: #5fd968; }
+
+.mn-op-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mn-op-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mn-op-top b { font-size: 12px; color: #cfd8dc; font-weight: normal; }
+.mn-op-top span { flex: none; font-size: 9px; color: #55606c; }
+.mn-op-body { font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+.mn-op.near .mn-op-body { color: #ff8a7a; }
+.mn-op-note { margin-top: 3px; font-size: 9px; line-height: 1.5; color: #55606c; }
+
+.mn-op-btns { display: flex; gap: 6px; margin-top: 6px; }
+.mn-op-btns .mn-btn { flex: 1 1 0; min-height: 32px; justify-content: center; }
+
+.mn-op-who { margin-top: 3px; font-size: 10px; line-height: 1.5; color: #e06a5a; }
+.mn-op-who b { color: #cfd8dc; font-weight: normal; }
+.mn-op.caught .mn-op-who { color: #5fd968; }
+.mn-op-who.probe { display: flex; align-items: center; gap: 7px; color: #d9a940; }
+
+.mn-op-who.probe i {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(217, 169, 64, 0.55);
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: bold;
+  color: #ffd66b;
+  animation: mn-pulse 2s ease-in-out infinite;
+}
+
+/* --- охрана и защита от диверсий */
+.mn-crew.g .mn-crew-ico svg { stroke: #b8c4d0; }
+.mn-chip.guard.on { border-color: #b8c4d0; background: rgba(184, 196, 208, 0.08); }
+
+.mn-guard {
+  margin-top: 8px;
+  padding: 10px 11px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-left: 3px solid #2a3644;
+  border-radius: 8px;
+}
+
+.mn-guard.on { border-left-color: #b8c4d0; }
+.mn-guard-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mn-guard-top span { font-size: 9px; letter-spacing: 0.5px; color: #55606c; text-transform: uppercase; }
+.mn-guard-top b { font-size: 16px; color: #55606c; font-weight: normal; }
+.mn-guard.on .mn-guard-top b { color: #5fd968; }
+.mn-guard-rows { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
+.mn-guard-rows > div { display: flex; align-items: baseline; gap: 6px; font-size: 10px; color: #55606c; }
+.mn-guard-rows > div.on { color: #cfd8dc; }
+.mn-guard-rows i { flex: none; width: 10px; font-style: normal; text-align: center; }
+.mn-guard-rows > div.on i { color: #5fd968; }
+.mn-guard-rows span { flex: 1; min-width: 0; }
+.mn-guard-rows em { flex: none; font-style: normal; color: #5fd968; }
+.mn-guard .mn-note { margin-top: 7px; font-size: 9px; }
+
 /* телефон боком: сцена слева, управление справа */
 @media (orientation: landscape) and (max-height: 500px) {
   #mn-box {

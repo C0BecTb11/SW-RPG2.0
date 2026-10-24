@@ -24,8 +24,8 @@
   "sha": "aafae6e1d7f2"
  },
  "css/mine-site.css": {
-  "v": "2",
-  "sha": "98bba64f1534"
+  "v": "5",
+  "sha": "842f8d919beb"
  },
  "css/reports.css": {
   "v": "2",
@@ -38,6 +38,10 @@
  "css/space-live.css": {
   "v": "4",
   "sha": "de8cd473ee40"
+ },
+ "css/spy-ops.css": {
+  "v": "1",
+  "sha": "55c7a9180ea4"
  },
  "css/treasury.css": {
   "v": "1",
@@ -104,8 +108,8 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "5",
-  "sha": "e92c68d2d8c9"
+  "v": "6",
+  "sha": "e133cd235b01"
  },
  "js/events.js": {
   "v": "4",
@@ -132,20 +136,20 @@
   "sha": "0cca4ca75a8e"
  },
  "js/ground-battle.js": {
-  "v": "6",
-  "sha": "bd3bf979109c"
+  "v": "7",
+  "sha": "3c9adfa274e9"
  },
  "js/ground-live.js": {
   "v": "25",
   "sha": "7b77119422bd"
  },
  "js/mine-scene.js": {
-  "v": "1",
-  "sha": "250f244af43b"
+  "v": "5",
+  "sha": "02eb8fbea3df"
  },
  "js/mine-site.js": {
-  "v": "3",
-  "sha": "d149941d9513"
+  "v": "6",
+  "sha": "726e3968ccef"
  },
  "js/planet-info.js": {
   "v": "2",
@@ -186,6 +190,14 @@
  "js/space-live.js": {
   "v": "16",
   "sha": "51abd60d3d18"
+ },
+ "js/spy-map.js": {
+  "v": "1",
+  "sha": "1faef7956b12"
+ },
+ "js/spy-ops.js": {
+  "v": "1",
+  "sha": "5f6b8487d9f8"
  },
  "js/supabase-client.js": {
   "v": "2",

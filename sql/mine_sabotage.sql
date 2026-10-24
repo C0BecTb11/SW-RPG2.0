@@ -568,6 +568,12 @@ begin
     d := replace(d, $a$'survey', 0, 'maint', 0)$a$, $b$'survey', 0, 'maint', 0, 'guard', mine_task_k('guard'))$b$);
     execute d;
   end if;
+  -- время сервера в состоянии: сцена ведёт фигурки группы по нему, а не по часам телефона
+  d := pg_get_functiondef('public.mine_site_state(uuid)'::regprocedure);
+  if position($a$'now', now(), 'building_id', p_building,$a$ in d) = 0 then
+    if position($a$    'building_id', p_building, 'system_id', s.system_id, 'refine', v_ref,$a$ in d) = 0 then raise exception 'mine_site_state: место правки (now) не найдено'; end if;
+    execute replace(d, $a$    'building_id', p_building, 'system_id', s.system_id, 'refine', v_ref,$a$, $b$    'now', now(), 'building_id', p_building, 'system_id', s.system_id, 'refine', v_ref,$b$);
+  end if;
 
   -- напряжение: подстрекатели на участках планеты за сутки
   d := pg_get_functiondef('public.unrest_calc(text,boolean,integer)'::regprocedure);

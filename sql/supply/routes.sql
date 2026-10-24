@@ -163,6 +163,11 @@ begin
       exception when others then perform err_db('supply_route_step', sqlstate, sqlerrm, false);
         if sqlstate in ('40P01', '40001', '55P03') then raise; end if;
         v_err := sqlerrm;
+        if v_err like 'Корабль под огнём%' or v_err like '%в бою 2.0%' then
+          update supply_routes set last_note = 'Флот под огнём — прыжок, когда бой стихнет', updated_at = now()
+           where id = r.id and last_note is distinct from 'Флот под огнём — прыжок, когда бой стихнет';
+          exit;
+        end if;
         if sqlstate = 'P0001' then
           perform supply_route_stall(r.id, v_err);
         else
@@ -1331,9 +1336,9 @@ declare
   r record; cm record; v_fac text; v_side text; v_here text; v_hname text;
   v_grid int := game_setting_int('space_grid_cells', 150);
   v_zh int := game_setting_int('hyperspace_zone_height', 14);
-  s record; v_w int; v_h int; v_mr int; v_tx int; v_ty int; v_found boolean;
+  s record; v_w int; v_h int; v_l int; v_mr int; v_tx int; v_ty int; v_found boolean; v_live boolean;
   v_txa int[] := '{}'; v_tya int[] := '{}'; v_twa int[] := '{}'; v_tha int[] := '{}';
-  v_y0 int; v_y1 int; v_pref int; v_d int; v_cx int; v_cy int; v_k int; v_dir int;
+  v_y0 int; v_y1 int; v_mid int; v_d int; v_cx int; v_cy int; v_k int; v_rows int[];
   v_path jsonb; v_group uuid; v_new uuid[] := '{}'; v_id uuid; v_n int := 0; v_out int; a uuid;
 begin
   select * into r from supply_routes where id = p_route_id;
@@ -1344,18 +1349,35 @@ begin
   select sy.name into v_hname from systems sy where sy.id = v_here;
   v_side := hyperspace_side(v_here, v_fac);
 
+  -- живая орбита: корабли ведёт сервер боя
+  v_live := exists (select 1 from ships sh where sh.commander_id = cm.id and sh.system_id = v_here
+                     and not sh.in_transit and sh.carrier_ship_id is null and rt_obj_busy_2_0('ship', sh.id) is not null);
+
   select count(*)::int into v_out
   from ships sh join ship_types t on t.id = sh.ship_type
   where sh.commander_id = cm.id and sh.system_id = v_here and not sh.in_transit and sh.carrier_ship_id is null
     and not is_in_hyperspace_zone(sh.y, ship_box_h(t.width_cells, t.height_cells, sh.facing), v_side);
   if v_out = 0 then
     if r.zone_tries <> 0 then update supply_routes set zone_tries = 0 where id = r.id; end if;
+    execute 'del' || 'ete from rt_space_orders o where o.ship_id in (select sh.id from ships sh where sh.commander_id = $1)' using cm.id;
     return 'ready';
   end if;
 
-  -- уже идут (наш автоход или приказ самого игрока) — ждём, чужой приказ не перебиваем
-  if exists (select 1 from auto_moves am join ships sh on sh.id = am.ship_id
-              where am.status = 'active' and sh.commander_id = cm.id and sh.system_id = v_here) then
+  if v_live then
+    -- наш автоход из базы в живой орбите не сделает ни шага — снимаем, дальше ведёт сервер боя
+    update auto_moves am set status = 'stopped', stop_reason = 'cancelled', updated_at = now()
+     where am.status = 'active' and am.label = 'Выход к гиперлинии'
+       and am.ship_id in (select sh.id from ships sh where sh.commander_id = cm.id);
+    -- приказ ещё не забран или корабли ещё идут (до 4 минут после выдачи)
+    if exists (select 1 from rt_space_orders o join ships sh on sh.id = o.ship_id
+                where sh.commander_id = cm.id and o.system_id = v_here
+                  and (o.taken_at is null and o.created_at > now() - interval '5 minutes'
+                       or o.taken_at > now() - interval '4 minutes')) then
+      return 'moving';
+    end if;
+  elsif exists (select 1 from auto_moves am join ships sh on sh.id = am.ship_id
+                 where am.status = 'active' and sh.commander_id = cm.id and sh.system_id = v_here) then
+    -- уже идут (наш автоход или приказ самого игрока) — ждём, чужой приказ не перебиваем
     return 'moving';
   end if;
 
@@ -1376,13 +1398,15 @@ begin
     return 'blocked:Флот не может выйти к гиперлинии: «' || v_hname;
   end if;
 
-  -- корабли заняты боем или другим приказом прямо сейчас — попробуем на следующем такте
-  begin
-    perform 1 from ships sh where sh.commander_id = cm.id and sh.system_id = v_here
-      and not sh.in_transit and sh.carrier_ship_id is null order by sh.id for update nowait;
-  exception when lock_not_available then
-    return 'moving';
-  end;
+  if not v_live then
+    -- корабли заняты другим приказом прямо сейчас — попробуем на следующем такте
+    begin
+      perform 1 from ships sh where sh.commander_id = cm.id and sh.system_id = v_here
+        and not sh.in_transit and sh.carrier_ship_id is null order by sh.id for update nowait;
+    exception when lock_not_available then
+      return 'moving';
+    end;
+  end if;
 
   update supply_routes set zone_tries = zone_tries + 1 where id = r.id;
   v_group := case when v_out > 1 then gen_random_uuid() end;
@@ -1397,43 +1421,62 @@ begin
   loop
     v_w := ship_box_w(s.tw, s.th, s.facing);
     v_h := ship_box_h(s.tw, s.th, s.facing);
+    v_l := greatest(s.tw, s.th);                     -- в любом развороте корабль помещается в квадрат L×L
     select ss.move_range into v_mr from ship_stats(s.id) ss;
     v_mr := greatest(1, coalesce(v_mr, 1));
-    -- ряды полосы, где корабль целиком внутри; ближний к полю — первым
-    if v_side = 'top' then v_y0 := 0; v_y1 := v_zh - v_h; v_pref := v_y1; v_dir := -1;
-    else v_y0 := v_grid - v_zh; v_y1 := v_grid - v_h; v_pref := v_y0; v_dir := 1; end if;
-    continue when v_y1 < v_y0;                       -- корабль выше полосы: такой не прыгнет ни в каком случае
+    -- ряды полосы, где квадрат целиком внутри; от середины полосы к краям
+    if v_side = 'top' then v_y0 := 0; v_y1 := v_zh - v_l;
+    else v_y0 := v_grid - v_zh; v_y1 := v_grid - v_l; end if;
+    continue when v_y1 < v_y0;                       -- корабль длиннее полосы: такой не прыгнет ни в каком случае
+    v_mid := (v_y0 + v_y1) / 2;
+    select array_agg(g order by abs(g - v_mid), g) into v_rows from generate_series(v_y0, v_y1) g;
 
-    -- место: напротив корабля, затем всё дальше вбок; каждый ряд полосы от поля к краю
+    -- место: напротив корабля, затем всё дальше вбок
     v_found := false;
     <<search>>
     for v_d in 0 .. least(v_grid, 80) loop
-      for v_k in 0 .. (v_y1 - v_y0) loop
-        v_cy := v_pref + v_dir * v_k;
-        foreach v_cx in array array[least(greatest(0, s.x - v_d), v_grid - v_w), least(greatest(0, s.x + v_d), v_grid - v_w)] loop
-          if automove_box_ok('space', v_here, s.id, v_cx, v_cy, v_w, v_h, v_fac, false)
+      foreach v_cy in array v_rows loop
+        foreach v_cx in array array[least(greatest(0, s.x - v_d), v_grid - v_l), least(greatest(0, s.x + v_d), v_grid - v_l)] loop
+          if automove_box_ok('space', v_here, s.id, v_cx, v_cy, v_l, v_l, v_fac, false)
              and not exists (select 1 from unnest(v_txa, v_tya, v_twa, v_tha) e(ex, ey, ew, eh)
-                             where boxes_overlap(v_cx, v_cy, v_w, v_h, e.ex, e.ey, e.ew, e.eh)) then
+                             where boxes_overlap(v_cx, v_cy, v_l, v_l, e.ex, e.ey, e.ew, e.eh)) then
             v_tx := v_cx; v_ty := v_cy; v_found := true;
             exit search;
           end if;
         end loop;
       end loop;
-      exit when v_d > 0 and s.x - v_d <= 0 and s.x + v_d >= v_grid - v_w;
+      exit when v_d > 0 and s.x - v_d <= 0 and s.x + v_d >= v_grid - v_l;
     end loop;
     continue when not v_found;
+
+    if v_live then
+      -- центр квадрата в метрах: сервер боя ведёт корабль туда в реальном времени
+      v_txa := v_txa || v_tx; v_tya := v_tya || v_ty; v_twa := v_twa || v_l; v_tha := v_tha || v_l;
+      insert into rt_space_orders (ship_id, system_id, x, y, reason, created_at, taken_at)
+      values (s.id, v_here, round((v_tx + v_l / 2.0) * 200)::int, round((v_ty + v_l / 2.0) * 200)::int, 'supply', now(), null)
+      on conflict (ship_id) do update set system_id = excluded.system_id, x = excluded.x, y = excluded.y,
+                                          reason = excluded.reason, created_at = now(), taken_at = null;
+      v_n := v_n + 1;
+      continue;
+    end if;
 
     v_path := automove_route('space', v_here, s.x, s.y, v_tx, v_ty, v_w, v_h, v_mr, v_fac, false);
     continue when jsonb_array_length(v_path) = 0;
 
-    v_txa := v_txa || v_tx; v_tya := v_tya || v_ty; v_twa := v_twa || v_w; v_tha := v_tha || v_h;
+    v_txa := v_txa || v_tx; v_tya := v_tya || v_ty; v_twa := v_twa || v_l; v_tha := v_tha || v_l;
     update ships set overwatch = false where id = s.id and overwatch;
-    insert into auto_moves (owner_user_id, system_id, layer, ship_id, group_id, target_x, target_y, path,
-                            step_range, member_idx, faction, label, status)
-    values (r.owner_user_id, v_here, 'space', s.id, v_group, v_tx, v_ty, v_path, v_mr, v_n, v_fac,
-            'Выход к гиперлинии', 'active')
-    returning id into v_id;
-    v_new := v_new || v_id;
+    v_id := null;
+    begin
+      insert into auto_moves (owner_user_id, system_id, layer, ship_id, group_id, target_x, target_y, path,
+                              step_range, member_idx, faction, label, status)
+      values (r.owner_user_id, v_here, 'space', s.id, v_group, v_tx, v_ty, v_path, v_mr, v_n, v_fac,
+              'Выход к гиперлинии', 'active')
+      returning id into v_id;
+    exception when others then
+      -- орбиту как раз открыли (бой 2.0): автоход не нужен, на следующем такте приказ получит сервер боя
+      if sqlerrm not like '%в бою 2.0%' then raise; end if;
+    end;
+    if v_id is not null then v_new := v_new || v_id; end if;
     v_n := v_n + 1;
   end loop;
 

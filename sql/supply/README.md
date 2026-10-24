@@ -5,7 +5,7 @@
 Правки шага 2 (`sql/supply_fixes.sql`), шага 3 (`sql/supply_client.sql`) и шага 4 (`sql/supply_map.sql`, `sql/supply_buildings.sql`) в снимок уже внесены — 91 функция, сверено с базой после применения.
 Шаг 5 (уборка): `sql/supply_cleanup.sql` отвязал живые функции от конвоев, `sql/supply_drop_convoys.sql` (вручную, SQL Editor)
 удаляет таблицу `convoys` и 9 функций конвоев — в снимке их уже нет.
-Выход флота к гиперлинии (`sql/supply_zone.sql`): `supply_fleet_to_zone`, правка `supply_route_step` — 83 функции.
+Выход флота к гиперлинии (`sql/supply_zone.sql`, `sql/supply_zone_live.sql` — и в живой орбите через сервер боя): `supply_fleet_to_zone`, `rt_space_orders_take`, правка `supply_route_step` — 84 функции.
 
 Это **справка о том, что лежит в базе**, а не миграция. Правки снабжения делаются отдельными файлами `sql/supply_*.sql`
 и потом переносятся сюда, чтобы снимок оставался верным. План переделки — `claude/supply-plan.md` в проекте.

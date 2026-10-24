@@ -524,3 +524,23 @@ begin
   return null;
 end;
 $function$
+
+-- ----------------------------------------
+-- сервер боя забирает приказы для живой орбиты (sql/supply_zone_live.sql, server/system-room.js takeOrders)
+CREATE OR REPLACE FUNCTION public.rt_space_orders_take(p_key text, p_battle uuid, p_system text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v jsonb;
+begin
+  perform rt_need_key(p_key);
+  with t as (
+    update rt_space_orders o set taken_at = now()
+     where o.system_id = p_system and o.taken_at is null and o.created_at > now() - interval '5 minutes'
+    returning o.ship_id, o.x, o.y
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('ship_id', t.ship_id, 'x', t.x, 'y', t.y)), '[]'::jsonb) into v from t;
+  return v;
+end $function$

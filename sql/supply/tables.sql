@@ -5,6 +5,17 @@
 -- в них пишет абордаж, права там остались выданными Supabase по умолчанию.
 -- Таблица convoys удалена в шаге 5 (sql/supply_drop_convoys.sql): разовые конвои стали рейсами «в одну сторону».
 
+CREATE TABLE public.rt_space_orders (   -- приказы игры для живой орбиты (бой 2.0): рейс ведёт флот к гиперлинии (sql/supply_zone_live.sql)
+  ship_id uuid PRIMARY KEY,             -- без внешнего ключа: строку снимает supply_fleet_to_zone
+  system_id text NOT NULL,
+  x integer NOT NULL,                   -- цель в метрах орбиты, центр корабля
+  y integer NOT NULL,
+  reason text NOT NULL DEFAULT 'supply',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  taken_at timestamptz                  -- забрал сервер боя (rt_space_orders_take)
+);
+-- RLS включён, политик нет, у anon и authenticated прав нет
+
 CREATE TABLE public.market_lots (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   seller_user_id uuid NOT NULL,

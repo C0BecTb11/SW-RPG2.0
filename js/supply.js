@@ -46,6 +46,7 @@
     filter: 'all',          // сеть: all | take | need
     myId: null,
     faction: null,
+    hasHub: undefined,               // есть ли у игрока достроенный хаб (get_supply_hub); undefined — ещё не знаем
     resources: RES_DEFAULT.slice(),
     systems: null,          // планеты своей фракции для конструктора
     network: null, routes: null, planets: null, grants: null, partners: null,
@@ -83,18 +84,25 @@
 
   function num(v) { var n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
 
+  // Ответ, который так и не пришёл, не оставляет экран в «Загрузке…»: через 20 с — «нет связи»
   function call(name, args) {
     var p;
     try { p = supabase.rpc(name, args || {}); }
     catch (e) { return Promise.resolve({ data: null, error: { message: 'Нет связи с сервером' } }); }
-    return Promise.resolve(p).then(function(res) { return res || { data: null, error: null }; },
-      function() { return { data: null, error: { message: 'Нет связи с сервером' } }; });
+    return new Promise(function(done) {
+      var over = false;
+      var t = setTimeout(function() { over = true; done({ data: null, error: { message: 'Сервер не ответил — попробуй ещё раз' } }); }, 20000);
+      Promise.resolve(p).then(function(res) { if (over) return; clearTimeout(t); done(res || { data: null, error: null }); },
+        function() { if (over) return; clearTimeout(t); done({ data: null, error: { message: 'Нет связи с сервером' } }); });
+    });
   }
 
   function errText(err) {
     var m = err && (err.message || err.details) || '';
     // Служебные сообщения PostgREST игроку ничего не скажут
     if (!m || /function|schema cache|permission denied|JWT|violates/i.test(m)) return 'Не получилось — попробуй ещё раз';
+    // тексты для игрока сервер пишет по-русски; служебное английское («statement timeout» и т. п.) — не показываем
+    if (!/[А-Яа-яЁё]/.test(m)) return 'Сервер не справился — попробуй ещё раз';
     return m;
   }
 
@@ -149,6 +157,8 @@
     var key = (typeof svDayKey === 'function') ? svDayKey : function(x) { return new Date(x).toDateString(); };
     if (key(ms) === key(now)) return timeText(iso);
     if (key(ms) === key(now - 86400000)) return 'вчера ' + timeText(iso);
+    var dk = String(key(ms));                                   // svDayKey: ГГГГ-ММ-ДД по часам сервера
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dk)) return dk.slice(8, 10) + '.' + dk.slice(5, 7) + ' ' + timeText(iso);
     var d = new Date(ms);
     return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + ' ' + timeText(iso);
   }
@@ -186,7 +196,7 @@
 
   var TAB_KEYS = {
     network: ['network', 'grants', 'routes', 'planets'],
-    routes:  ['routes', 'convoys'],
+    routes:  ['routes'],
     stores:  ['planets'],
     market:  ['lots', 'orders', 'mylots', 'planets'],
     access:  ['grants', 'partners']
@@ -202,25 +212,30 @@
     });
   }
 
-  // Один и тот же список не запрашиваем дважды: второй ждёт первый ответ
-  var waiters = {};
+  // Один и тот же список не запрашиваем дважды: второй ждёт первый ответ.
+  // После действия игрока (force) — всегда новый запрос: ответ на запрос, начатый ДО действия,
+  // показал бы старое. Номер запроса (seq) отбрасывает устаревшие ответы — главнее последний.
+  var waiters = {}, seq = {};
 
-  function load(keys, done) {
+  function load(keys, done, force) {
     var left = keys.length;
     if (!left) { if (done) done(); return; }
     function fin() { if (--left === 0 && done) done(); }
     keys.forEach(function(k) {
-      if (st.loading[k]) { waiters[k].push(fin); return; }
+      if (st.loading[k] && !force) { waiters[k].push(fin); return; }
+      if (!st.loading[k]) waiters[k] = [];
+      waiters[k].push(fin);
       st.loading[k] = true;
-      waiters[k] = [fin];
+      var my = seq[k] = (seq[k] || 0) + 1;
       var L = LOADERS[k];
       call(L.fn || L, L.args).then(function(res) {
+        if (my !== seq[k]) return;
         st.loading[k] = false;
         if (res.error) st.errors[k] = errText(res.error);
         else {
           st[k] = res.data || [];
           st.errors[k] = null;
-          if (k === 'orders' || k === 'convoys') stampUntil(st[k]);
+          if (k === 'orders' || k === 'convoys' || k === 'routes') stampUntil(st[k]);
           // Свежие правила с сервера: черновики без правок больше не нужны,
           // иначе после смены правила или контроля они покажут старое
           if (k === 'planets') {
@@ -363,6 +378,13 @@
       // Остальные вкладки — фоном, ради счётчиков на них
       load(['routes', 'grants', 'network', 'planets', 'orders'], function() { if (st.open) { updateTabCounts(); updateNavBadge(); } });
       refreshTab();
+      // Есть ли штаб снабжения: без него «Новый рейс» неактивен (сервер всё равно проверит при запуске)
+      call('get_supply_hub').then(function(res) {
+        if (res.error) return;
+        var had = st.hasHub;
+        st.hasHub = res.data === true;
+        if (st.open && st.tab === 'routes' && had !== st.hasHub) render();
+      });
     });
 
     if (timer) clearInterval(timer);
@@ -382,6 +404,12 @@
     if (timer) { clearInterval(timer); timer = null; }
   }
 
+  // Постройка-штаб снабжения своей стороны: у Республики «логистический хаб», у КНС «транспортный узел»
+  function hubWord(acc, cap) {
+    var w = st.faction === 'cis' ? 'транспортный узел' : 'логистический хаб';
+    return cap ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+  }
+
   function hubName() {
     return st.hub ? (st.hub.name || sysName(st.hub.id)) : '';
   }
@@ -390,7 +418,7 @@
     var el = document.getElementById('sup-sub');
     if (!el) return;
     if (st.hub) {
-      el.innerHTML = '<i></i>Логистический хаб · <b>' + esc(hubName()) + '</b>';
+      el.innerHTML = '<i></i>' + esc(hubWord(false, true)) + ' · <b>' + esc(hubName()) + '</b>';
       el.style.display = '';
     } else {
       el.innerHTML = '';
@@ -601,7 +629,7 @@
       h += '<div class="' + cls + '">' +
         '<div class="sup-phead">' +
           '<button type="button" class="sup-pname" data-act="focus" data-sys="' + esc(p.id) + '">' +
-            esc(p.name) + '<em>⌖</em></button>' +
+            '<span class="sup-pname-t">' + esc(p.name) + '</span><em>⌖</em></button>' +
           '<span class="sup-owner">' + owner + '</span>' +
           ((take.length || need.length)
             ? '<button type="button" class="sup-mini" data-act="route-from" data-sys="' + esc(p.id) + '"' +
@@ -805,18 +833,22 @@
     var routes = (st.routes || []).slice();
     var live = routes.filter(function(r) { return r.status !== 'stopped'; });
     var done = routes.filter(function(r) { return r.status === 'stopped'; });
+    // вставший рейс ждёт игрока — он первым; дальше идущие и на паузе
     var rank = { stalled: 0, active: 1, paused: 2 };
-    live.sort(function(a, b) { return (rank[a.status] || 3) - (rank[b.status] || 3); });
+    function rk(x) { return rank[x.status] !== undefined ? rank[x.status] : 3; }
+    live.sort(function(a, b) { return rk(a) - rk(b); });
 
-    var h = '<button type="button" class="sup-new" data-act="route-new"><span>+</span>Новый рейс' +
-      (st.hub ? '<em>отсюда · ' + esc(hubName()) + '</em>' : '') + '</button>';
+    var noHub = st.hasHub === false && !st.hub;
+    var h = '<button type="button" class="sup-new" data-act="route-new"' + (noHub ? ' disabled' : '') + '><span>+</span>Новый рейс' +
+      (st.hub ? '<em>отсюда · ' + esc(hubName()) + '</em>' : noHub ? '<em>нужен ' + esc(hubWord(true)) + '</em>' : '') + '</button>';
+    if (noHub) h += '<div class="sup-note">Рейсы запускает ' + esc(hubWord()) + ': построй его хотя бы на одной своей планете.</div>';
 
     var convoys = (st.convoys || []).filter(function(c) { return c.status === 'in_flight' || c.status === 'stalled'; });
 
     if (!live.length) {
       h += '<div class="sup-empty"><b>Рейсов нет</b>' +
         'Рейс — это флот, который сам возит груз: один раз туда (и, если нужно, обратно) или по кругу — забирает там, где отдают, и выгружает там, где нужно.<br><br>' +
-        'Чтобы запускать рейсы, нужен логистический хаб хотя бы на одной твоей планете.</div>';
+        'Чтобы запускать рейсы, нужен ' + esc(hubWord(true)) + ' хотя бы на одной твоей планете.</div>';
     } else {
       h += live.map(renderRoute).join('');
     }
@@ -868,10 +900,11 @@
       us[u].textContent = sec > 0 ? leftText(sec) : (us[u].getAttribute('data-zero') || '');
     }
     if (!st.routes) return;
-    var arrived = false;
+    var arrived = false, nowMs = Date.now();
+    // от момента (stampUntil), а не счётчиком тиков: свёрнутое приложение не замораживает отсчёт
     st.routes.forEach(function(r) {
-      if (r.status !== 'active' || !(r.seconds_left > 0)) return;
-      r.seconds_left -= 1;
+      if (r.status !== 'active' || !(r.seconds_left > 0) || !r._until) return;
+      r.seconds_left = Math.max(0, Math.round((r._until - nowMs) / 1000));
       if (r.seconds_left <= 0) arrived = true;
     });
     if (st.tab !== 'routes') return;
@@ -1106,9 +1139,12 @@
     if (d.max_per_day !== null && d.max_per_day < 0) d.max_per_day = 0;
     st.saving[k] = true;
     rerenderRule(k);
+    // переключатель «В сеть» шлёт сохранённое правило с новым share — правки без «Сохранить» он не отправляет
+    var src = fromToggle ? { share: d.share, keep_min: p.keep_min, max_per_day: p.max_per_day, audience: p.audience, want_min: p.want_min } : d;
     call('set_supply_rule', {
-      p_system_id: p.system_id, p_resource: p.resource, p_share: d.share, p_keep_min: d.keep_min,
-      p_max_per_day: d.max_per_day, p_audience: d.audience, p_want_min: d.want_min
+      p_system_id: p.system_id, p_resource: p.resource, p_share: src.share, p_keep_min: num(src.keep_min),
+      p_max_per_day: src.max_per_day === undefined ? null : src.max_per_day,
+      p_audience: src.audience === 'trusted' ? 'trusted' : 'faction', p_want_min: num(src.want_min)
     }).then(function(res) {
       st.saving[k] = false;
       if (res.error) {
@@ -1118,16 +1154,19 @@
         rerenderRule(k);
         return;
       }
-      p.share = d.share; p.keep_min = d.keep_min; p.max_per_day = d.max_per_day;
-      p.audience = d.audience; p.want_min = d.want_min;
-      d.dirty = false;
+      if (fromToggle) p.share = d.share;
+      else {
+        p.share = d.share; p.keep_min = d.keep_min; p.max_per_day = d.max_per_day;
+        p.audience = d.audience; p.want_min = d.want_min;
+        d.dirty = false;
+      }
       rerenderRule(k);
       var row = document.querySelector('#sup-body .sup-res[data-rule="' + cssEsc(k) + '"]');
       if (row) { row.classList.add('flash'); setTimeout(function() { row.classList.remove('flash'); }, 1200); }
       toast((p.resource_name || resInfo(p.resource).name) + ': правило сохранено');
       // Сеть изменилась — пусть «Сеть» перечитается при следующем заходе
       st.network = null;
-      load(['network'], function() { updateTabCounts(); });
+      load(['network'], function() { updateTabCounts(); }, true);
     });
   }
 
@@ -1374,7 +1413,7 @@
     call('buy_market_lot', { p_lot_id: l.lot_id, p_amount: q }).then(function(res) {
       if (res.error) {
         toast(errText(res.error), true);
-        load(['lots'], function() { if (st.tab === 'market') render(); });
+        load(['lots'], function() { if (st.tab === 'market') render(); }, true);
         return;
       }
       delete st.buyQty[l.lot_id];
@@ -1383,7 +1422,7 @@
       // Сразу к вывозу: форма новой брони уже раскрыта
       st.mkt = 'orders';
       if (res.data) { openPick(String(res.data)); st.pick.scroll = true; }
-      load(['lots', 'orders'], function() { updateTabCounts(); if (st.tab === 'market') { render(); scrollToPick(); } });
+      load(['lots', 'orders'], function() { updateTabCounts(); if (st.tab === 'market') { render(); scrollToPick(); } }, true);
       if (typeof refreshCreditsBar === 'function') { try { refreshCreditsBar(); } catch (e) { /* полоса кредитов догонит сама */ } }
     });
   }
@@ -1398,7 +1437,9 @@
     }
     var h = '<div class="sup-note">Флот сам долетит до продавца через свои миры, заберёт покупку и отвезёт куда скажешь. ' +
       'Весь заказ должен влезть в трюм.</div>';
-    list.sort(function(a, b) { return (a.fleet_sent ? 1 : 0) - (b.fleet_sent ? 1 : 0) || untilLeft(a) - untilLeft(b); });
+    // ждущие вывоза — сверху, просроченные (деньги вернутся сами) — в самом низу
+    function ow(o) { return untilLeft(o) <= 0 ? 2 : o.fleet_sent ? 1 : 0; }
+    list.sort(function(a, b) { return ow(a) - ow(b) || untilLeft(a) - untilLeft(b); });
     return h + list.map(renderOrder).join('');
   }
 
@@ -1420,7 +1461,7 @@
 
     if (!o.fleet_sent) {
       h += '<div class="sup-order-left' + (soon ? ' soon' : '') + (expired ? ' gone' : '') + '">' +
-        (expired ? 'Срок брони истёк' : 'Бронь ещё <span data-until="' + num(o._until) + '" data-zero="истекает">' + leftText(left) + '</span>') + '</div>';
+        (expired ? 'Срок брони истёк — деньги вернутся на счёт в ближайшие минуты' : 'Бронь ещё <span data-until="' + num(o._until) + '" data-zero="истекает">' + leftText(left) + '</span>') + '</div>';
       if (!expired) {
         h += open
           ? renderPickForm(o)
@@ -1545,6 +1586,7 @@
     var why = null;
     if (!c) why = 'Выбери флот';
     else if (c.busy) why = 'Этот флот занят';
+    else if (!num(c.ships)) why = 'У командира нет кораблей';
     else if (!c.ready) why = 'Флот не в зоне прыжка — выведи весь флот в полосу у края орбиты';
     else if (num(c.free_cargo) < need) why = 'Не влезет: покупка ' + need + ', свободно ' + num(c.free_cargo);
     else if (!dest) why = 'Выбери планету выгрузки';
@@ -1597,7 +1639,7 @@
       if (res.error) { toast(errText(res.error), true); render(); return; }
       st.pick = null;
       toast('Флот вылетел за покупкой — рейс вывоза во вкладке «Рейсы»');
-      load(['orders', 'routes'], function() { updateTabCounts(); if (st.tab === 'market') render(); });
+      load(['orders', 'routes'], function() { updateTabCounts(); if (st.tab === 'market') render(); }, true);
     });
   }
 
@@ -1785,7 +1827,7 @@
       if (res.error) { toast(errText(res.error), true); if (st.tab === 'market') render(); return; }
       toast('Лот выставлен: ' + resInfo(f.res).name.toLowerCase() + ' ' + num(f.amount) + ' по ' + money(f.price) + ' кр');
       f.amount = 10;
-      load(['mylots', 'planets', 'lots'], function() { updateTabCounts(); if (st.tab === 'market') render(); });
+      load(['mylots', 'planets', 'lots'], function() { updateTabCounts(); if (st.tab === 'market') render(); }, true);
     });
   }
 
@@ -1807,7 +1849,7 @@
       toast(fit <= 0 ? 'На складе нет места — лот остался на продаже'
         : fit < left ? 'На склад вернулось ' + fit + ' — места больше нет, ' + (left - fit) + ' осталось в лоте'
         : 'Лот снят — остаток вернулся на склад');
-      load(['mylots', 'planets', 'lots'], function() { updateTabCounts(); if (st.tab === 'market') render(); });
+      load(['mylots', 'planets', 'lots'], function() { updateTabCounts(); if (st.tab === 'market') render(); }, true);
     });
   }
 
@@ -2011,7 +2053,18 @@
     }
 
     if (act === 'request') { accessCall('request_supply_access', { p_owner_user_id: b.getAttribute('data-user') }, 'Запрос отправлен — владелец получит уведомление', b); return; }
-    if (act === 'grant') { accessCall('grant_supply_access', { p_grantee_user_id: b.getAttribute('data-user') }, 'Доступ к твоим складам открыт', b); return; }
+    if (act === 'grant') {
+      if (!b.classList.contains('confirm')) {
+        b.classList.add('confirm');
+        b.textContent = 'Открыть склады?';
+        setTimeout(function() {
+          if (document.body.contains(b) && b.classList.contains('confirm')) { b.classList.remove('confirm'); b.textContent = 'Доверять'; }
+        }, 3000);
+        return;
+      }
+      accessCall('grant_supply_access', { p_grantee_user_id: b.getAttribute('data-user') }, 'Доступ к твоим складам открыт', b);
+      return;
+    }
     if (act === 'respond') {
       var ok = b.getAttribute('data-ok') === '1';
       accessCall('respond_supply_access', { p_grant_id: b.getAttribute('data-id'), p_accept: ok }, ok ? 'Доступ открыт' : 'Запрос отклонён', b);
@@ -2076,7 +2129,7 @@
         return;
       }
       toast(status === 'paused' ? 'Рейс на паузе' : status === 'stopped' ? 'Рейс завершён, командир свободен' : 'Рейс продолжен');
-      load(['routes'], function() { updateTabCounts(); updateNavBadge(); if (st.tab === 'routes') render(); });
+      load(['routes'], function() { updateTabCounts(); updateNavBadge(); if (st.tab === 'routes') render(); }, true);
     });
   }
 
@@ -2089,7 +2142,7 @@
         return;
       }
       toast(okText);
-      load(['grants', 'partners', 'network'], function() { updateTabCounts(); updateNavBadge(); render(); });
+      load(['grants', 'partners', 'network'], function() { updateTabCounts(); updateNavBadge(); render(); }, true);
     });
   }
 
@@ -2512,7 +2565,8 @@
     if (ed.stops.length >= 2 && total && !anyLoad && ed.stops[0].actions.length) warns.push('В рейсе нет погрузки — повезёт только то, что уже в трюме');
     var c = selectedCommander();
     if (c) {
-      if (!c.ready) warns.push('Флот не в зоне прыжка — рейс встанет на первом перелёте');
+      if (!num(c.ships)) errs.push('У командира нет кораблей — выбери другой флот');
+      else if (!c.ready) warns.push('Флот не в зоне прыжка — рейс встанет на первом перелёте');
       if (loadTotal > num(c.free_cargo) && !loadAll) warns.push('Погрузка больше трюма (' + num(c.free_cargo) + ') — возьмёт сколько влезет');
     }
     return { errs: errs, warns: warns };
@@ -2683,12 +2737,17 @@
       if (st.open) {
         st.tab = 'routes';
         markTabs();
-        load(['routes'], function() { updateTabCounts(); updateNavBadge(); render(); });
+        load(['routes'], function() { updateTabCounts(); updateNavBadge(); render(); }, true);
       }
     });
   }
 
   // ── Запуск ─────────────────────────────────────────────────────────
+
+  // Вернулись в приложение с открытым экраном — данные за время отсутствия устарели
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && st.open) refreshTab(true);
+  });
 
   window.openSupplyScreen = openSupplyScreen;
   window.closeSupplyScreen = closeSupplyScreen;

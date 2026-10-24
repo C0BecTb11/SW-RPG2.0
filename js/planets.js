@@ -48,7 +48,7 @@ var planetsPaused = false;   // на время перетаскивания и 
 // а размытый фон панели пересчитывался бы на каждом кадре. Полупрозрачные
 // карточки (планета, обучение, передача войск) не в счёт — сквозь них
 // карту видно, и она должна жить. Проверка — не чаще двух раз в секунду.
-var MAP_COVER_SCREENS = '#faction-screen, #army-screen, #processes-screen, #supply-screen, #faction-control-screen';
+var MAP_COVER_SCREENS = '#faction-screen, #army-screen, #processes-screen, #supply-screen, #sup-editor, #faction-control-screen';
 var mapCoveredAt = 0;
 var mapCovered = false;
 function isMapCovered(now) {

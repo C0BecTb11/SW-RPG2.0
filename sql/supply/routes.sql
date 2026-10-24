@@ -1241,3 +1241,12 @@ AS $function$
                  join market_orders o on o.id = (a.value ->> 'order_id')::uuid
                   where a.value ->> 'op' = 'pickup' and o.status = 'reserved');
 $function$
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.get_supply_hub()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select auth.uid() is not null and supply_has_hub(auth.uid());
+$function$

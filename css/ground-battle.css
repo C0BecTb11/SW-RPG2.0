@@ -979,6 +979,18 @@ html, body {
 .logi-row.foreign { border-left: 3px solid #d94a4a; padding-left: 8px; }
 
 .logi-info { flex: 1; min-width: 60%; }
+
+/* Торговый пост: название и цена — строкой сверху, счётчик и «Продать» — снизу (влезает в телефон 360) */
+.logi-row.trade { flex-wrap: wrap; row-gap: 7px; }
+.logi-row.trade .logi-info { flex: 1 1 100%; min-width: 0; }
+.logi-row.trade .logi-qty { flex: 1 1 auto; }
+.logi-row.trade .logi-qty-btn { min-height: 32px; }
+.logi-row.trade .logi-go.small { min-height: 32px; padding: 0 16px; }
+.logi-trade-msg { margin: 0 0 6px; font-size: 11px; line-height: 1.5; color: #55606c; }
+.logi-trade-msg:empty { display: none; }
+.logi-trade-msg.ok { color: #5fd968; }
+.logi-trade-msg.bad { color: #ff8a7a; }
+.logi-go.eco-supply { display: block; width: 100%; margin-top: 10px; }
 .logi-name { font-size: 12px; color: #cfd8dc; }
 .logi-sub { margin-top: 3px; font-size: 10px; color: #55606c; }
 

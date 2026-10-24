@@ -253,6 +253,10 @@
   letter-spacing: 0.5px;
 }
 
+/* без хаба рейсы не запустить — кнопка неактивна, рядом объяснение */
+.sup-new:disabled { background: #1c2530; color: #55606c; cursor: default; }
+.sup-new:disabled em { color: #8a6f2a; }
+
 .sup-new span { font-size: 16px; line-height: 1; }
 
 /* ── Плашки ресурсов ───────────────────────────────────────────── */
@@ -334,17 +338,23 @@
 
 .sup-pname:active { color: #4a90d9; }
 
+/* Владелец и «доверяет»: длинное имя сокращается, а метка доверия и сам владелец не пропадают */
 .sup-owner {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 10px;
   color: #55606c;
 }
 
-.sup-owner b { font-weight: normal; color: #8fa8c4; }
+.sup-owner b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: normal; color: #8fa8c4; }
+.sup-owner .sup-tag { flex: none; }
+.sup-pname { flex: 0 0 auto; max-width: 55%; }
+.sup-pname-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sup-tag {
   display: inline-block;
@@ -1034,6 +1044,7 @@
 .sup-go:disabled { background: #2a3644; color: #55606c; }
 
 .sup-cmd {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 10px;

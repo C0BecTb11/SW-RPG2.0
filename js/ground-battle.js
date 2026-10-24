@@ -2682,11 +2682,16 @@ function onSlotTapped(slotIndex) {
     var isHub = code === 'rep_logistics' || code === 'cis_logistics';
     var isTrade = code === 'rep_trade' || code === 'cis_trade';
     var isEconomy = isEconomyBuilding(code);
+    var isDepot = code === 'rep_depot' || code === 'cis_depot';
+    // Хаб, пост и склад работают на планету: их открывает и хозяин планеты, даже если строил не он.
+    // Трофейные (старой фракции) не работают — захватчик их сносит, поэтому для них только карточка.
+    var planetSvc = isHub || isTrade || isDepot;
+    var alien = sysFaction && existing.faction && existing.faction !== sysFaction;
 
     // В обычном режиме тап по своему готовому зданию открывает его занятие:
     // у казармы это наём, у научного центра — исследования. Карточка
     // со сносом остаётся в режиме стройки.
-    if (!buildMode && mine && ready) {
+    if (!buildMode && ready && (mine || (planetSvc && isController)) && !(planetSvc && alien)) {
       if (isLab) openResearchPanel(existing);
       // Хаб — вход в общий экран «Снабжение» (рейсы, склады, рынок) от
       // этой планеты; старая панель узла — только если экран не подключён
@@ -8363,14 +8368,21 @@ function openTradePanel(building) {
   renderTradePanel();
 }
 
-function renderTradePanel() {
+// Торговый пост: продажа излишков склада планеты NPC. Строка ресурса — в две линии (название и цена сверху,
+// счётчик и «Продать» снизу), чтобы влезала в телефон. Ответ продажи приходит, даже если панель уже закрыли —
+// тогда его просто не рисуем. Итог продажи и ошибки — строкой в самой панели.
+function renderTradePanel(msg) {
+  var building = logiBuilding;
+  if (!building) return;
+  var sysId = building.system_id;
   var body = document.getElementById('logi-body');
-  body.innerHTML = '<div class="logi-empty">Загрузка...</div>';
+  if (!msg) body.innerHTML = '<div class="logi-empty">Загрузка...</div>';
 
-  supabase.rpc('get_trade_prices', { p_system_id: logiBuilding.system_id })
+  supabase.rpc('get_trade_prices', { p_system_id: sysId })
     .then(function(res) {
+      if (logiBuilding !== building) return;                      // панель закрыли или открыли другую
       if (res.error) {
-        body.innerHTML = '<div class="logi-empty">' + res.error.message + '</div>';
+        body.innerHTML = '<div class="logi-empty">Цены не загрузились — закрой и открой пост ещё раз</div>';
         return;
       }
 
@@ -8378,6 +8390,11 @@ function renderTradePanel() {
 
       body.innerHTML = '';
       body.appendChild(logiSection('Скупка излишков'));
+
+      var line = document.createElement('div');
+      line.className = 'logi-trade-msg' + (msg ? ' ' + msg.cls : '');
+      line.textContent = msg ? msg.text : '';
+      body.appendChild(line);
 
       if (!rows.length) {
         var e = document.createElement('div');
@@ -8389,16 +8406,15 @@ function renderTradePanel() {
 
       rows.forEach(function(r) {
         var row = document.createElement('div');
-        row.className = 'logi-row';
+        row.className = 'logi-row trade';
         if (r.color) row.style.borderLeft = '3px solid ' + r.color;
         row.style.paddingLeft = r.color ? '8px' : '';
 
         var info = document.createElement('div');
         info.className = 'logi-info';
         info.innerHTML =
-          '<div class="logi-name">' + r.name + ' · ' + r.price + ' кр за ед.</div>' +
-          '<div class="logi-sub">На складе ' + r.amount +
-            ' · за всё ' + r.total + ' кр</div>';
+          '<div class="logi-name">' + escHtml(r.name) + ' · ' + r.price + ' кр за ед.</div>' +
+          '<div class="logi-sub">На складе ' + r.amount + ' · за всё ' + r.total + ' кр</div>';
         row.appendChild(info);
 
         var qty = logiAmount(r.amount);
@@ -8409,17 +8425,26 @@ function renderTradePanel() {
         sell.textContent = 'Продать';
         sell.addEventListener('click', function() {
           var n = parseInt(qty.valueEl.textContent, 10);
+          if (!(n > 0)) return;
           sell.disabled = true;
-          supabase.rpc('sell_to_trade_post', {
-            p_system_id: logiBuilding.system_id,
-            p_resource: r.resource,
-            p_amount: n
-          }).then(function(r2) {
-            sell.disabled = false;
-            if (r2.error) { alert(r2.error.message); return; }
-            // Счётчик кредитов обновится сам: он слушает profiles по realtime
-            renderTradePanel();
-          });
+          supabase.rpc('sell_to_trade_post', { p_system_id: sysId, p_resource: r.resource, p_amount: n })
+            .then(function(r2) {
+              if (logiBuilding !== building) return;
+              sell.disabled = false;
+              if (r2.error) {
+                var m = r2.error.message || '';
+                line.className = 'logi-trade-msg bad';
+                line.textContent = /[А-Яа-яЁё]/.test(m) ? m : 'Не продалось — попробуй ещё раз';
+                return;
+              }
+              // Счётчик кредитов обновится сам: он слушает profiles по realtime
+              renderTradePanel({ cls: 'ok', text: 'Продано: ' + String(r.name || '').toLowerCase() + ' ' + n + ' · +' + (r2.data || n * r.price) + ' кр' });
+            }, function() {
+              if (logiBuilding !== building) return;
+              sell.disabled = false;
+              line.className = 'logi-trade-msg bad';
+              line.textContent = 'Нет связи с сервером';
+            });
         });
         row.appendChild(sell);
 
@@ -8428,8 +8453,7 @@ function renderTradePanel() {
 
       var note = document.createElement('div');
       note.className = 'logi-note';
-      note.textContent = 'Пост платит меньше, чем можно выручить на рынке. ' +
-                         'Зато сразу и без перевозки.';
+      note.textContent = 'Пост платит меньше, чем можно выручить на рынке. Зато сразу и без перевозки.';
       body.appendChild(note);
     });
 }
@@ -8656,6 +8680,19 @@ function renderEconomyPanel(body, st) {
       '<div class="eco-what">' + what + '</div>' +
       '<div class="eco-status ' + stat.cls + '">' + stat.text + next + '</div>';
     body.appendChild(card);
+
+    // склад — часть снабжения: что отдавать в сеть и сколько держать, задаётся там
+    if (st.storage_bonus > 0 && typeof openSupplyScreen === 'function') {
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'logi-go eco-supply';
+      go.textContent = 'Правила склада — в «Снабжении»';
+      go.addEventListener('click', function() {
+        if (typeof closeLogisticsPanel === 'function') closeLogisticsPanel();
+        openSupplyScreen('stores');
+      });
+      body.appendChild(go);
+    }
   }
 
   // --- склад планеты ---

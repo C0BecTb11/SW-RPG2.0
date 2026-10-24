@@ -60,7 +60,9 @@ function soGroupById(id) { var a = (soState && soState.groups) || []; for (var i
 function soKind(id) { for (var i = 0; i < SO_KINDS.length; i++) if (SO_KINDS[i].id === id) return SO_KINDS[i]; return null; }
 
 // ---------------------------------------------------------------- карточка в окне штаба
+var soBoxEl = null, soBoxBld = null;   // карточка в окне штаба: обновить, когда окно операций закроют
 function soBox(building, box) {
+  soBoxEl = box; soBoxBld = building;
   box.innerHTML = '<div class="so-box-head">Тайные операции</div><div class="so-box-empty">Загрузка…</div>';
   supabase.rpc('spy_state').then(function(r) {
     if (r.error || !r.data) { box.innerHTML = '<div class="so-box-head">Тайные операции</div><div class="so-box-empty">Не удалось прочитать</div>'; return; }
@@ -128,6 +130,8 @@ function closeSpyOps() {
   if (soTick) { clearInterval(soTick); soTick = null; }
   if (window.SOMap) SOMap.stop();
   soState = null; soSeq++;
+  // под окном осталось окно штаба — его карточка должна показать, что изменилось (группа ушла в дело и т. п.)
+  if (soBoxEl && soBoxBld && document.body.contains(soBoxEl)) soBox(soBoxBld, soBoxEl);
 }
 
 function soLoad() {
@@ -276,6 +280,9 @@ function soTargetHtml() {
   var html = '<button type="button" class="so-back" data-so="back">← К группам</button>' +
     '<div class="so-sec">Цель для «' + soEsc(g ? g.name : '') + '»</div>';
   if (!soPick.targets) return html + '<div class="so-empty">Разведка ищет цели…</div>';
+  // не дошло — так и пишем, а не «целей нет»
+  if (soPick.tErr) return html + '<div class="so-empty bad">' + soEsc(soPick.tErr) + '</div>' +
+    '<button type="button" class="so-back" data-so="op-start" data-g="' + soEsc(soPick.group) + '">Спросить ещё раз</button>';
   if (!soPick.targets.length) return html + '<div class="so-note">В двух гиперпутях от планеты ' + soEsc(g ? g.base_name : '') + ' нет чужих планет с участками и цехами.</div>';
   html += '<div class="so-hint">Тапни планету на карте или выбери участок в списке.</div>';
   soPick.targets.forEach(function(p) {
@@ -376,9 +383,12 @@ function soClick(e) {
     var gid = soPick.group;
     supabase.rpc('spy_targets', { p_group: gid }).then(function(r) {
       if (soView !== 'target' || soPick.group !== gid) return;
-      if (r.error) { soPick.targets = []; soRender(); soErr(r.error.message); return; }
+      if (r.error) { soPick.targets = []; soPick.tErr = r.error.message; soRender(); return; }
       soPick.targets = r.data || [];
       soMapSync(); soRender();
+    }, function() {
+      if (soView !== 'target' || soPick.group !== gid) return;
+      soPick.targets = []; soPick.tErr = 'Нет связи с сервером'; soRender();
     });
   }
   else if (act === 'back') { soView = 'home'; soPick.targets = null; soPick.sys = null; soMapSync(); soRender(); }

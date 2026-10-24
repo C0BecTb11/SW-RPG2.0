@@ -145,7 +145,10 @@
     S.raf = requestAnimationFrame(loop);
     if (document.hidden) { S.last = now; return; }
     var dt = Math.min(0.1, (now - (S.last || now)) / 1000); S.last = now; S.t += dt;
-    try { draw(); } catch (e) { if (!S.err) { S.err = 1; if (root.errReport) root.errReport(e, 'spy.map'); } }
+    try { draw(); } catch (e) {
+      if (S.cv) S.cv.width = S.cv.width;                  // сбросить «залипшие» save() и трансформации
+      if (!S.err) { S.err = 1; if (root.errReport) root.errReport(e, 'spy.map'); }
+    }
   }
 
   function onTap(e) {

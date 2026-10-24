@@ -352,6 +352,8 @@
   // Одна единица добытого: свободный от ноши рабочий на смене несёт её на склад
   function haul() {
     var st = S.st, sp = st ? spots(st.places) : [];
+    // пока у склада банда, рабочие на склад не ходят: единица просто ложится на склад
+    if (S.raidFocus) { S.pops.push({ x: STORE.x + STORE.w / 2, y: STORE.y + 0.4, t: 0 }); return; }
     var cand = S.agents.filter(function(a) { return a.role === 'work' && !a.path && !a.carry; });
     if (!cand.length) { S.pops.push({ x: STORE.x + STORE.w / 2, y: STORE.y + 0.4, t: 0 }); return; }
     var a = cand[(S.rr++) % cand.length];
@@ -386,8 +388,8 @@
   function guardStep(a, dt) {
     if (a.hold > 0) { a.hold -= dt; return; }              // тревога ведёт его сама (alarmGuards)
     a.alarm = false;
-    if (S.raidFocus) {                                         // банда у склада: стоит и держит её на прицеле
-      a.path = null; a.mv = 0; a.alarm = S.raidFocus.fight;
+    if (S.raidFocus && !(a.path && a.path.length)) {           // банда у склада: стоит и держит её на прицеле (идущий к посту — дойдёт)
+      a.mv = 0; a.alarm = S.raidFocus.fight;
       a.ang = Math.atan2(S.raidFocus.y - a.y, S.raidFocus.x - a.x);
       return;
     }
@@ -821,7 +823,14 @@
     (st.raids || []).forEach(function(r) { var x = raidNow(r, now); if (x) list.push(x); });
     S.rcur = list;
     var f = null;                                                // охрана разворачивается к банде
-    list.forEach(function(x) { if (!f && x.figs.length && (x.dt < 0 || x.fight)) f = { x: x.focus[0], y: x.focus[1], fight: x.fight }; });
+    // держит на прицеле, пока банда на ногах: и в бою, и пока она грабит склад и уходит
+    list.forEach(function(x) {
+      if (f) return;
+      var up = x.figs.filter(function(fg) { return fg.pose !== 'down'; });
+      if (!up.length) return;
+      var cx = 0, cy = 0; up.forEach(function(fg) { cx += fg.x; cy += fg.y; });
+      f = { x: cx / up.length, y: cy / up.length, fight: x.fight };
+    });
     S.raidFocus = f;
     // налётчики целятся в ближайшего охранника
     var gs = S.agents.filter(function(a) { return a.k === 'g' && !a.inside; });

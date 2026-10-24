@@ -8,6 +8,8 @@
 -- Защитников не меньше — налёт отбит; иначе шанс 80 % × защита / налётчики.
 -- Отбили — 40 кр за налётчика. Нет — смена обрывается (сделанное сохраняется), со склада планеты уходит 20 % ресурса
 -- участка (до 60), износ +10 %. Не трогаем: ничьи планеты, аккаунты моложе 7 дней, пустоту, планету в захвате.
+-- Такт опоздал (налёт без предупреждения или больше 10 мин после начала) — налёт отменяется: за простой сервера
+-- игрока не наказываем (как «calm» у налётов на поселения).
 
 insert into public.game_settings (key, value) values
   ('mine_raid_enabled', '1'), ('mine_raid_pct', '30'), ('mine_raid_pct_low', '50'), ('mine_raid_bounty', '40'),
@@ -32,15 +34,17 @@ create table if not exists public.mine_raids (
   loot_res text,
   bounty integer not null default 0,
   shift_cut boolean not null default false,
+  tries integer not null default 0,               -- сбои при разборе налёта: после пяти — налёт отменяется
   created_at timestamptz not null default now(),
   unique (system_id, cycle)
 );
 create index if not exists mine_raids_open on public.mine_raids (status) where status in ('plan', 'warned');
 create index if not exists mine_raids_building on public.mine_raids (building_id, raid_at desc);
+alter table public.mine_raids add column if not exists tries integer not null default 0;
 alter table public.mine_raids enable row level security;
 
 insert into public.event_types (type, category, title, tone, jumpable) values
-  ('mine_raid_warn', 'combat', 'Банда идёт к участку', 'warn', true),
+  ('mine_raid_warn', 'combat', 'Мародёры на подходе', 'warn', true),
   ('mine_raid_repelled', 'combat', 'Налёт отбит', 'good', true),
   ('mine_raid_lost', 'combat', 'Налёт на участок', 'bad', true)
 on conflict (type) do nothing;
@@ -88,6 +92,8 @@ declare r mine_raids; s mine_sites; v_ctl uuid; v_fac text; v_bname text; v_slot
 begin
   select * into r from mine_raids where id = p_raid and status in ('plan', 'warned') for update;
   if not found then return; end if;
+  -- порядок блокировок как у mine_finish (смена, потом участок), иначе возможна взаимная блокировка с mine_tick
+  select * into v_sh from mine_shifts where building_id = r.building_id and status = 'run' for update;
   select * into s from mine_sites where building_id = r.building_id for update;
   select sc.controller_user_id, sy.faction into v_ctl, v_fac from systems sy left join system_control sc on sc.system_id = sy.id where sy.id = r.system_id;
   select bd.slot_index, bt.name, bd.faction into v_slot, v_bname, v_bfac
@@ -111,12 +117,11 @@ begin
      where id = p_raid;
     perform log_event(v_ctl, v_fac, r.system_id, 'mine_raid_repelled',
       v_bname || ': охрана отбила налёт — ' || ru_plural(r.n, 'налётчик', 'налётчика', 'налётчиков') || ' · +' || v_bounty || ' кр.',
-      v_bounty, 'private', v_meta);
+      null, 'private', v_meta);
     return;
   end if;
 
   -- не отбили: бригада бросает смену, банда выносит часть ресурса участка со склада планеты, ломает оборудование
-  select * into v_sh from mine_shifts where building_id = r.building_id and status = 'run';
   if v_sh.id is not null then perform mine_finish(v_sh.id, 'stopped'); end if;
   select coalesce(amount, 0) into v_have from planet_stock where system_id = r.system_id and resource = s.resource for update;
   v_take := least(game_setting_int('mine_raid_loot_max', 60), floor(coalesce(v_have, 0) * game_setting_int('mine_raid_loot_pct', 20) / 100.0))::integer;
@@ -127,9 +132,9 @@ begin
                         loot = v_take, loot_res = case when v_take > 0 then s.resource end, shift_cut = v_sh.id is not null
    where id = p_raid;
   perform log_event(v_ctl, v_fac, r.system_id, 'mine_raid_lost',
-    v_bname || ': банда ушла с добычей' || case when v_take > 0 then ' — −' || v_take || ' ' || lower(coalesce(v_rname, s.resource)) else '' end
+    v_bname || ': ' || case when v_take > 0 then 'банда ушла с добычей — −' || v_take || ' ' || lower(coalesce(v_rname, s.resource)) else 'банда прорвалась, склад пуст' end
       || case when v_sh.id is not null then ', смена оборвана' else '' end || ', износ +' || game_setting_int('mine_raid_wear', 10) || ' %',
-    v_take, 'private', v_meta);
+    null, 'private', v_meta);
 end;
 $$;
 
@@ -167,22 +172,30 @@ begin
   -- предупреждение хозяину за полчаса
   for r in select mr.* from mine_raids mr where mr.status = 'plan' and now() >= mr.raid_at - make_interval(mins => v_warn) and now() < mr.raid_at loop
     begin
-      update mine_raids set status = 'warned' where id = r.id;
+      update mine_raids set status = 'warned' where id = r.id and status = 'plan';
+      continue when not found;
       select bd.slot_index, bt.name into v_slot, v_bname from buildings bd join building_types bt on bt.id = bd.building_type_id where bd.id = r.building_id;
       if v_slot is not null then
         perform log_event(sc.controller_user_id, sy.faction, r.system_id, 'mine_raid_warn',
           v_bname || ': ' || ru_plural(r.n, 'налётчик', 'налётчика', 'налётчиков') || ' будут около ' || marauder_hhmm(r.raid_at)
             || ' · защитников на посту: ' || mine_raid_defense(r.building_id),
-          r.n, 'private', jsonb_build_object('slot', v_slot, 'building_id', r.building_id, 'raid', r.id, 'raid_at', r.raid_at))
+          null, 'private', jsonb_build_object('slot', v_slot, 'building_id', r.building_id, 'raid', r.id, 'raid_at', r.raid_at))
           from systems sy join system_control sc on sc.system_id = sy.id where sy.id = r.system_id and sc.controller_user_id is not null;
       end if;
     exception when others then perform err_db('mine_raid_tick', sqlstate, sqlerrm, true); end;
   end loop;
 
-  -- налёт
-  for r in select id from mine_raids where status in ('plan', 'warned') and now() >= raid_at order by raid_at loop
+  -- такт опоздал: предупреждения не было или налёт давно должен был начаться — отменить, игрока не наказывать
+  update mine_raids set status = 'done', result = 'void', acted_at = now() where status in ('plan', 'warned') and now() >= raid_at
+     and (status = 'plan' or now() > raid_at + interval '10 minutes' or tries >= 5);
+
+  -- налёт; сбой — ещё попытка через минуту, после пяти налёт отменяется (строкой выше)
+  for r in select id from mine_raids where status = 'warned' and now() >= raid_at order by raid_at loop
     begin perform mine_raid_resolve(r.id);
-    exception when others then perform err_db('mine_raid_tick', sqlstate, sqlerrm, true); end;
+    exception when others then
+      perform err_db('mine_raid_tick', sqlstate, sqlerrm, true);
+      update mine_raids set tries = tries + 1 where id = r.id;
+    end;
   end loop;
 end;
 $$;

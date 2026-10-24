@@ -93,7 +93,13 @@ function mnWorkers(n, kind) {
 // Время сервера и «сколько осталось» до его отметки
 function mnSrvNow() { return Date.now() + mnSkew; }
 function mnLeftAt(iso) { return mnLeft((iso ? Date.parse(iso) : 0) - mnSrvNow()); }
-function mnHm(iso) { return iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''; }
+// время — по часам сервера, как в ленте и в «18–23 по серверу» (js/credits-bar.js → svFormatTime)
+function mnHm(iso) {
+  if (!iso) return '';
+  var t = Date.parse(iso);
+  if (typeof svFormatTime === 'function') { try { var f = svFormatTime(t); if (f) return f; } catch (e) {} }
+  return new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
 
 // Выбывшие по причинам: rush — травмы и поломки после аврала, strike — бастуют, virus — сбой дроидов
 function mnHurt(st, kind) {
@@ -197,15 +203,15 @@ function mnRaidCard(r, st, now) {
   var ph = mnRaidPhase(r, now), n = r.n || 0, band = mnRaiders(n), cfg = st.cfg.raid || {};
   if (ph === 'repelled')
     return mnOpCard('caught', MN_OP_ICON.caught, 'Налёт отбит', mnHm(r.acted_at),
-      'Охрана отбила ' + band + ' — защитников было ' + (r.defense || 0) + '.',
+      'Охрана отбила ' + band + ' — на посту ' + mnDefenders(r.defense || 0) + '.',
       '<div class="mn-op-who">Трофеи · +' + (r.bounty || 0) + ' кр</div>');
   if (ph === 'lost') {
     var rn = st.res && st.res.id === r.loot_res ? st.res.name : r.loot_res, parts = [];
     if (r.loot > 0) parts.push('−' + r.loot + (rn ? ' ' + mnEsc(rn).toLowerCase() : '') + ' со склада планеты');
     if (r.shift_cut) parts.push('смена оборвана');
     parts.push('износ +' + (cfg.wear || 10) + ' %');
-    return mnOpCard('known', MN_OP_ICON.raid, 'Налёт: банда ушла с добычей', mnHm(r.acted_at),
-      band.charAt(0).toUpperCase() + band.slice(1) + ' против ' + (r.defense || 0) + ' защитников: ' + parts.join(', ') + '.', '');
+    return mnOpCard('known', MN_OP_ICON.raid, r.loot > 0 ? 'Налёт: банда ушла с добычей' : 'Налёт: банда прорвалась', mnHm(r.acted_at),
+      band.charAt(0).toUpperCase() + band.slice(1) + ' против ' + mnDefenders(r.defense || 0) + ': ' + parts.join(', ') + '.', '');
   }
   var d = mnDefense(st), ch = mnRaidChance(d, n);
   var odds = ch >= 100 ? '<b class="ok">отобьёте</b>' : ch > 0 ? 'шанс отбиться <b>' + ch + ' %</b>' : '<b class="bad">отбиться некому</b>';
@@ -216,6 +222,7 @@ function mnRaidCard(r, st, now) {
     ph === 'fight' ? '' :
     '<div class="mn-op-note">Защитников на посту: ' + d + ' из ' + n + ' нужных — ' + odds + '. Не отобьёте — смена оборвётся, банда унесёт ' + (cfg.loot_pct || 20) + ' % ресурса со склада планеты (до ' + (cfg.loot_max || 60) + '), износ +' + (cfg.wear || 10) + ' %. Отобьёте — ' + (cfg.bounty || 40) + ' кр за налётчика.</div>' + mnDefendBtns(st));
 }
+function mnDefenders(n) { var a = n % 10, b = n % 100; return n + (a === 1 && b !== 11 ? ' защитника' : ' защитников'); }
 function mnRaiders(n) { var a = n % 10, b = n % 100; return n + (a === 1 && b !== 11 ? ' налётчик' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? ' налётчика' : ' налётчиков'); }
 
 // Охрана и защита от диверсий: кто на посту, караул, узел связи — насколько это снижает шанс диверсанта

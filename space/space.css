@@ -34,6 +34,39 @@ button { font-family: inherit; }
   border-radius: 20px;
   text-decoration: none;
 }
+/* «← Галактика» и переход на другое пространство планеты — одной строкой (js/map-layer.js) */
+#sp-nav {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 12px;
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+#sp-nav #sp-back { position: static; }
+#sp-layer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  background: rgba(5,6,10,0.75);
+  border: 1px solid rgba(28,37,48,0.9);
+  color: #cfd8dc;
+  font-size: 12px;
+  padding: 0 12px;
+  border-radius: 20px;
+  text-decoration: none;
+}
+#sp-layer svg { flex: none; width: 15px; height: 15px; fill: none; stroke: #d9a940; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+#sp-layer.wait, body.deep-space #sp-layer { display: none; }
+/* не влезает до пилюли кредитов (у админа в ней ещё DEV) — от «Галактики» остаётся стрелка */
+#sp-nav.tight .sp-back-t { display: none; }
+/* телефон стоя: справа пилюля кредитов с часами — оставляем только значок (подпись — в title) */
+@media (max-width: 519px) {
+  #sp-layer { padding: 0 9px; }
+  #sp-layer span { display: none; }
+}
 #sp-tr {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top, 0px));
@@ -633,6 +666,6 @@ body.cisside .sp-hold .hero { color: #ff9a88; }
 .sp-gfx-tg.on b { color: #e8d9a8; }
 .sp-gfx-tg em { font-style: normal; font-size: 9px; color: #55606c; }
 /* узкий телефон: кадры в секунду — в настройках, место — кнопкам */
-@media (max-width: 400px) { #sp-clock .fps { display: none; } #sp-tr { gap: 5px; } }
+@media (max-width: 519px) { #sp-clock .fps { display: none; } #sp-tr { gap: 5px; } }
 /* орбита системы из игры: без списка боёв, полигона, скорости и ссылок */
 body.sys #sp-top, body.sys .sp-speed { display: none; }

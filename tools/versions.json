@@ -143,6 +143,10 @@
   "v": "25",
   "sha": "7b77119422bd"
  },
+ "js/map-layer.js": {
+  "v": "1",
+  "sha": "e9f945119426"
+ },
  "js/mine-scene.js": {
   "v": "5",
   "sha": "b1ca83f9f3ab"
@@ -184,8 +188,8 @@
   "sha": "b9e1bc3a5d69"
  },
  "js/space-battle.js": {
-  "v": "2",
-  "sha": "29d5a10e48f5"
+  "v": "3",
+  "sha": "7e15b780b865"
  },
  "js/space-live.js": {
   "v": "16",
@@ -320,8 +324,8 @@
   "sha": "26a531e80361"
  },
  "space/space.css": {
-  "v": "21",
-  "sha": "0abcdaaacd8e"
+  "v": "22",
+  "sha": "eddb39e9609f"
  },
  "space/space.js": {
   "v": "34",

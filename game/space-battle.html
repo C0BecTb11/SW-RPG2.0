@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="../css/lease.css">
 <link rel="stylesheet" href="../css/overwatch.css">
 <link rel="stylesheet" href="../css/boarding-space.css">
-<link rel="stylesheet" href="../space/space.css?v=21">
+<link rel="stylesheet" href="../space/space.css?v=22">
 <link rel="stylesheet" href="../css/space-live.css?v=4">
 </head>
 <body>
@@ -43,7 +43,11 @@
 <!-- Космос 2.0: орбита системы и бой в реальном времени (space/space.js), поверх — панели игры -->
 <canvas id="sp-canvas"></canvas>
 
-<a id="sp-back" href="galaxy-map.html">← Галактика</a>
+<!-- верхний левый угол: в галактику и на другое пространство этой же планеты (js/map-layer.js) -->
+<nav id="sp-nav">
+  <a id="sp-back" href="galaxy-map.html" title="Галактика">← <span class="sp-back-t">Галактика</span></a>
+  <a id="sp-layer" class="wait" href="ground-battle.html" data-page="ground-battle.html" title="Земное пространство планеты" aria-label="Земное пространство планеты"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5.5l2.6 4 1.9-2.6L14.5 13z"/><path d="m4.6 7.9 1.4 1 1.3-1"/></svg><span>Земля</span></a>
+</nav>
 <div id="sp-tr">
   <div class="sp-speed" role="group" aria-label="Скорость боя">
     <button id="sp-pause" type="button" title="Пауза">❚❚</button>
@@ -247,6 +251,7 @@
 <script src="../js/err-report.js?v=4"></script>
 <script src="../js/scene-loader.js?v=2"></script>
 <script src="../js/credits-bar.js?v=7"></script>
+<script src="../js/map-layer.js?v=1"></script>
 <script src="../js/game-confirm.js"></script>
 <script src="../js/drag-command.js"></script>
 <script src="../js/production-lease.js"></script>
@@ -266,7 +271,7 @@
 <script src="../space/space-gfx.js?v=1"></script>
 <script src="../space/space-deck.js?v=2"></script>
 <script src="../js/space-live.js?v=16"></script>
-<script src="../js/space-battle.js?v=2"></script>
+<script src="../js/space-battle.js?v=3"></script>
 <script src="../js/ship-control.js?v=2"></script>
 <script src="../js/automove-route.js"></script>
 <script src="../js/automove-space.js"></script>

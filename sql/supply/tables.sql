@@ -1,44 +1,9 @@
 -- Снимок таблиц снабжения (схема public), проект zqqaxhhajhgspaiwlyhy, 24.10.2026
 -- Восстановлено по pg_attribute / pg_constraint / pg_indexes / pg_trigger / pg_policies. Справка, а не миграция.
--- У всех таблиц включён RLS. С sql/supply_fixes.sql на таблицы снабжения и рынка (convoys, market_lots, market_orders,
+-- У всех таблиц включён RLS. С sql/supply_fixes.sql на таблицы снабжения и рынка (market_lots, market_orders,
 -- planet_stock, supply_*) у authenticated только SELECT, у anon прав нет; ship_cargo и ship_resource_cargo не трогали —
 -- в них пишет абордаж, права там остались выданными Supabase по умолчанию.
-
-CREATE TABLE public.convoys (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  owner_user_id uuid NOT NULL,
-  faction text NOT NULL,
-  from_system text NOT NULL,
-  to_system text NOT NULL,
-  resource text,
-  amount integer,
-  departed_at timestamptz NOT NULL DEFAULT now(),
-  arrives_at timestamptz NOT NULL,
-  status text NOT NULL DEFAULT 'in_flight',
-  seized_by uuid,
-  order_id uuid,
-  commander_id uuid,
-  cargo jsonb,
-  route text[],
-  kind text NOT NULL DEFAULT 'transfer',
-  pickup_system text,
-  home_system text,
-  return_home boolean NOT NULL DEFAULT false,
-  stage text NOT NULL DEFAULT 'to_dest',
-  CONSTRAINT convoys_pkey PRIMARY KEY (id),
-  CONSTRAINT convoys_amount_check CHECK (amount > 0),
-  CONSTRAINT convoys_commander_id_fkey FOREIGN KEY (commander_id) REFERENCES commanders(id) ON DELETE SET NULL,
-  CONSTRAINT convoys_from_system_fkey FOREIGN KEY (from_system) REFERENCES systems(id),
-  CONSTRAINT convoys_to_system_fkey FOREIGN KEY (to_system) REFERENCES systems(id),
-  CONSTRAINT convoys_home_system_fkey FOREIGN KEY (home_system) REFERENCES systems(id),
-  CONSTRAINT convoys_pickup_system_fkey FOREIGN KEY (pickup_system) REFERENCES systems(id),
-  CONSTRAINT convoys_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES auth.users(id),
-  CONSTRAINT convoys_resource_fkey FOREIGN KEY (resource) REFERENCES resources(id)
-);
--- на status / kind / stage нет CHECK
-CREATE INDEX convoys_due_idx ON public.convoys USING btree (arrives_at) WHERE (status = 'in_flight');
-CREATE INDEX convoys_to_idx  ON public.convoys USING btree (to_system)  WHERE (status = 'in_flight');
--- POLICY convoys_select_own: SELECT TO public USING (owner_user_id = auth.uid())
+-- Таблица convoys удалена в шаге 5 (sql/supply_drop_convoys.sql): разовые конвои стали рейсами «в одну сторону».
 
 CREATE TABLE public.market_lots (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -110,7 +75,7 @@ CREATE TRIGGER trg_cargo_owner BEFORE INSERT OR UPDATE ON public.ship_cargo FOR 
 CREATE TRIGGER trg_ship_transit_guard BEFORE INSERT OR DELETE OR UPDATE ON public.ship_cargo FOR EACH ROW EXECUTE FUNCTION ship_transit_guard();
 -- POLICY "Own ship cargo": SELECT TO public USING (EXISTS (SELECT 1 FROM ships s WHERE s.id = ship_cargo.ship_id AND s.owner_user_id = auth.uid()))
 
-CREATE TABLE public.ship_resource_cargo (  -- resources carried by ships (convoys / routes)
+CREATE TABLE public.ship_resource_cargo (  -- resources carried by ships (routes)
   ship_id uuid NOT NULL,
   resource text NOT NULL,
   amount integer NOT NULL,
@@ -219,15 +184,13 @@ CREATE INDEX supply_takes_sys_res_at ON public.supply_takes USING btree (system_
 -- политик нет: только через RPC
 
 -- ============================================================================
--- game_settings (ключи про снабжение, конвои, рынок, торговлю, груз, склад, пределы), 24.10.2026
---   cargo_units_per_slot = 2        (resource_slots, commander_free_cargo, supply_fleet_free, supply_put_cargo, dispatch_convoy, convoy_load_order)
---   convoy_hop_seconds   = 180      (нигде не используется)
---   convoy_max_amount    = 400      (нигде не используется)
+-- game_settings (ключи про снабжение, рынок, торговлю, груз, склад, пределы), 24.10.2026
+--   cargo_units_per_slot = 2        (resource_slots, commander_free_cargo, supply_fleet_free, supply_put_cargo)
 --   market_min_price     = 1        (create_market_lot)
 --   market_order_hours   = 24       (buy_market_lot)
 --   planet_stock_base_cap= 200      (planet_stock_cap)
 --   trade_post_pct       = 60       (trade_post_price)
---   travel_seconds       = 60       (start_commander_move, get_convoy_destinations, start_interception)
+--   travel_seconds       = 60       (start_commander_move, dispatch_market_pickup, start_interception)
 --   payout_hour          = 4        (last_payout_at → суточные лимиты снабжения, production_tick)
 --   approach_warn_pct    = 80       (approach_warning_tick)
 --   mine_site_cap = 300, capture_seconds = 21600, deploy_capacity = 72 (к снабжению не относятся)
@@ -239,8 +202,7 @@ CREATE INDEX supply_takes_sys_res_at ON public.supply_takes USING btree (system_
 --   supply-tick            20 seconds   select supply_tick()
 --   market-expiry          */5 * * * *  select market_expire_tick()
 --   supply-cleanup         35 4 * * *   select supply_cleanup()   (с sql/supply_fixes.sql: журналы и завершённое старше 14 дней)
---   finish-commander-moves 30 seconds   select finish_due_commander_moves()   -> finish_commander_move -> unload_convoy_on_arrival
+--   finish-commander-moves 30 seconds   select finish_due_commander_moves()   -> finish_commander_move -> commander_route_continue
 --   interceptions          15 seconds   select interception_tick()
 --   approach-warnings      15 seconds   select approach_warning_tick()
 --   extract-resources      * * * * *    select production_tick()
---   (convoy_tick is NOT scheduled)

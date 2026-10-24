@@ -798,9 +798,6 @@ begin
   if not cm.unlocked then raise exception 'Командир ещё не открыт'; end if;
   if cm.moving_to is not null then raise exception 'Командир в пути — дождись прибытия'; end if;
   if cm.current_system is null then raise exception 'Неизвестно, где стоит флот'; end if;
-  if exists (select 1 from convoys v where v.commander_id = p_commander_id and v.status = 'in_flight') then
-    raise exception 'Флот везёт конвой — дождись доставки';
-  end if;
   if exists (select 1 from supply_routes r where r.commander_id = p_commander_id and r.status <> 'stopped') then
     raise exception 'У этого командира уже есть рейс — заверши его';
   end if;
@@ -1037,7 +1034,6 @@ begin
          (c.moving_to is null and q.n > 0 and q.rdy = q.n),
          case when exists (select 1 from supply_routes r where r.commander_id = c.id
                            and r.status in ('active', 'paused', 'stalled')) then 'route'
-              when exists (select 1 from convoys v where v.commander_id = c.id and v.status = 'in_flight') then 'convoy'
               when c.moving_to is not null then 'moving' end
   from commanders c
   left join systems s on s.id = c.current_system
@@ -1217,7 +1213,6 @@ AS $function$
 declare v_del text := 'del' || 'ete from ';
 begin
   -- журналы рейсов и supply_takes старше 7 дней и так чистит cleanup_old_records; здесь — то, что держат ссылки
-  execute v_del || 'convoys where departed_at < now() - interval ''14 days''';
   execute v_del || 'supply_route_log l using supply_routes r where l.route_id = r.id and r.status = ''stopped'' and r.updated_at < now() - interval ''14 days''';
   execute v_del || 'supply_routes where status = ''stopped'' and updated_at < now() - interval ''14 days''';
   execute v_del || 'market_orders o where o.status <> ''reserved'' and o.created_at < now() - interval ''14 days''

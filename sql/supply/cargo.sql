@@ -1,7 +1,6 @@
--- Снимок (pg_get_functiondef): груз в трюмах, окончание перелёта, чтение конвоев. 24.10.2026
+-- Снимок (pg_get_functiondef): груз в трюмах и окончание перелёта. 24.10.2026
 -- boarding_drop_cargo, check_cargo_owner, commander_free_cargo, finish_commander_move, finish_due_commander_moves,
--- get_convoy_commanders, get_convoy_destinations, get_drop_ready_cargo, get_my_convoys, get_ship_resource_cargo,
--- log_lost_cargo, ship_load_used, supply_hold_total
+-- get_drop_ready_cargo, get_ship_resource_cargo, log_lost_cargo, ship_load_used, supply_hold_total
 
 CREATE OR REPLACE FUNCTION public.boarding_drop_cargo(p_ship uuid)
  RETURNS void
@@ -79,8 +78,6 @@ begin
     perform place_ship_in_hyperspace(sh.id, v_to);
   end loop;
 
-  perform unload_convoy_on_arrival(p_commander_id);
-
   -- Дальний маршрут: следующий прыжок без участия игрока
   perform commander_route_continue(p_commander_id);
 end;
@@ -125,48 +122,6 @@ end;
 $function$
 
 -- ----------------------------------------
-CREATE OR REPLACE FUNCTION public.get_convoy_commanders(p_system_id text)
- RETURNS TABLE(commander_id uuid, name text, ships integer, ready integer, free_units integer, busy boolean)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'extensions', 'pg_temp'
-AS $function$
-  select c.id, c.name,
-         (select count(*)::integer from ships s
-          where s.commander_id = c.id and s.system_id = p_system_id and not s.in_transit),
-         (select count(*)::integer from ships s join ship_types t on t.id = s.ship_type
-          where s.commander_id = c.id and s.system_id = p_system_id and not s.in_transit
-            and is_in_hyperspace_zone(s.y, ship_box_h(t.width_cells, t.height_cells, s.facing),
-                                      hyperspace_side(p_system_id, s.faction))),
-         commander_free_cargo(c.id),
-         c.moving_to is not null
-  from commanders c
-  where c.user_id = auth.uid() and c.unlocked and c.current_system = p_system_id
-  order by c.slot_index;
-$function$
-
--- ----------------------------------------
-CREATE OR REPLACE FUNCTION public.get_convoy_destinations(p_from text)
- RETURNS TABLE(system_id text, name text, hops integer, seconds integer, controlled boolean)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'extensions', 'pg_temp'
-AS $function$
-  with me as (select faction from profiles where id = auth.uid()),
-  t as (select coalesce((select value::integer from game_settings
-                         where key = 'travel_seconds'), 60) as sec)
-  select s.id, s.name,
-         array_length(convoy_route(p_from, s.id, me.faction), 1) - 1,
-         (array_length(convoy_route(p_from, s.id, me.faction), 1) - 1) * t.sec,
-         exists (select 1 from system_control sc
-                 where sc.system_id = s.id and sc.controller_user_id = auth.uid())
-  from systems s, me, t
-  where s.id <> p_from and not s.is_deep_space and s.faction = me.faction
-    and convoy_route(p_from, s.id, me.faction) is not null
-  order by 3, s.name;
-$function$
-
--- ----------------------------------------
 CREATE OR REPLACE FUNCTION public.get_drop_ready_cargo(p_system_id text)
  RETURNS TABLE(ship_id uuid, ship_name text, zone integer, unit_type text, unit_name text, unit_image text, quantity integer, x integer, y integer)
  LANGUAGE sql
@@ -189,33 +144,6 @@ AS $function$
   group by s.id, st.name, st.width_cells, st.height_cells, s.facing, s.x, s.y,
            u.unit_type, ut.name, ut.image
   order by st.name, ut.name;
-$function$
-
--- ----------------------------------------
-CREATE OR REPLACE FUNCTION public.get_my_convoys()
- RETURNS TABLE(id uuid, kind text, stage text, from_name text, to_name text, pickup_name text, cargo_text text, seconds_left integer, status text, return_home boolean)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'extensions', 'pg_temp'
-AS $function$
-  select c.id, c.kind, c.stage, sf.name, st.name, sp.name,
-         coalesce(
-           (select string_agg(r.name || ' ' || (c.cargo ->> r.id), ', ' order by r.sort_order)
-            from resources r where c.cargo ? r.id),
-           (select r.name || ' ' || o.amount_left
-            from market_orders o join market_lots l on l.id = o.lot_id
-            join resources r on r.id = l.resource where o.id = c.order_id)),
-         greatest(0, ceil(extract(epoch from coalesce(cm.arrives_at, now()) - now()))::integer),
-         c.status, c.return_home
-  from convoys c
-  join systems sf on sf.id = c.from_system
-  join systems st on st.id = c.to_system
-  left join systems sp on sp.id = c.pickup_system
-  left join commanders cm on cm.id = c.commander_id
-  where c.owner_user_id = auth.uid()
-    and (c.cargo is not null or c.kind = 'market')
-    and (c.status in ('in_flight','stalled') or c.departed_at > now() - interval '1 day')
-  order by c.departed_at desc;
 $function$
 
 -- ----------------------------------------

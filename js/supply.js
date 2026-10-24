@@ -13,8 +13,8 @@
 // ctx = { hub: system_id, name } — экран открыт из хаба этой планеты:
 // склады отфильтрованы по ней, новый рейс и вывоз покупок начинаются отсюда.
 //
-// Экран — единственный интерфейс логистики: старая панель хаба (конвои и
-// рынок) перенесена сюда целиком, торговый пост и добыча живут отдельно.
+// Экран — единственный интерфейс логистики: разовые конвои стали рейсами «в одну
+// сторону», рынок живёт здесь; торговый пост и добыча — отдельные окна построек.
 //
 // Окно — в языке окон участка и тайных операций (css/supply.css): по центру над
 // затемнённой картой, сверху живая карта сети (js/supply-map.js, get_supply_map),
@@ -65,7 +65,6 @@
     saving: {},
     hub: null,                       // { id, name } — экран открыт из хаба этой планеты
     storeSys: null,                  // «Склады»: показать только эту планету
-    convoys: null,                   // конвои старого образца, ещё в пути
     lots: null, orders: null, mylots: null,   // рынок
     mkt: 'lots',                     // рынок: lots | orders | mine
     mktRes: 'all',                   // фильтр лотов по ресурсу
@@ -214,7 +213,6 @@
     planets:  'get_my_supply_planets',
     grants:   'get_supply_grants',
     partners: 'get_supply_partners',
-    convoys:  'get_my_convoys',
     lots:     { fn: 'get_market_lots', args: { p_resource: null } },
     orders:   'get_my_market_orders',
     mylots:   'get_my_market_lots',
@@ -262,7 +260,7 @@
         else {
           st[k] = res.data || [];
           st.errors[k] = null;
-          if (k === 'orders' || k === 'convoys' || k === 'routes') stampUntil(st[k]);
+          if (k === 'orders' || k === 'routes') stampUntil(st[k]);
           // Свежие правила с сервера: черновики без правок больше не нужны,
           // иначе после смены правила или контроля они покажут старое
           if (k === 'planets') {
@@ -1053,7 +1051,6 @@
       (st.hub ? '<em>отсюда · ' + esc(hubName()) + '</em>' : noHub ? '<em>нужен ' + esc(hubWord(true)) + '</em>' : '') + '</button>';
     if (noHub) h += '<div class="sup-note">Рейсы запускает ' + esc(hubWord()) + ': построй его хотя бы на одной своей планете.</div>';
 
-    var convoys = (st.convoys || []).filter(function(c) { return c.status === 'in_flight' || c.status === 'stalled'; });
 
     if (!live.length) {
       h += '<div class="sup-empty"><b>Рейсов нет</b>' +
@@ -1063,10 +1060,6 @@
       h += live.map(renderRoute).join('');
     }
 
-    if (convoys.length) {
-      h += '<div class="sup-section">Конвои в пути<span class="sup-count blue">' + convoys.length + '</span></div>';
-      h += convoys.map(renderConvoy).join('');
-    }
 
     if (done.length) {
       h += '<div class="sup-section">Завершённые<span class="sup-count">' + done.length + '</span></div>';
@@ -1075,33 +1068,9 @@
     return h;
   }
 
-  // Конвой старого образца (отправка со склада или вывоз покупки):
-  // только показ — управлять им уже нечем, он долетит сам
-  var CONVOY_STAGE = { to_pickup: 'к продавцу', to_dest: 'везёт груз', returning: 'возвращается' };
-
-  function renderConvoy(c) {
-    var bad = c.status === 'stalled';
-    var path = (c.kind === 'market' && c.pickup_name)
-      ? esc(c.pickup_name) + ' → ' + esc(c.to_name)
-      : esc(c.from_name) + ' → ' + esc(c.to_name);
-    var left = untilLeft(c);
-    return '<div class="sup-convoy' + (bad ? ' bad' : '') + '">' +
-      '<div class="sup-convoy-info">' +
-        '<div class="sup-convoy-cargo">' + (c.kind === 'market' ? '<span class="sup-tag buy">покупка</span> ' : '') +
-          esc(c.cargo_text || 'груз') + '</div>' +
-        '<div class="sup-convoy-path">' + path + (c.return_home ? ' <span>· и обратно</span>' : '') + '</div>' +
-      '</div>' +
-      '<div class="sup-convoy-state">' +
-        (bad ? '<span class="sup-pill stalled"><i></i>встал</span>'
-             : '<span class="sup-pill travel"><i></i>' + esc(CONVOY_STAGE[c.stage] || 'в пути') + '</span>' +
-               '<span class="sup-left" data-until="' + num(c._until) + '" data-zero="прибывает">' + (left > 0 ? leftText(left) : 'прибывает') + '</span>') +
-      '</div>' +
-    '</div>';
-  }
-
   // Локальный отсчёт: только цифры, без перерисовки карточек
   function tickRoutes() {
-    // Брони и конвои: отсчёт от момента, а не от счётчика
+    // Брони: отсчёт от момента, а не от счётчика
     var us = document.querySelectorAll('#sup-body [data-until]');
     for (var u = 0; u < us.length; u++) {
       var ms = num(us[u].getAttribute('data-until'));
@@ -2553,7 +2522,6 @@
 
   function cmdState(c) {
     if (c.busy === 'route') return { cls: '', text: 'на рейсе' };
-    if (c.busy === 'convoy') return { cls: '', text: 'в конвое' };
     if (c.busy === 'moving') return { cls: '', text: 'в перелёте' };
     if (!c.ready) return { cls: 'warn', text: 'не готов' };
     return { cls: 'ok', text: 'готов' };

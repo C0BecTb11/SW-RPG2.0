@@ -85,7 +85,6 @@ begin
     where c.user_id = v_user and c.unlocked and c.moving_to is null
       and c.current_system is not null and c.current_system <> p_target
       and r.path is not null
-      and not exists (select 1 from convoys v where v.commander_id = c.id and v.status = 'in_flight')
       and not exists (select 1 from supply_routes sr where sr.commander_id = c.id and sr.status = 'active')
   ),
   fl as (
@@ -156,8 +155,7 @@ begin
   if c.current_system is null then raise exception 'Неизвестна текущая система командира'; end if;
   if c.current_system = p_target then raise exception 'Командир уже находится в этой системе'; end if;
 
-  if exists (select 1 from convoys v where v.commander_id = c.id and v.status = 'in_flight')
-     or exists (select 1 from supply_routes sr where sr.commander_id = c.id and sr.status = 'active') then
+  if exists (select 1 from supply_routes sr where sr.commander_id = c.id and sr.status = 'active') then
     raise exception 'Командир занят снабжением — сначала сними его с рейса';
   end if;
 

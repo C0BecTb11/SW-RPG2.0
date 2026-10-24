@@ -244,7 +244,6 @@
 }
 .sup-count.gold { color: #d9a940; border-color: rgba(217, 169, 64, 0.35); }
 .sup-count.green { color: #5fd968; border-color: rgba(95, 217, 104, 0.35); }
-.sup-count.blue { color: #4a90d9; border-color: rgba(74, 144, 217, 0.35); }
 .sup-count.red { color: #d94a4a; border-color: rgba(217, 74, 74, 0.35); }
 
 .sup-err {
@@ -434,7 +433,7 @@
 .sup-chiprow + .sup-chiprow { margin-top: 6px; }
 
 /* ── Общая карточка ────────────────────────────────────────────── */
-.sup-pcard, .sup-route, .sup-res, .sup-lot, .sup-order, .sup-person, .sup-convoy, .sup-form {
+.sup-pcard, .sup-route, .sup-res, .sup-lot, .sup-order, .sup-person, .sup-form {
   background: #0a0d14;
   border: 1px solid #1c2530;
   border-left: 3px solid #2a3644;
@@ -498,7 +497,6 @@
 }
 .sup-tag.mine { color: #4a90d9; border-color: rgba(74, 144, 217, 0.35); }
 .sup-tag.trust { color: #5fd968; border-color: rgba(95, 217, 104, 0.35); }
-.sup-tag.buy { color: #d9a940; border-color: rgba(217, 169, 64, 0.4); }
 .sup-tag.enemy { color: #d94a4a; border-color: rgba(217, 74, 74, 0.4); }
 .sup-tag.open { color: #4a90d9; border-color: rgba(74, 144, 217, 0.35); }
 
@@ -725,16 +723,6 @@
 .sup-log-text b { font-weight: normal; color: #cfd8dc; }
 .sup-log-moved { flex: none; color: #5fd968; }
 .sup-log-moved.zero { color: #55606c; }
-
-/* Конвои старого образца — только показ, пока долетают */
-.sup-convoy { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; padding: 9px 11px; border-left-color: #4a90d9; }
-.sup-convoy.bad { border-color: rgba(217, 74, 74, 0.4); border-left-color: #d94a4a; background: linear-gradient(90deg, rgba(217, 74, 74, 0.08), #0a0d14 60%); }
-.sup-convoy-info { flex: 1; min-width: 0; }
-.sup-convoy-cargo { font-size: 11px; line-height: 1.4; color: #cfd8dc; overflow-wrap: anywhere; }
-.sup-convoy-path { margin-top: 3px; font-size: 10px; color: #8fa8c4; overflow-wrap: anywhere; }
-.sup-convoy-path span { color: #55606c; }
-.sup-convoy-state { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
-.sup-convoy-state .sup-left { font-size: 10px; }
 
 /* ── Склады ────────────────────────────────────────────────────── */
 .sup-scope { margin-bottom: 12px; }

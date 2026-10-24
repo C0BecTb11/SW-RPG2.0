@@ -457,7 +457,6 @@ html, body {
   color: #d94a4a;
 }
 
-
 /* Подсказка режима постановки — над нижним рядом кнопок, иначе
    наезжает на переключатель слоёв и «Строительство» */
 #placement-hint {
@@ -863,26 +862,6 @@ html, body {
   height: 30px;
 }
 
-#logi-tabs {
-  flex: none;
-  display: flex;
-  gap: 6px;
-  padding: 10px 14px 0;
-}
-
-.logi-tab {
-  flex: 1;
-  padding: 9px 4px;
-  background: #10151e;
-  border: 1px solid #1c2530;
-  border-radius: 7px;
-  color: #55606c;
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-}
-
-.logi-tab.active { border-color: #4a90d9; color: #cfd8dc; }
-
 #logi-body {
   flex: 1;
   overflow-y: auto;
@@ -912,20 +891,6 @@ html, body {
   font-size: 10px;
   line-height: 1.5;
   color: #55606c;
-}
-
-.logi-form { display: flex; flex-direction: column; gap: 8px; }
-
-.logi-select, .logi-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 9px 10px;
-  background: #0a0d14;
-  border: 1px solid #2a3644;
-  border-radius: 7px;
-  color: #cfd8dc;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
 }
 
 .logi-qty { display: flex; align-items: center; gap: 6px; }
@@ -961,24 +926,8 @@ html, body {
 }
 
 .logi-go.small { flex: none; padding: 9px 12px; font-size: 10px; }
-.logi-go.danger { background: #2a3644; color: #d94a4a; }
+
 .logi-go:disabled { opacity: 0.5; }
-
-.logi-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 0;
-  border-bottom: 1px solid #1c2530;
-}
-
-.logi-row:last-child { border-bottom: none; }
-.logi-row.lot { flex-wrap: wrap; }
-
-/* Лот противника отмечен, чтобы не купить у врага по невнимательности */
-.logi-row.foreign { border-left: 3px solid #d94a4a; padding-left: 8px; }
-
-.logi-info { flex: 1; min-width: 60%; }
 
 /* Торговый пост — в языке окон снабжения и участка: сверху карточка «из чего цена», ниже карточка на ресурс —
    ромб и цена, на складе и сколько дадут, счётчик и «Продать» (влезает в телефон 360) */
@@ -1016,11 +965,6 @@ html, body {
 .logi-trade-msg.ok { color: #5fd968; }
 .logi-trade-msg.bad { color: #ff8a7a; }
 .logi-go.eco-supply { display: block; width: 100%; margin-top: 10px; }
-.logi-name { font-size: 12px; color: #cfd8dc; }
-.logi-sub { margin-top: 3px; font-size: 10px; color: #55606c; }
-
-.logi-state { flex: none; font-size: 10px; color: #4a90d9; text-align: right; }
-.logi-state.bad { color: #d94a4a; }
 
 /* Цена в ресурсах: платит склад планеты, а не кошелёк игрока */
 .build-panel-rescost {
@@ -1144,52 +1088,6 @@ html, body {
 /* Не весь флот в полосе — прыжок не состоится, сервер откажет */
 .intel-sub.warn { color: #d9a940; }
 
-/* ===== Форма конвоя: груз по ресурсам ===== */
-
-.logi-cargo {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.logi-cargo-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  background: #0a0d14;
-  border: 1px solid #1c2530;
-  border-radius: 7px;
-}
-
-.logi-cargo-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 11px;
-  color: #cfd8dc;
-}
-
-.logi-cargo-name span {
-  display: block;
-  margin-top: 2px;
-  font-size: 9px;
-  color: #55606c;
-}
-
-.logi-cargo-row .logi-qty { flex: none; }
-.logi-cargo-row .logi-qty-value { min-width: 30px; }
-
-/* Итог по вместимости: перевес виден сразу, до нажатия */
-.logi-cap {
-  padding: 8px 0 2px;
-  font-size: 11px;
-  color: #4a90d9;
-  text-align: right;
-}
-
-.logi-cap.over { color: #d94a4a; }
-.logi-note.warn { color: #d9a940; }
-
 /* ===== Окно экономической постройки ===== */
 
 .eco-card {
@@ -1253,62 +1151,6 @@ html, body {
   font-size: 9px;
   color: #55606c;
 }
-
-/* ===== Вывоз с рынка флотом ===== */
-
-.logi-order { border-bottom: 1px solid #1c2530; }
-.logi-order:last-of-type { border-bottom: none; }
-.logi-order .logi-row { border-bottom: none; }
-
-.logi-pickup {
-  margin: 0 0 12px;
-  padding: 10px;
-  background: #0a0d14;
-  border: 1px solid #1c2530;
-  border-radius: 8px;
-}
-
-/* Переключатель «вернуться домой» — понятный без подписи-инструкции */
-.logi-toggle {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 9px 10px;
-  background: #0a0d14;
-  border: 1px solid #2a3644;
-  border-radius: 7px;
-  color: #8fa8c4;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  text-align: left;
-}
-
-.logi-toggle i {
-  flex: none;
-  position: relative;
-  width: 30px;
-  height: 16px;
-  border-radius: 8px;
-  background: #1c2530;
-  transition: background 0.15s;
-}
-
-.logi-toggle i::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #55606c;
-  transition: left 0.15s, background 0.15s;
-}
-
-.logi-toggle.on { color: #cfd8dc; border-color: #4a90d9; }
-.logi-toggle.on i { background: #1f3a5c; }
-.logi-toggle.on i::after { left: 16px; background: #4a90d9; }
 
 /* Техника снята квадратом: карточка ложится снимком широкой полосой
    сверху. Сам кадр виден целиком, края полосы закрывает его же

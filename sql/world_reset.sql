@@ -49,7 +49,6 @@ update ships set in_transit = false, tractor_by = null, tractor_until = null;   
 delete from ship_cargo;
 delete from ship_resource_cargo;
 delete from ship_orders;
-delete from convoys;
 delete from supply_takes;
 delete from supply_route_log;
 delete from supply_routes;

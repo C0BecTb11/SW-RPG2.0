@@ -1022,7 +1022,7 @@
     if (sh.launchT > 0 || sh.eff.hangar < 0.3) return;
     // в ангаре — машины поштучно (как в игре: одна строка ships — одна машина); вылет по одной,
     // звеньями по четыре с паузой
-    var type = sh.hangar.shift();
+    var type = sh.hangar.shift(), slot = sh.launched = (sh.launched || 0) + 1;   // slot — номер машины в ангаре по порядку
     sh.wing = (sh.wing || 0) + 1;
     if (sh.wing >= 4) { sh.wing = 0; sh.launchT = 6; } else sh.launchT = 1.5;
     // звенья вылетают по очереди из всех ангаров корабля
@@ -1034,7 +1034,7 @@
     var C = CRAFT[type];
     this.craft.push({ id: this.nextCraft++, type: type, role: C.role, img: C.img, side: sh.side, home: sh.n,
                       x: w[0], y: w[1], hd: sh.hd, v: C.speed * 0.6, hp: C.hp, max: C.hp, speed: C.speed,
-                      cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t });
+                      cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t, slot: slot - 1 });
   };
   // Малый корабль, который уже в полёте (в игре истребители стоят на орбите сами по себе):
   // приписывается к своему крупному кораблю home, с которого «взлетел»
@@ -1460,6 +1460,9 @@
   Battle.prototype.shuttleLost = function(c) {
     var b = this.ships[c.tgt];
     if (b && !c.back) b.inbound = Math.max(0, b.inbound - 1);
+    // команда сбитого шаттла погибла: на родном корабле — уже не «ушёл», а потерян (запишется в базу как погибший)
+    var home = this.ships[c.home], ag = home && home.crew && home.crew.agents;
+    if (ag && c.party) for (var i = 0; i < c.party.length; i++) { var m = ag[c.party[i].src]; if (m && m.gone) { m.gone = false; m.lost = true; m.alive = false; } }
   };
   Battle.prototype.shuttleHome = function(c, home) {
     c.dead = true; c.docked = true; c.deadAt = this.t;

@@ -38,7 +38,7 @@ function GroundRoom(name, system, cfg) {
   this.clients = []; this.waiting = []; this.ready = false; this.closed = false; this.failed = null;
   this.ms = []; this.bytes = 0; this.bytesRate = 0; this.rateAt = Date.now(); this.tickN = 0;
   this.battle = { tick: 0 };
-  this.byUid = {}; this.structByUid = {}; this.lastSync = {}; this.structSync = {};
+  this.byUid = {}; this.structByUid = {}; this.lastSync = {}; this.structSync = {}; this.structOk = {};
   this.syncAt = Date.now(); this.pullAt = Date.now(); this.quietSince = Date.now(); this.emptySince = Date.now(); this.created = Date.now();
   this.loads = [];
   var self = this;
@@ -121,18 +121,25 @@ GroundRoom.prototype.applyUnits = function(units) {
     delete self.byUid[uid]; delete self.lastSync[uid];
   });
 };
-GroundRoom.prototype.applyStructs = function(list) {
+// base — прочность построек, которая лежала в базе к моменту запроса (pull)
+GroundRoom.prototype.applyStructs = function(list, base) {
   var B = this.B, self = this, seen = {};
   list.forEach(function(s) {
     seen[s.id] = 1;
-    if (self.structByUid[s.id] != null) { var st0 = B.structs[self.structByUid[s.id]]; if (st0 && st0.dead && s.hp > 0) { st0.dead = false; st0.hp = s.hp; } return; }
+    if (self.structByUid[s.id] != null) {
+      // разбитая постройка снова цела — только если база уже знала о гибели (там был 0): старый снимок,
+      // где гибель ещё не записана, её не воскрешает
+      var st0 = B.structs[self.structByUid[s.id]], b0 = base ? base[s.id] : self.structOk[s.id];
+      if (st0 && st0.dead && s.hp > 0 && b0 === 0) { st0.dead = false; st0.hp = s.hp; self.structSync[s.id] = self.structOk[s.id] = Math.round(s.hp); }
+      return;
+    }
     if (s.building) return;                                   // ещё строится — подхватим, когда готова
     if (!U.ST[s.kind]) return;
     var st = B.addStruct(s.kind, teamOf(s.faction), s.x, s.y, { w: s.w, h: s.h, hp: Math.min(s.hp, s.hpMax || s.hp), uid: s.id });
     if (!st) return;
     if (s.hpMax) st.hpMax = s.hpMax;
     if (s.hp <= 0) st.dead = true;
-    self.structByUid[s.id] = st.i; self.structSync[s.id] = Math.round(st.hp);
+    self.structByUid[s.id] = st.i; self.structSync[s.id] = self.structOk[s.id] = st.dead ? 0 : Math.round(st.hp);
   });
   Object.keys(this.structByUid).forEach(function(uid) { if (!seen[uid]) { var st = B.structs[self.structByUid[uid]]; if (st) st.dead = true; delete self.structByUid[uid]; } });
 };
@@ -237,7 +244,12 @@ GroundRoom.prototype.syncNow = function() {
   });
   if (!rows.length && !srows.length) return Promise.resolve();
   return this.rpc('rt_ground_sync', { p_battle: this.battleId, p_units: rows, p_structs: srows })
-    .catch(function(e) { self.cfg.log('error', 'rt_ground_sync', { room: self.name, err: e.message }); Object.keys(self.lastSync).forEach(function(k) { if (rows.some(function(r) { return r.id === k; })) delete self.lastSync[k]; }); });
+    .then(function() { srows.forEach(function(r) { self.structOk[r.id] = r.hp; }); })
+    .catch(function(e) {
+      self.cfg.log('error', 'rt_ground_sync', { room: self.name, err: e.message });
+      Object.keys(self.lastSync).forEach(function(k) { if (rows.some(function(r) { return r.id === k; })) delete self.lastSync[k]; });
+      srows.forEach(function(r) { delete self.structSync[r.id]; });      // постройки — повторить запись в следующий раз
+    });
 };
 // Подхватить из базы новых бойцов, ушедших, постройки, прогресс захвата; смена хозяина — закрыть
 GroundRoom.prototype.pull = function() {
@@ -247,8 +259,12 @@ GroundRoom.prototype.pull = function() {
   return this.pullNow().then(function(v) { me.pulling = false; return v; }, function(e) { me.pulling = false; throw e; });
 };
 GroundRoom.prototype.pullNow = function() {
-  var self = this; this.pullAt = Date.now();
-  return this.rpc('rt_ground_pull', { p_battle: this.battleId, p_system: this.system }).then(function(st) {
+  var self = this, base = null; this.pullAt = Date.now();
+  // сначала дождаться своих записей: снимок базы не старее того, что мы в неё положили
+  return (this.syncQ || Promise.resolve()).then(function() {
+    base = {}; for (var k in self.structOk) base[k] = self.structOk[k];
+    return self.rpc('rt_ground_pull', { p_battle: self.battleId, p_system: self.system });
+  }).then(function(st) {
     if (!st || st.closed) { self.cfg.log('warn', 'бой закрыт базой', { room: self.name }); self.closed = true; self.kick('Бой на планете закрыт'); return; }
     var settle = st.settle ? { level: st.settle.level, districts: st.settle.districts || [] } : { level: 1, districts: [] };
     var key = JSON.stringify(settle) + '|' + (st.system && st.system.faction);
@@ -260,7 +276,7 @@ GroundRoom.prototype.pullNow = function() {
     }
     self.state = st;
     self.applyUnits(st.units || []);
-    self.applyStructs(st.structs || []);
+    self.applyStructs(st.structs || [], base);
     self.applyCapture(st.capture, st.capture_goal);
   }).catch(function(e) { self.cfg.log('error', 'rt_ground_pull', { room: self.name, err: e.message }); });
 };

@@ -208,16 +208,21 @@ function openFactionControlScreen() {
           { system_id: system.system_id, controller_user_id: newControllerId },
           { onConflict: 'system_id' });
 
+        // отказ — список возвращается к тому, кто управляет на деле (иначе в нём висел бы несохранённый выбор)
+        var failed = function(err) {
+          select.value = previous || '';
+          // запись в таблицу, запрет политики доступа: полномочие сняли или игрок ушёл из фракции, пока окно открыто
+          status.textContent = /row-level security/i.test((err && err.message) || '')
+            ? 'Нет права менять управляющего — обнови окно'
+            : 'Ошибка: ' + gameErr(err);
+        };
         query.then(function(res) {
-          if (res.error) {
-            status.textContent = 'Ошибка: ' + res.error.message;
-            return;
-          }
+          if (res.error) { failed(res.error); return; }
           system.controller_user_id = newControllerId;
           row.classList.remove('pending');
           status.textContent = 'Сохранено';
           setTimeout(function() { status.textContent = ''; }, 2000);
-        });
+        }, failed);
       });
 
       listEl.appendChild(row);

@@ -67,10 +67,15 @@ function createProfile(userId, nickname) {
 function handleSubmit() {
   var email = emailInput.value.trim();
   var password = passwordInput.value;
-  var nickname = nicknameInput.value.trim();
+  var nickname = nicknameInput.value.replace(/\s+/g, ' ').trim();
 
   if (mode === 'signup' && !nickname) {
     showMessage('Введи игровой ник', true);
+    return;
+  }
+  // ник виден во всех списках игры: длинный ломал бы строки на телефоне
+  if (mode === 'signup' && (nickname.length < 2 || nickname.length > 24)) {
+    showMessage('Ник — от 2 до 24 знаков', true);
     return;
   }
   if (!email || !password) {
@@ -89,7 +94,7 @@ function handleSubmit() {
     supabase.auth.signUp({ email: email, password: password }).then(function(res) {
       if (res.error) {
         submitBtn.disabled = false;
-        showMessage(res.error.message, true);
+        showMessage(gameErr(res.error), true);
         return;
       }
       // Supabase не всегда возвращает явную ошибку на повторную регистрацию —
@@ -111,7 +116,7 @@ function handleSubmit() {
       createProfile(res.data.user.id, nickname).then(function(profileRes) {
         submitBtn.disabled = false;
         if (profileRes.error) {
-          showMessage('Аккаунт создан, но профиль не сохранился: ' + profileRes.error.message, true);
+          showMessage('Аккаунт создан, но профиль не сохранился: ' + gameErr(profileRes.error), true);
           return;
         }
         window.location.href = nextUrl();
@@ -121,7 +126,7 @@ function handleSubmit() {
     supabase.auth.signInWithPassword({ email: email, password: password }).then(function(res) {
       submitBtn.disabled = false;
       if (res.error) {
-        showMessage(res.error.message, true);
+        showMessage(gameErr(res.error), true);
         return;
       }
       window.location.href = nextUrl();

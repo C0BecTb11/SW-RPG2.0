@@ -4,6 +4,19 @@
 var cargoShip = null;
 var cargoShipType = null;
 var cargoTab = 'load';   // 'load' | 'unload'
+// Номер показа: ответ, пришедший после смены вкладки или корабля, в список не пишется
+// (иначе в «Высадку» дописывались строки «Погрузить» прошлой вкладки)
+var cargoSeq = 0;
+function cargoLive(seq, ship) { return seq === cargoSeq && cargoShip === ship; }
+// Одарённых пачкой не грузят (load_to_ship) — их строку показываем без кнопки
+var cargoHeroTypes = null;
+function cargoHeroes() {
+  if (cargoHeroTypes) return Promise.resolve(cargoHeroTypes);
+  return supabase.from('unit_types').select('id').eq('is_hero', true).then(function(res) {
+    if (!res.error && res.data) { cargoHeroTypes = {}; res.data.forEach(function(r) { cargoHeroTypes[r.id] = true; }); }
+    return cargoHeroTypes || {};
+  }, function() { return {}; });
+}
 
 function openShipCargo(ship, type) {
   cargoShip = ship;
@@ -20,10 +33,12 @@ function openShipCargo(ship, type) {
 function closeShipCargo() {
   document.getElementById('shipcargo-panel').style.display = 'none';
   cargoShip = null;
+  cargoSeq++;
 }
 
 function setCargoTab(tab) {
   cargoTab = tab;
+  cargoSeq++;
   document.getElementById('shipcargo-tab-load').className =
     'shipcargo-tab' + (tab === 'load' ? ' active' : '');
   document.getElementById('shipcargo-tab-unload').className =
@@ -38,7 +53,9 @@ function setCargoTab(tab) {
 
 function updateShipCapacity() {
   var el = document.getElementById('shipcargo-capacity');
+  var seq = cargoSeq, ship = cargoShip;
   supabase.rpc('ship_load_used', { p_ship_id: cargoShip.id }).then(function(res) {
+    if (!cargoLive(seq, ship)) return;
     var used = (!res.error && typeof res.data === 'number') ? res.data : 0;
     // С улучшением трюма корабля — как ship_stats на сервере
     var cap = (cargoShipType.capacity || 0) + ((cargoShip && cargoShip.bonus_capacity) || 0);
@@ -53,35 +70,51 @@ function updateShipCapacity() {
 // Что доступно к погрузке, решает сервер: только свои юниты и только
 // из зоны высадки той планеты, над которой стоит корабль.
 function renderLoadable() {
-  supabase.rpc('get_ship_loadable', { p_ship_id: cargoShip.id }).then(function(res) {
+  var seq = cargoSeq, ship = cargoShip;
+  Promise.all([supabase.rpc('get_ship_loadable', { p_ship_id: cargoShip.id }), cargoHeroes()]).then(function(r) {
+    if (!cargoLive(seq, ship)) return;
+    var res = r[0], heroes = r[1] || {};
     var list = document.getElementById('shipcargo-list');
     if (res.error) {
-      list.innerHTML = '<div class="cargo-empty">' + res.error.message + '</div>';
+      list.innerHTML = '';
+      var e = document.createElement('div');
+      e.className = 'cargo-empty';
+      e.textContent = typeof gameErr === 'function' ? gameErr(res.error) : res.error.message;
+      list.appendChild(e);
       return;
     }
     // Войск может не быть, а склад при этом полон — ресурсы показываем всё равно
     if (!res.data || res.data.length === 0) {
       list.innerHTML = '<div class="cargo-empty">В зоне высадки этой планеты нет твоих войск</div>';
-      renderLoadableResources(list);
-      renderMarketPickup(list);
+      renderLoadableResources(list, seq, ship);
+      renderMarketPickup(list, seq, ship);
       return;
     }
     list.innerHTML = '';
     res.data.forEach(function(row) {
-      list.appendChild(makeShipCargoRow(row, row.available, 'Погрузить', row.slot_size));
+      var el = makeShipCargoRow(row, row.available, 'Погрузить', row.slot_size, 'load');
+      if (heroes[row.unit_type]) {
+        // одарённый грузится по одному — с наземной карты
+        var ctl = el.querySelector('.cargo-controls');
+        if (ctl) ctl.parentNode.removeChild(ctl);
+        var av = el.querySelector('.cargo-available');
+        if (av) av.textContent = 'Одарённого грузят по одному — выбери его на наземной карте';
+      }
+      list.appendChild(el);
     });
-    renderLoadableResources(list);
-    renderMarketPickup(list);
+    renderLoadableResources(list, seq, ship);
+    renderMarketPickup(list, seq, ship);
   });
 }
 
 // Склад планеты, над которой стоит корабль. Сервер отдаёт запас только
 // тому, кто держит планету, поэтому чужой склад сюда просто не придёт.
-function renderLoadableResources(list) {
+function renderLoadableResources(list, seq, ship) {
   if (!cargoShip || !cargoShip.system_id) return;
 
   supabase.rpc('get_planet_stock', { p_system_id: cargoShip.system_id })
     .then(function(res) {
+      if (!cargoLive(seq, ship)) return;
       if (res.error || !res.data) return;
 
       var rows = res.data.filter(function(r) { return r.amount > 0; });
@@ -89,17 +122,18 @@ function renderLoadableResources(list) {
 
       list.appendChild(makeCargoSection('Склад планеты'));
       rows.forEach(function(r) {
-        list.appendChild(makeResourceCargoRow(r.resource, r.name, r.amount, 'Погрузить'));
+        list.appendChild(makeResourceCargoRow(r.resource, r.name, r.amount, 'Погрузить', 'load'));
       });
     });
 }
 
 // Купленное на рынке лежит на чужой планете и вывозится отдельной кнопкой:
 // право грузиться там даёт бронь, а не контроль над планетой.
-function renderMarketPickup(list) {
+function renderMarketPickup(list, seq, ship) {
   if (!cargoShip || !cargoShip.system_id) return;
 
   supabase.rpc('get_my_market_orders').then(function(res) {
+    if (!cargoLive(seq, ship)) return;
     if (res.error || !res.data) return;
 
     var here = res.data.filter(function(o) {
@@ -151,13 +185,13 @@ function renderMarketPickup(list) {
       act.addEventListener('click', function() {
         act.disabled = true;
         supabase.rpc('load_market_order', {
-          p_ship_id: cargoShip.id,
+          p_ship_id: ship.id,
           p_order_id: o.order_id,
           p_amount: parseInt(val.textContent, 10)
         }).then(function(r2) {
           act.disabled = false;
-          if (r2.error) { alert(r2.error.message); return; }
-          setCargoTab(cargoTab);
+          if (r2.error) { alert(typeof gameErr === 'function' ? gameErr(r2.error) : r2.error.message); return; }
+          if (cargoShip) setCargoTab(cargoTab);   // панель могли закрыть, пока шёл ответ
           if (typeof loadArmyData === 'function') loadArmyData();
         });
       });
@@ -180,13 +214,14 @@ function renderCargo() {
   // Трюм это не только ship_cargo: пехота лежит там счётчиком, а техника
   // отдельными строками — иначе гружёная канонерка не помнила бы своих
   // пассажиров. Собираем обе части одной функцией.
+  var seq = cargoSeq, ship = cargoShip;
   Promise.all([
     supabase.rpc('get_ship_holds'),
     supabase.rpc('get_carried_units', { p_carrier_unit_id: null, p_ship_id: cargoShip.id }),
     supabase.rpc('get_ship_resource_cargo', { p_ship_id: cargoShip.id }),
     supabase.from('systems').select('faction').eq('id', cargoShip.system_id).maybeSingle()
   ]).then(function(r) {
-    if (!cargoShip) return;
+    if (!cargoLive(seq, ship)) return;
     var list = document.getElementById('shipcargo-list');
 
     // Пехоту пачкой высаживают только на своей планете. На чужой сервер
@@ -216,7 +251,7 @@ function renderCargo() {
     infantry.forEach(function(h) {
       var row = makeShipCargoRow({
         unit_type: h.unit_type, name: h.unit_name, image: h.unit_image
-      }, h.quantity, 'Высадить', h.slots / Math.max(1, h.quantity));
+      }, h.quantity, 'Высадить', h.slots / Math.max(1, h.quantity), 'unload');
       if (!ownPlanet) {
         var ctl = row.querySelector('.cargo-controls');
         if (ctl) ctl.parentNode.removeChild(ctl);
@@ -233,7 +268,7 @@ function renderCargo() {
     if (cargoRes.length) {
       list.appendChild(makeCargoSection('Груз'));
       cargoRes.forEach(function(c) {
-        list.appendChild(makeResourceCargoRow(c.resource, c.name, c.amount, 'Выгрузить'));
+        list.appendChild(makeResourceCargoRow(c.resource, c.name, c.amount, 'Выгрузить', 'unload'));
       });
     }
   });
@@ -248,7 +283,9 @@ function makeCargoSection(title) {
 
 // Ресурс считается десятками, поэтому шаг у счётчика крупнее, чем у войск,
 // и есть кнопка «всё» — иначе набирать сотню рудой по единице невозможно.
-function makeResourceCargoRow(resourceId, label, available, actionLabel) {
+// mode — 'load' | 'unload': действие строки — по её секции, а не по вкладке, открытой в момент нажатия
+function makeResourceCargoRow(resourceId, label, available, actionLabel, mode) {
+  var shipId = cargoShip && cargoShip.id;
   var row = document.createElement('div');
   row.className = 'cargo-row cargo-resource';
 
@@ -307,15 +344,15 @@ function makeResourceCargoRow(resourceId, label, available, actionLabel) {
     var n = parseInt(val.textContent, 10);
     act.disabled = true;
 
-    var fn = cargoTab === 'load' ? 'load_resource_to_ship' : 'unload_resource_from_ship';
+    var fn = mode === 'load' ? 'load_resource_to_ship' : 'unload_resource_from_ship';
     supabase.rpc(fn, {
-      p_ship_id: cargoShip.id,
+      p_ship_id: shipId,
       p_resource: resourceId,
       p_amount: n
     }).then(function(res) {
       act.disabled = false;
-      if (res.error) { alert(res.error.message); return; }
-      setCargoTab(cargoTab);
+      if (res.error) { alert(typeof gameErr === 'function' ? gameErr(res.error) : res.error.message); return; }
+      if (cargoShip) setCargoTab(cargoTab);   // панель могли закрыть, пока шёл ответ
       // Груз занимает те же слоты, что и десант: список флота под панелью
       // должен сразу показать новую загрузку
       if (typeof loadArmyData === 'function') loadArmyData();
@@ -364,7 +401,7 @@ function makeVehicleCargoRow(v) {
     btn.disabled = true;
     supabase.rpc('unload_vehicle_auto', { p_unit_id: v.unit_id }).then(function(res) {
       btn.disabled = false;
-      if (res.error) { alert(res.error.message); return; }
+      if (res.error) { alert(typeof gameErr === 'function' ? gameErr(res.error) : res.error.message); return; }
       renderCargo();
       if (typeof loadShips === 'function') loadShips();
     });
@@ -375,7 +412,8 @@ function makeVehicleCargoRow(v) {
   return row;
 }
 
-function makeShipCargoRow(unit, available, actionLabel, slotSize) {
+function makeShipCargoRow(unit, available, actionLabel, slotSize, mode) {
+  var shipId = cargoShip && cargoShip.id;
   var row = document.createElement('div');
   row.className = 'cargo-row';
 
@@ -434,18 +472,18 @@ function makeShipCargoRow(unit, available, actionLabel, slotSize) {
   act.addEventListener('click', function() {
     var n = parseInt(val.textContent, 10);
     act.disabled = true;
-    var fn = cargoTab === 'load' ? 'load_to_ship' : 'unload_from_ship';
+    var fn = mode === 'load' ? 'load_to_ship' : 'unload_from_ship';
     supabase.rpc(fn, {
-      p_ship_id: cargoShip.id,
+      p_ship_id: shipId,
       p_unit_type: unit.unit_type,
       p_quantity: n
     }).then(function(res) {
       act.disabled = false;
       if (res.error) {
-        alert(res.error.message);
+        alert(typeof gameErr === 'function' ? gameErr(res.error) : res.error.message);
         return;
       }
-      setCargoTab(cargoTab);
+      if (cargoShip) setCargoTab(cargoTab);   // панель могли закрыть, пока шёл ответ
       if (typeof loadArmyData === 'function') loadArmyData();
     });
   });

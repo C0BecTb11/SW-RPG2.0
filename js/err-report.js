@@ -206,3 +206,64 @@
   // для перехваченных ошибок: errReport(err, 'ground.frame')
   window.errReport = function(err, ctx) { report(err, ctx); };
 })();
+
+/* Текст ошибки для игрока: gameErr(res.error) или gameErr('строка').
+ *   * отказы функций игры (они по-русски) — как есть;
+ *   * сбой связи — «Нет связи с сервером…»;
+ *   * внутренние ошибки базы (англ.: violates, duplicate key, deadlock…) — понятным текстом, без служебных подробностей;
+ *   * ответы входа (почта, пароль) — по-русски.
+ * Сырой английский текст базы игроку не показывается никогда. ES5.
+ */
+(function() {
+  'use strict';
+  if (window.gameErr) return;
+  var RU = /[А-Яа-яЁё]/;
+  var MAP = [
+    [/invalid login credentials/i, 'Неверная почта или пароль'],
+    [/user already registered|already been registered/i, 'Такая почта уже зарегистрирована'],
+    [/email not confirmed/i, 'Почта не подтверждена — проверь письмо'],
+    [/rate limit|too many requests|security purposes/i, 'Слишком много попыток — подожди минуту'],
+    [/password should be at least/i, 'Пароль слишком короткий'],
+    [/weak.?password|password is known to be weak|easy to guess|pwned/i, 'Пароль слишком простой — придумай другой'],
+    [/signups? not allowed|signup is disabled|signups are disabled/i, 'Регистрация сейчас закрыта'],
+    [/link is invalid or has expired|otp.?expired|token has expired|invalid.?token|flow state/i, 'Ссылка недействительна или устарела — запроси новую'],
+    [/same.?password|new password should be different/i, 'Новый пароль должен отличаться от старого'],
+    [/jwt expired|invalid jwt|refresh token|session.?not.?found|auth session missing/i, 'Вход устарел — обнови страницу'],
+    [/user not found/i, 'Такой учётной записи нет'],
+    [/unable to validate email|invalid email|email address .* is invalid/i, 'Почта указана неверно'],
+    // раньше сети: «canceling statement due to statement timeout» — база была занята, а не связь пропала
+    [/deadlock|could not serialize|canceling statement|lock timeout|could not obtain lock/i, 'Сервер был занят — попробуй ещё раз'],
+    [/failed to fetch|networkerror|network request failed|load failed|typeerror|timed? ?out|timeout|aborterror|fetch/i, 'Нет связи с сервером — попробуй ещё раз'],
+    [/violates|duplicate key|null value|row-level security|permission denied|constraint|invalid input syntax|does not exist|out of range|malformed/i,
+     'База не приняла изменение — попробуй ещё раз; если повторится — сообщи администрации']
+  ];
+  // коды ошибок входа (GoTrue, e.code) — надёжнее текста, который сервис может поменять
+  var CODE = {
+    invalid_credentials: 'Неверная почта или пароль', user_already_exists: 'Такая почта уже зарегистрирована',
+    email_exists: 'Такая почта уже зарегистрирована', email_not_confirmed: 'Почта не подтверждена — проверь письмо',
+    over_request_rate_limit: 'Слишком много попыток — подожди минуту', over_email_send_rate_limit: 'Слишком много писем — подожди немного',
+    weak_password: 'Пароль слишком простой — придумай другой', signup_disabled: 'Регистрация сейчас закрыта',
+    email_provider_disabled: 'Регистрация сейчас закрыта', otp_expired: 'Ссылка недействительна или устарела — запроси новую',
+    same_password: 'Новый пароль должен отличаться от старого', user_not_found: 'Такой учётной записи нет',
+    validation_failed: 'Почта или пароль указаны неверно', email_address_invalid: 'Почта указана неверно'
+  };
+  window.gameErr = function(e) {
+    if (e && typeof e === 'object' && typeof e.code === 'string' && CODE[e.code]) return CODE[e.code];
+    var m = '';
+    try {
+      if (e == null) m = '';
+      else if (typeof e === 'string') m = e;
+      else if (e.message != null) m = String(e.message);
+      else if (e.error_description) m = String(e.error_description);
+      else if (e.msg) m = String(e.msg);
+      else m = String(e);
+    } catch (x) { m = ''; }
+    m = m.replace(/\s+/g, ' ').trim();
+    if (!m || m === '[object Object]') return 'Не удалось — попробуй ещё раз';
+    // служебный английский (в том числе внутри русской фразы «Не удалось: …violates…») — понятным текстом
+    for (var i = 0; i < MAP.length; i++) if (MAP[i][0].test(m)) return MAP[i][1];
+    // отказ функции игры: русский текст как есть (без технического префикса «ERROR: …:»)
+    if (RU.test(m)) return m.replace(/^(error|ошибка)\s*:\s*/i, '');
+    return 'Не удалось — попробуй ещё раз';
+  };
+})();

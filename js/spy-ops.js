@@ -45,6 +45,17 @@ var SO_FACE = {
 };
 
 function soEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+// «дд.мм чч:мм» по часам и календарю сервера (МСК, js/credits-bar.js), а не телефона
+function soWhen(iso) {
+  var t = Date.parse(iso); if (isNaN(t)) return '';
+  var d = new Date(t), hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2),
+      dm = ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2);
+  try {
+    if (typeof svFormatTime === 'function') hm = svFormatTime(t);
+    if (typeof svDayKey === 'function') { var k = svDayKey(t).split('-'); if (k.length === 3) dm = ('0' + k[2]).slice(-2) + '.' + ('0' + k[1]).slice(-2); }
+  } catch (e) {}
+  return dm + ' ' + hm;
+}
 function soNow() { return Date.now() + soSkew; }
 function soT(iso) { return iso ? new Date(iso).getTime() : 0; }
 function soLeft(ms) {
@@ -148,7 +159,7 @@ function soLoad() {
   var seq = ++soSeq;
   supabase.rpc('spy_state').then(function(r) {
     if (seq !== soSeq) return;
-    if (r.error) { document.getElementById('so-body').innerHTML = '<div class="so-empty bad">' + soEsc(r.error.message) + '</div>'; return; }
+    if (r.error) { document.getElementById('so-body').innerHTML = '<div class="so-empty bad">' + soEsc(gameErr(r.error)) + '</div>'; return; }
     soSet(r.data);
   }, function() {
     if (seq === soSeq && !soState) document.getElementById('so-body').innerHTML = '<div class="so-empty bad">Нет связи с сервером</div>';
@@ -264,7 +275,7 @@ function soHomeHtml() {
   if (st.log.length) {
     html += '<div class="so-sec">Журнал операций</div><div class="so-log">';
     st.log.forEach(function(x) {
-      var t = new Date(x.at), when = t.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' + t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      var when = soWhen(x.at);
       var res = x.result === 'ok' ? '<b class="ok">успех</b>' : x.result === 'caught' ? '<b class="bad">схвачены</b>' : '<b class="dim">сорвалась</b>';
       html += '<div class="so-log-row"><span class="so-ico">' + (SO_ICON[x.kind] || '') + '</span>' +
         '<div class="so-log-info"><span>' + soEsc(x.name) + ' · ' + soEsc(x.building_name || '') + ', ' + soEsc(x.target_name) + '</span>' +
@@ -367,7 +378,7 @@ function soCall(fn, args, after) {
   var seq = ++soSeq;                         // опрос, начатый раньше, не перетрёт свежий ответ действия
   supabase.rpc(fn, args).then(function(r) {
     soBusy = false;
-    if (r.error) { if (seq === soSeq) soErr(r.error.message); return; }
+    if (r.error) { if (seq === soSeq) soErr(gameErr(r.error)); return; }
     if (typeof refreshCreditsSoon === 'function') refreshCreditsSoon();
     if (typeof loadPlanetStock === 'function') loadPlanetStock();
     if (seq !== soSeq) return;               // окно закрыли (или открыли заново) — не трогать
@@ -395,7 +406,7 @@ function soClick(e) {
     var gid = soPick.group;
     supabase.rpc('spy_targets', { p_group: gid }).then(function(r) {
       if (soView !== 'target' || soPick.group !== gid) return;
-      if (r.error) { soPick.targets = []; soPick.tErr = r.error.message; soRender(); return; }
+      if (r.error) { soPick.targets = []; soPick.tErr = gameErr(r.error); soRender(); return; }
       soPick.targets = r.data || [];
       soMapSync(); soRender();
     }, function() {

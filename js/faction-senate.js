@@ -188,7 +188,7 @@ function snCall(name, args, key, okText) {
   Promise.resolve(supabase.rpc(name, args)).then(function(r) {
     delete snState.busy[key];
     if (r.error) {
-      if (typeof hqToast === 'function') hqToast(r.error.message || 'Не получилось', true);
+      if (typeof hqToast === 'function') hqToast(gameErr(r.error), true);
       snRepaint();
       return;
     }

@@ -33,6 +33,14 @@
       return r.data;
     }, function(e) { busy = false; el.classList.remove('busy'); throw e; });
   }
+  // чтение для подгрузки списков: не занимает общий флаг действий (иначе два чтения подряд при открытии вкладки
+  // давали ложное «Подожди, прошлое действие ещё идёт»)
+  function look(fn, args) {
+    return supabase.rpc(fn, args || {}).then(function(r) {
+      if (r.error) throw new Error(r.error.message || 'Ошибка базы');
+      return r.data;
+    });
+  }
   function say(text, bad) {
     var s = $('.dv-status'); if (!s) return;
     s.textContent = text; s.className = 'dv-status show' + (bad ? ' bad' : '');
@@ -140,7 +148,7 @@
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="gestart"' + (S.geTypes ? '' : ' disabled') + '>Запустить сейчас</button></div>' +
         '<div class="dv-ges"></div>' +
         '<p class="dv-note">Тестовое событие не занимает место в расписании (до двух обычных разом). Цель — случайная планета без другого события.</p></section>';
-      if (!S.geTypes) rpc('dev_galaxy_event_types').then(function(t) { S.geTypes = t || []; if (tab === 'ev') render(); }, fail);
+      if (!S.geTypes) look('dev_galaxy_event_types').then(function(t) { S.geTypes = t || []; if (tab === 'ev') render(); }, fail);
       geFill();
     } else if (tab === 'err') {
       // два журнала: у игроков (браузер) и на сервере (база, pg_cron, сервер боёв)
@@ -257,7 +265,7 @@
   var GE_SCOPE = { galaxy: 'вся галактика', faction: 'сторона', sector: 'сектор', planet: 'планета', front: 'фронт' };
   // идущие галактические события — с кнопкой «Закончить»
   function geFill() {
-    rpc('galaxy_events_state').then(function(d) {
+    look('galaxy_events_state').then(function(d) {
       var box = $('.dv-ges'); if (!box) return;
       var list = (d && d.active) || [];
       box.innerHTML = list.length ? list.map(function(e) {

@@ -51,6 +51,10 @@ function loadProcesses() {
       return;
     }
     processesData = res.data || [];
+    // отсчёт — от момента ответа (как stampUntil в supply.js): свёрнутое приложение тормозит таймеры,
+    // и вычитание секунды за тик отставало бы от настоящего времени до следующей перечитки
+    var at = Date.now();
+    processesData.forEach(function(p) { if (p.seconds_left > 0) p._until = at + p.seconds_left * 1000; });
     renderProcesses();
   }, function() { processesLoading = false; });
 }
@@ -194,10 +198,13 @@ function tickProcesses() {
   var changed = false;
   var justDone = false;
 
+  var now = Date.now();
   processesData.forEach(function(p) {
     if (p.kind === 'idle') return;
     if (p.seconds_left > 0) {
-      p.seconds_left -= 1;
+      var left = p._until ? Math.max(0, Math.ceil((p._until - now) / 1000)) : p.seconds_left - 1;
+      if (left === p.seconds_left) return;
+      p.seconds_left = left;
       changed = true;
       if (p.seconds_left <= 0) justDone = true;
     }

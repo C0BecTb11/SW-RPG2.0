@@ -553,7 +553,7 @@ function dtCommit(it, x, y, fx, fy) {
     if (r && r.error) {
       done();
       redrawScene();
-      if (typeof dcFlash === 'function') dcFlash(fx, fy, 'Не вышло', r.error.message, 'bad', 2600);
+      if (typeof dcFlash === 'function') dcFlash(fx, fy, 'Не вышло', typeof gbErr === 'function' ? gbErr(r.error) : r.error.message, 'bad', 2600);
       return;
     }
     if (typeof dcBuzz === 'function') dcBuzz(10);

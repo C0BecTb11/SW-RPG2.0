@@ -149,7 +149,7 @@ function makeMyRequests(list) {
       x.addEventListener('click', function() {
         x.disabled = true;
         supabase.rpc('cancel_planet_request', { p_id: q.request_id }).then(function(res) {
-          if (res.error) { x.disabled = false; prToast(res.error.message, true); return; }
+          if (res.error) { x.disabled = false; prToast(gameErr(res.error), true); return; }
           prToast('Запрос отозван');
           loadRequestablePlanets();
         });
@@ -246,7 +246,7 @@ function sendPlanetRequest() {
     prBusy = false;
     if (res.error) {
       paintPrFoot();
-      prToast(res.error.message, true);
+      prToast(gameErr(res.error), true);
       return;
     }
     note.value = '';
@@ -265,7 +265,7 @@ function loadPlanetRequests() {
   supabase.rpc('get_planet_requests').then(function(res) {
     if (prMode !== 'review') return;
     if (res.error) {
-      body.innerHTML = '<div class="pr-empty">' + escapePr(res.error.message) + '</div>';
+      body.innerHTML = '<div class="pr-empty">' + escapePr(gameErr(res.error)) + '</div>';
       return;
     }
 
@@ -342,7 +342,7 @@ function resolveRequest(q, approve, yes, no) {
       if (res.error) {
         yes.disabled = false;
         no.disabled = false;
-        prToast(res.error.message, true);
+        prToast(gameErr(res.error), true);
         loadPlanetRequests();
         return;
       }

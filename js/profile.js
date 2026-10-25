@@ -30,7 +30,7 @@ function showNicknamePrompt() {
     supabase.from('profiles').insert({ id: currentUserId, nickname: nickname }).then(function(res) {
       saveBtn.disabled = false;
       if (res.error) {
-        messageEl.textContent = res.error.message;
+        messageEl.textContent = typeof gameErr === 'function' ? gameErr(res.error) : res.error.message;
         return;
       }
       prompt.style.display = 'none';
@@ -84,7 +84,10 @@ function subscribeToOwnProfile() {
     }, function(payload) {
       var updated = payload.new;
       if (updated.faction) {
+        // фракцию выдали: карта (planets.js), командиры и подписки читают её один раз при загрузке —
+        // без перезагрузки новичок видел бы карту без своего командира и штаба
         hideWaitingScreen();
+        location.reload();
       }
     })
     .subscribe();

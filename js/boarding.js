@@ -387,12 +387,32 @@ function bdLayout() {
 
 // ---------- загрузка и обновления ----------
 
+// Сбой связи — не конец боя: окно итога открывается только когда абордажа правда нет. Пока бой шёл,
+// любая ошибка чтения — временная (сеть поднимается после сна телефона): тост и повтор через 3 с
+var bdFailOpen = false, bdRetryT = null, bdRetryN = 0;
+function bdNetRetry() {
+  if (!bdRetryN++) bdToast('Нет связи — повторяю…', true);
+  if (bdRetryT) return;
+  bdRetryT = setTimeout(function() { bdRetryT = null; bdLoad(true); }, 3000);
+}
 function bdLoad(keepView) {
   var my = ++bdSeq;
   var ask = bdDrill() ? bddGet() : supabase.rpc('get_boarding', { p_id: bdId });
-  return ask.then(function(res) {
+  return ask.then(null, function(e) { return { data: null, error: { message: (e && e.message) || 'Нет связи с сервером', net: true } }; }).then(function(res) {
     if (my !== bdSeq) return;
-    if (res.error || !res.data) { bdFail(res.error ? res.error.message : 'Абордаж не найден'); return; }
+    if (res.error || !res.data) {
+      // отказ сервера по-русски («Абордаж не найден», «Не авторизован» и т. п.) — окончательно, и при первой
+      // загрузке, и посреди боя (повтор его не исправит); сетевая или служебная ошибка — повторить:
+      // посреди боя без счёта, при первой загрузке — до 10 раз
+      var msg = res.error ? String(res.error.message || '') : 'Абордаж не найден';
+      var refusal = !res.error || (!res.error.net && /[а-яё]/i.test(msg));
+      if (!refusal && (bdState || bdRetryN < 10)) { bdNetRetry(); return; }
+      bdFail(refusal ? msg : 'Нет связи с сервером — проверь интернет и открой абордаж снова');
+      return;
+    }
+    if (bdRetryN) { bdRetryN = 0; bdToast('Связь восстановлена'); }
+    // окно ошибки открывал сбой, а бой идёт — убрать его
+    if (bdFailOpen && res.data.status === 'active') { var fb = document.getElementById('bd-end'); if (fb) fb.classList.remove('open'); bdFailOpen = false; }
     var s = res.data;
     var prevById = {};
     if (bdState) bdState.units.forEach(function(u) { prevById[u.id] = u; });
@@ -469,6 +489,7 @@ function bdFail(msg) {
       ? '<button class="bd-btn wide" data-act="orbit">На орбиту</button></div>'
       : '<button class="bd-btn wide" data-act="galaxy">На карту галактики</button></div>');
   box.classList.add('open');
+  bdFailOpen = true;
 }
 
 var BD_END = {
@@ -483,6 +504,7 @@ var BD_END = {
 function bdShowEnd() {
   if (bdShownEnd) return;
   bdShownEnd = true;
+  bdFailOpen = false;
   var s = bdState;
   if (s.drill) {
     var dbox = document.getElementById('bd-end');

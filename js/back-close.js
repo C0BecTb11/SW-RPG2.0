@@ -12,12 +12,13 @@
 (function() {
   'use strict';
   if (!window.history || !history.pushState) return;
-  var armed = !!(history.state && history.state.swBack), leaving = false, raf = 0;
+  var armed = !!(history.state && history.state.swBack), leaving = false, raf = 0, shut = null, shutAt = 0;
 
   function visible(el) {
     if (!el || el.hidden) return false;
     var cs = getComputedStyle(el);
-    return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity > 0.05;
+    // закрытое окно с плавным угасанием сразу перестаёт ловить касания — оно уже не «открыто»
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity > 0.05 && cs.pointerEvents !== 'none';
   }
   function closer(el) {
     var list = el.querySelectorAll('button, [role="button"], .close, [data-close]');
@@ -44,15 +45,19 @@
   function check() {
     raf = 0;
     if (leaving) return;
-    if (!armed && top()) { try { history.pushState({ swBack: 1 }, '', location.href); armed = true; } catch (e) {} }
+    var o = !armed && top();
+    // окно, которое только что закрывали «Назад», не взводит сторожа полсекунды: если «✕» его не спрятал,
+    // «Назад» не застрянет на нём, а пойдёт дальше
+    if (o && !(o.el === shut && Date.now() - shutAt < 500)) { try { history.pushState({ swBack: 1 }, '', location.href); armed = true; } catch (e) {} }
   }
   function later() { if (!raf) raf = requestAnimationFrame(check); }
 
-  window.addEventListener('popstate', function() {
-    if (!armed) return;
-    armed = false;
+  window.addEventListener('popstate', function(e) {
+    var onGuard = !!(e.state && e.state.swBack);
+    if (!armed) { armed = onGuard; return; }                 // «Вперёд» на сторожа — он снова наш
+    armed = onGuard;
     var o = top();
-    if (o) { o.btn.click(); setTimeout(later, 80); }        // закрыли окно; под ним ещё одно — сторож снова
+    if (o) { shut = o.el; shutAt = Date.now(); o.btn.click(); setTimeout(later, 80); }   // закрыли окно; под ним ещё одно — сторож снова
     else if (!leaving) history.back();                       // окна уже нет — «Назад» идёт дальше, как раньше
   });
   window.addEventListener('pagehide', function() { leaving = true; });

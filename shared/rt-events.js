@@ -445,6 +445,7 @@
       var x = box[0] + Math.floor(R() * box[2]), y = box[1] + Math.floor(R() * box[3]);
       var spot = B.nearestOk(T.move, T.size, x, y); if (!spot) continue;
       var off = T.size === 2 ? 1 : 0.5, taken = false;
+      if (!B.okAt({ move: T.move, size: T.size, team: team, T: T, air: T.air, fly: T.move === 'air' }, spot[0], spot[1]) && t < 150) continue;   // не внутри турели или чужого укрепления
       for (var i = 0; i < B.agents.length; i++) { var o = B.agents[i]; if (o.alive && Math.abs(o.x - spot[0] - off) < 0.9 && Math.abs(o.y - spot[1] - off) < 0.9) { taken = true; break; } }
       if (taken && t < 150) continue;
       return B.add(tid, team, spot[0] + off, spot[1] + off, { owner: ex.owner, aim: ex.aim });
@@ -591,7 +592,9 @@
         if (a.focus >= 0 && !(B.agents[a.focus] && B.agents[a.focus].alive)) a.focus = -1;
         if (a.tgt >= 0 || a.focus >= 0) return;
         var po = a.post0; if (!po) return;
-        if (Math.abs(a.x - po.x - 0.5) + Math.abs(a.y - po.y - 0.5) > 2.5 && (a.at || !a.goal)) { B.goCell(a, po.x, po.y); a.post = false; a.hold = false; }
+        var far = Math.abs(a.x - po.x - 0.5) + Math.abs(a.y - po.y - 0.5) > 2.5;
+        if (far && (a.at || !a.goal)) { B.goCell(a, po.x, po.y); a.post = false; a.hold = false; }
+        else if (!far && po.fort && a.at && !a.hold) a.hold = true;      // вернулся в укрепление — снова держит место
       });
     });
   };

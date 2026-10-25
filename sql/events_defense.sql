@@ -7,6 +7,9 @@
 -- * Против бота ботов звать не нужно: сбор начинается сам (минимум роли — один игрок, через 30 с
 --   или сразу при полном составе). Кнопка «С ботами» в PvE не показывается.
 -- * Тест администрации: в PvE p_bots — сколько всего в гарнизоне (ты + боты-союзники).
+-- * Награда PvE — как в PvP (бой не «с ботами»): полная за победу, утешительная 25 % за поражение после 3 минут.
+-- ВАЖНО: файл правит тела функций из sql/events.sql и sql/events_schedule.sql — после их повторного
+-- применения его нужно применить снова (правки идемпотентны).
 
 alter table public.event_catalog add column if not exists pair text references public.event_catalog(id);
 
@@ -30,7 +33,8 @@ begin
   v_def := pg_get_functiondef('public.event_day_row(date)'::regprocedure);
   v_a := $q$  select id into v_pick from event_catalog where ready and (v_prev is null or id <> v_prev or (select count(*) from event_catalog where ready) = 1)$q$;
   v_b := $q$  select id into v_pick from event_catalog where ready and (pair is null or id < pair or not exists (select 1 from event_catalog p where p.id = event_catalog.pair and p.ready))
-     and (v_prev is null or (id <> v_prev and pair is distinct from v_prev) or (select count(*) from event_catalog where ready and (pair is null or id < pair)) = 1)$q$;
+     and (v_prev is null or (id <> v_prev and pair is distinct from v_prev)
+          or (select count(*) from event_catalog c where c.ready and (c.pair is null or c.id < c.pair or not exists (select 1 from event_catalog p where p.id = c.pair and p.ready))) = 1)$q$;
   if position('pair is null or id < pair' in v_def) = 0 then
     if position(v_a in v_def) = 0 then raise exception 'event_day_row: нет якоря'; end if;
     execute replace(v_def, v_a, v_b);

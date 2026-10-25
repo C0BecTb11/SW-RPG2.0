@@ -89,3 +89,35 @@ end $$;
 -- start_commander_move зовут только SECURITY DEFINER-функции (маршрут, снабжение, перехват); прямой вызов игроком
 -- обходил проверку «командир занят снабжением» из start_commander_route
 revoke all on function public.start_commander_move(uuid, text) from public, anon, authenticated;
+
+-- err_scan: «сервер упал» — только если за минуту до запуска не было штатной остановки
+-- (после «остановка: SIGTERM» сервер ещё пишет «орбита закрыта», «игрок вышел» — это не падение)
+do $$
+declare v_def text; a text := $x$      if v_prev is not null and v_prev not like 'остановка%' then$x$;
+  b text := $x$      if v_prev is not null and v_prev not like 'остановка%'
+         and not exists (select 1 from rt_server_log q where q.msg like 'остановка%' and q.at < r.at and q.at > r.at - interval '60 seconds') then$x$;
+begin
+  v_def := pg_get_functiondef('public.err_scan()'::regprocedure);
+  if position(b in v_def) = 0 then
+    if (length(v_def) - length(replace(v_def, a, ''))) / length(a) <> 1 then raise exception 'err_scan: нет якоря'; end if;
+    execute replace(v_def, a, b);
+  end if;
+end $$;
+
+-- дозор: сбой выстрела — в журнал ошибок (как все when others в проекте), а не только warning в лог Postgres
+do $$
+declare f text; v_def text; a text; b text;
+begin
+  foreach f in array array['overwatch_fire_ship', 'overwatch_fire_unit'] loop
+    v_def := pg_get_functiondef(('public.' || f || '(uuid)')::regprocedure);
+    a := format($x$      raise warning '%s %%: %%', p_id, sqlerrm;
+      return false;$x$, f);
+    b := format($x$      raise warning '%s %%: %%', p_id, sqlerrm;
+      perform err_db('%s', sqlstate, sqlerrm, false);
+      return false;$x$, f, f);
+    if position(b in v_def) = 0 then
+      if (length(v_def) - length(replace(v_def, a, ''))) / length(a) <> 1 then raise exception '%: нет якоря', f; end if;
+      execute replace(v_def, a, b);
+    end if;
+  end loop;
+end $$;

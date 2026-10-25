@@ -461,7 +461,8 @@ body {
   transition: background 0.8s ease;
 }
 
-/* Подпись держит свой размер на экране при любом зуме (--gx-k ставит js/galaxy-fx.js) */
+/* Подпись держит свой размер на экране при любом зуме (--gx-k ставит js/galaxy-fx.js).
+   Касание подписи открывает планету, как раньше (щелчок всплывает к обёртке). */
 .planet-label {
   position: absolute;
   top: 100%;
@@ -475,7 +476,6 @@ body {
   letter-spacing: 1px;
   white-space: nowrap;
   text-shadow: 0 0 4px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95);
-  pointer-events: none;
   transition: color 0.6s ease;
 }
 

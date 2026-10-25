@@ -104,6 +104,9 @@
   to   { opacity: 1; transform: scale(1); }
 }
 
+/* Карта под сплошной панелью — бесконечные анимации стоят, как и холсты */
+.gx-covered .planet-halo, .gx-covered .planet-target::after, .gx-covered .ge-mark::after { animation-play-state: paused; }
+
 @media (prefers-reduced-motion: reduce) {
   .gx-front .planet-halo { animation: none; }
 }

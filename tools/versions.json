@@ -41,11 +41,11 @@
  },
  "css/galaxy-fx.css": {
   "v": "1",
-  "sha": "acf9bbce4465"
+  "sha": "c97ba3765a6e"
  },
  "css/galaxy.css": {
   "v": "4",
-  "sha": "341465ef44e7"
+  "sha": "712020b5c271"
  },
  "css/ground-battle.css": {
   "v": "4",
@@ -265,7 +265,7 @@
  },
  "js/galaxy-fx.js": {
   "v": "1",
-  "sha": "2bd92767dd81"
+  "sha": "54968e4b0aaa"
  },
  "js/galaxy.js": {
   "v": "1",
@@ -309,7 +309,7 @@
  },
  "js/planets.js": {
   "v": "6",
-  "sha": "79011cfd250f"
+  "sha": "b9b54ae81326"
  },
  "js/processes.js": {
   "v": "1",

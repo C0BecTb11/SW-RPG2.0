@@ -32,7 +32,7 @@
   var parts = [];
   var viewDirty = true, lastK = -1, lastMk = -1;
   var running = false, lastFx = 0, lastT = 0;
-  var intro = false, tickErr = false;
+  var intro = false, tickErr = false, frameNo = 0, syncFrame = -1, lastSize = 0, coveredCls = false;
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function smooth(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
@@ -60,8 +60,10 @@
   }
 
   function covered(now) {
-    if (document.hidden) return true;
-    return typeof isMapCovered === 'function' ? isMapCovered(now) : false;
+    var c = document.hidden || (typeof isMapCovered === 'function' ? isMapCovered(now) : false);
+    // под панелью и «дыхание» фронта стоит
+    if (c !== coveredCls) { coveredCls = c; document.body.classList.toggle('gx-covered', c); }
+    return c;
   }
 
   // ── Каркас ────────────────────────────────────────────────────────
@@ -122,16 +124,27 @@
     if (k !== lastK) { lastK = k; area.style.setProperty('--gx-k', k); }
     var mk = Math.round(clamp(0.85 / v.s, 0.75, 1.8) * 100) / 100;
     if (mk !== lastMk) { lastMk = mk; area.style.setProperty('--gx-mk', mk); }
-    // мир расширили в настройках — пересобираем фон под новый размер
-    if (data && (area.offsetWidth !== W || area.offsetHeight !== H) && area.offsetWidth > 0) build();
-    // Перерисовка сразу, в том же кадре, что и сдвиг мира: отложенная на следующий кадр отставала бы
-    // от планет и ракет на кадр — след перелёта «отрывался» от ракеты при движении камеры
-    var now = window.performance ? performance.now() : Date.now();
-    if (vw > 0 && !covered(now)) {
-      drawSky();
-      drawFx(now, 0); lastFx = now;
-      viewDirty = false;
-    } else viewDirty = true;
+    // Перерисовка сразу, в том же кадре, что и сдвиг мира: отложенная на кадр отставала бы от планет и ракет —
+    // след перелёта «отрывался» от ракеты, если камеру двигает кадровый цикл. Но не чаще раза за кадр:
+    // касания на 120-герцевых экранах приходят чаще кадров — лишние сдвиги дорисует ближайший кадр.
+    if (syncFrame !== frameNo && vw > 0) {
+      var now = window.performance ? performance.now() : Date.now();
+      if (!covered(now)) {
+        syncFrame = frameNo;
+        drawSky();
+        drawFx(now, 0); lastFx = now;
+        viewDirty = false;
+        return;
+      }
+    }
+    viewDirty = true;
+  }
+
+  // Размер окна карты и мира — раз в полсекунды: карту прячут (экран ожидания фракции), мир расширяют
+  // в настройках, а событие resize в эти моменты не приходит
+  function checkSize() {
+    if (scroll.clientWidth !== vw || scroll.clientHeight !== vh) { if (scroll.clientWidth > 0) resize(); }
+    if (data && area.offsetWidth > 0 && (area.offsetWidth !== W || area.offsetHeight !== H)) build();
   }
 
   window.gxFxView = function() {
@@ -344,7 +357,7 @@
   // Влияние планеты — гауссово пятно. Клетка принадлежит фракции с большим влиянием.
   // Заливка слабая, к краю территории и к фронту — ярче (как полоса границы у державы).
 
-  var SIGMA = 165, G = 10;
+  var SIGMA = 165, G = 10, FAR = SIGMA * 3;
   var frontPath = '';
 
   function field(gx, gy) {
@@ -353,6 +366,7 @@
       var s = data.systems[i], f = data.fac[s.id];
       if (!COL[f]) continue;
       var p = data.pos[s.id], dx = wx - p.x, dy = wy - p.y;
+      if (dx > FAR || dx < -FAR || dy > FAR || dy < -FAR) continue;   // дальше 3σ — вклад ничтожен
       var w = Math.exp(-(dx * dx + dy * dy) / (2 * SIGMA * SIGMA)) * (data.caps[s.id] ? 1.25 : 1);
       acc[f] = (acc[f] || 0) + w;
     }
@@ -488,6 +502,12 @@
     makeParts();
   }
 
+  // Где линия упирается в планету: край атмосферы, у столицы — за кольцом
+  function rimOf(id) {
+    var r = Math.round((data.rad[id] || 14) * (typeof PLANET_SCALE === 'number' ? PLANET_SCALE : 1.3));
+    return data.caps[id] ? (r + 4) * 1.6 + 8 : r + 8;
+  }
+
   function paintLanes() {
     while (lanesSvg.firstChild) lanesSvg.removeChild(lanesSvg.firstChild);
     lanesSvg.setAttribute('width', W); lanesSvg.setAttribute('height', H);
@@ -523,7 +543,8 @@
       defs.appendChild(gr);
 
       // концы — у края планеты, а не в её центре
-      var ra = 26, rb = 26;
+      var ra = rimOf(l.a), rb = rimOf(l.b);
+      if (l.len < ra + rb + 6) return;                 // планеты почти касаются — линия не нужна
       var x1 = l.ax + l.ux * ra, y1 = l.ay + l.uy * ra, x2 = l.bx - l.ux * rb, y2 = l.by - l.uy * rb;
       ['halo', 'glow', 'core'].forEach(function(part) {
         var ln = document.createElementNS(SVGNS, 'line');
@@ -700,7 +721,9 @@
 
   function tick(t) {
     requestAnimationFrame(tick);
+    frameNo++;
     try {
+      if (t - lastSize > 500) { lastSize = t; checkSize(); }
       var dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0;
       // Кадр пропущен — время не копим, чтобы огоньки не прыгали
       if (viewDirty) {
@@ -773,26 +796,31 @@
   window.gxFxInit = function(systems, lanesIn, positions) {
     setup();
     if (!area) return;
-    data = { systems: systems || [], lanes: lanesIn || [], pos: positions || {}, fac: {}, caps: {} };
-    data.systems.forEach(function(s) { data.fac[s.id] = s.faction; });
+    data = { systems: systems || [], lanes: lanesIn || [], pos: positions || {}, fac: {}, caps: {}, rad: {} };
+    data.systems.forEach(function(s) { data.fac[s.id] = s.faction; data.rad[s.id] = s.radius; });
+    if (intro) setTimeout(endIntro, 4200);   // до сборки: если она упадёт, вступление всё равно закончится
     build();
-    if (intro) setTimeout(endIntro, 4200);
     // Столицы — из настроек игры (их же знают мятежи)
     supabase.from('game_settings').select('value').eq('key', 'unrest_capitals').maybeSingle().then(function(res) {
       if (res.error || !res.data || !res.data.value) return;
       String(res.data.value).split(',').forEach(function(id) { id = id.trim(); if (id) data.caps[id] = true; });
-      buildTerritory(); paintFront(); markPlanets();
+      buildTerritory(); paintLanes(); markPlanets();
     }, function() {});
   };
 
   // Планета сменила хозяина — граница и линии перестраиваются, территория вспыхивает
+  // Несколько захватов подряд (волна realtime) — одна пересборка
+  var facTimer = 0;
   window.gxFxFaction = function(id, faction) {
     if (!data || data.fac[id] === faction) return;
     data.fac[id] = faction;
-    terr.classList.add('flash');
-    buildTerritory(); paintLanes(); makeParts(); markPlanets();
-    setTimeout(function() { terr.classList.remove('flash'); }, 60);
-    viewDirty = true;
+    clearTimeout(facTimer);
+    facTimer = setTimeout(function() {
+      terr.classList.add('flash');
+      buildTerritory(); paintLanes(); makeParts(); markPlanets();
+      setTimeout(function() { terr.classList.remove('flash'); }, 60);
+      viewDirty = true;
+    }, 150);
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup);

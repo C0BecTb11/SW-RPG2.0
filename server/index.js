@@ -403,8 +403,20 @@ function hello() {
 // Планетам без маски проходимости — базовая (без города): её иначе пишет только первое открытие планеты в 2.0,
 // а до того высадка и стройка старой игры не видели воду и скалы. Городскую маску не трогает (rt_ground_map_base).
 function seedMasks() {
-  var fs = require('fs'), M;
-  try { M = require('../tools/planets/masks.js'); } catch (e) { log('warn', 'маски: нет генератора', { err: e.message }); return; }
+  var fs = require('fs'), P = require('../shared/rt-planets.js');
+  // то же, что tools/planets/masks.js (на сервер выкладываются только server/ и shared/)
+  var M = { masks: function(json) {
+    var m = P.load(json), N = P.N, out = {};
+    [['foot', 1], ['track', 1], ['track', 2], ['hover', 1], ['hover', 2]].forEach(function(q) {
+      var mv = q[0], size = q[1], s = '';
+      for (var k = 0; k < N * N; k++) {
+        var x = k % N, y = (k - x) / N;
+        s += (size === 1 ? P.speed(m, x, y, mv) > 0 : x + 2 <= N && y + 2 <= N && P.canBox(m, x, y, 2, mv)) ? '1' : '0';
+      }
+      out[mv + size] = s;
+    });
+    return out;
+  } };
   rpc('rt_ground_map_missing', { p_key: CFG.key }).then(function(ids) {
     var list = (Array.isArray(ids) ? ids : []).filter(function(id) { return /^[a-z0-9_]{1,40}$/.test(id) && fs.existsSync(path.join(__dirname, '..', 'shared', 'planets', id + '.json')); });
     if (!list.length) return;
@@ -412,7 +424,7 @@ function seedMasks() {
     return list.reduce(function(p, id) {
       return p.then(function() {
         var mk = M.masks(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'shared', 'planets', id + '.json'), 'utf8')));
-        mk.w = require('../shared/rt-planets.js').N || 144; mk.h = mk.w;
+        mk.w = P.N || 144; mk.h = mk.w;
         return rpc('rt_ground_map_base', { p_key: CFG.key, p_system: id, p_masks: mk }).then(function(ok) { if (ok) done++; });
       }).catch(function(e) { log('warn', 'маска планеты не записана', { system: id, err: e.message }); });
     }, Promise.resolve()).then(function() { log('info', 'базовые маски планет записаны', { planets: done, of: list.length }); });

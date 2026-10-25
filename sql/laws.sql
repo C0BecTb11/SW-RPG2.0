@@ -94,6 +94,10 @@ create or replace function public.faction_power_list()
 as $function$
   select array['manage_roles','planet_requests','planet_controllers','orders','economy','laws','treasury']::text[];
 $function$;
+-- проверка таблицы должностей — тот же список (иначе должность с «Законами» или «Казной» не сохранялась)
+alter table public.faction_roles drop constraint if exists faction_roles_powers_known;
+alter table public.faction_roles add constraint faction_roles_powers_known
+  check (powers <@ array['manage_roles','planet_requests','planet_controllers','orders','economy','laws','treasury']::text[]);
 
 -- ---------------------------------------------------------------- каталог
 insert into public.faction_laws (id, faction, title, text, effects, sort) values

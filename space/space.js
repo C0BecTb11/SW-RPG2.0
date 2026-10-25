@@ -2986,7 +2986,7 @@
       uid = ses.user.id; FLEET.uid = uid;
       return Promise.all([
         sb.from('profiles').select('faction').eq('id', uid).maybeSingle(),
-        sb.from('ships').select('id,ship_type,name,hp,system_id,faction,in_transit,carrier_ship_id,shield_fore,shield_aft,shield_port,shield_starboard,shields_updated_at,trophy,boarding_eff,bonus_hp,bonus_shield,bonus_fore,bonus_damage,upgrades').eq('owner_user_id', uid),
+        sb.from('ships').select('id,ship_type,name,hp,system_id,faction,in_transit,carrier_ship_id,shield_fore,shield_aft,shield_port,shield_starboard,shields_updated_at,trophy,boarding_eff,bonus_hp,bonus_shield,bonus_fore,bonus_damage,bonus_move,bonus_vision,upgrades').eq('owner_user_id', uid),
         sb.from('unit_positions').select('id,unit_type,quantity,hp,bonus_hp,bonus_damage,hero_name,carrier_ship_id').eq('owner_user_id', uid).not('carrier_ship_id', 'is', null),
         sb.from('ship_types').select('id,name,max_hp,max_shield,shield_regen,damage,capacity'),
         sb.from('systems').select('id,name'),
@@ -3244,7 +3244,7 @@
     if (G.net) netClose(true);
     ++START;
     G.task = null; taskRow();
-    G.net = { sys: system, code: system, scen: 'vp', cfg: null, want: want, ws: null, M: null, side: -1, seats: null, tries: 0, q: [], ready: false, round: 0, lastAt: 0, vkey: '' };
+    G.net = { sys: system, srv: srv || null, code: system, scen: 'vp', cfg: null, want: want, ws: null, M: null, side: -1, seats: null, tries: 0, q: [], ready: false, round: 0, lastAt: 0, vkey: '' };
     document.body.classList.add('sys');
     netPanel(false); netRow();
     toast('Орбита: подключаюсь…', 'gold');
@@ -3414,15 +3414,28 @@
     $('sp-net-foe').innerHTML = foe;
   }
   // Окно «Бой по сети»: создать комнату, войти по коду, ошибки связи
+  // Части окна, которые нужны только сетевому полигону (на орбите из игры комнат и кодов нет)
+  var NET_POLY = ['.sp-net-scen', '#sp-net-make', '.sp-net-or', '.sp-net-joinrow', 'p'], netTexts = null;
+  // выход с орбиты — та же ссылка, что у «← Галактика» на странице игры (на полигоне её нет)
+  function netExit() { var a = document.getElementById('sp-back'); return a && a.getAttribute('href') ? a.href : null; }
   function netPanel(show) {
     var el = $('sp-net');
     if (!show) { el.hidden = true; return; }
-    var N = G.net;
+    var N = G.net, sys = !!(N && N.sys);
+    var kick = el.querySelector('.sp-kicker'), h2 = el.querySelector('h2');
+    if (!netTexts) netTexts = { kick: kick ? kick.textContent : '', h2: h2 ? h2.textContent : '', close: $('sp-net-close').textContent };
+    // орбита: только причина, «Ещё раз» и выход — без комнат и кодов полигона; строки связи на орбите
+    // не видно (body.sys #sp-top), поэтому закрыть окно и остаться перед пустой орбитой незачем
+    $('sp-net-close').textContent = sys && netExit() ? '← Галактика' : netTexts.close;
+    NET_POLY.forEach(function(q) { var x = el.querySelector(q); if (x) x.style.display = sys ? 'none' : ''; });
+    if (kick) kick.textContent = sys ? 'Орбита' : netTexts.kick;
+    if (h2) h2.textContent = sys ? 'Орбита недоступна' : netTexts.h2;
     $('sp-net-scen').textContent = G.scen && G.scen.cfg || SCEN[G.scen] ? scName(G.scen) : SCEN.vp.name;
     var err = $('sp-net-err');
     if (N && N.fail) {
       err.hidden = false;
-      err.innerHTML = esc(N.fail) + (N.login ? ' · <a href="../auth.html?next=' + encodeURIComponent('space/?room=' + N.code + '&scen=' + N.scen) + '">Войти</a>' : '');
+      var next = sys ? 'game/space-battle.html' + location.search : 'space/?room=' + N.code + '&scen=' + N.scen;
+      err.innerHTML = esc(N.fail) + (N.login ? ' · <a href="../auth.html?next=' + encodeURIComponent(next) + '">Войти</a>' : '');
       $('sp-net-retry').hidden = false;
     } else { err.hidden = true; $('sp-net-retry').hidden = true; }
     el.hidden = false;
@@ -3444,10 +3457,16 @@
     $('sp-net-in').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('sp-net-join').onclick(); });
     $('sp-net-close').onclick = function() {
       netPanel(false);
-      // окно закрыли после ошибки связи — вернуться к своему бою
-      if (G.net && G.net.fail) { netClose(true); start(G.scen, G.side >= 0 ? G.side : 0); }
+      // окно закрыли после ошибки связи — вернуться к своему бою (полигон); орбита из игры учебный бой
+      // не запускает — уходит на карту галактики, как кнопка «← Галактика»
+      var N = G.net;
+      if (N && N.sys) { var ex = netExit(); if (ex) location.href = ex; return; }
+      if (N && N.fail) { netClose(true); start(G.scen, G.side >= 0 ? G.side : 0); }
     };
-    $('sp-net-retry').onclick = function() { var N = G.net; if (N) netOpen(N.code, N.scen, N.want); };
+    $('sp-net-retry').onclick = function() {
+      var N = G.net; if (!N) return;
+      if (N.sys) netOpenSys(N.sys, N.srv, N.want); else netOpen(N.code, N.scen, N.want);
+    };
     $('sp-net-link').onclick = netShare;
     $('sp-net-quit').onclick = function() { netClose(); start(G.scen, G.side); };
     // проверка связи раз в 3 с: давно нет кадров — «жёлтая» точка

@@ -68,7 +68,7 @@
   // своя (или союзная готовая) станция в системе — есть куда зайти в верфь
   SL.dockHere = function() {
     var st = window.stationRecord, my = window.spaceMyFaction;
-    return !!(st && my && st.faction === my && (!st.completes_at || new Date(st.completes_at).getTime() <= Date.now()));
+    return !!(st && my && st.faction === my && (!st.completes_at || new Date(st.completes_at).getTime() <= (typeof scServerNow === 'function' ? scServerNow() : Date.now())));
   };
   function onSheetClick(e) {
     var t = e.target.closest('[data-sl]'); if (!t) return;
@@ -76,7 +76,7 @@
     var S = sp(), G = S && S.G, sh = G && G.B && G.B.ships[G.sel]; if (!sh) return;
     var row = SL.rowOf(sh), type = SL.typeOf(row);
     var k = t.getAttribute('data-sl');
-    if (k === 'hold') { if (row && type && typeof onOwnShipTapped === 'function') { window.scTab = 'cargo'; onOwnShipTapped(row, type); } else S.toast('Корабль ещё не перечитан из базы — секунду', 'bad'); }
+    if (k === 'hold') { if (row && type && typeof onOwnShipTapped === 'function') { window.scTab = 'cargo'; window.scTabKey = ''; onOwnShipTapped(row, type); } else S.toast('Корабль ещё не перечитан из базы — секунду', 'bad'); }
     else if (k === 'cmd') { if (row && type && typeof openShipInfo === 'function') openShipInfo(row, type); }
     else if (k === 'yard') { if (typeof openShipyard === 'function') openShipyard(); }
   }

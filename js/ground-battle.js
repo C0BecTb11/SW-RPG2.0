@@ -9844,16 +9844,15 @@ function gbApplyLink(link) {
     return;
   }
 
+  // Боец из ленты («выведен», «ремонт готов»): в бою 2.0 — выбрать его и навести камеру. Старую пошаговую панель
+  // бойца не открываем: её кнопки двигали и атаковали в базе в обход сервера боёв
   if (link.unit) {
     var u = unitsOnMap.filter(function(x) { return x.id === link.unit; })[0];
-    if (u && u.x !== null && u.x !== undefined) {
+    if (u && u.x !== null && u.x !== undefined && window.GL && window.GD) {
       var b = unitBox(u);
       selectedStructure = null;
-      selectedUnit = u;
-      gbLinkZoom(); focusCell(u.x + b.w / 2 - 0.5, u.y + b.h / 2 - 0.5);
-      offerPickup(u);
-      gbPing(u.x, u.y, b.w, b.h);
-      redrawScene();
+      GL.focusCell(u.x + b.w / 2 - 0.5, u.y + b.h / 2 - 0.5);
+      if (u._agent != null && GD.select && u.owner_user_id === currentUserId) GD.select([u._agent]);
       return;
     }
     // Боец ушёл, погиб или скрылся в тумане — показываем место события

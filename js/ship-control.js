@@ -1968,8 +1968,8 @@ var sxPrevShipsAt = 0;       // серверное время, на которо
 
 function sxAfterShips(prev, req) {
   var at = scServerNow();
-  sxDiffShips(prev, shipsInSystem, sxPrevShipsAt || at, at);
-  sxOverwatchShots(prev, shipsInSystem);
+  // бой 2.0 сам показывает попадания: старое окно «Под огнём» и выстрелы дозора поверх него не нужны
+  if (!window.SL) { sxDiffShips(prev, shipsInSystem, sxPrevShipsAt || at, at); sxOverwatchShots(prev, shipsInSystem); }
   sxPrevShipsAt = at;
   sxRefreshIntel();
 }
@@ -2429,6 +2429,8 @@ function sxDeepLink() {
     open: q.get('open')
   };
   if (!link.ship && link.x === null && !link.open) return;
+  // корабль выбирает бой 2.0 (SP_ON_HELLO в space-live.js): передать ему до того, как адрес почищен
+  if (link.ship && window.SL) window.SL.wantShip = link.ship;
 
   try {
     var keep = '?system=' + encodeURIComponent(systemId) +
@@ -2448,6 +2450,8 @@ function sxDeepLink() {
 
 function sxApplyLink(link) {
 
+  // бой 2.0 сам выбирает корабль и наводит камеру — старая панель и карточка разведки поверх него не нужны
+  if (link.ship && window.SL) return;
   if (link.ship) {
     var s = sxShipById(link.ship);
     var t = s ? shipTypeById[s.ship_type] : null;

@@ -280,8 +280,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "12",
-  "sha": "76fc8b925f5f"
+  "v": "13",
+  "sha": "4d7abfd6d89a"
  },
  "js/ground-live.js": {
   "v": "26",
@@ -344,16 +344,16 @@
   "sha": "82d49a9d9668"
  },
  "js/ship-control.js": {
-  "v": "3",
-  "sha": "6fc1ad5c83a3"
+  "v": "4",
+  "sha": "4fa7a9cd9f59"
  },
  "js/space-battle.js": {
   "v": "5",
   "sha": "75e9d093f6ee"
  },
  "js/space-live.js": {
-  "v": "19",
-  "sha": "259af80e78da"
+  "v": "20",
+  "sha": "d76d4571aba8"
  },
  "js/spy-map.js": {
   "v": "2",

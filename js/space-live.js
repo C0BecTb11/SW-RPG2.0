@@ -127,7 +127,8 @@
     if (window.sceneLoader) { sceneLoader.mark('station'); sceneLoader.mark('ships'); }
     while (toastQ.length) { var tq = toastQ.shift(); sp().toast(tq[0], tq[1]); }
     // ссылка с карты галактики на корабль — выбрать его в новом экране
-    var want = (/[?&]ship=([0-9a-f-]{36})/.exec(location.search) || [])[1];
+    var want = SL.wantShip || (/[?&]ship=([0-9a-f-]{36})/.exec(location.search) || [])[1];   // адрес мог почистить sxDeepLink
+    SL.wantShip = null;
     if (want) for (var i = 0; i < B.ships.length; i++) if (B.ships[i].gameId === want || B.ships[i].id === want) { sp().selectShip(i); sp().focusShip(B.ships[i]); break; }
     // строки из базы — панелям; бой уже на экране
     if (typeof loadShips === 'function') loadShips();

@@ -120,6 +120,14 @@ var SPACE_MAX = 8;          // космический бой с экипажам
 var GROUND_MAX = 12;        // живых планет на сервер
 var SYSTEM_MAX = 10;        // живых орбит на сервер
 var EVENT_MAX = 12;         // боёв ивентов на сервер
+var PER_USER_MAX = 5;       // планет (и отдельно орбит), открытых одним игроком и ещё живых: один не займёт весь сервер
+
+// сколько живых комнат этого вида открыл игрок (комната живёт минуты после ухода — счёт не только «сейчас смотрит»)
+function openedBy(kind, who) {
+  var n = 0; if (!who || !who.user) return 0;
+  ROOMS.forEach(function(x) { if (x.kind === kind && !x.closed && x.by === who.user) n++; });
+  return n;
+}
 
 function getRoom(name, cfg, who) {
   var gp = Ground.parse(name);
@@ -129,9 +137,9 @@ function getRoom(name, cfg, who) {
     if (g && g.closeP && !g.closeDone) return null;     // прошлый бой ещё записывается — вход чуть позже
     if (!Ground.hasMap(gp.system)) return null;
     var ng = 0; ROOMS.forEach(function(x) { if (x.kind === 'ground' && !x.closed) ng++; });
-    if (ng >= GROUND_MAX) return null;
+    if (ng >= GROUND_MAX || (!CFG.dev && openedBy('ground', who) >= PER_USER_MAX)) return null;
     g = new Ground.GroundRoom(gp.key, gp.system, { rpc: groundRpc, key: CFG.key, log: log, dev: CFG.dev });
-    g.ms = [];
+    g.ms = []; g.by = who ? who.user : null;
     ROOMS.set(gp.key, g);
     log('info', 'комната планеты создана', { room: gp.key });
     return g;
@@ -142,9 +150,9 @@ function getRoom(name, cfg, who) {
     if (q && !q.closed) return q;
     if (q && q.closeP && !q.closeDone) return null;
     var nq = 0; ROOMS.forEach(function(x) { if (x.kind === 'system' && !x.closed) nq++; });
-    if (nq >= SYSTEM_MAX) return null;
+    if (nq >= SYSTEM_MAX || (!CFG.dev && openedBy('system', who) >= PER_USER_MAX)) return null;
     q = new Sys.SystemRoom(so.key, so.system, { rpc: groundRpc, key: CFG.key, log: log, dev: CFG.dev });
-    q.ms = [];
+    q.ms = []; q.by = who ? who.user : null;
     ROOMS.set(so.key, q);
     log('info', 'комната орбиты создана', { room: so.key });
     return q;
@@ -277,7 +285,11 @@ var server = http.createServer(function(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (url === '/health' || url === '/') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify(health()));
+    // подробно (комнаты: где идут бои и кто смотрит) — только с самого сервера (update.sh, замеры);
+    // снаружи, через Caddy (есть X-Forwarded-For), — коротко
+    var ra = String(req.socket && req.socket.remoteAddress || ''), local = !req.headers['x-forwarded-for'] && /^(127\.|::1$|::ffff:127\.)/.test(ra);
+    var h = health();
+    res.end(JSON.stringify(local || CFG.dev ? h : { ok: h.ok, version: h.version, uptime: h.uptime, busy: h.busy, rooms: h.rooms.length }));
     return;
   }
   res.statusCode = 404; res.end('not found');

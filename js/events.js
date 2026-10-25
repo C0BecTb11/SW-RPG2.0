@@ -190,6 +190,7 @@
     var counts = q ? q.counts || {} : null, pct = (st.bots_pct || S.list.bots_pct || 50) / 100;
     var w = E.roles.map(function(r) { var n = counts ? counts[r.id] || 0 : waitCount(E.id, tier, r.id); return esc(r.name.toLowerCase()) + ' <b>' + n + '</b>/' + r.max; }).join(' · ');
     if (E.kind === 'pvp') html += '<div class="ev-howto"><span>1</span>Запишись <span>2</span>Стороны собраны — «Сбор», жми «Готов» <span>3</span>Бой. Соперника нет 3 мин — можно с ботами (награда ×' + String(pct).replace('.', ',') + ')</div>';
+    else html += '<div class="ev-howto"><span>1</span>Запишись — можно одному, в отряде до ' + Math.max.apply(null, myRoles.map(function(r) { return r.max; }).concat([1])) + ' <span>2</span>Через полминуты или полным составом — «Сбор», жми «Готов» <span>3</span>Бой против волн врага</div>';
     html += '<div class="ev-foot" id="ev-day-foot">' + dayFoot(E, w, q) + '</div>';
     return html + '</article>';
   }
@@ -249,8 +250,11 @@
     html += '<div><div class="ev-lab">Роль</div><div class="ev-chips">' + E.roles.map(function(r) { return '<button type="button" data-dv="role" data-v="' + r.id + '" class="' + (d.role === r.id ? 'on' : '') + '">' + esc(r.name) + ' · ' + (r.side === 'cis' ? 'КНС' : 'Респ.') + '</button>'; }).join('') + '</div></div>';
     html += '<div><div class="ev-lab">Сложность</div><div class="ev-chips">' + CAT.TIERS.map(function(T) { return '<button type="button" data-dv="tier" data-v="' + T.n + '" class="' + (d.tier === T.n ? 'on' : '') + '">' + ['I', 'II', 'III'][T.n - 1] + ' · ' + T.name + '</button>'; }).join('') + '</div></div>';
     html += '<div><div class="ev-lab">Карта</div><div class="ev-chips"><button type="button" data-dv="map" data-v="" class="' + (!d.map ? 'on' : '') + '">случайная</button>' + E.maps.map(function(m) { return '<button type="button" data-dv="map" data-v="' + m + '" class="' + (d.map === m ? 'on' : '') + '">' + esc(S.maps[m] || m) + '</button>'; }).join('') + '</div></div>';
-    var other = E.roles.filter(function(r) { return r.id !== d.role && r.max > 1; })[0];
-    if (other) html += '<div><div class="ev-lab">Ботов в роли «' + esc(other.name) + '»</div><div class="ev-chips">' + [1, 2, 3, 4].filter(function(n) { return n >= other.min && n <= other.max; }).map(function(n) { return '<button type="button" data-dv="bots" data-v="' + n + '" class="' + (d.bots === n ? 'on' : '') + '">' + n + '</button>'; }).join('') + '</div></div>';
+;
+    var other = E.roles.filter(function(r) { return r.id !== d.role && r.max > 1; })[0], own = E.roles.filter(function(r) { return r.id === d.role; })[0];
+    // против бота: сколько всего в отряде — ты и боты-союзники
+    if (E.kind === 'pve' && own && own.max > 1) html += '<div><div class="ev-lab">Отряд в тесте — ты и боты</div><div class="ev-chips">' + [1, 2, 3, 4].filter(function(n) { return n <= own.max; }).map(function(n) { return '<button type="button" data-dv="bots" data-v="' + n + '" class="' + (d.bots === n ? 'on' : '') + '">' + (n === 1 ? 'один' : n + ' в отряде') + '</button>'; }).join('') + '</div></div>';
+    else if (other) html += '<div><div class="ev-lab">Ботов в роли «' + esc(other.name) + '»</div><div class="ev-chips">' + [1, 2, 3, 4].filter(function(n) { return n >= other.min && n <= other.max; }).map(function(n) { return '<button type="button" data-dv="bots" data-v="' + n + '" class="' + (d.bots === n ? 'on' : '') + '">' + n + '</button>'; }).join('') + '</div></div>';
     html += '<div class="ev-foot"><div class="ev-wait">Прошлый тест, если шёл, будет отменён.</div><button type="button" class="ev-go" id="ev-dev-go">Запустить тест</button></div></div>';
     if (!S.devRecent) { rpc('dev_event_recent', { p_limit: 12 }).then(function(r) { S.devRecent = r || []; render(); }, function() { S.devRecent = []; }); }
     else if (S.devRecent.length) html += '<div class="ev-sec"><h2>Последние матчи</h2></div><div class="ev-rows">' + S.devRecent.map(function(m) {

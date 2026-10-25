@@ -30,7 +30,7 @@ body.event.cisside .sp-side { color: #d94a4a; }
 .ev-end.loss .ev-end-mark svg { stroke: #ff8a70; }
 .ev-end.loss .sp-end-card { border-left-color: #d94a4a; }
 .ev-end.win .sp-end-card { border-left-color: #5fd968; }
-.ev-end-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0 0 10px; }
+.ev-end-stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin: 0 0 10px; }
 .ev-end-stats div { padding: 6px 2px; border: 1px solid #1c2530; border-radius: 8px; background: rgba(5,6,10,0.55); }
 .ev-end-stats b { display: block; font-size: 14px; font-weight: normal; color: #e8d9a8; }
 .ev-end-stats span { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }

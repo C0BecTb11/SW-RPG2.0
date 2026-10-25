@@ -4,6 +4,7 @@
 // на пустых ролях, а по итогу пишет его в базу (rt_event_finish: награды, трофеи, титулы).
 // Бойцы ивента в армию не пишутся. Войти могут только игроки матча (в тесте — его автор).
 // RT_DEV: «ev:dev-<ивент>-<уровень>-<карта>-<роль>» — матч без базы, остальные роли — боты.
+// Укрепления сценария (оборона) уходят игроку в hello, как на планете.
 'use strict';
 
 var fs = require('fs');
@@ -49,7 +50,8 @@ function devMatch(id) {
   var E = CAT.BY[m[1]]; if (!E || !E.ready) throw new Error('нет такого ивента');
   var bots = +(m[5] || 2), players = [];
   E.roles.forEach(function(r) {
-    var n = r.id === m[4] ? r.min - 1 : r.max === 1 ? 1 : Math.max(r.min, Math.min(r.max, bots));
+    // своя роль: против бота — число в имени = весь отряд (ты + боты-союзники); иначе только до минимума
+    var n = r.id === m[4] ? (E.kind === 'pve' ? Math.max(r.min - 1, Math.min(r.max, bots) - 1) : r.min - 1) : r.max === 1 ? 1 : Math.max(r.min, Math.min(r.max, bots));
     if (r.id === m[4]) players.push({ user: 'dev', role: r.id, side: r.side, nick: 'dev' });
     for (var i = 1; i <= n; i++) players.push({ user: 'bot:' + r.id + ':' + i, role: r.id, side: r.side, bot: true });
   });
@@ -108,7 +110,7 @@ EventRoom.prototype.admit = function(c) {
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'event', system: this.mapInfo.id, name: this.mapInfo.name, side: c.side, att: B.att, T: Math.round(B.t * 100) / 100, capNeed: 1,
     me: c.who.user === 'dev' && this.cfg.dev ? 'dev' : c.who.user, own: true,
-    map: this.mapPacked, structs: [], districts: [], faction: null, controller: null, zones: [], zoneBox: null, buildings: [], plots: [],
+    map: this.mapPacked, structs: B.structs.map(Net.structRow), districts: [], faction: null, controller: null, zones: [], zoneBox: null, buildings: [], plots: [],
     ev: { match: this.match.id, event: E.id, title: E.title, tier: this.match.tier, role: p.role, roleName: role ? role.name : p.role, test: !!this.match.test,
           place: this.mapInfo.name, about: this.mapInfo.about, goal: E.goal ? E.goal[role ? role.side : 'republic'] : '', minutes: E.minutes[this.match.tier - 1],
           players: this.match.players.map(function(q) { return { role: q.role, nick: q.bot ? 'бот' : q.nick || '', bot: !!q.bot, me: q.user === c.who.user }; }) }
@@ -169,12 +171,12 @@ EventRoom.prototype.forfeit = function(now) {
 EventRoom.prototype.finish = function() {
   var self = this, H = this.H;
   this.finishing = true; this.endAt = Date.now();
-  var res = { winner: H.result.winner, why: H.result.why, t: H.result.t, tasks: H.result.tasks, need: H.result.need, stats: H.result.stats, forfeit: !!H.result.forfeit, present: Object.keys(this.present) };
+  var res = { winner: H.result.winner, why: H.result.why, t: H.result.t, tasks: H.result.tasks, need: H.result.need, hp: H.result.hp, stats: H.result.stats, forfeit: !!H.result.forfeit, present: Object.keys(this.present) };
   this.cfg.log('info', 'ивент окончен', { room: this.name, winner: res.winner, why: res.why, t: res.t, forfeit: res.forfeit });
   // игроку — общий итог без чужих данных, своя награда и свои убийства
   this.endMsg = function(c) {
     var me = c.who && res.stats[c.who.user] || { kills: 0, lost: 0 };
-    return JSON.stringify({ t: 'evend', result: { winner: res.winner, why: res.why, t: res.t, tasks: res.tasks, need: res.need, forfeit: res.forfeit }, me: me, awards: self.awardFor(c), saved: self.saved, test: !!self.match.test });
+    return JSON.stringify({ t: 'evend', result: { winner: res.winner, why: res.why, t: res.t, tasks: res.tasks, need: res.need, hp: res.hp, forfeit: res.forfeit }, me: me, awards: self.awardFor(c), saved: self.saved, test: !!self.match.test });
   };
   var done = function(aw, saved) {
     self.awards = Array.isArray(aw) ? aw : null; self.saved = !!saved;

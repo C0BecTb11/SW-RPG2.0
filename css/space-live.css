@@ -10,7 +10,6 @@ html, body { background-color: #05060a; background-image: url('../assets/ui/gala
 #sp-tr { top: calc(96px + env(safe-area-inset-top, 0px)); left: 12px; right: auto; }   /* под «Галактика» и «Строительство» — иначе звук и графика под кнопкой */   /* справа под кредитами — трекер обучения */
 #sp-clock { display: none; }
 .sl-row .sp-chip em { font-style: normal; color: #55606c; font-size: 9px; margin-left: 4px; }
-/* очередь верфи и переключатель режима стройки — над нижней панелью нового экрана */
+/* очередь верфи — над нижней панелью нового экрана */
 #ship-queue { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
-#build-switcher { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 #sc-tab-cargo .sc-pad-warn { color: #d9a940; border-left: 2px solid rgba(217,169,64,0.6); padding-left: 8px; text-align: left; }

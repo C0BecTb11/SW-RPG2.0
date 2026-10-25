@@ -7,6 +7,7 @@
  * roles: [{ id, side, min, max, name, about }] — роли и сколько игроков на роль.
  * reward: { cr — кредиты уровня I, res — ресурсы уровня I }; уровни II и III — ×TIER.k.
  * titles: титул за победу на уровне III по ролям.
+ * pair: парный ивент другой стороны (PvE): выпал один — у второй стороны в этот день идёт пара.
  */
 (function(root, factory) {
   var api = factory();
@@ -61,7 +62,13 @@
       about: 'Повреждённый флагман: одни прорываются к мостику, другие держат отсеки.', reward: { cr: 650, res: { durasteel: 60 } } }),
 
     // ================================================================ PvE Республика
-    ev({ id: 'r_tessara', kind: 'pve', theater: 'ground', sides: ['republic'], troops: 'own', icon: 'outpost', title: 'Оборона аванпоста «Тессара»', place: 'Тессара', about: 'Волны дроидов на аванпост: 5, 10 или 15 волн.', reward: { cr: 380, res: { durasteel: 40 } } }),
+    ev({ id: 'r_tessara', kind: 'pve', theater: 'ground', sides: ['republic'], troops: 'event', ready: true, icon: 'outpost', pair: 'c_siege',
+      title: 'Оборона аванпоста «Тессара»', place: 'Плато Тессара · Перевал Тессары',
+      about: 'Узел связи на краю фронта. Гарнизон клонов в окопах и бункерах держит волны дроидов: 5, 10 или 15 волн, на поздних — техника. Дроиды у ядра ломают аванпост.',
+      goal: { republic: 'Отбей все волны и не дай дроидам сломать узел связи' },
+      roles: [{ id: 'defender', side: 'republic', min: 1, max: 4, name: 'Гарнизон', about: 'Отряд клонов на укреплениях аванпоста' }],
+      maps: ['tessara', 'tessara_pass'], minutes: [10, 15, 21], reward: { cr: 420, res: { durasteel: 40 } },
+      titles: { defender: 'Щит Тессары' } }),
     ev({ id: 'r_veilkrag', kind: 'pve', theater: 'ground', sides: ['republic'], troops: 'event', icon: 'rescue', title: 'Плен на заводе «Вейл-Краг»', place: 'Вейл-Краг', about: 'Скрытно освободить пленных и вывести их к шаттлу.', reward: { cr: 400, res: { food: 60 } } }),
     ev({ id: 'r_duun', kind: 'pve', theater: 'ground', sides: ['republic'], troops: 'event', icon: 'beast', title: 'Логово в кратере Дуун', place: 'Кратер Дуун', about: 'Зачистить гнёзда хищных тварей.', reward: { cr: 360, res: { food: 50 } } }),
     ev({ id: 'r_meltarr', kind: 'pve', theater: 'ground', sides: ['republic'], troops: 'own', icon: 'factory', title: 'Завод «Мелтарр»', place: 'Мелтарр', about: 'Пробиться и подорвать линию сборки дроидов.', reward: { cr: 460, res: { electronics: 40 } } }),
@@ -84,7 +91,13 @@
     ev({ id: 'c_contract', kind: 'pve', theater: 'ground', sides: ['cis'], troops: 'event', icon: 'bounty', title: 'Контракт на командира', place: 'Застава Корр', about: 'Устранить командира клонов под охраной.', reward: { cr: 460, res: { electronics: 30 } } }),
     ev({ id: 'c_narkess', kind: 'pve', theater: 'ground', sides: ['cis'], troops: 'own', icon: 'city', title: 'Нар-Кесс', place: 'Нар-Кесс', about: 'Подавить восстание в городе.', reward: { cr: 420, res: { food: 60 } } }),
     ev({ id: 'c_aurelis', kind: 'pve', theater: 'ground', sides: ['cis'], troops: 'event', icon: 'lab', title: 'Лаборатория «Аурелис»', place: 'Аурелис', about: 'Похитить данные и вынести их.', reward: { cr: 440, res: { electronics: 40 } } }),
-    ev({ id: 'c_siege', kind: 'pve', theater: 'ground', sides: ['cis'], troops: 'own', icon: 'factory', title: 'Завод под осадой', place: 'Завод Векс', about: 'Удержать дроидный завод против волн десанта.', reward: { cr: 460, res: { durasteel: 40 } } }),
+    ev({ id: 'c_siege', kind: 'pve', theater: 'ground', sides: ['cis'], troops: 'event', ready: true, icon: 'factory', pair: 'r_tessara',
+      title: 'Завод под осадой', place: 'Завод Векс · Шлаковые поля Векса',
+      about: 'Республика высадила десант на дроидный завод Векс. Гарнизон дроидов держит волны клонов: 5, 10 или 15 волн, на поздних — шагоходы. Клоны у реактора ломают завод.',
+      goal: { cis: 'Отбей все волны и не дай клонам захватить реактор' },
+      roles: [{ id: 'defender', side: 'cis', min: 1, max: 4, name: 'Гарнизон', about: 'Отряд дроидов на укреплениях завода' }],
+      maps: ['vex', 'vex_slag'], minutes: [10, 15, 21], reward: { cr: 420, res: { durasteel: 40 } },
+      titles: { defender: 'Стальная стена Векса' } }),
     ev({ id: 'c_grotto', kind: 'pve', theater: 'ground', sides: ['cis'], troops: 'own', icon: 'sith', title: 'Грот Шепчущих', place: 'Грот Шепчущих', about: 'Испытание своего ситха.', reward: { cr: 500, res: { crystals: 20 } } }),
     ev({ id: 'c_kolm', kind: 'pve', theater: 'space', sides: ['cis'], troops: 'own', icon: 'ambush', title: 'Дрейф Кольм', place: 'Дрейф Кольм', about: 'Засада на конвой Республики.', reward: { cr: 480, res: { durasteel: 50 } } }),
     ev({ id: 'c_vigil', kind: 'pve', theater: 'space', sides: ['cis'], troops: 'event', icon: 'relay', title: 'Ретранслятор «Вигил»', place: 'Вигил', about: 'Разрушить узел связи Республики.', reward: { cr: 420, res: { electronics: 40 } } }),

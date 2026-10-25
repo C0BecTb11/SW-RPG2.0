@@ -24,8 +24,8 @@
   "sha": "1bc1bb3b52d9"
  },
  "css/event-live.css": {
-  "v": "2",
-  "sha": "001ee13d73dc"
+  "v": "3",
+  "sha": "084533cb1fce"
  },
  "css/events.css": {
   "v": "2",
@@ -52,8 +52,8 @@
   "sha": "71ffc3156745"
  },
  "css/ground-live.css": {
-  "v": "4",
-  "sha": "aafae6e1d7f2"
+  "v": "5",
+  "sha": "50fab49296c0"
  },
  "css/lease.css": {
   "v": "1",
@@ -80,8 +80,8 @@
   "sha": "5c6e4c806f33"
  },
  "css/shared-ui.css": {
-  "v": "1",
-  "sha": "0abd728e53ca"
+  "v": "2",
+  "sha": "3e9d1be0c074"
  },
  "css/ship-control.css": {
   "v": "1",
@@ -92,8 +92,8 @@
   "sha": "f308cf807177"
  },
  "css/space-live.css": {
-  "v": "4",
-  "sha": "de8cd473ee40"
+  "v": "5",
+  "sha": "43ec444f026b"
  },
  "css/spy-ops.css": {
   "v": "2",
@@ -163,6 +163,10 @@
   "v": "1",
   "sha": "387159e0247f"
  },
+ "js/back-close.js": {
+  "v": "1",
+  "sha": "9e2caf92e80a"
+ },
  "js/banner.js": {
   "v": "1",
   "sha": "cfc0827a6960"
@@ -204,12 +208,12 @@
   "sha": "3cb586aab8c5"
  },
  "js/credits-bar.js": {
-  "v": "7",
-  "sha": "96b6b6106fd8"
+  "v": "8",
+  "sha": "118c0e2ca686"
  },
  "js/dev-panel.js": {
-  "v": "6",
-  "sha": "57332d2c6f9e"
+  "v": "7",
+  "sha": "67a7beda5e18"
  },
  "js/drag-command.js": {
   "v": "1",
@@ -224,8 +228,8 @@
   "sha": "b3e4d717d3d8"
  },
  "js/event-live.js": {
-  "v": "20",
-  "sha": "d0715ced0e53"
+  "v": "21",
+  "sha": "a667496c374e"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -236,8 +240,8 @@
   "sha": "e133cd235b01"
  },
  "js/events.js": {
-  "v": "4",
-  "sha": "3843f6cfa5ad"
+  "v": "5",
+  "sha": "256ed4d029fa"
  },
  "js/faction-control.js": {
   "v": "1",
@@ -408,20 +412,20 @@
   "sha": "1c9ac021d481"
  },
  "shared/rt-events-cat.js": {
-  "v": "1",
-  "sha": "cd764df88707"
+  "v": "2",
+  "sha": "c32d70d5ab51"
  },
  "shared/rt-events.js": {
-  "v": "2",
-  "sha": "57b2c4cfeca6"
+  "v": "3",
+  "sha": "1a8674fbd15e"
  },
  "shared/rt-figures.js": {
   "v": "7",
   "sha": "29de229d9ace"
  },
  "shared/rt-ground-net.js": {
-  "v": "8",
-  "sha": "49ff82187320"
+  "v": "9",
+  "sha": "36c6c0074f63"
  },
  "shared/rt-ground.js": {
   "v": "13",

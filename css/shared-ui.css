@@ -34,49 +34,9 @@ html {
   letter-spacing: 0.5px;
 }
 
-/* Переключатель в режиме строительства: земля / космос / выход на галактику */
-#build-switcher {
-  position: fixed;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  display: flex;
-  gap: 6px;
-  background: rgba(5,6,10,0.85);
-  border: 1px solid rgba(28,37,48,0.9);
-  border-radius: 22px;
-  padding: 5px;
-}
-
-.build-switch-btn {
-  background: none;
-  border: none;
-  color: #8fa8c4;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  padding: 8px 14px;
-  border-radius: 18px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.build-switch-btn.active {
-  background: #d9a940;
-  color: #0a0d14;
-  font-weight: bold;
-}
-
-/* Кнопка входа в режим стройки — на самих картах, а не в карточке планеты */
-/* Раскладка низа в три ряда, иначе элементы наезжают друг на друга
-   на узком экране:
-     ряд 1 (14px)  — переключатель «Земля / Космос», по центру
-     ряд 2 (64px)  — «Строительство» справа, «Высадка» слева
-     ряд 3 (116px) — подсказки режима и полоска погрузки
-   Переключатель широкий и центрированный, поэтому кнопка справа
-   на той же высоте с ним пересекалась. */
-/* Переключатель стройки ушёл наверх, под кнопку «Галактика»: снизу
-   теперь живёт HUD юнита, и кнопка там перекрывала половину панели. */
+/* Кнопка входа в режим стройки — на самих картах, а не в карточке планеты.
+   Стоит наверху, под кнопкой «Галактика»: снизу живёт HUD юнита. Переход
+   «Земля ↔ Космос» — ссылка рядом с «← Галактика» (js/map-layer.js). */
 #build-toggle {
   position: fixed;
   left: 12px;

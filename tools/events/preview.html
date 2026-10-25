@@ -10,6 +10,13 @@ fetch('../../shared/events/maps/'+id+'.json').then(r=>r.json()).then(function(j)
   if (/clean=1/.test(location.search)) { document.title='ok'; return; }
   var ev=j.ev; x.lineWidth=2; x.font='bold 13px Courier New';
   function box(b,col,t){x.strokeStyle=col;x.strokeRect(b[0]*px,b[1]*px,b[2]*px,b[3]*px);if(t){x.fillStyle=col;x.fillText(t,b[0]*px+2,b[1]*px-4);}}
+  if (ev.kind==='defense') {
+    x.strokeStyle='#6fb8ff'; x.beginPath(); x.arc(ev.core[0]*px,ev.core[1]*px,ev.plaza*px,0,7); x.stroke();
+    x.strokeStyle='#f0c86a'; x.beginPath(); x.arc(ev.core[0]*px,ev.core[1]*px,ev.zone*px,0,7); x.stroke(); x.fillStyle='#f0c86a'; x.fillText(ev.core[2],ev.core[0]*px-30,ev.core[1]*px-ev.zone*px-6);
+    ev.spawns.forEach(s=>box([s[0]-4,s[1]-4,8,8],'#ff6e5a',s[2]));
+    ev.forts.forEach(f=>{var w=f[0]==='bunker'?2:1;x.fillStyle=f[0]==='turret'?'#ff9a3c':f[0]==='bunker'?'#8fa8c4':'#c9b27a';x.fillRect(f[1]*px,f[2]*px,w*px,w*px);});
+    document.title='ok'; return;
+  }
   box(ev.base,'#6fb8ff','ЛАГЕРЬ');
   ev.prey.forEach((p,i)=>box([p[0]-2.5,p[1]-2.5,5,5],'#ff6e5a','СТАРТ '+(i+1)));
   ev.sites.forEach(s=>box([s[0]-2.5,s[1]-2.5,5,5],'#f0c86a',s[2]));

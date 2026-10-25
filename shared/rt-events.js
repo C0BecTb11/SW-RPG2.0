@@ -337,7 +337,7 @@
   };
   var KITD = {
     // waveK — поправка силы волн: дроиды хрупче и проще клонов, укрепления выкашивают их быстрее
-    r_tessara: { team: 0, foe: 1, waveK: 1.3, lead: 'rep_officer', basic: 'rep_dc15a', spec: ['rep_heavy', 'rep_heavy', 'rep_sniper', 'rep_launcher'], elite: 'rep_commando', veh: 'rep_atrt',
+    r_tessara: { team: 0, foe: 1, waveK: 1.15, lead: 'rep_officer', basic: 'rep_dc15a', spec: ['rep_heavy', 'rep_heavy', 'rep_sniper', 'rep_launcher'], elite: 'rep_commando', veh: 'rep_atrt',
       enemy: { basic: 'cis_b1', mix: [[0.15, 'cis_b1_launcher', 0.1], [0.2, 'cis_b1_sniper', 0.08], [0.3, 'cis_b2', 0.25], [0.45, 'cis_wheel', 0.12], [0.5, 'cis_stap', 0.1], [0.65, 'cis_bx', 0.12]],
                boss: ['cis_aat'], bossLite: ['cis_stap', 'cis_stap', 'cis_bx'] },
       base: 'аванпост', baseGen: 'аванпоста', foes: 'дроиды', foesGen: 'дроидов', lost: 'Аванпост пал', held: 'Аванпост устоял: флот на подходе', won: 'Все волны дроидов отбиты' },

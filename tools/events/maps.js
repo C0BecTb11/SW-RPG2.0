@@ -426,7 +426,7 @@ module.exports = {
       mats: { 1: ['debris', 'rubble'], 2: ['weeds', 'crater'], 3: ['container', 'barrier', 'crate'], 4: ['rock', 'wreck'] }
     },
     layout: {
-      kind: 'defense', core: [72, 44], plaza: 15, zone: 7, coreKind: 'reactor', coreName: 'Главный реактор', waveK: 0.85,   // в тесных цехах враг подходит вплотную — волны слабее
+      kind: 'defense', core: [72, 44], plaza: 15, zone: 7, coreKind: 'reactor', coreName: 'Главный реактор', waveK: 0.9,   // в тесных цехах враг подходит вплотную — волны слабее
       spawns: [[2, 120, 'Сортировочная'], [68, 134, 'Южные ворота'], [134, 116, 'Доки']]
     },
     build(g, T) {

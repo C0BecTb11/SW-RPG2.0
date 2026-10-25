@@ -124,8 +124,8 @@
   "sha": "7dbe235506f3"
  },
  "ground/ground.js": {
-  "v": "27",
-  "sha": "d82b2ecb6257"
+  "v": "28",
+  "sha": "fd57d9c0a531"
  },
  "ground/preview.css": {
   "v": "1",
@@ -148,8 +148,8 @@
   "sha": "210432ea379d"
  },
  "js/auth.js": {
-  "v": "2",
-  "sha": "085588d489fd"
+  "v": "3",
+  "sha": "e00da9afaf77"
  },
  "js/automove-ground.js": {
   "v": "1",
@@ -164,8 +164,8 @@
   "sha": "387159e0247f"
  },
  "js/back-close.js": {
-  "v": "1",
-  "sha": "ce699960a802"
+  "v": "2",
+  "sha": "34264997ebe2"
  },
  "js/banner.js": {
   "v": "1",
@@ -188,8 +188,8 @@
   "sha": "75ab7764ffe6"
  },
  "js/boarding-orders.js": {
-  "v": "1",
-  "sha": "1f9a36c91083"
+  "v": "2",
+  "sha": "c890a5af8df0"
  },
  "js/boarding-rules.js": {
   "v": "1",
@@ -200,8 +200,8 @@
   "sha": "74f485d9d1b1"
  },
  "js/boarding.js": {
-  "v": "2",
-  "sha": "209ae7da488e"
+  "v": "3",
+  "sha": "a06072c66d8a"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -209,59 +209,59 @@
  },
  "js/credits-bar.js": {
   "v": "8",
-  "sha": "118c0e2ca686"
+  "sha": "65e55230d999"
  },
  "js/dev-panel.js": {
-  "v": "7",
-  "sha": "67a7beda5e18"
+  "v": "8",
+  "sha": "f765387cdf62"
  },
  "js/drag-command.js": {
   "v": "1",
   "sha": "c75b869ab7b7"
  },
  "js/drop-tray.js": {
-  "v": "2",
-  "sha": "fae2692a5783"
+  "v": "3",
+  "sha": "d4b456a3fc84"
  },
  "js/err-report.js": {
-  "v": "4",
-  "sha": "b3e4d717d3d8"
+  "v": "5",
+  "sha": "51de03ba3a5a"
  },
  "js/event-live.js": {
   "v": "21",
-  "sha": "a667496c374e"
+  "sha": "fc703eab7e25"
  },
  "js/events-entry.js": {
   "v": "2",
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "8",
-  "sha": "e133cd235b01"
+  "v": "9",
+  "sha": "24477898d89e"
  },
  "js/events.js": {
-  "v": "5",
-  "sha": "256ed4d029fa"
+  "v": "6",
+  "sha": "921639b866c6"
  },
  "js/faction-control.js": {
-  "v": "1",
-  "sha": "1428b4226c3f"
+  "v": "2",
+  "sha": "14679090f16f"
  },
  "js/faction-panel.js": {
   "v": "5",
   "sha": "1f29cd364514"
  },
  "js/faction-senate.js": {
-  "v": "2",
-  "sha": "8589b2077399"
+  "v": "3",
+  "sha": "640618fe6a6e"
  },
  "js/faction-staff.js": {
-  "v": "3",
-  "sha": "73f2f6e783a3"
+  "v": "4",
+  "sha": "b1849b9e361c"
  },
  "js/faction-treasury.js": {
-  "v": "1",
-  "sha": "944bb3981ec6"
+  "v": "2",
+  "sha": "f68c164c70ce"
  },
  "js/galaxy-events.js": {
   "v": "2",
@@ -280,88 +280,88 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "11",
-  "sha": "3c385cd21810"
+  "v": "12",
+  "sha": "7637306f5750"
  },
  "js/ground-live.js": {
-  "v": "25",
-  "sha": "7b77119422bd"
+  "v": "26",
+  "sha": "016429018361"
  },
  "js/map-layer.js": {
   "v": "2",
   "sha": "40edf2e28ad0"
  },
  "js/mine-scene.js": {
-  "v": "7",
-  "sha": "b1ca83f9f3ab"
+  "v": "8",
+  "sha": "28d2d73b964f"
  },
  "js/mine-site.js": {
-  "v": "9",
-  "sha": "e914b4fc79fc"
+  "v": "10",
+  "sha": "08f9f2c36f5f"
  },
  "js/overwatch.js": {
   "v": "1",
   "sha": "a7b3a4f5ad79"
  },
  "js/planet-info.js": {
-  "v": "2",
-  "sha": "bf5dc9b4e8b9"
+  "v": "3",
+  "sha": "c8b32766cbdb"
  },
  "js/planet-request.js": {
-  "v": "1",
-  "sha": "a26ef5a0d47b"
+  "v": "2",
+  "sha": "572ebc4e7c7d"
  },
  "js/planets.js": {
   "v": "6",
   "sha": "b9b54ae81326"
  },
  "js/processes.js": {
-  "v": "1",
-  "sha": "97dd28152a6c"
+  "v": "2",
+  "sha": "dbfc88a2c210"
  },
  "js/production-lease.js": {
-  "v": "1",
-  "sha": "bcddf75af072"
+  "v": "2",
+  "sha": "36c5f56d9faa"
  },
  "js/profile.js": {
-  "v": "1",
-  "sha": "6781e536d723"
+  "v": "2",
+  "sha": "3645df228c95"
  },
  "js/quest.js": {
-  "v": "6",
-  "sha": "1ff6d8fad9d6"
+  "v": "7",
+  "sha": "6b04e80f15e1"
  },
  "js/reports.js": {
-  "v": "4",
-  "sha": "9de4a45e83c8"
+  "v": "5",
+  "sha": "741ba128f275"
  },
  "js/scene-loader.js": {
   "v": "2",
   "sha": "3ba339716db6"
  },
  "js/ship-cargo.js": {
-  "v": "1",
-  "sha": "8d71ca407bea"
+  "v": "2",
+  "sha": "82d49a9d9668"
  },
  "js/ship-control.js": {
-  "v": "2",
-  "sha": "b9e1bc3a5d69"
+  "v": "3",
+  "sha": "6fc1ad5c83a3"
  },
  "js/space-battle.js": {
-  "v": "4",
-  "sha": "cd8dc1ed5935"
+  "v": "5",
+  "sha": "75e9d093f6ee"
  },
  "js/space-live.js": {
-  "v": "17",
-  "sha": "038312a68b5f"
+  "v": "18",
+  "sha": "d5aa477364b8"
  },
  "js/spy-map.js": {
   "v": "2",
   "sha": "ffeded052e99"
  },
  "js/spy-ops.js": {
-  "v": "2",
-  "sha": "c25e62b45b9d"
+  "v": "3",
+  "sha": "d84b5eb741f7"
  },
  "js/supabase-client.js": {
   "v": "2",
@@ -372,16 +372,16 @@
   "sha": "30106420e278"
  },
  "js/supply.js": {
-  "v": "6",
-  "sha": "a1edfd0d2a8a"
+  "v": "7",
+  "sha": "342472009bbb"
  },
  "js/troop-transfer.js": {
   "v": "1",
   "sha": "08e4a1e7805d"
  },
  "js/unrest.js": {
-  "v": "3",
-  "sha": "d25382b543e2"
+  "v": "4",
+  "sha": "807ab9ced1e0"
  },
  "proto/proto.css": {
   "v": "5",
@@ -500,7 +500,7 @@
   "sha": "eddb39e9609f"
  },
  "space/space.js": {
-  "v": "35",
-  "sha": "2e874905cc22"
+  "v": "36",
+  "sha": "e70347bb88e0"
  }
 }

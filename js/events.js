@@ -14,7 +14,11 @@
   var toastT = 0;
   function toast(msg, kind) { var el = $('ev-toast'); el.textContent = msg; el.className = 'ev-toast show' + (kind ? ' ' + kind : ''); clearTimeout(toastT); toastT = setTimeout(function() { el.className = 'ev-toast'; }, 2800); }
   function rpc(fn, args) { return supabase.rpc(fn, args || {}).then(function(r) { if (r.error) throw new Error(r.error.message); return r.data; }); }
-  function errText(e) { return String(e && e.message || e).replace(/^.*?: /, ''); }
+  function errText(e) {
+    var m = String(e && e.message || e).replace(/^.*?: /, '');
+    // внутренние ошибки базы и сети (англ.) — понятным текстом (gameErr из js/err-report.js)
+    return typeof gameErr === 'function' ? gameErr({ message: m }) : m;
+  }
 
   // ---------------------------------------------------------------- значки ивентов
   var P = {
@@ -271,12 +275,17 @@
       var E = CAT.BY[st.match.event] || { title: '' }, mine = (st.match.players || []).filter(function(p) { return p.user === S.uid; })[0], role = mine && CAT.role(st.match.event, mine.role);
       el.hidden = false; el.className = 'ev-queue found';
       el.innerHTML = '<i class="ev-q-spin"></i><div class="ev-q-tx"><b>Бой найден: ' + esc(E.title) + '</b><em>' + esc(S.maps[st.match.map] || st.match.map) + ' · ' + ['I', 'II', 'III'][st.match.tier - 1] + (role ? ' · ты — <i>' + esc(role.name.toLowerCase()) + '</i>' : '') + (st.match.test ? ' · тест' : st.match.bots ? ' · против ботов' : '') + '</em></div><div class="ev-q-btns"><button type="button" class="ev-go" id="ev-q-go">В бой</button></div>';
-      // сам переводим в бой один раз на матч: вернулся из боя — остаётся кнопка
-      var key = 'ev-go-' + st.match.id, once = false; try { once = !!sessionStorage.getItem(key); sessionStorage.setItem(key, '1'); } catch (e) {}
-      clearTimeout(S.goT); if (!once) S.goT = setTimeout(function() { go(st.match.id); }, 2500);
+      // сам переводим в бой один раз на матч: вернулся из боя — остаётся кнопка. Опрос идёт каждые 2 с —
+      // уже поставленный переход на этот же матч не трогаем (раньше следующий опрос его снимал)
+      if (S.goFor !== st.match.id) {
+        clearTimeout(S.goT); S.goFor = st.match.id;
+        var key = 'ev-go-' + st.match.id, once = false; try { once = !!sessionStorage.getItem(key); sessionStorage.setItem(key, '1'); } catch (e) {}
+        var mid = st.match.id;
+        if (!once) S.goT = setTimeout(function() { go(mid); }, 2500);
+      }
       return;
     }
-    clearTimeout(S.goT);
+    clearTimeout(S.goT); S.goFor = null;
     if (!st.queue) { el.hidden = true; return; }
     var q = st.queue, E2 = CAT.BY[q.event] || { title: q.event, roles: [] }, role2 = CAT.role(q.event, q.role), c = q.counts || {};
     var head = esc(E2.title) + ' · ' + ['I', 'II', 'III'][q.tier - 1] + ' · ' + esc(role2 ? role2.name.toLowerCase() : q.role);

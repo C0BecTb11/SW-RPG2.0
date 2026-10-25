@@ -660,13 +660,14 @@ function stlDevHtml(L) {
   // Напряжение: шкала, прогноз на утро, история (js/unrest.js)
   if (typeof unSettlementHtml === 'function') html += unSettlementHtml(L.unrest);
 
-  // Доход: множитель уровня и рынок — чтобы было понятно, откуда цифра
+  // Доход: итоговый множитель — чтобы было понятно, откуда цифра. income_mult из базы уже
+  // включает рынок (уровень × рынок), поэтому рынок не дописывается сверху второй раз
   var market = (d.districts || []).some(function(x) { return x.id === 'market' && !x.building; });
   html += '<div class="stl-income">' +
     '<div class="stl-income-row"><span>Доход за сутки</span>' +
       '<b>' + d.income + ' кр.</b></div>' +
-    '<div class="stl-income-row sub"><span>Уровень ' + stlMult(d.income_mult) +
-      (market ? ' · рынок ×1,25' : '') + '</span><em>выплачено всего ' + (st.total_paid || 0) + '</em></div>' +
+    '<div class="stl-income-row sub"><span>Множитель ' + stlMult(d.income_mult) +
+      (market ? ' · с рынком' : ' · уровня') + '</span><em>выплачено всего ' + (st.total_paid || 0) + '</em></div>' +
   '</div>';
 
   // Следующая ступень, идущее расширение или предел
@@ -1096,7 +1097,7 @@ function renderSettlementTasks(pane, st, tasks, hasDev) {
       btn.addEventListener('click', function() {
         btn.disabled = true;
         supabase.rpc('settlement_pay_task', { p_task_id: t.id }).then(function(res) {
-          if (res.error) { alert(res.error.message); btn.disabled = false; return; }
+          if (res.error) { alert(gbErr(res.error)); btn.disabled = false; return; }
           loadSettlementPanel();
         });
       });
@@ -1249,7 +1250,7 @@ function stlAction(btn, fn, args) {
     if (res.error) {
       btn.disabled = false;
       btn.classList.remove('busy');
-      alert(res.error.message);
+      alert(gbErr(res.error));
       return;
     }
     stlPicker = null;
@@ -1501,6 +1502,13 @@ var uiBottomInset = 0;
 var gbTimeOffset = 0;
 var gbApCd = 30;
 var gbApMax = 2;
+
+// Текст ошибки для игрока: отказы функций базы — как есть (они по-русски), внутренние ошибки
+// (англ. «violates…», сбой сети) — понятным текстом (gameErr из js/err-report.js)
+function gbErr(e) {
+  if (typeof gameErr === 'function') return gameErr(e);
+  return (e && e.message) || 'Не удалось — попробуй ещё раз';
+}
 
 function gbServerNow() {
   return Date.now() + gbTimeOffset;
@@ -2158,7 +2166,7 @@ function drawDeployZone() {
 }
 
 function drawBuildSlots() {
-  var now = Date.now();
+  var now = gbServerNow();
 
   for (var i = 0; i < buildSlots.length; i++) {
     var slot = buildSlots[i];
@@ -2666,7 +2674,7 @@ function handleTap(clientX, clientY) {
 function onSlotTapped(slotIndex) {
   var existing = buildingsBySlot[slotIndex];
   if (existing) {
-    var ready = !existing.completes_at || new Date(existing.completes_at).getTime() <= Date.now();
+    var ready = !existing.completes_at || new Date(existing.completes_at).getTime() <= gbServerNow();
     var mine = existing.owner_user_id === currentUserId;
 
     var code = (existing.building_types || {}).code;
@@ -2792,7 +2800,7 @@ function openBuildingInfo(building) {
       supabase.rpc('demolish_building', { p_building_id: building.id }).then(function(res) {
         finish();
         if (res.error) {
-          alert('Не удалось снести: ' + res.error.message);
+          alert('Не удалось снести: ' + gbErr(res.error));
           return;
         }
         loadBuildings();
@@ -2911,7 +2919,7 @@ function loadResearchPanel() {
     if (!list) return;
 
     if (res.error) {
-      list.innerHTML = '<div class="rs-empty">Ошибка: ' + res.error.message + '</div>';
+      list.innerHTML = '<div class="rs-empty">Ошибка: ' + gbErr(res.error) + '</div>';
       return;
     }
 
@@ -3114,7 +3122,7 @@ function showResearchInfo(r, tile) {
     supabase.rpc('start_research', {
       p_building_id: researchBuilding.id, p_research_id: r.id
     }).then(function(res) {
-      if (res.error) { alert(res.error.message); go.disabled = false; return; }
+      if (res.error) { alert(gbErr(res.error)); go.disabled = false; return; }
       loadResearchPanel();
       info.innerHTML = '<div class="rs-info-meta ok">Исследование запущено</div>';
     });
@@ -3200,7 +3208,7 @@ function gbPaintBuildingLease(building, seq, captured) {
     return;
   }
 
-  var ready = !building.completes_at || new Date(building.completes_at).getTime() <= Date.now();
+  var ready = !building.completes_at || new Date(building.completes_at).getTime() <= gbServerNow();
   var demolishBtn = document.getElementById('building-info-demolish');
 
   var paint = function(row) {
@@ -3249,7 +3257,7 @@ function gbPaintUnitLease(building) {
 
   var type = building.building_types || {};
   var leasable = typeof plLeasable === 'function' && plLeasable(type.code);
-  var ready = !building.completes_at || new Date(building.completes_at).getTime() <= Date.now();
+  var ready = !building.completes_at || new Date(building.completes_at).getTime() <= gbServerNow();
   var captured = sysFaction && building.faction && building.faction !== sysFaction;
 
   var apply = function(row) {
@@ -3442,7 +3450,7 @@ function constructBuilding(slotIndex, buildingTypeId) {
     constructBusy = false;
     closeBuildPanel();
     if (res.error) {
-      alert('Не удалось построить: ' + res.error.message);
+      alert('Не удалось построить: ' + gbErr(res.error));
       return;
     }
     loadBuildings();
@@ -3583,7 +3591,7 @@ function askDemolishBuilding(building, captured, go) {
   loadPlanetStock(function() {
     // Пока склад грузился, карточку закрыли или открыли другую — молчим
     if (seq !== buildingInfoSeq || !buildingInfoShown()) return;
-    var done = !building.completes_at || new Date(building.completes_at).getTime() <= Date.now();
+    var done = !building.completes_at || new Date(building.completes_at).getTime() <= gbServerNow();
     var drop = done ? Number(full.storage_bonus) || 0 : 0;
     var r = gcRefund(half, full.cost_resources, 1, 2, drop);
     gameConfirm({
@@ -3719,7 +3727,7 @@ function redrawSceneNow() {
 // Пока на карте есть недостроенное здание, обновляем картинку раз в секунду,
 // чтобы шёл обратный отсчёт. Достроилось всё — таймер выключаем.
 function updateRedrawTimer() {
-  var now = Date.now();
+  var now = gbServerNow();
   var hasPending = Object.keys(buildingsBySlot).some(function(k) {
     var b = buildingsBySlot[k];
     return b.completes_at && new Date(b.completes_at).getTime() > now;
@@ -3730,7 +3738,7 @@ function updateRedrawTimer() {
       redrawScene();
       var stillPending = Object.keys(buildingsBySlot).some(function(k) {
         var b = buildingsBySlot[k];
-        return b.completes_at && new Date(b.completes_at).getTime() > Date.now();
+        return b.completes_at && new Date(b.completes_at).getTime() > gbServerNow();
       });
       if (!stillPending) {
         clearInterval(redrawTimer);
@@ -4250,7 +4258,7 @@ function loadRepairList(building, box) {
           p_unit_id: u.unit_id
         }).then(function(r2) {
           btn.disabled = false;
-          if (r2.error) { alert('Не вышло: ' + r2.error.message); return; }
+          if (r2.error) { alert('Не вышло: ' + gbErr(r2.error)); return; }
           renderProductionSlot(building, unitPanelMax);
           loadRepairList(building, box);
           updateDeployCounter();
@@ -4315,7 +4323,7 @@ function loadHeroRoster(building, box) {
           supabase.rpc('rename_hero', { p_hero_id: h.hero_id, p_name: next.trim() })
             .then(function(r2) {
               rename.disabled = false;
-              if (r2.error) { alert('Не вышло: ' + r2.error.message); return; }
+              if (r2.error) { alert('Не вышло: ' + gbErr(r2.error)); return; }
               loadHeroRoster(building, box);
               loadUnits();
             });
@@ -4401,14 +4409,19 @@ function buildUnitCard(unit) {
     body.appendChild(relay);
   }
 
-  // Ресурсы со склада планеты — отдельной строкой перед кнопкой найма
-  var unitRes = consumesText(unit.cost_resources);
-  if (unitRes) {
-    var urc = document.createElement('div');
-    urc.className = 'build-panel-rescost' +
-                    (canAffordResources(unit.cost_resources) ? '' : ' short');
-    urc.textContent = 'Со склада: ' + unitRes;
+  // Ресурсы со склада планеты — отдельной строкой перед кнопкой найма. Сервер (order_unit →
+  // take_build_resources) списывает сырьё за всю партию, поэтому строка и проверка — за выбранное
+  // количество; пересчитывает их updatePrice
+  var urc = null;
+  if (consumesText(unit.cost_resources)) {
+    urc = document.createElement('div');
+    urc.className = 'build-panel-rescost';
     body.appendChild(urc);
+  }
+  function resFor(n) {
+    var out = {}, c = unit.cost_resources || {};
+    for (var rk in c) if (Object.prototype.hasOwnProperty.call(c, rk)) out[rk] = c[rk] * n;
+    return out;
   }
 
   var footer = document.createElement('div');
@@ -4527,6 +4540,11 @@ function buildUnitCard(unit) {
 
   function updatePrice() {
     var n = parseInt(val.textContent, 10);
+    if (urc) {
+      var need = resFor(n);
+      urc.className = 'build-panel-rescost' + (canAffordResources(need) ? '' : ' short');
+      urc.textContent = 'Со склада: ' + consumesText(need);
+    }
     if (order.getAttribute('data-gate') !== 'bad') {
       order.textContent = 'Нанять · ' + ((unit.cost + upgradeCost()) * n);
     }
@@ -4571,7 +4589,7 @@ function buildUnitCard(unit) {
       if (unitPanelBuilding !== bld || !document.body.contains(card)) return;
       // Старая база без проверки — ведём себя как раньше: поле сразу
       if (r.error && stlRpcMissing(r.error)) { applyHeroGate(null); if (done) done(null); return; }
-      var reason = r.error ? ('Не удалось проверить: ' + r.error.message) : (r.data || null);
+      var reason = r.error ? ('Не удалось проверить: ' + gbErr(r.error)) : (r.data || null);
       applyHeroGate(reason);
       if (done) done(reason);
     });
@@ -4664,7 +4682,7 @@ function loadUnitOrders() {
       bar.style.display = 'flex';
       var due = false;
       res.data.forEach(function(o) {
-        var left = Math.max(0, Math.ceil((new Date(o.completes_at).getTime() - Date.now()) / 1000));
+        var left = Math.max(0, Math.ceil((new Date(o.completes_at).getTime() - gbServerNow()) / 1000));
         // Просим выдать один раз на заказ: если он застрял, ждёт тика
         if (left <= 0 && !claimedOrderKeys['o|' + o.id]) {
           claimedOrderKeys['o|' + o.id] = true;
@@ -5158,7 +5176,7 @@ function showPickup(unit, ships, carriers, inside, boardable, ap, liftCarriers) 
   // Временно наш: показываем, сколько осталось до возврата хозяину
   if (unit.control_until) {
     var left = Math.max(0, Math.round(
-      (new Date(unit.control_until).getTime() - Date.now()) / 1000));
+      (new Date(unit.control_until).getTime() - gbServerNow()) / 1000));
     role = 'Подчинён · ' + formatLeft(left);
   }
 
@@ -5537,7 +5555,7 @@ function guRenderAbilities(panel, unit, type, ap, ships, carriers, inside, board
         btn.disabled = true;
         supabase.rpc('lift_fighter', { p_unit_id: unit.id, p_carrier_id: c.carrier_id })
           .then(function(r) {
-            if (r.error) { alert('Не удалось поднять: ' + r.error.message); btn.disabled = false; return; }
+            if (r.error) { alert('Не удалось поднять: ' + gbErr(r.error)); btn.disabled = false; return; }
             selectedUnit = null; hidePickup(); loadUnits(); loadDropCargo();
           });
       });
@@ -5550,7 +5568,7 @@ function guRenderAbilities(panel, unit, type, ap, ships, carriers, inside, board
       btn.disabled = true;
       supabase.rpc('board_carrier', { p_unit_id: b.unit_id, p_carrier_id: unit.id })
         .then(function(r) {
-          if (r.error) { alert('Не удалось посадить: ' + r.error.message); btn.disabled = false; return; }
+          if (r.error) { alert('Не удалось посадить: ' + gbErr(r.error)); btn.disabled = false; return; }
           loadUnits(); offerPickup(unit);
         });
     });
@@ -5566,7 +5584,7 @@ function guRenderAbilities(panel, unit, type, ap, ships, carriers, inside, board
       btn.disabled = true;
       supabase.rpc('board_carrier', { p_unit_id: unit.id, p_carrier_id: c.carrier_id })
         .then(function(r) {
-          if (r.error) { alert('Не удалось посадить: ' + r.error.message); btn.disabled = false; return; }
+          if (r.error) { alert('Не удалось посадить: ' + gbErr(r.error)); btn.disabled = false; return; }
           selectedUnit = null; hidePickup(); loadUnits();
         });
     });
@@ -5578,7 +5596,7 @@ function guRenderAbilities(panel, unit, type, ap, ships, carriers, inside, board
       btn.disabled = true;
       var rpc = type.is_vehicle ? 'load_vehicle_to_ship' : 'load_unit_from_ground';
       supabase.rpc(rpc, { p_unit_id: unit.id, p_ship_id: sh.ship_id }).then(function(r) {
-        if (r.error) { alert('Не удалось: ' + r.error.message); btn.disabled = false; return; }
+        if (r.error) { alert('Не удалось: ' + gbErr(r.error)); btn.disabled = false; return; }
         selectedUnit = null; hidePickup(); loadUnits(); loadDropCargo();
       });
     });
@@ -5600,7 +5618,7 @@ function guScoutDestinations(info, unit) {
     if (res.error) {
       var err = document.createElement('div');
       err.className = 'gu-abil-meta warn';
-      err.textContent = res.error.message;
+      err.textContent = gbErr(res.error);
       info.appendChild(err);
       return;
     }
@@ -5626,7 +5644,7 @@ function guScoutDestinations(info, unit) {
         supabase.rpc('start_scout_move', {
           p_unit_id: unit.id, p_target_system: d.system_id
         }).then(function(r) {
-          if (r.error) { alert(r.error.message); b.disabled = false; return; }
+          if (r.error) { alert(gbErr(r.error)); b.disabled = false; return; }
           alert('Разведчик в пути: ' + r.data + ' с');
           selectedUnit = null;
           hidePickup();
@@ -5720,7 +5738,7 @@ function handleArtilleryTap(cellX, cellY) {
     supabase.rpc('artillery_strike', {
       p_unit_id: gun.id, p_x: areaPreview.cx, p_y: areaPreview.cy
     }).then(function(r) {
-      if (r.error) { go.disabled = false; alert(r.error.message); return; }
+      if (r.error) { go.disabled = false; alert(gbErr(r.error)); return; }
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportArea('Залп артиллерии', gun, res);
       cancelTargeting();
@@ -5793,7 +5811,7 @@ function showAreaConfirm(a) {
       p_unit_id: u.id, p_research_id: a.research_id,
       p_x: areaPreview.x, p_y: areaPreview.y
     }).then(function(r) {
-      if (r.error) { alert(r.error.message); return; }
+      if (r.error) { alert(gbErr(r.error)); return; }
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportArea(a.name, u, res);
       cancelTargeting();
@@ -5899,7 +5917,7 @@ function handleUpgradeAbilityTap(cellX, cellY) {
   var lungeFrom = a.kind === 'ability_lunge' ? { x: unit.x, y: unit.y } : null;
   cbLastOwnAction = Date.now();
   supabase.rpc('use_unit_ability', args).then(function(r) {
-    if (r.error) { alert(r.error.message); return; }
+    if (r.error) { alert(gbErr(r.error)); return; }
     var res = (r.data && r.data.length) ? r.data[0] : null;
     if (lungeFrom) gbLungeFx(lungeFrom, unitBox(unit), mainPick);
     // Две цели: убитым может оказаться любая, поэтому итог — общей сводкой
@@ -5939,7 +5957,7 @@ function startTwinSecond(unit, a, first) {
         p_unit_id: unit.id, p_research_id: a.research_id,
         p_target_id: first.target_id
       }).then(function(r) {
-        if (r.error) { alert(r.error.message); return; }
+        if (r.error) { alert(gbErr(r.error)); return; }
         var res = (r.data && r.data.length) ? r.data[0] : null;
         if (res) cbReportAbility(a.name, unit, first, res, firstBefore);
         cancelTargeting();
@@ -6066,7 +6084,7 @@ function handleTargetTap(cellX, cellY) {
     supabase.rpc('attack_unit', {
       p_attacker_id: shooter.id, p_target_id: pick.target_id
     }).then(function(r) {
-      if (r.error) { alert(r.error.message); return; }
+      if (r.error) { alert(gbErr(r.error)); return; }
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportShot(shooter, pick, res);
       cancelTargeting();
@@ -6083,7 +6101,7 @@ function handleTargetTap(cellX, cellY) {
     p_unit_id: helper.id, p_ability_id: helpDef.ability_id,
     p_target_id: pick.target_id
   }).then(function(r) {
-    if (r.error) { alert(r.error.message); return; }
+    if (r.error) { alert(gbErr(r.error)); return; }
     cbLastOwnAction = Date.now();
     var tu = cbTargetUnit(pick);
     var gain = Number(r.data) || 0;
@@ -6150,7 +6168,7 @@ function handleDisembarkTap(cellX, cellY) {
   supabase.rpc('disembark_carrier', {
     p_unit_id: disembarking.passenger.unit_id, p_x: cellX, p_y: cellY
   }).then(function(r) {
-    if (r.error) { alert('Не удалось высадить: ' + r.error.message); return; }
+    if (r.error) { alert('Не удалось высадить: ' + gbErr(r.error)); return; }
     cancelDisembark();
     loadUnits();
   });
@@ -6236,7 +6254,7 @@ function handleGroundMoveTap(cellX, cellY) {
   supabase.rpc('move_ground_unit', {
     p_unit_id: movingUnit.id, p_x: cellX, p_y: cellY
   }).then(function(r) {
-    if (r.error) { alert('Не получилось: ' + r.error.message); return; }
+    if (r.error) { alert('Не получилось: ' + gbErr(r.error)); return; }
     cancelGroundMove();
     selectedUnit = null;
     loadUnits();
@@ -6620,7 +6638,7 @@ function gbDragCommit(d, it) {
         var now = guLiveUnit(u);
         if (now.x === it.ax && now.y === it.ay) { now.x = fromX; now.y = fromY; }
         redrawScene();
-        fail(r.error.message);
+        fail(gbErr(r.error));
         return;
       }
       done(); after(); loadUnits();
@@ -6637,7 +6655,7 @@ function gbDragCommit(d, it) {
     var pick = it.pick;
     cbLastOwnAction = Date.now();
     supabase.rpc('attack_unit', { p_attacker_id: u.id, p_target_id: pick.target_id }).then(function(r) {
-      if (r.error) { fail(r.error.message); return; }
+      if (r.error) { fail(gbErr(r.error)); return; }
       done();
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportShot(u, pick, res);
@@ -6650,7 +6668,7 @@ function gbDragCommit(d, it) {
     var sp = it.spick;
     cbLastOwnAction = Date.now();
     supabase.rpc('attack_structure', { p_attacker_id: u.id, p_structure_id: sp.structure_id }).then(function(r) {
-      if (r.error) { fail(r.error.message); return; }
+      if (r.error) { fail(gbErr(r.error)); return; }
       done();
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportStructShot(u, sp, res);
@@ -6993,7 +7011,7 @@ function handleFighterLandingTap(cellX, cellY) {
     p_fighter_id: f.fighter_id, p_x: cellX, p_y: cellY
   }).then(function(r) {
     landingBusy = false;
-    if (r.error) { alert('Не удалось посадить: ' + r.error.message); return; }
+    if (r.error) { alert('Не удалось посадить: ' + gbErr(r.error)); return; }
     cancelDrop();
     loadUnits();
     loadDropCargo();
@@ -7027,7 +7045,7 @@ function handleVehicleDropTap(cellX, cellY) {
   supabase.rpc('unload_vehicle_at', {
     p_unit_id: droppingVehicle.unit_id, p_x: cellX, p_y: cellY
   }).then(function(r) {
-    if (r.error) { alert('Не удалось высадить: ' + r.error.message); return; }
+    if (r.error) { alert('Не удалось высадить: ' + gbErr(r.error)); return; }
     cancelDrop();
     loadUnits();
     loadDropCargo();
@@ -7077,19 +7095,26 @@ function drawDropCells() {
 
   var occupied = buildOccupancy();
 
-  // Посадка истребителя на своей планете идёт в зоны высадки: красим
-  // их свободные клетки тем же зелёным, что и при найме
-  if (landingFighter && !iAmAttacker) {
+  // На своей планете высадка (пехота, техника, посадка истребителя) идёт в зоны
+  // высадки: красим их свободные клетки тем же зелёным, что и при найме.
+  // Полоса вторжения хозяину не подсвечивается нигде, в том числе из лотка
+  if (!iAmAttacker) {
+    // клетка зелёная, если её накрывает хоть одно свободное место под эту машину (у пехоты — сама клетка)
+    var lit = {};
     deployZones.forEach(function(zone) {
       var size = zone.size || DEPLOY_SIZE;
-      for (var dx = 0; dx < size; dx++) {
-        for (var dy = 0; dy < size; dy++) {
+      for (var dx = 0; dx + vw <= size; dx++) {
+        for (var dy = 0; dy + vh <= size; dy++) {
           var zx = zone.x + dx, zy = zone.y + dy;
-          if (!isBoxFree(occupied, zx, zy, 1, 1)) continue;
-          ctx.fillStyle = 'rgba(95,217,104,0.25)';
-          ctx.fillRect(zx * CELL_PX + 3, zy * CELL_PX + 3, CELL_PX - 6, CELL_PX - 6);
+          if (!isBoxFree(occupied, zx, zy, vw, vh)) continue;
+          for (var ix = 0; ix < vw; ix++) for (var iy = 0; iy < vh; iy++) lit[(zx + ix) + ',' + (zy + iy)] = 1;
         }
       }
+    });
+    ctx.fillStyle = 'rgba(95,217,104,0.25)';
+    Object.keys(lit).forEach(function(k) {
+      var p = k.split(','), lx = +p[0], ly = +p[1];
+      ctx.fillRect(lx * CELL_PX + 3, ly * CELL_PX + 3, CELL_PX - 6, CELL_PX - 6);
     });
     return;
   }
@@ -7126,7 +7151,7 @@ function handleDropTap(cellX, cellY) {
     p_y: cellY
   }).then(function(res) {
     if (res.error) {
-      alert('Не удалось высадить: ' + res.error.message);
+      alert('Не удалось высадить: ' + gbErr(res.error));
       return;
     }
 
@@ -7211,7 +7236,7 @@ function handlePlacementTap(cellX, cellY) {
       p_target_y: cellY
     }).then(function(res) {
       if (res.error) {
-        alert('Не удалось нанять: ' + res.error.message);
+        alert('Не удалось нанять: ' + gbErr(res.error));
         return;
       }
       loadUnitOrders();
@@ -7228,7 +7253,7 @@ function handlePlacementTap(cellX, cellY) {
     p_upgrades: order.upgrades || []
   }).then(function(res) {
     if (res.error) {
-      alert('Не удалось нанять: ' + res.error.message);
+      alert('Не удалось нанять: ' + gbErr(res.error));
       return;
     }
     loadUnitOrders();
@@ -7274,7 +7299,7 @@ function openHeroTree(unit) {
   var title = document.getElementById('tree-title');
   var info = document.getElementById('tree-info');
 
-  title.textContent = 'Развитие · ' + escHtml(unit.hero_name || 'одарённый');
+  title.textContent = 'Развитие · ' + (unit.hero_name || 'одарённый');   // textContent — без экранирования
   info.innerHTML = '<div class="tree-hint">Загрузка...</div>';
   panel.style.display = 'flex';
 
@@ -7438,7 +7463,7 @@ function selectTreeNode(id) {
       p_ability_id: n.ability_id
     }).then(function(r) {
       go.disabled = false;
-      if (r.error) { alert('Не вышло: ' + r.error.message); return; }
+      if (r.error) { alert('Не вышло: ' + gbErr(r.error)); return; }
       closeHeroTree();
       selectedUnit = null;
       hidePickup();
@@ -7550,7 +7575,7 @@ function startHeroAbility(unit, a) {
     supabase.rpc('use_hero_ability', {
       p_unit_id: unit.id, p_ability_id: a.ability_id
     }).then(function(r) {
-      if (r.error) { alert(r.error.message); return; }
+      if (r.error) { alert(gbErr(r.error)); return; }
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportArea(a.name, unit, res);
       cancelTargeting();
@@ -7626,7 +7651,7 @@ function handleHeroAbilityTap(cellX, cellY) {
       p_unit_id: unit.id, p_ability_id: a.ability_id,
       p_x: cellX, p_y: cellY
     }).then(function(r) {
-      if (r.error) { alert(r.error.message); return; }
+      if (r.error) { alert(gbErr(r.error)); return; }
       var res = (r.data && r.data.length) ? r.data[0] : null;
       if (res) cbReportArea(a.name, unit, res);
       cancelTargeting();
@@ -7658,7 +7683,7 @@ function handleHeroAbilityTap(cellX, cellY) {
     p_ability_id: a.ability_id,
     p_target_id: pick.target_id
   }).then(function(r) {
-    if (r.error) { alert(r.error.message); return; }
+    if (r.error) { alert(gbErr(r.error)); return; }
 
     var res = (r.data && r.data.length) ? r.data[0] : null;
     if (res && a.target_mode === 'ally') {
@@ -8110,7 +8135,7 @@ function showInterceptChoice(building, transit, box, btn) {
             p_target_commander: transit.commander_id
           }).then(function(r2) {
             send.disabled = false;
-            if (r2.error) { alert(r2.error.message); return; }
+            if (r2.error) { alert(gbErr(r2.error)); return; }
             alert('Флот вышел на перехват. Встреча в пустоте на пути ' +
                   transit.from_name + ' — ' + transit.to_name + '.');
             wrap.remove();
@@ -8214,7 +8239,7 @@ function renderEconomyPanel(body, st, capParts) {
     var stat = ECONOMY_STATUS[st.status] || ECONOMY_STATUS.working;
     var next = '';
     if (st.next_at && (st.status === 'working')) {
-      var left = Math.max(0, Math.round((new Date(st.next_at).getTime() - Date.now()) / 1000));
+      var left = Math.max(0, Math.round((new Date(st.next_at).getTime() - gbServerNow()) / 1000));
       next = left > 0 ? ' · следующая выдача через ' + formatLeft(left) : ' · выдача вот-вот';
     }
 
@@ -8909,7 +8934,7 @@ function sendStructurePlacement() {
   }).then(function(r) {
     if (r.error) {
       if (go) go.disabled = false;
-      alert('Не удалось построить: ' + r.error.message);
+      alert('Не удалось построить: ' + gbErr(r.error));
       return;
     }
     cancelStructurePlacement();
@@ -8997,7 +9022,7 @@ function openStructurePanel(s, keepView) {
       var go = function() {
         btn.disabled = true;
         supabase.rpc('demolish_structure', { p_id: s.id }).then(function(res) {
-          if (res.error) { btn.disabled = false; alert(res.error.message); return; }
+          if (res.error) { btn.disabled = false; alert(gbErr(res.error)); return; }
           selectedStructure = null;
           hidePickup();
           loadStructures();
@@ -9120,7 +9145,7 @@ function attackStructureTarget(pick) {
   supabase.rpc('attack_structure', {
     p_attacker_id: shooter.id, p_structure_id: pick.structure_id
   }).then(function(r) {
-    if (r.error) { alert(r.error.message); return; }
+    if (r.error) { alert(gbErr(r.error)); return; }
     var res = (r.data && r.data.length) ? r.data[0] : null;
     if (res) cbReportStructShot(shooter, pick, res);
     cancelTargeting();

@@ -89,7 +89,8 @@
         if (window.errReport) errReport({ name: 'Сервер боёв', message: String(m.msg || 'ошибка без текста').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '‹id›') }, 'rt.server');
         return;
       }
-      if (m.t === 'reset') { toast(m.msg || 'Планета изменилась', 'gold'); G.B = null; return; }
+      // сброс боя: прежний бой и всё, что ссылалось на его бойцов (выбор, прицел способности), — забыть
+      if (m.t === 'reset') { toast(m.msg || 'Планета изменилась', 'gold'); G.B = null; G.usel = []; G.arm = null; G.autoSel = false; return; }
       if (m.t === 'note') { toast(m.msg, m.kind || 'gold'); return; }
       if (m.t === 'ev' || m.t === 'evend') { if (window.GD_ON_EV) window.GD_ON_EV(m); return; }     // ивент: худ и итог (js/event-live.js)
       if (G.B && G.B.onText) G.B.onText(m);
@@ -915,9 +916,10 @@
   // ---------------------------------------------------------------- худ
   // Чей боец под приказами: своя сторона, а в живой игре — ещё и свой (не союзника, не ополчение).
   // Сервер приказы чужим бойцам всё равно отбрасывает (rt-ground-net, Viewer.ids) — так их и не выбрать.
-  function mine(a) { var B = G.B; return !!a && a.alive && B.ctl(a) === G.side && (!G.own || (!a.npc && a.owner === G.me)); }
-  function ally(a) { return !!a && a.alive && G.B.ctl(a) === G.side && !mine(a); }
-  function selected() { var B = G.B; return G.usel.map(function(id) { return B.agents[id]; }).filter(mine); }
+  // бой ещё не пришёл или сброшен (G.B === null) — ни своих, ни выбранных
+  function mine(a) { var B = G.B; return !!B && !!a && a.alive && B.ctl(a) === G.side && (!G.own || (!a.npc && a.owner === G.me)); }
+  function ally(a) { return !!G.B && !!a && a.alive && G.B.ctl(a) === G.side && !mine(a); }
+  function selected() { var B = G.B; if (!B) return []; return G.usel.map(function(id) { return B.agents[id]; }).filter(mine); }
   function hud() {
     var B = G.B; if (!B) return;
     var cp = B.cap, el = $('gd-cap'), mineAtt = G.side === B.att;
@@ -1045,11 +1047,13 @@
   var PTR = {}, GES = null, pressT = 0;
   function agentAt(px, py) {
     var B = G.B, w = toW(px, py), best = -1, bd = 1e9;
+    if (!B) return -1;
     for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; var r = vrad(a) + 0.25, dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < r * r && d < bd) { bd = d; best = i; } }
     return best;
   }
   function tap(px, py) {
     var B = G.B, w = toW(px, py), cx = Math.floor(w[0]), cy = Math.floor(w[1]);
+    if (!B) return;                                           // бой сброшен, новый ещё не пришёл
     if (G.mini && px >= G.mini[0] && px <= G.mini[0] + G.mini[2] && py >= G.mini[1] && py <= G.mini[1] + G.mini[2]) { CAM.x = (px - G.mini[0]) / G.mini[2] * N; CAM.y = (py - G.mini[1]) / G.mini[2] * N; return; }
     var hit = agentAt(px, py), a = hit >= 0 ? B.agents[hit] : null, sel = selected();
     // страница игры: режимы высадки и размещения, участки, площадь — её касание первым
@@ -1081,6 +1085,7 @@
   function boxSelect(b) {
     var B = G.B, x0 = Math.min(b[0], b[2]), y0 = Math.min(b[1], b[3]), x1 = Math.max(b[0], b[2]), y1 = Math.max(b[1], b[3]);
     G.usel = [];
+    if (!B) return;
     for (var i = 0; i < B.agents.length && G.usel.length < 160; i++) { var a = B.agents[i]; if (!mine(a)) continue; var p = toS(a.x, a.y); if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) G.usel.push(i); }
     hud();
   }
@@ -1113,7 +1118,7 @@
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('wheel', function(e) { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
     $('sp-view').onclick = fitAll;
-    $('gd-all').onclick = function() { var B = G.B; if (G.usel.length) G.usel = []; else B.agents.forEach(function(a) { if (mine(a)) G.usel.push(a.id); }); hud(); };
+    $('gd-all').onclick = function() { var B = G.B; if (!B) return; if (G.usel.length) G.usel = []; else B.agents.forEach(function(a) { if (mine(a)) G.usel.push(a.id); }); hud(); };
     $('sp-pause').onclick = function() { setSpeed(G.speed === 0 ? (G.lastSpd || 1) : 0); };
     $('sp-spd').onclick = function() { var c = G.speed || G.lastSpd || 1; setSpeed(c === 1 ? 2 : c === 2 ? 4 : 1); };
     $('sp-gfx-b').onclick = function() { GFX.open(G.fps); };
@@ -1122,6 +1127,7 @@
       var t = e.target.closest('[data-tab],[data-ba],[data-as],[data-sq],[data-type],[data-ab],[data-abx],#sp-sheet-x'); if (!t) return;
       e.preventDefault();
       var B = G.B;
+      if (!B) return;
       if (t.id === 'sp-sheet-x') { G.sheet = ''; hud(); return; }
       if (t.hasAttribute('data-abx')) { G.arm = null; hud(); return; }
       if (t.hasAttribute('data-tab')) { var k = t.getAttribute('data-tab'); G.sheet = G.sheet === k ? '' : k; hud(); return; }
@@ -1184,7 +1190,7 @@
   });
 
   resize(); bind(); requestAnimationFrame(frame);
-  G.CAM = CAM; G.TW = TW; G.focusOn = function(id) { var a = G.B.agents[id]; if (a) { CAM.x = a.x; CAM.y = a.y; } };
+  G.CAM = CAM; G.TW = TW; G.focusOn = function(id) { var a = G.B && G.B.agents[id]; if (a) { CAM.x = a.x; CAM.y = a.y; } };
   G.toast = toast; G.hud = hud; G.toW = toW; G.toS = toS; G.selected = selected; G.select = function(ids) { G.usel = ids.slice(); hud(); };
   window.GD = G;
 })();

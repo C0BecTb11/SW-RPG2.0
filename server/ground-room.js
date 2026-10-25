@@ -26,9 +26,12 @@ function mapJson(id) {
 function teamOf(faction) { return faction === 'republic' ? 0 : faction === 'cis' ? 1 : 2; }
 function hasMap(id) { try { return fs.existsSync(path.join(__dirname, '..', 'shared', 'planets', id + '.json')); } catch (e) { return false; } }
 
-// Пассивные умения героя из выученных способностей (hero_learned → ABIL таблица движка)
+// Пассивные умения героя из выученных способностей (hero_learned → ABIL таблица движка).
+// Здоровье, урон, обзор, меткость и уклонение база уже кладёт в bonus_* бойца (hero_apply_passives) —
+// они приходят в u.bonus и учитываются там; здесь — только то, чего в bonus нет (отражение, поглощение),
+// иначе пассивка считалась бы дважды (и герой уходил бы из боя с запасом сверх предела)
 function passiveOf(abil) {
-  var out = {}, map = { deflect_light: 'deflect', atk_light: 'acc', atk_dark: 'damage', hp_light: 'hp', hp_dark: 'hp', evasion_light: 'evasion', evasion_dark: 'evasion', vision_light: 'vision', vision_dark: 'vision', absorb_dark: 'absorb' };
+  var out = {}, map = { deflect_light: 'deflect', absorb_dark: 'absorb' };
   (abil || []).forEach(function(id) { var A = GR.ABIL[id]; if (A && !A[0] && map[id]) out[map[id]] = (out[map[id]] || 0) + A[4]; });
   return out;
 }

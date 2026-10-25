@@ -430,7 +430,54 @@ body {
   inset: 0;
 }
 
-.planet-icon { display: block; }
+/* Планета: обёртка ровно по диску, центр — точка системы (туда сходятся гиперлинии).
+   Подпись и ореол — вне потока. Цвет хозяина приходит классом f-<фракция>. */
+.planet-wrapper {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  --pf: 143, 168, 196;
+}
+.planet-wrapper.f-republic { --pf: 74, 144, 217; }
+.planet-wrapper.f-cis      { --pf: 217, 74, 74; }
+
+/* Палец промахивается по маленькому диску — зона касания шире */
+.planet-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.planet-icon { display: block; position: relative; }
+
+/* Атмосферное свечение в цвет хозяина */
+.planet-halo {
+  position: absolute;
+  inset: -85%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle closest-side,
+    rgba(var(--pf), 0.42) 0%, rgba(var(--pf), 0.16) 38%, rgba(var(--pf), 0.05) 62%, rgba(var(--pf), 0) 100%);
+  transition: background 0.8s ease;
+}
+
+/* Подпись держит свой размер на экране при любом зуме (--gx-k ставит js/galaxy-fx.js).
+   Касание подписи открывает планету, как раньше (щелчок всплывает к обёртке). */
+.planet-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-top: 3px;
+  transform: translateX(-50%) scale(var(--gx-k, 1));
+  transform-origin: 50% 0;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  text-shadow: 0 0 4px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95);
+  transition: color 0.6s ease;
+}
 
 /* ===== Карточка планеты ===== */
 #planet-info-overlay {

@@ -95,8 +95,13 @@ function verify(token) {
     // фракция — из профиля (RLS отдаёт игроку его собственную строку)
     return fetch(CFG.sbUrl + '/rest/v1/profiles?select=faction,nickname&id=eq.' + encodeURIComponent(u.id), {
       headers: { apikey: CFG.sbKey, Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(8000)
-    }).then(function(r) { return r.ok ? r.json() : []; }).catch(function() { return []; }).then(function(rows) {
-      var p = rows && rows[0] || {};
+    }).then(function(r) {
+      // профиль не прочитан (сбой сети, база) — не входить: иначе игрок КНС попал бы в бой стороной Республики
+      if (!r.ok) throw new Error('профиль не прочитан (' + r.status + ')');
+      return r.json();
+    }).then(function(rows) {
+      if (!Array.isArray(rows)) throw new Error('профиль не прочитан');
+      var p = rows[0] || {};
       var who = { user: u.id, side: p.faction === 'cis' ? 1 : 0, nick: String(p.nickname || '').slice(0, 40), until: Date.now() + 5 * 60e3 };
       TOKENS.set(token, who);
       if (TOKENS.size > 500) TOKENS.delete(TOKENS.keys().next().value);

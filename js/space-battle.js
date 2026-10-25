@@ -177,7 +177,7 @@ function spPaintStationPanel(lease) {
 
   if (stationRecord) {
     var building = stationRecord.completes_at
-      && new Date(stationRecord.completes_at).getTime() > Date.now();
+      && new Date(stationRecord.completes_at).getTime() > sbNow();
     var captured = sysFaction && stationRecord.faction
       && stationRecord.faction !== sysFaction;
 
@@ -188,7 +188,7 @@ function spPaintStationPanel(lease) {
     // планеты верфь осталась бы у прежнего хозяина.
     if (building) {
       var left = Math.max(0, Math.ceil(
-        (new Date(stationRecord.completes_at).getTime() - Date.now()) / 1000));
+        (new Date(stationRecord.completes_at).getTime() - sbNow()) / 1000));
       textEl.textContent = 'Станция строится: осталось ' + left + ' с';
     } else if (captured) {
       textEl.textContent = 'Трофейная станция — работать не будет, только снос';
@@ -1066,16 +1066,23 @@ function renderShips() {
   if (typeof bdsRender === 'function') bdsRender();
 }
 
+// Время сервера (сдвиг считает ship-control.js): отметки базы сравниваются с ним, а не с часами телефона
+function sbNow() { return typeof scServerNow === 'function' ? scServerNow() : Date.now(); }
+
 function openShipInfo(ship, type) {
   var panel = document.getElementById('ship-info');
   document.getElementById('ship-info-name').textContent = ship.name ? '«' + ship.name + '» · ' + type.name : type.name;
   fillShipCommanders(ship);
+  // как ship_stats в базе: тип + бонусы исследований; трофей до ремонта — урон и ход вдвое
+  var bn = function(k) { return Number(ship[k]) || 0; };
+  var dmg = (type.damage || 0) + bn('bonus_damage'), mv = (type.move_range || 0) + bn('bonus_move');
+  if (ship.trophy) { dmg = Math.max(1, Math.ceil(dmg / 2)); mv = Math.max(1, Math.floor(mv / 2)); }
   document.getElementById('ship-info-stats').innerHTML =
-    '<div><span>Прочность</span><b>' + ship.hp + ' / ' + type.max_hp + '</b></div>' +
-    '<div><span>Урон</span><b>' + type.damage + '</b></div>' +
-    '<div><span>Обзор</span><b>' + type.vision_range + ' кл.</b></div>' +
-    '<div><span>Ход</span><b>' + type.move_range + ' кл.</b></div>' +
-    '<div><span>Трюм</span><b>' + type.capacity + ' слотов</b></div>' +
+    '<div><span>Прочность</span><b>' + ship.hp + ' / ' + ((type.max_hp || 0) + bn('bonus_hp')) + '</b></div>' +
+    '<div><span>Урон</span><b>' + dmg + '</b></div>' +
+    '<div><span>Обзор</span><b>' + ((type.vision_range || 0) + bn('bonus_vision')) + ' кл.</b></div>' +
+    '<div><span>Ход</span><b>' + mv + ' кл.</b></div>' +
+    '<div><span>Трюм</span><b>' + ((type.capacity || 0) + bn('bonus_capacity')) + ' слотов</b></div>' +
     '<div><span>Размер</span><b>' + type.width_cells + '×' + type.height_cells + '</b></div>';
   panel.style.display = 'flex';
 }
@@ -1389,7 +1396,7 @@ function makeDockCard(s, box) {
   var stype = shipTypeById[s.ship_type] || null;
   var foreign = !!(row && stype && stype.faction && stype.faction !== row.faction);
   if (trophy) {
-    var left = row.jump_lock_until ? new Date(row.jump_lock_until).getTime() - Date.now() : 0;
+    var left = row.jump_lock_until ? new Date(row.jump_lock_until).getTime() - sbNow() : 0;
     var tn = document.createElement('div');
     tn.className = 'dock-trophy';
     tn.innerHTML = '<b>Трофей</b><span>Щиты выключены, ход и урон вдвое ниже' +
@@ -1618,7 +1625,7 @@ function spPaintShipyardLease(list) {
 
   var fac = (stationRecord && stationRecord.faction) || sysFaction;
   var ok = stationRecord && !(stationRecord.completes_at &&
-    new Date(stationRecord.completes_at).getTime() > Date.now()) &&
+    new Date(stationRecord.completes_at).getTime() > sbNow()) &&
     !(sysFaction && stationRecord.faction && stationRecord.faction !== sysFaction);
 
   var paint = function(row) {
@@ -1731,8 +1738,14 @@ function makeShipCard(type) {
   var pick = { fighter: 0, bomber: 0 };
   var chosen = {};
   var slots = type.hangar_slots || 0;
-  var priceEl;
+  var priceEl, upSub = null, hangHead = null;
   var rows = {};
+  // «Расширенный ангар» из дополнений поднимает предел: кнопки — до самого большого возможного числа мест,
+  // лишние гаснут, пока дополнение не выбрано
+  var hangarMax = slots;
+  shipyardUpgrades.forEach(function(r) {
+    if ((r.applies_to || []).indexOf(type.id) !== -1 && r.effect_kind === 'hangar') hangarMax += r.effect_value || 0;
+  });
 
   var btn = document.createElement('button');
   btn.className = 'ship-order-btn';
@@ -1773,10 +1786,13 @@ function makeShipCard(type) {
       if (chosen[k].effect_kind === 'hangar') bonusSlots += chosen[k].effect_value;
     }
     slots = (type.hangar_slots || 0) + bonusSlots;
+    // сняли «Расширенный ангар» — выбранные машины не должны остаться сверх мест
+    while (pick.fighter + pick.bomber > slots) { if (pick.bomber > 0) pick.bomber--; else pick.fighter--; }
 
-    var usub = document.getElementById('ship-up-sub');
-    if (usub) {
-      usub.textContent = upgradeCount() === 0
+    if (hangHead) hangHead.textContent = 'Ангар · мест ' + slots;
+    // строка своей карточки (раньше искалась по общему id и уходила в карточку другого корабля)
+    if (upSub) {
+      upSub.textContent = upgradeCount() === 0
         ? 'Дополнения не выбраны'
         : 'Выбрано ' + upgradeCount() + ' · +' + upgradeCost() +
           ' кредитов и +' + (upgradeCount() * 10) + ' с к сроку';
@@ -1817,7 +1833,7 @@ function makeShipCard(type) {
     row.className = 'ship-addon-row';
     rows[kind] = row;
 
-    for (var i = 0; i <= slots; i++) {
+    for (var i = 0; i <= hangarMax; i++) {
       (function(n) {
         var b = document.createElement('button');
         b.className = 'ship-addon-btn' + (n === 0 ? ' active' : '');
@@ -1836,14 +1852,14 @@ function makeShipCard(type) {
 
   var addon;
 
-  if (slots > 0) {
+  if (hangarMax > 0) {
     addon = document.createElement('div');
     addon.className = 'ship-addon';
 
-    var head = document.createElement('div');
-    head.className = 'ship-addon-head';
-    head.textContent = 'Ангар · мест ' + slots;
-    addon.appendChild(head);
+    hangHead = document.createElement('div');
+    hangHead.className = 'ship-addon-head';
+    hangHead.textContent = 'Ангар · мест ' + slots;
+    addon.appendChild(hangHead);
 
     makeRow('fighter', 'Истребители', hangarTypes.fighter);
     makeRow('bomber', 'Бомбардировщики', hangarTypes.bomber);
@@ -1897,10 +1913,9 @@ function makeShipCard(type) {
 
     up.appendChild(upGrid);
 
-    var usub = document.createElement('div');
-    usub.className = 'ship-addon-sub';
-    usub.id = 'ship-up-sub';
-    up.appendChild(usub);
+    upSub = document.createElement('div');
+    upSub.className = 'ship-addon-sub';
+    up.appendChild(upSub);
 
     body.appendChild(up);
   }
@@ -1939,7 +1954,7 @@ function loadShipOrders() {
       bar.innerHTML = '';
       bar.style.display = 'flex';
       res.data.forEach(function(o) {
-        var left = Math.max(0, Math.ceil((new Date(o.completes_at).getTime() - Date.now()) / 1000));
+        var left = Math.max(0, Math.ceil((new Date(o.completes_at).getTime() - sbNow()) / 1000));
         var chip = document.createElement('div');
         chip.className = 'order-chip';
         chip.textContent = (o.ship_types ? o.ship_types.name : o.ship_type) + ' · ' + left + 'с';

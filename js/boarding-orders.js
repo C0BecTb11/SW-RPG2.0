@@ -18,7 +18,15 @@ var bdFocusAfter = null;  // боец, к которому вести камер
 // Вызов сервера, который никогда не «повисает»: обрыв связи — та же ошибка
 function bdRpc(name, args) {
   if (bdDrill()) return bddRpc(name, args);
-  return supabase.rpc(name, args).then(null, function() {
+  return supabase.rpc(name, args).then(function(res) {
+    // ошибка приходит ответом, а не исключением: служебный английский текст базы или сети — по-русски
+    if (res && res.error) {
+      var m = typeof gameErr === 'function' ? gameErr(res.error) : res.error.message;
+      if (!/[а-яё]/i.test(m || '')) m = 'Нет связи с сервером — повтори';
+      res = { data: null, error: { message: m, code: res.error.code } };
+    }
+    return res;
+  }, function() {
     return { data: null, error: { message: 'Нет связи с сервером' } };
   });
 }

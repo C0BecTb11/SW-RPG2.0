@@ -409,6 +409,7 @@ function sxOverwatchShots(prev, next) {
 // Щиты и ангар вынесены отдельно: держать их на виду постоянно значит
 // закрывать карту, на которую надо тыкать при ходе и атаке.
 var scTab = 'actions';
+var scTabKey = '';   // корабль:вкладка, чьё содержимое уже нарисовано (трюм и ангар грузятся при показе)
 
 function scRenderTabs() {
   var box = document.getElementById('sc-tabs');
@@ -438,15 +439,20 @@ function scRenderTabs() {
     b.addEventListener('click', function() {
       scTab = t.id;
       if (t.id !== 'actions') scSetMode(null);
+      scTabKey = '';                 // нажатие — всегда свежий трюм и ангар
       scRenderTabs();
-      scApplyTab();
-      if (t.id === 'hangar') scRenderHangar();
-      if (t.id === 'cargo') scRenderCargo();
     });
     box.appendChild(b);
   });
 
   scApplyTab();
+  // трюм и ангар грузятся при показе: в 2.0 панель сразу открывается на них — без этого вкладка была пустой
+  var key = scShip ? scShip.id + ':' + scTab : '';
+  if (key !== scTabKey) {
+    scTabKey = key;
+    if (scTab === 'cargo') scRenderCargo();
+    else if (scTab === 'hangar') scRenderHangar();
+  }
 }
 
 function scApplyTab() {
@@ -1410,6 +1416,7 @@ function scResetSections() {
   // Каждый корабль открывается на действиях: иначе остаётся вкладка
   // от предыдущего, а у него мог быть ангар, которого здесь нет
   scTab = 'actions';
+  scTabKey = '';
   scHangarMode = null;
   scHangarPick = null;
   scTargets = [];

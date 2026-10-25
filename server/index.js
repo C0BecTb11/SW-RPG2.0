@@ -385,8 +385,26 @@ function hello() {
   if (CFG.dev || !CFG.key) { log('warn', 'режим без базы: ' + (CFG.dev ? 'RT_DEV' : 'нет RT_SERVER_KEY')); return; }
   rpc('rt_server_hello', { p_key: CFG.key, p_url: CFG.publicUrl, p_version: VERSION,
                            p_info: { node: process.version, cpus: os.cpus().length, memMb: Math.round(os.totalmem() / 1048576) } })
-    .then(function(active) { log('info', 'сервер на связи с базой', { url: CFG.publicUrl, version: VERSION, activeBattles: (active || []).length }); })
+    .then(function(active) { log('info', 'сервер на связи с базой', { url: CFG.publicUrl, version: VERSION, activeBattles: (active || []).length }); setTimeout(seedMasks, 15000); })
     .catch(function(e) { log('error', 'rt_server_hello не прошёл', { err: e.message }); setTimeout(hello, 30000); });
+}
+// Планетам без маски проходимости — базовая (без города): её иначе пишет только первое открытие планеты в 2.0,
+// а до того высадка и стройка старой игры не видели воду и скалы. Городскую маску не трогает (rt_ground_map_base).
+function seedMasks() {
+  var fs = require('fs'), M;
+  try { M = require('../tools/planets/masks.js'); } catch (e) { log('warn', 'маски: нет генератора', { err: e.message }); return; }
+  rpc('rt_ground_map_missing', { p_key: CFG.key }).then(function(ids) {
+    var list = (Array.isArray(ids) ? ids : []).filter(function(id) { return /^[a-z0-9_]{1,40}$/.test(id) && fs.existsSync(path.join(__dirname, '..', 'shared', 'planets', id + '.json')); });
+    if (!list.length) return;
+    var done = 0;
+    return list.reduce(function(p, id) {
+      return p.then(function() {
+        var mk = M.masks(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'shared', 'planets', id + '.json'), 'utf8')));
+        mk.w = require('../shared/rt-planets.js').N || 144; mk.h = mk.w;
+        return rpc('rt_ground_map_base', { p_key: CFG.key, p_system: id, p_masks: mk }).then(function(ok) { if (ok) done++; });
+      }).catch(function(e) { log('warn', 'маска планеты не записана', { system: id, err: e.message }); });
+    }, Promise.resolve()).then(function() { log('info', 'базовые маски планет записаны', { planets: done, of: list.length }); });
+  }).catch(function(e) { log('warn', 'маски: список не получен', { err: e.message }); });
 }
 
 // что стоит перед сервером: версия Caddy и включён ли только HTTP/1.1 (для разбора обрывов связи)

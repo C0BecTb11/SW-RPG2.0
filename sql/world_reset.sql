@@ -4,7 +4,8 @@
 -- Что делает:
 --   1. Закрывает бои 2.0 и снимает блокировки.
 --   2. Стирает всё, что нажито: войска, героев, корабли, постройки, укрепления, станции,
---      склады, очереди верфи и исследований, караваны, рынок, автоходы, абордажи, журнал.
+--      склады, очереди верфи и исследований, караваны, рынок, автоходы, абордажи, журнал;
+--      напряжение и мятежи, законы, казну, эффекты, донесения, галактические события, тайные операции, участки.
 --   3. Планеты — по сиду (sql/systems_seed.sql): фракции систем как в начале, поселения уровня 1,
 --      без владельцев.
 --   4. Игроки остаются (аккаунт, ник, фракция, лидеры фракций): кредиты 1000, персонаж и первый
@@ -72,6 +73,27 @@ delete from settlement_tasks;
 delete from system_capture;
 delete from planet_maps;
 delete from game_events;
+-- механики после первой версии сброса (аудит 25.10.2026): напряжение и мятежи, законы и казна, эффекты,
+-- донесения, галактические события, тайные операции, участки и цеха, приказы орбиты 2.0
+delete from settlement_riots;
+delete from settlement_unrest_log;
+delete from settlement_unrest;
+delete from settlement_notices;
+delete from faction_votes;      -- голоса ссылаются на законопроекты: сначала голоса
+delete from faction_bills;
+delete from faction_effects;
+delete from active_effects;
+delete from treasury_log;
+update faction_treasury set credits = 0, updated_at = now();
+delete from player_reports;
+delete from galaxy_events;
+delete from spy_ops;
+delete from spy_groups;
+delete from mine_hurt;
+delete from mine_shifts;
+delete from mine_sites;
+delete from mine_raids;
+delete from rt_space_orders;
 update planet_stock set amount = 0;
 update settlement_state
    set level = 1, satisfaction = 0, dev_points = 0, upgrade_until = null, upgrade_to = null, fed = null, food_short = 0,

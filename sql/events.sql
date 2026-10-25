@@ -1,3 +1,6 @@
+-- ⚠ НЕ ПРИМЕНЯТЬ ПОВТОРНО ЦЕЛИКОМ (аудит 25.10.2026). Файл устарел относительно базы: его прогон откатит
+--   event_status, event_list, event_join, event_leave, event_match_try, event_expire, rt_event_finish — потеряются окно 18–23, сбор и награда раз в день (sql/events_schedule.sql) и пары PvE (sql/events_defense.sql).
+--   Нужна функция отсюда — бери её текущую версию из базы (pg_get_functiondef), а не из этого файла.
 -- Ивенты: каталог, очередь и подбор, матчи, награды, трофеи, титулы, рейтинг, тест из DEV.
 -- Каталог повторяет shared/rt-events-cat.js (награды, роли, титулы; сверка — tools/events/check.js).
 -- Оборона (r_tessara, c_siege) и пары PvE-ивентов — sql/events_defense.sql.

@@ -8,46 +8,6 @@ html, body {
   background: #000;
 }
 
-#space-back-btn {
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 1000;
-  background: rgba(5,6,10,0.75);
-  border: 1px solid rgba(28,37,48,0.9);
-  color: #cfd8dc;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  padding: 8px 14px;
-  border-radius: 20px;
-  cursor: pointer;
-}
-
-#space-viewport {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  touch-action: none;
-  background-color: #05060a;
-  background-image: url('../assets/ui/galaxy-bg-tile.png');
-  background-repeat: repeat;
-}
-
-/* Сама сетка — один большой div с линиями через repeating-linear-gradient.
-   130x130 клеток по 40px = поле 5200x5200px. Так не нужно создавать
-   10000 отдельных DOM-элементов/клеток — просто два градиента на слой. */
-#space-grid {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 5200px;
-  height: 5200px;
-  transform-origin: 0 0;
-  background-image:
-    repeating-linear-gradient(to right, rgba(120,170,220,0.12) 0, rgba(120,170,220,0.12) 1px, transparent 1px, transparent 40px),
-    repeating-linear-gradient(to bottom, rgba(120,170,220,0.12) 0, rgba(120,170,220,0.12) 1px, transparent 1px, transparent 40px);
-}
-
 /* Панель космической станции */
 #station-panel {
   position: fixed;
@@ -134,7 +94,6 @@ html, body {
 }
 
 /* ===== Верфь и корабли ===== */
-.ship-sprite { pointer-events: auto; }
 
 #shipyard-panel {
   position: fixed;
@@ -636,18 +595,6 @@ html, body {
   font-style: normal;
   font-size: 9px;
   color: #3c4652;
-}
-
-/* В пустоте нет планеты внизу — убираем её свечение из фона сетки */
-body.deep-space #space-grid { background-image: none; }
-
-/* Туман войны: маска клетка-в-точку, растянутая на поле. Сглаживание
-   браузера даёт мягкую границу обзора. Касания проходят насквозь. */
-#space-fog {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
 }
 
 /* ===== Верфь: занятый стапель и сырьё со склада ===== */

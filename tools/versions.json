@@ -7,14 +7,6 @@
   "v": "1",
   "sha": "f6ee9bb55d2f"
  },
- "css/boarding-space.css": {
-  "v": "1",
-  "sha": "c85d113074c9"
- },
- "css/boarding.css": {
-  "v": "1",
-  "sha": "7f5cd6b7f476"
- },
  "css/dev-panel.css": {
   "v": "3",
   "sha": "6809dc8c4ba5"
@@ -85,15 +77,15 @@
  },
  "css/ship-control.css": {
   "v": "1",
-  "sha": "c0d2b9362327"
+  "sha": "ca0db4a573f8"
  },
  "css/space-battle.css": {
   "v": "1",
-  "sha": "f308cf807177"
+  "sha": "521358044fe2"
  },
  "css/space-live.css": {
   "v": "5",
-  "sha": "43ec444f026b"
+  "sha": "e1f04e78981e"
  },
  "css/spy-ops.css": {
   "v": "2",
@@ -159,10 +151,6 @@
   "v": "1",
   "sha": "063e65957261"
  },
- "js/automove-space.js": {
-  "v": "1",
-  "sha": "387159e0247f"
- },
  "js/back-close.js": {
   "v": "2",
   "sha": "34264997ebe2"
@@ -170,38 +158,6 @@
  "js/banner.js": {
   "v": "1",
   "sha": "cfc0827a6960"
- },
- "js/boarding-deck.js": {
-  "v": "1",
-  "sha": "3c6e924fc1de"
- },
- "js/boarding-drill.js": {
-  "v": "1",
-  "sha": "388507b2bade"
- },
- "js/boarding-fx.js": {
-  "v": "1",
-  "sha": "d76d0b78278b"
- },
- "js/boarding-goals.js": {
-  "v": "1",
-  "sha": "75ab7764ffe6"
- },
- "js/boarding-orders.js": {
-  "v": "2",
-  "sha": "c890a5af8df0"
- },
- "js/boarding-rules.js": {
-  "v": "1",
-  "sha": "35890285892d"
- },
- "js/boarding-space.js": {
-  "v": "1",
-  "sha": "74f485d9d1b1"
- },
- "js/boarding.js": {
-  "v": "3",
-  "sha": "a64f88dac4e4"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -237,7 +193,7 @@
  },
  "js/events-feed.js": {
   "v": "9",
-  "sha": "24477898d89e"
+  "sha": "6351f2cca47c"
  },
  "js/events.js": {
   "v": "6",
@@ -329,7 +285,7 @@
  },
  "js/quest.js": {
   "v": "7",
-  "sha": "6b04e80f15e1"
+  "sha": "07a93ab3eac0"
  },
  "js/reports.js": {
   "v": "5",
@@ -345,11 +301,11 @@
  },
  "js/ship-control.js": {
   "v": "4",
-  "sha": "4fa7a9cd9f59"
+  "sha": "9896b2d34967"
  },
  "js/space-battle.js": {
   "v": "5",
-  "sha": "75e9d093f6ee"
+  "sha": "139225ce80bf"
  },
  "js/space-live.js": {
   "v": "20",

@@ -1,19 +1,10 @@
-// Космическое пространство конкретной планеты (system=id в URL).
-// Сейчас поле полностью пустое — задел под будущее размещение кораблей
-// и космическую оборону. Realtime-канал подписывается уже сейчас,
-// чтобы инфраструктура была готова, когда появится сама механика
-// (таблица space_units и т.п. добавится вместе с той механикой).
+// Орбита конкретной планеты (system=id в URL): данные страницы — станция,
+// верфь и док, список кораблей, сторона прыжка. Карту, ход и бой рисует
+// космос 2.0 (js/space-live.js и space/*), он же читает отсюда глобальные
+// shipsInSystem, shipTypeById, stationRecord, spaceMyFaction.
 
 var systemId = null;
 var buildMode = false;   // пустой слот станции показываем только в режиме стройки
-var scale = 1;
-var panX = 0;
-var panY = 0;
-
-var viewport, grid;
-
-var CELL_PX = 40;
-var GRID_CELLS = 150;   // карта выросла: станции стояли впритык к полосам прыжка      // размер космической карты в клетках (было 100)
 var STATION_SIZE = 8;      // слот станции, размер приходит из БД
 
 // Арт станции по фракции. Своей таблицы типов у станций нет — вариант
@@ -29,26 +20,6 @@ var stationRecord = null;  // запись из space_stations, если ста�
 var currentUserId = null;
 var isController = false;  // может ли текущий игрок строить в этой системе
 
-// Тот же принцип, что и на наземной карте: позиция слота выводится из id
-// системы, поэтому у каждой планеты она своя, но всегда одна и та же.
-function hashStringToSeed(str) {
-  var h = 0;
-  for (var i = 0; i < str.length; i++) {
-    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
-  }
-  return h >>> 0;
-}
-
-function mulberry32(seed) {
-  var a = seed;
-  return function() {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    var t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 // Позиция слота станции приходит из БД: там же её проверяет сервер,
 // когда расставляет построенные корабли вокруг станции.
 function loadStationSlot() {
@@ -62,77 +33,6 @@ function loadStationSlot() {
       stationSlot = (res.error || !res.data) ? null : res.data;
       if (stationSlot && stationSlot.size) STATION_SIZE = stationSlot.size;
     });
-}
-
-// Слот станции рисуется отдельным элементом поверх сетки —
-// пунктирный, если пусто, сплошной с иконкой, если станция построена.
-function renderStationSlot() {
-  if (window.SL) return;                        // космос 2.0: станцию рисует бой
-  var existing = document.getElementById('station-slot');
-  if (existing) existing.parentNode.removeChild(existing);
-  if (!stationSlot) return;
-  // Вне режима стройки пустой слот не рисуем — видна только готовая станция.
-  if (!stationRecord && !buildMode) return;
-
-  var el = document.createElement('div');
-  el.id = 'station-slot';
-  el.style.position = 'absolute';
-  el.style.left = (stationSlot.x * CELL_PX) + 'px';
-  el.style.top = (stationSlot.y * CELL_PX) + 'px';
-  el.style.width = (STATION_SIZE * CELL_PX) + 'px';
-  el.style.height = (STATION_SIZE * CELL_PX) + 'px';
-  el.style.display = 'flex';
-  el.style.alignItems = 'center';
-  el.style.justifyContent = 'center';
-  el.style.cursor = 'pointer';
-  el.style.fontFamily = "'Courier New', monospace";
-  el.style.boxSizing = 'border-box';
-
-  if (stationRecord) {
-    var art = STATION_IMAGES[stationRecord.faction];
-    if (art) {
-      // Станция — постройка, а не корабль: разворачивать её не нужно,
-      // рендер уже сверху. Вписываем в квадрат слота по ширине.
-      var im = document.createElement('img');
-      im.src = '../' + art;
-      im.alt = '';
-      im.style.width = '100%';
-      im.style.height = '100%';
-      im.style.objectFit = 'contain';
-      im.style.pointerEvents = 'none';
-      im.style.filter = 'drop-shadow(0 0 ' + (CELL_PX * 0.4) + 'px rgba(0,0,0,0.8))';
-      // Если файл не подхватился, откатываемся на прежний значок
-      im.addEventListener('error', function() {
-        if (im.parentNode) im.parentNode.removeChild(im);
-        el.style.border = '2px solid #d9a940';
-        el.style.color = '#d9a940';
-        el.style.fontSize = (STATION_SIZE * CELL_PX * 0.35) + 'px';
-        el.textContent = '⬢';
-      });
-      el.appendChild(im);
-    } else {
-      el.style.background = 'rgba(217,169,64,0.25)';
-      el.style.border = '2px solid #d9a940';
-      el.style.color = '#d9a940';
-      el.style.fontSize = (STATION_SIZE * CELL_PX * 0.35) + 'px';
-      el.textContent = '⬢';
-    }
-  } else {
-    el.style.background = 'rgba(120,170,220,0.12)';
-    el.style.border = '2px dashed rgba(120,170,220,0.6)';
-    el.style.color = 'rgba(120,170,220,0.8)';
-    el.style.fontSize = (STATION_SIZE * CELL_PX * 0.14) + 'px';
-    el.textContent = 'СЛОТ СТАНЦИИ';
-  }
-
-  el.addEventListener('click', function(e) {
-    e.stopPropagation();
-    // В режиме автохода слот — просто точка на карте
-    if (typeof amFieldEvent === 'function' && amFieldEvent(e)) return;
-    onStationSlotTapped();
-  });
-
-  grid.appendChild(el);
 }
 
 // ===== Аренда верфи =====
@@ -166,7 +66,6 @@ function onStationSlotTapped() {
 }
 
 function spPaintStationPanel(lease) {
-  if (typeof sxCloseIntel === 'function') sxCloseIntel();
   var panel = document.getElementById('station-panel');
   var titleEl = document.getElementById('station-panel-title');
   var textEl = document.getElementById('station-panel-text');
@@ -361,14 +260,12 @@ function loadStation() {
   supabase.from('space_stations').select('*').eq('system_id', systemId).maybeSingle().then(function(res) {
     stationRecord = (!res.error && res.data) ? res.data : null;
     stationLoaded = true;
-    renderStationSlot();
     if (window.sceneLoader) sceneLoader.mark('station');
   });
 }
 
-// Полоса гиперпространства. Своя видна целиком, чужой на карте просто
-// нет — её и не должно быть видно, за это же отвечает RLS в базе.
-var ZONE_HEIGHT = 14;
+// Сторона прыжка (сверху — хозяин системы, снизу — пришедший): по ней
+// курс новичка показывает полосу прыжка (js/quest.js)
 var myZoneSide = null;
 var sysFaction = null;   // фракция планеты: по ней видно, трофейна ли станция
 var spaceMyFaction = null; // своя фракция: союзные корабли отличаем от вражеских
@@ -379,8 +276,7 @@ function loadHyperspaceZone() {
 
     return Promise.all([
       supabase.from('profiles').select('faction').eq('id', res.data.session.user.id).maybeSingle(),
-      supabase.from('systems').select('faction, is_deep_space, name').eq('id', systemId).maybeSingle(),
-      supabase.from('game_settings').select('key, value')
+      supabase.from('systems').select('faction, is_deep_space, name').eq('id', systemId).maybeSingle()
     ]).then(function(r) {
       var myFaction = (r[0].data && r[0].data.faction) || null;
       spaceMyFaction = myFaction;
@@ -397,10 +293,6 @@ function loadHyperspaceZone() {
       var layer = document.getElementById('sp-layer');
       if (layer && r[1].data) layer.classList.remove('wait');
 
-      (r[2].data || []).forEach(function(row) {
-        if (row.key === 'hyperspace_zone_height') ZONE_HEIGHT = parseInt(row.value, 10) || 14;
-      });
-
       if (!myFaction) return;
 
       // Та же логика, что в hyperspace_side на сервере: хозяин системы
@@ -411,109 +303,8 @@ function loadHyperspaceZone() {
       } else {
         myZoneSide = (sysFaction === myFaction) ? 'top' : 'bottom';
       }
-
-      renderHyperspaceZone();
-      loadOrbitalDropZones();
     });
   });
-}
-
-// Площадки сброса десанта. Показываем только нападающему — обороняющийся
-// не должен видеть, что там стоит, иначе он просто караулил бы обе.
-function loadOrbitalDropZones() {
-  // В пустоте сбрасывать нечего и некуда: поверхности нет
-  if (isDeepSpace) return;
-
-  // Рисуем площадки обеим сторонам: их расположение фиксировано и секретом
-  // не является, а переброска десанта теперь идёт через них у всех.
-  // Скрытым остаётся содержимое — за это отвечает can_see_space в базе,
-  // и обороняющийся по-прежнему не увидит, чьи корабли там стоят.
-  if (!myZoneSide) return;
-
-  supabase.rpc('orbital_drop_zones').then(function(res) {
-    if (res.error || !res.data) return;
-
-    res.data.forEach(function(z) {
-      var el = document.createElement('div');
-      el.className = 'orbital-drop-zone';
-      el.style.left = (z.x * CELL_PX) + 'px';
-      el.style.top = (z.y * CELL_PX) + 'px';
-      el.style.width = (z.size * CELL_PX) + 'px';
-      el.style.height = (z.size * CELL_PX) + 'px';
-
-      var label = document.createElement('span');
-      label.textContent = 'СБРОС ' + z.idx;
-      el.appendChild(label);
-
-      grid.insertBefore(el, grid.firstChild);
-    });
-  });
-}
-
-// ===== Туман войны =====
-// Что видят свои корабли (get_my_vision — те же правила, что фильтр чужих
-// кораблей в базе). Маска клетка-в-точку растягивается на всё поле:
-// браузер сам сглаживает край, а сама картинка — 150×150, почти бесплатно.
-var spFogEl = null;
-var SP_FOG_COLOR = 'rgba(2,3,8,0.74)';
-
-function loadSpaceVision() {
-  if (!systemId || buildMode || !grid) return;
-  supabase.rpc('get_my_vision', { p_system_id: systemId, p_layer: 'space' }).then(function(res) {
-    if (res.error || !res.data) return;
-    renderSpaceFog(res.data);
-  });
-}
-
-function renderSpaceFog(rects) {
-  if (window.SL) return;
-  if (!spFogEl) {
-    spFogEl = document.createElement('canvas');
-    spFogEl.id = 'space-fog';
-    spFogEl.width = GRID_CELLS;
-    spFogEl.height = GRID_CELLS;
-    spFogEl.style.width = (GRID_CELLS * CELL_PX) + 'px';
-    spFogEl.style.height = (GRID_CELLS * CELL_PX) + 'px';
-  }
-  // Под всем остальным: корабли, станция и полосы рисуются поверх
-  if (grid.firstChild !== spFogEl) grid.insertBefore(spFogEl, grid.firstChild);
-  var g = spFogEl.getContext('2d');
-  g.clearRect(0, 0, GRID_CELLS, GRID_CELLS);
-  g.fillStyle = SP_FOG_COLOR;
-  g.fillRect(0, 0, GRID_CELLS, GRID_CELLS);
-  rects.forEach(function(r) {
-    if (r.kind === 'see') g.clearRect(r.x0, r.y0, r.x1 - r.x0 + 1, r.y1 - r.y0 + 1);
-  });
-  rects.forEach(function(r) {
-    if (r.kind === 'hide') {
-      g.clearRect(r.x0, r.y0, r.x1 - r.x0 + 1, r.y1 - r.y0 + 1);
-      g.fillRect(r.x0, r.y0, r.x1 - r.x0 + 1, r.y1 - r.y0 + 1);
-    }
-  });
-}
-
-function renderHyperspaceZone() {
-  if (window.SL) return;
-  var old = grid.querySelector('.hyperspace-zone');
-  if (old) old.parentNode.removeChild(old);
-  if (!myZoneSide) return;
-
-  var band = document.createElement('div');
-  band.className = 'hyperspace-zone ' + myZoneSide;
-  band.style.left = '0px';
-  band.style.width = (GRID_CELLS * CELL_PX) + 'px';
-  band.style.height = (ZONE_HEIGHT * CELL_PX) + 'px';
-  band.style.top = (myZoneSide === 'top'
-    ? 0
-    : (GRID_CELLS - ZONE_HEIGHT) * CELL_PX) + 'px';
-
-  var label = document.createElement('span');
-  label.className = 'hyperspace-zone-label';
-  label.textContent = 'Зона гиперпространства';
-  band.appendChild(label);
-
-  // Полоса должна лежать под кораблями, иначе перехватит тапы по ним
-  grid.insertBefore(band, grid.firstChild);
 }
 
 function checkStationRights() {
@@ -536,255 +327,13 @@ function isBuildMode() {
   return params.get('mode') === 'build';
 }
 
-function applyTransform() {
-  grid.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')';
-  if (typeof sxSyncScale === 'function') sxSyncScale();
-  if (typeof amOnTransform === 'function') amOnTransform();
-}
-
-// Не даёт утащить поле за пределы экрана: если поле крупнее вьюпорта —
-// панорамирование ограничено его краями, если мельче — центрируется.
-// Сколько места внизу занимает HUD корабля. Без этого выбранный корабль
-// и клетки под панелью оказывались недосягаемы: ходить некуда, потому что
-// половина вариантов спрятана под самой панелью управления.
-var uiBottomInset = 0;
-
-function setBottomInset(px) {
-  if (window.SL) return;                        // космос 2.0: поле не двигаем
-  var delta = px - uiBottomInset;
-  uiBottomInset = px;
-  panY -= delta;
-  clampPan();
-  applyTransform();
-  if (typeof sxPlaceToast === 'function') sxPlaceToast();
-}
-
-// Доводит карту до клетки, центрируя её над панелью управления
+// Доводит камеру боя до клетки (клетка орбиты — 200 м)
 function focusCell(cx, cy) {
-  // космос 2.0: камера нового экрана (клетка орбиты — 200 м)
-  if (window.SL && window.__sp) { var C = __sp.CAM; C.x = (cx + 0.5) * 200; C.y = (cy + 0.5) * 200; __sp.G.follow = ''; return; }
-  var vw = viewport.clientWidth;
-  var vh = viewport.clientHeight - uiBottomInset;
-  panX = vw / 2 - (cx + 0.5) * CELL_PX * scale;
-  panY = vh / 2 - (cy + 0.5) * CELL_PX * scale;
-  clampPan();
-  applyTransform();
+  if (!window.__sp) return;
+  var C = __sp.CAM; C.x = (cx + 0.5) * 200; C.y = (cy + 0.5) * 200; __sp.G.follow = '';
 }
 
-function clampPan() {
-  var vw = viewport.clientWidth;
-  var vh = viewport.clientHeight - uiBottomInset;
-  var fieldPx = GRID_CELLS * CELL_PX;
-  var scaledSize = fieldPx * scale;
-
-  if (scaledSize <= vw) {
-    panX = (vw - scaledSize) / 2;
-  } else {
-    var minPanX = vw - scaledSize;
-    panX = Math.min(0, Math.max(minPanX, panX));
-  }
-
-  if (scaledSize <= vh) {
-    panY = (vh - scaledSize) / 2;
-  } else {
-    var minPanY = vh - scaledSize;
-    panY = Math.min(0, Math.max(minPanY, panY));
-  }
-}
-
-function centerGridInitially() {
-  // центрирование поля по центру экрана при старте
-  var vw = viewport.clientWidth;
-  var vh = viewport.clientHeight;
-  var fieldPx = GRID_CELLS * CELL_PX;
-  scale = 0.4;
-  panX = vw / 2 - (fieldPx * scale) / 2;
-  panY = vh / 2 - (fieldPx * scale) / 2;
-  clampPan();
-  applyTransform();
-}
-
-function initPanAndZoom() {
-  var isDragging = false;
-  var dragStartX = 0;
-  var dragStartY = 0;
-  var panStartX = 0;
-  var panStartY = 0;
-
-  // при пинче запоминаем, какая именно точка сетки была "под пальцами"
-  // в момент начала жеста — и держим её там же по мере зума
-  var pinchStartDist = 0;
-  var pinchStartScale = 1;
-  var anchorGridX = 0;
-  var anchorGridY = 0;
-
-  function distance(t1, t2) {
-    var dx = t1.clientX - t2.clientX;
-    var dy = t1.clientY - t2.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  function midpoint(t1, t2) {
-    return {
-      x: (t1.clientX + t2.clientX) / 2,
-      y: (t1.clientY + t2.clientY) / 2
-    };
-  }
-
-  viewport.addEventListener('touchstart', function(e) {
-    if (e.touches.length === 1) {
-      isDragging = true;
-      dragStartX = e.touches[0].clientX;
-      dragStartY = e.touches[0].clientY;
-      panStartX = panX;
-      panStartY = panY;
-      // Палец на своём корабле: удержит — корабль поднимется под палец
-      if (typeof sdArm === 'function') sdArm(dragStartX, dragStartY);
-    } else if (e.touches.length === 2) {
-      // Второй палец — щипок, а не приказ: поднятый корабль отпускаем
-      if (typeof sdCancel === 'function') sdCancel();
-      isDragging = false;
-      pinchStartDist = distance(e.touches[0], e.touches[1]);
-      pinchStartScale = scale;
-
-      var mid = midpoint(e.touches[0], e.touches[1]);
-      var rect = viewport.getBoundingClientRect();
-      var midInViewport = { x: mid.x - rect.left, y: mid.y - rect.top };
-
-      // точка сетки (в координатах самого поля), которая сейчас под пальцами
-      anchorGridX = (midInViewport.x - panX) / scale;
-      anchorGridY = (midInViewport.y - panY) / scale;
-    }
-  }, { passive: true });
-
-  viewport.addEventListener('touchmove', function(e) {
-    if (typeof sdActive === 'function' && sdActive()) {
-      if (e.touches.length === 1) sdMove(e.touches[0].clientX, e.touches[0].clientY);
-      return;
-    }
-    if (e.touches.length === 1 && typeof sdArmMoved === 'function') {
-      sdArmMoved(e.touches[0].clientX, e.touches[0].clientY);
-    } else if (typeof sdRefused !== 'undefined') {
-      sdRefused = null;
-    }
-    if (e.touches.length === 1 && isDragging) {
-      panX = panStartX + (e.touches[0].clientX - dragStartX);
-      panY = panStartY + (e.touches[0].clientY - dragStartY);
-      clampPan();
-      applyTransform();
-    } else if (e.touches.length === 2) {
-      var newDist = distance(e.touches[0], e.touches[1]);
-      var ratio = newDist / pinchStartDist;
-      scale = Math.min(3, Math.max(0.2, pinchStartScale * ratio));
-
-      var mid = midpoint(e.touches[0], e.touches[1]);
-      var rect = viewport.getBoundingClientRect();
-      var midInViewport = { x: mid.x - rect.left, y: mid.y - rect.top };
-
-      // пересчитываем pan так, чтобы точка anchorGridX/Y осталась под пальцами
-      panX = midInViewport.x - anchorGridX * scale;
-      panY = midInViewport.y - anchorGridY * scale;
-
-      clampPan();
-      applyTransform();
-    }
-  }, { passive: true });
-
-  viewport.addEventListener('touchcancel', function() {
-    if (typeof sdCancel === 'function') sdCancel();
-    if (typeof sdRefused !== 'undefined') sdRefused = null;
-    isDragging = false;
-  });
-
-  // Долгое нажатие не должно открывать меню браузера над кораблём
-  viewport.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-
-  // После жеста браузер может прислать клик по кораблю или клетке —
-  // он не должен открыть карточку или поставить второй приказ
-  viewport.addEventListener('click', function(e) {
-    if (typeof sdNoClickUntil !== 'undefined' && Date.now() < sdNoClickUntil) {
-      e.stopPropagation();
-      e.preventDefault();
-    }
-  }, true);
-
-  viewport.addEventListener('touchend', function(e) {
-    if (typeof sdDisarm === 'function') sdDisarm();
-    if (typeof sdActive === 'function' && sdActive()) {
-      if (e.touches.length === 0) {
-        if (e.cancelable) e.preventDefault();
-        sdEnd();
-        isDragging = false;
-      }
-      return;
-    }
-    // Поднять не дали (нет действий, луч) и палец не уводили — отпускание
-    // не открывает панель: игрок держал палец ради жеста, а не ради меню
-    if (e.touches.length === 0 && typeof sdRefused !== 'undefined' && sdRefused) {
-      sdReleaseRefused();
-      isDragging = false;
-      return;
-    }
-    if (e.touches.length === 0) {
-      isDragging = false;
-    } else if (e.touches.length === 1) {
-      // если убрали один палец из двух — начинаем перетаскивание заново с оставшимся
-      isDragging = true;
-      dragStartX = e.touches[0].clientX;
-      dragStartY = e.touches[0].clientY;
-      panStartX = panX;
-      panStartY = panY;
-    }
-  });
-
-  // на всякий случай — поддержка мыши для отладки на компьютере
-  var mouseDragging = false;
-  viewport.addEventListener('mousedown', function(e) {
-    if (e.button !== undefined && e.button !== 0) return;
-    mouseDragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    panStartX = panX;
-    panStartY = panY;
-    if (typeof sdArm === 'function') sdArm(e.clientX, e.clientY);
-  });
-  window.addEventListener('mousemove', function(e) {
-    if (typeof sdActive === 'function' && sdActive()) { sdMove(e.clientX, e.clientY); return; }
-    if (!mouseDragging) return;
-    if (typeof sdArmMoved === 'function') sdArmMoved(e.clientX, e.clientY);
-    panX = panStartX + (e.clientX - dragStartX);
-    panY = panStartY + (e.clientY - dragStartY);
-    clampPan();
-    applyTransform();
-  });
-  window.addEventListener('mouseup', function() {
-    mouseDragging = false;
-    if (typeof sdDisarm === 'function') sdDisarm();
-    if (typeof sdActive === 'function' && sdActive()) { sdEnd(); return; }
-    if (typeof sdRefused !== 'undefined' && sdRefused) sdReleaseRefused();
-  });
-
-  viewport.addEventListener('wheel', function(e) {
-    e.preventDefault();
-    var rect = viewport.getBoundingClientRect();
-    var mx = e.clientX - rect.left;
-    var my = e.clientY - rect.top;
-    var gridX = (mx - panX) / scale;
-    var gridY = (my - panY) / scale;
-
-    var delta = e.deltaY < 0 ? 1.1 : 0.9;
-    scale = Math.min(3, Math.max(0.2, scale * delta));
-
-    panX = mx - gridX * scale;
-    panY = my - gridY * scale;
-    clampPan();
-    applyTransform();
-  }, { passive: false });
-}
-
-// Заготовка realtime-канала под конкретную планету — пока без данных,
-// но подписка уже поднята, чтобы не переделывать структуру, когда
-// появится сама механика размещения кораблей.
+// Realtime орбиты: станция и корабли системы.
 // Пачка событий — одна перезагрузка: залп, автоход или выход из гиперпрыжка
 // двигают несколько кораблей разом, и каждое событие раньше тянуло весь
 // флот системы и пересобирало все спрайты заново
@@ -813,21 +362,6 @@ function subscribeToSpaceChanges() {
 function initSpaceBattle() {
   systemId = getSystemIdFromUrl();
   buildMode = isBuildMode();
-
-  viewport = document.getElementById('space-viewport');
-  grid = document.getElementById('space-grid');
-  // Размер поля берём из тех же чисел, что и логика карты. В стилях
-  // оставалось 5200px со времён поля 130×130 — сетка и край обрывались
-  // за 20 клеток до настоящей границы
-  if (grid) {
-    grid.style.width = (GRID_CELLS * CELL_PX) + 'px';
-    grid.style.height = (GRID_CELLS * CELL_PX) + 'px';
-  }
-
-  var backBtn = document.getElementById('space-back-btn');
-  backBtn.addEventListener('click', function() {
-    window.location.href = 'galaxy-map.html';
-  });
 
   var stationPanelClose = document.getElementById('station-panel-close');
   if (stationPanelClose) stationPanelClose.addEventListener('click', closeStationPanel);
@@ -863,7 +397,6 @@ function initSpaceBattle() {
     Promise.all([loadStationSlot(), checkStationRights(), loadHyperspaceZone(), spLoadLeases()]).then(function() {
       loadStation();
       loadShips();
-      if (!window.SL) { centerGridInitially(); initPanAndZoom(); }
       initBuildToggle(true);
       subscribeToSpaceChanges();
       // Пока вкладка спала, реалтайм мог пропустить события. Слушаем
@@ -884,20 +417,6 @@ document.addEventListener('DOMContentLoaded', initSpaceBattle);
 
 var shipsInSystem = [];
 var shipTypeById = {};
-var shipImages = {};
-
-function getShipImage(path) {
-  if (!path) return null;
-  if (shipImages[path]) return shipImages[path];
-  var img = new Image();
-  img.src = '../' + path;
-  // Дозагрузка картинок сливается в одну пересборку: на флоте из
-  // разных типов их приходит несколько подряд
-  img.onload = function() { spSoon('render', renderShips, 30); };
-  img.onerror = function() { img.failed = true; };
-  shipImages[path] = img;
-  return img;
-}
 
 // Справочник типов кораблей по ходу боя не меняется — один раз, и заново
 // только если в системе появился неизвестный тип
@@ -915,7 +434,6 @@ function loadShips() {
     if (req && typeof sxShipsFresh === 'function' && !sxShipsFresh(req)) return;
     // Сбой запроса не стирает корабли с карты
     if (r[0].error || !r[0].data) return;
-    var prevShips = shipsInSystem;
     shipsInSystem = r[0].data;
     if (r[1] && !r[1].error && r[1].data && r[1].data.length) {
       shipTypeById = {};
@@ -923,147 +441,10 @@ function loadShips() {
       shipTypesFresh = true;
     }
     if (shipsInSystem.some(function(sh) { return !shipTypeById[sh.ship_type]; })) shipTypesFresh = false;
-    renderShips();
     if (window.sceneLoader) sceneLoader.mark('ships');
-    // Корабли сдвинулись — обзор поменялся
-    spSoon('vision', loadSpaceVision, 120);
     loadShipOrders();
     if (typeof onShipsReloaded === 'function') onShipsReloaded();
-    // Сцепленные абордажем пары — значок между кораблями (js/boarding-space.js)
-    if (typeof bdsLoad === 'function') bdsLoad();
-    if (typeof sxAfterShips === 'function') sxAfterShips(prevShips, req);
-    if (typeof amAfterShips === 'function') amAfterShips(prevShips);
   });
-}
-
-// Габариты корабля в клетках с учётом разворота. Формула повторяет
-// ship_box_w / ship_box_h на сервере — расхождение здесь означало бы,
-// что игрок видит одно, а база считает другое.
-function shipBoxCells(type, facing) {
-  var w = type.width_cells, h = type.height_cells;
-  if (facing === 0 || facing === 180) return { w: w, h: h };
-  if (facing === 90 || facing === 270) return { w: h, h: w };
-  var d = Math.ceil((w + h) / Math.SQRT2);
-  return { w: d, h: d };
-}
-
-// Корабли рисуем элементами поверх сетки: спрайт занимает ровно тот
-// прямоугольник клеток, который прописан у типа в БД.
-function renderShips() {
-  if (window.SL) return;                        // космос 2.0: корабли рисует бой
-  var old = grid.querySelectorAll('.ship-sprite');
-  for (var i = 0; i < old.length; i++) old[i].parentNode.removeChild(old[i]);
-
-  shipsInSystem.forEach(function(ship) {
-    var type = shipTypeById[ship.ship_type];
-    if (!type) return;
-
-    // Истребитель в ангаре — та же строка ships, но без клетки: x и y пусты.
-    // Раньше он рисовался в левом верхнем углу (null * CELL_PX = 0), хотя
-    // сидит внутри носителя.
-    if (ship.carrier_ship_id || ship.x === null || ship.x === undefined ||
-        ship.y === null || ship.y === undefined) return;
-
-    var facing = ship.facing || 0;
-    var box = shipBoxCells(type, facing);
-
-    // Внешний элемент — занятые клетки (габарит с учётом разворота),
-    // внутри него спрайт в исходных размерах, повёрнутый вокруг центра.
-    var el = document.createElement('div');
-    el.className = 'ship-sprite';
-    el.setAttribute('data-ship-id', ship.id);
-    el.style.position = 'absolute';
-    el.style.left = (ship.x * CELL_PX) + 'px';
-    el.style.top = (ship.y * CELL_PX) + 'px';
-    el.style.width = (box.w * CELL_PX) + 'px';
-    el.style.height = (box.h * CELL_PX) + 'px';
-    el.style.cursor = 'pointer';
-
-    var mine = ship.owner_user_id === currentUserId;
-    // Свои зелёные, союзники синие, враги красные — как на земле
-    var ally = !mine && spaceMyFaction && ship.faction === spaceMyFaction;
-    el.style.outline = '2px solid ' + (mine ? 'rgba(95,217,104,0.8)'
-      : ally ? 'rgba(74,144,217,0.85)' : 'rgba(217,74,74,0.8)');
-
-    // Открыт паспорт этого корабля — подсвечиваем его на карте
-    if (typeof sxIntelId !== 'undefined' && sxIntelId === ship.id) el.classList.add('ship-intel');
-
-    // В режиме атаки достижимые цели обводим ярче остальных
-    if (!mine && typeof scIsTargetable === 'function' && scIsTargetable(ship.id)) {
-      el.classList.add('ship-targetable');
-    }
-
-    // На чеку (свои и союзники): оранжевый значок в левом верхнем углу
-    if (ship.overwatch && (mine || ally)) {
-      el.classList.add('ow-on');
-      var owB = document.createElement('span');
-      owB.className = 'ow-badge';
-      el.appendChild(owB);
-    }
-
-    // Автоход: ведущий и корабли флота в кольце
-    if (typeof amShipMark === 'function') {
-      var amMark = amShipMark(ship);
-      if (amMark) el.classList.add(amMark);
-    }
-
-    var img = getShipImage(type.image);
-    if (img && img.complete && !img.failed) {
-      var inner = document.createElement('div');
-      inner.style.position = 'absolute';
-      inner.style.left = '50%';
-      inner.style.top = '50%';
-      inner.style.width = (type.width_cells * CELL_PX) + 'px';
-      inner.style.height = (type.height_cells * CELL_PX) + 'px';
-      // Спрайты нарисованы носом вверх, поэтому facing совпадает с углом
-      inner.style.transform = 'translate(-50%, -50%) rotate(' + facing + 'deg)';
-      inner.style.transformOrigin = '50% 50%';
-
-      var im = document.createElement('img');
-      im.src = img.src;
-      im.style.width = '100%';
-      im.style.height = '100%';
-      im.style.display = 'block';
-      inner.appendChild(im);
-      el.appendChild(inner);
-    }
-
-    el.addEventListener('click', function(e) {
-      e.stopPropagation();
-
-      // Выбор точки и флота для автохода
-      if (typeof amShipTap === 'function' && amShipTap(ship, type, mine, e)) return;
-
-      // В режиме атаки тап по чужому кораблю — это выстрел. В месиве
-      // одинаковых кораблей выбирать из списка невозможно, а палец
-      // показывает цель однозначно.
-      if (!mine && typeof scTryAttackByTap === 'function' && scTryAttackByTap(ship, type)) {
-        return;
-      }
-
-      if (mine && typeof onOwnShipTapped === 'function') {
-        if (typeof sxCloseIntel === 'function') sxCloseIntel();
-        onOwnShipTapped(ship, type);
-      } else if (typeof sxShowIntel === 'function') {
-        // Свой корабль ждёт приказа (ход, разворот, луч, вылет) — не сбиваем
-        // его чужой карточкой: тап по чужому кораблю тут промах мимо клетки
-        if (scShip && (scMode || scHangarMode)) {
-          if (typeof scFail === 'function') scFail('Сначала заверши или отмени приказ');
-          return;
-        }
-        // Повторный тап по тому же кораблю закрывает паспорт
-        if (sxIntelId === ship.id) sxCloseIntel(); else sxShowIntel(ship, type);
-      } else {
-        openShipInfo(ship, type);
-      }
-    });
-
-    grid.appendChild(el);
-  });
-
-  // Поднятый жестом корабль и его цели остаются отмеченными после перерисовки
-  if (typeof sdDecorate === 'function') sdDecorate();
-  if (typeof bdsRender === 'function') bdsRender();
 }
 
 // Время сервера (сдвиг считает ship-control.js): отметки базы сравниваются с ним, а не с часами телефона
@@ -1163,7 +544,6 @@ var sySeq = 0;
 // keep — перечитать уже открытую верфь (после заказа в доке, по концу
 // работ): без «Загрузки» и с тем же местом прокрутки
 function openShipyard(keep) {
-  if (typeof sxCloseIntel === 'function') sxCloseIntel();
   var panel = document.getElementById('shipyard-panel');
   var list = document.getElementById('shipyard-list');
   keep = keep === true && panel.style.display !== 'none';

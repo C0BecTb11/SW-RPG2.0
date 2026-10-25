@@ -17,8 +17,6 @@
 <link rel="stylesheet" href="../css/ship-control.css?v=1">
 <link rel="stylesheet" href="../css/quest.css?v=1">
 <link rel="stylesheet" href="../css/lease.css?v=1">
-<link rel="stylesheet" href="../css/overwatch.css?v=1">
-<link rel="stylesheet" href="../css/boarding-space.css?v=1">
 <link rel="stylesheet" href="../space/space.css?v=22">
 <link rel="stylesheet" href="../css/space-live.css?v=5">
 </head>
@@ -31,13 +29,6 @@
   <div class="sl-name">…</div>
   <div class="sl-bar"><i></i></div>
   <div class="sl-step"></div>
-</div>
-
-<button id="space-back-btn" hidden>← Галактика</button>
-
-<!-- старая сетка орбиты: скрыта, но остаётся — на неё ссылаются панели старого экрана -->
-<div id="space-viewport" hidden>
-  <div id="space-grid"></div>
 </div>
 
 <!-- Космос 2.0: орбита системы и бой в реальном времени (space/space.js), поверх — панели игры -->
@@ -244,8 +235,6 @@
 
 <div id="ship-queue" style="display:none;"></div>
 
-<div id="combat-log"></div>
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
 <script src="../js/supabase-client.js?v=2"></script>
 <script src="../js/err-report.js?v=6"></script>
@@ -253,9 +242,7 @@
 <script src="../js/credits-bar.js?v=9"></script>
 <script src="../js/map-layer.js?v=2"></script>
 <script src="../js/game-confirm.js?v=1"></script>
-<script src="../js/drag-command.js?v=1"></script>
 <script src="../js/production-lease.js?v=2"></script>
-<script src="../js/overwatch.js?v=1"></script>
 <script src="../shared/rt-core.js?v=5"></script>
 <script src="../shared/rt-figures.js?v=7"></script>
 <script src="../shared/rt-ship.js?v=2"></script>
@@ -273,9 +260,6 @@
 <script src="../js/space-live.js?v=20"></script>
 <script src="../js/space-battle.js?v=5"></script>
 <script src="../js/ship-control.js?v=4"></script>
-<script src="../js/automove-route.js?v=1"></script>
-<script src="../js/automove-space.js?v=1"></script>
-<script src="../js/boarding-space.js?v=1"></script>
 <script src="../js/quest.js?v=7"></script>
 </body>
 </html>

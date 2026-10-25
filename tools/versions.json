@@ -224,8 +224,8 @@
   "sha": "d4b456a3fc84"
  },
  "js/err-report.js": {
-  "v": "5",
-  "sha": "f5d3a3f1dbc6"
+  "v": "6",
+  "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
   "v": "22",
@@ -324,8 +324,8 @@
   "sha": "36c5f56d9faa"
  },
  "js/profile.js": {
-  "v": "2",
-  "sha": "3645df228c95"
+  "v": "3",
+  "sha": "659379e26e9e"
  },
  "js/quest.js": {
   "v": "7",
@@ -352,8 +352,8 @@
   "sha": "75e9d093f6ee"
  },
  "js/space-live.js": {
-  "v": "18",
-  "sha": "d5aa477364b8"
+  "v": "19",
+  "sha": "259af80e78da"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -372,8 +372,8 @@
   "sha": "30106420e278"
  },
  "js/supply.js": {
-  "v": "7",
-  "sha": "342472009bbb"
+  "v": "8",
+  "sha": "5ee803136cda"
  },
  "js/troop-transfer.js": {
   "v": "1",
@@ -500,7 +500,7 @@
   "sha": "eddb39e9609f"
  },
  "space/space.js": {
-  "v": "36",
-  "sha": "ca02e282fb33"
+  "v": "37",
+  "sha": "aa168abe9a39"
  }
 }

@@ -2975,7 +2975,7 @@
   var FLEET = { state: 'idle', ships: [], sel: [], foe: ['providence'], err: '', side: 0, uid: null, sys: {} };
   function sbReady() {
     if (window.supabase && typeof window.supabase.rpc === 'function') return Promise.resolve();
-    return loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2').then(function() { return loadScript('../js/supabase-client.js?v=2'); });
+    return loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0').then(function() { return loadScript('../js/supabase-client.js?v=2'); });
   }
   function fleetLoad() {
     FLEET.state = 'load'; FLEET.err = ''; polyDraw();
@@ -3216,7 +3216,7 @@
   function netAuth() {
     if (NET_DEV) return Promise.resolve({ url: NET_DEV, token: NET_AS ? 'dev:' + NET_AS : 'dev' });
     var sb = window.supabase && typeof window.supabase.rpc === 'function' ? Promise.resolve() :
-      loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2').then(function() { return loadScript('../js/supabase-client.js?v=2'); });
+      loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0').then(function() { return loadScript('../js/supabase-client.js?v=2'); });
     return sb.then(function() { return window.supabase.auth.getSession(); }).then(function(r) {
       var ses = r && r.data && r.data.session;
       if (!ses) { var e = new Error('Нужно войти в игру'); e.login = true; throw e; }

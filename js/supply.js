@@ -442,7 +442,7 @@
         if (res.error) return;
         var had = st.hasHub;
         st.hasHub = res.data === true;
-        if (st.open && st.tab === 'routes' && had !== st.hasHub) render();
+        if (st.open && (st.tab === 'routes' || st.tab === 'market') && had !== st.hasHub) render();
       });
     });
 
@@ -1778,7 +1778,9 @@
     }
 
     var why = null;
-    if (!c) why = 'Выбери флот';
+    // вывоз флотом — рейс снабжения: без своего хаба сервер его не запустит (dispatch_market_pickup)
+    if (st.hasHub === false && !st.hub) why = 'Вывоз флотом запускает ' + hubWord() + ': построй его хотя бы на одной своей планете';
+    else if (!c) why = 'Выбери флот';
     else if (c.busy) why = 'Этот флот занят';
     else if (!num(c.ships)) why = 'У командира нет кораблей';
     else if (num(c.free_cargo) < need) why = 'Не влезет: покупка ' + need + ', свободно ' + num(c.free_cargo);
@@ -1786,7 +1788,7 @@
 
     h += '<div class="sup-pick-fit' + (c && num(c.free_cargo) < need ? ' over' : '') + '">' +
       (c ? 'Покупка <b>' + need + '</b> · свободно в трюме <b>' + num(c.free_cargo) + '</b>' : '') + '</div>';
-    if (why && c) h += '<div class="sup-hint warn">' + esc(why) + '</div>';
+    if (why && (c || (st.hasHub === false && !st.hub))) h += '<div class="sup-hint warn">' + esc(why) + '</div>';
     else if (c && !c.ready) h += '<div class="sup-hint">' + esc(ZONE_HINT) + '</div>';
     h += errLine('pick');
     h += '<div class="sup-pick-btns">' +

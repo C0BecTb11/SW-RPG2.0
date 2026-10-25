@@ -85,6 +85,8 @@
     var n = now();
     if (key(t) === key(n)) return 'сегодня ' + hm;
     if (key(t) === key(n - 86400000)) return 'вчера ' + hm;
+    // дата — по календарю сервера (svDayKey «гггг-мм-дд»), как «сегодня/вчера» выше: около полуночи телефон и МСК расходятся
+    if (typeof svDayKey === 'function') { var k = svDayKey(t).split('-'); if (k.length === 3) return ('0' + k[2]).slice(-2) + '.' + ('0' + k[1]).slice(-2) + ' ' + hm; }
     return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + ' ' + hm;
   }
 
@@ -96,6 +98,7 @@
       function() { return { data: null, error: { message: 'Нет связи с сервером' } }; });
   }
   function errText(err) {
+    if (typeof gameErr === 'function') return gameErr(err);
     var m = err && (err.message || err.details) || '';
     if (!m || /function|schema cache|permission denied|JWT|violates/i.test(m)) return 'Не получилось — попробуй ещё раз';
     return m;

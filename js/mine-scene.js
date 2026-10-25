@@ -757,8 +757,9 @@
   // ---------------------------------------------------------------- кадр
   function accNow() {
     var r = S.st && S.st.run; if (!r) return null;
-    var t1 = new Date(r.ends_at).getTime(), now = Date.now();
-    var v = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - S.at) / 3600000;
+    // по времени сервера: ends_at серверное, часы телефона могут спешить или отставать
+    var t1 = new Date(r.ends_at).getTime(), now = srvNow();
+    var v = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - (S.at + S.skew)) / 3600000;
     return r.cap != null ? Math.min(r.cap, v) : v;
   }
   function step(dt) {
@@ -1012,7 +1013,7 @@
       var low = st.refine.inputs.some(function(x) { return x.have < x.k; });
       text(c, 'сырьё ' + st.refine.inputs.map(function(x) { return x.have; }).join(' · '), RAW.x + RAW.w / 2, RAW.y + RAW.h + 0.42, 0.42, low ? '#ff8a7a' : '#cfd8dc');
     }
-    var cn = counts(st), inH = cn.h.rest + cn.h.hurt, inD = cn.d.rest + cn.d.hurt, now = Date.now();
+    var cn = counts(st), inH = cn.h.rest + cn.h.hurt, inD = cn.d.rest + cn.d.hurt, now = srvNow();   // rest_* — отметки сервера
     var parts = [];
     if (cn.h.rest || cn.d.rest) {
       var until = Math.max(st.rest_h ? new Date(st.rest_h).getTime() : 0, st.rest_d ? new Date(st.rest_d).getTime() : 0), m = Math.max(0, Math.ceil((until - now) / 60000));

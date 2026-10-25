@@ -241,7 +241,7 @@ function plRenderBanner(host, row, o) {
       cancel.disabled = true;
       plRpc('lease_cancel', { p_id: row.id }).then(function(r) {
         cancel.disabled = false;
-        if (r.error) plToast(r.error.message, true);
+        if (r.error) plToast(gameErr(r.error), true);
         else plToast('Предложение отозвано');
         changed();
       });
@@ -318,7 +318,7 @@ function plRenderBlock(host, o) {
       cancel.disabled = true;
       plRpc('lease_cancel', { p_id: row.id }).then(function(r) {
         cancel.disabled = false;
-        if (r.error) { plToast(r.error.message, true); changed(); return; }
+        if (r.error) { plToast(gameErr(r.error), true); changed(); return; }
         plToast('Предложение отозвано');
         changed();
       });
@@ -372,7 +372,7 @@ function plRespond(row, accept, look, done, btns) {
     lock(true);
     plRpc('lease_respond', { p_id: row.id, p_accept: accept }).then(function(r) {
       lock(false);
-      if (r.error) { plToast(r.error.message, true); if (done) done(); return; }
+      if (r.error) { plToast(gameErr(r.error), true); if (done) done(); return; }
       // «!…» — предложение уже не действует (истекло, планета ушла)
       if (typeof r.data === 'string' && r.data.charAt(0) === '!') {
         plToast(r.data.slice(1), true);
@@ -413,7 +413,7 @@ function plEnd(row, name, done, btn) {
     if (btn) { if (btn.disabled) return; btn.disabled = true; }
     plRpc('lease_end', { p_id: row.id }).then(function(r) {
       if (btn) btn.disabled = false;
-      if (r.error) { plToast(r.error.message, true); if (done) done(); return; }
+      if (r.error) { plToast(gameErr(r.error), true); if (done) done(); return; }
       plToast('Производство вернулось хозяину');
       if (done) done();
     });
@@ -669,7 +669,7 @@ function plSendOffer() {
     st.busy = false;
     if (r.error) {
       plPaintOfferFoot();
-      plToast(r.error.message, true);
+      plToast(gameErr(r.error), true);
       return;
     }
     var done = st.o.onDone;
@@ -838,7 +838,7 @@ function makeLeaseCard(x, live) {
       cancel.disabled = true;
       plRpc('lease_cancel', { p_id: x.id }).then(function(r) {
         cancel.disabled = false;
-        if (r.error) plToast(r.error.message, true);
+        if (r.error) plToast(gameErr(r.error), true);
         else plToast('Предложение отозвано');
         reload();
       });

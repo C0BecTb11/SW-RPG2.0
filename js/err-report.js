@@ -206,3 +206,47 @@
   // для перехваченных ошибок: errReport(err, 'ground.frame')
   window.errReport = function(err, ctx) { report(err, ctx); };
 })();
+
+/* Текст ошибки для игрока: gameErr(res.error) или gameErr('строка').
+ *   * отказы функций игры (они по-русски) — как есть;
+ *   * сбой связи — «Нет связи с сервером…»;
+ *   * внутренние ошибки базы (англ.: violates, duplicate key, deadlock…) — понятным текстом, без служебных подробностей;
+ *   * ответы входа (почта, пароль) — по-русски.
+ * Сырой английский текст базы игроку не показывается никогда. ES5.
+ */
+(function() {
+  'use strict';
+  if (window.gameErr) return;
+  var RU = /[А-Яа-яЁё]/;
+  var MAP = [
+    [/invalid login credentials/i, 'Неверная почта или пароль'],
+    [/user already registered|already been registered/i, 'Такая почта уже зарегистрирована'],
+    [/email not confirmed/i, 'Почта не подтверждена — проверь письмо'],
+    [/rate limit|too many requests|security purposes/i, 'Слишком много попыток — подожди минуту'],
+    [/password should be at least|weak password/i, 'Пароль слишком короткий'],
+    [/unable to validate email|invalid email|email address .* is invalid/i, 'Почта указана неверно'],
+    // раньше сети: «canceling statement due to statement timeout» — база была занята, а не связь пропала
+    [/deadlock|could not serialize|canceling statement|lock timeout|could not obtain lock/i, 'Сервер был занят — попробуй ещё раз'],
+    [/failed to fetch|networkerror|network request failed|load failed|typeerror|timed? ?out|timeout|aborterror|fetch/i, 'Нет связи с сервером — попробуй ещё раз'],
+    [/violates|duplicate key|null value|row-level security|permission denied|constraint|invalid input syntax|does not exist|out of range|malformed/i,
+     'База не приняла изменение — попробуй ещё раз; если повторится — сообщи администрации']
+  ];
+  window.gameErr = function(e) {
+    var m = '';
+    try {
+      if (e == null) m = '';
+      else if (typeof e === 'string') m = e;
+      else if (e.message != null) m = String(e.message);
+      else if (e.error_description) m = String(e.error_description);
+      else if (e.msg) m = String(e.msg);
+      else m = String(e);
+    } catch (x) { m = ''; }
+    m = m.replace(/\s+/g, ' ').trim();
+    if (!m || m === '[object Object]') return 'Не удалось — попробуй ещё раз';
+    // служебный английский (в том числе внутри русской фразы «Не удалось: …violates…») — понятным текстом
+    for (var i = 0; i < MAP.length; i++) if (MAP[i][0].test(m)) return MAP[i][1];
+    // отказ функции игры: русский текст как есть (без технического префикса «ERROR: …:»)
+    if (RU.test(m)) return m.replace(/^(error|ошибка)\s*:\s*/i, '');
+    return 'Не удалось — попробуй ещё раз';
+  };
+})();

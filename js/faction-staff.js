@@ -278,7 +278,9 @@ function hqOnClick(e) {
 }
 
 // Текст ошибки для игрока: отказы функций — как есть (они по-русски), внутренние ошибки базы — человеческим языком
+// (общий перевод — gameErr из js/err-report.js; запасной путь — если страницу открыли без него)
 function hqErrText(e) {
+  if (typeof gameErr === 'function') return gameErr(e);
   var m = (e && e.message) || '';
   if (/^(new row|duplicate key|null value|insert or update|update or delete)|violates|constraint/i.test(m)) return 'База не приняла изменение — сообщи администрации';
   return m || 'Не удалось — попробуй ещё раз';

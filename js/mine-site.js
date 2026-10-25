@@ -10,6 +10,7 @@ var mnState = null;        // последнее состояние с серв�
 var mnBuilding = null;     // строка постройки
 var mnAt = 0;              // когда пришло состояние (мс, часы клиента)
 var mnSkew = 0;            // часы сервера − часы клиента, мс (st.now)
+var mnSrvAt = 0;           // когда пришло состояние — по часам сервера (от него считается выработка)
 var mnWaitAt = 0, mnWaitN = 0;   // ожидание итога операции: когда последний раз переспросили базу и сколько раз
 var mnPoll = null, mnTick = null, mnBusy = false, mnSeq = 0;
 var mnOpenAt = 0, mnDownBack = false;   // касание фона закрывает шторку, только если оно на фоне и началось
@@ -69,9 +70,10 @@ function mnRoom(upkeepOre) {
   r.inputs.forEach(function(x) { if (x.k > 0) room = Math.min(room, Math.floor(Math.max(0, x.have - (x.id === 'ore' ? upkeepOre || 0 : 0)) / x.k)); });
   return room === Infinity ? 0 : room;
 }
-// сделанное за смену сейчас: по ставке от ответа сервера, не больше взятого сырья
+// сделанное за смену сейчас: по ставке от ответа сервера, не больше взятого сырья.
+// now — время сервера (mnSrvNow): ends_at тоже серверное, часы телефона могут спешить или отставать
 function mnGot(r, now) {
-  var t1 = new Date(r.ends_at).getTime(), v = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - mnAt) / 3600000;
+  var t1 = new Date(r.ends_at).getTime(), v = r.accrued + r.rate * Math.max(0, Math.min(now, t1) - mnSrvAt) / 3600000;
   return r.cap != null ? Math.min(r.cap, v) : v;
 }
 
@@ -275,7 +277,7 @@ function mnLoad() {
   var seq = ++mnSeq, bid = mnBuilding.id;
   supabase.rpc('mine_site_state', { p_building: bid }).then(function(r) {
     if (seq !== mnSeq || !mnBuilding || mnBuilding.id !== bid) return;
-    if (r.error) { document.getElementById('mn-body').innerHTML = '<div class="mn-empty bad">' + mnEsc(r.error.message) + '</div>'; return; }
+    if (r.error) { document.getElementById('mn-body').innerHTML = '<div class="mn-empty bad">' + mnEsc(gameErr(r.error)) + '</div>'; return; }
     mnSet(r.data);
   }, function() {
     if (seq === mnSeq && !mnState) document.getElementById('mn-body').innerHTML = '<div class="mn-empty bad">Нет связи с сервером</div>';
@@ -286,6 +288,7 @@ function mnSet(st) {
   mnState = st; mnAt = Date.now();
   var sn = st && st.now ? Date.parse(st.now) : NaN;
   mnSkew = isNaN(sn) ? 0 : sn - mnAt;
+  mnSrvAt = mnAt + mnSkew;
   if (window.MNScene) { try { MNScene.set(st, mnAt); } catch (e) { if (window.errReport) errReport(e, 'mine.scene'); } }
   // по умолчанию на смену — все свободные и отдохнувшие, не больше мест
   if (!mnForm.touched) {
@@ -388,7 +391,7 @@ function mnRender() {
   if (st.last && st.last.length) {
     html += '<div class="mn-sec">Последние смены</div><div class="mn-log">';
     st.last.forEach(function(x) {
-      var when = new Date(x.ended_at || x.started_at), hm = when.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      var hm = mnHm(x.ended_at || x.started_at);                 // по часам сервера, как карточки происшествий
       var crew = [x.humans ? mnWorkers(x.humans, 'h') : '', x.droids ? mnWorkers(x.droids, 'd') : ''].filter(Boolean).join(' + ');
       var tag = x.status === 'stopped' ? 'остановлена' : x.status === 'lost' ? 'сорвана' : x.auto ? 'авто' : '';
       var task = x.task && x.task !== 'extract' ? mnTaskName(x.task) + ' · ' : '';
@@ -419,7 +422,7 @@ function mnDaySub(st) {
 
 // Состояние участка: оборудование, опыт бригады, жила, вскрыша — и что это даёт к выработке
 function mnStateHtml(st) {
-  var w = st.wear || 0, wk = w >= 60 ? 'bad' : w >= 25 ? 'warn' : 'ok', now = Date.now();
+  var w = st.wear || 0, wk = w >= 60 ? 'bad' : w >= 25 ? 'warn' : 'ok', now = mnSrvNow();   // vein_until — отметка сервера
   var star = st.stars || 0, next = st.hours_next;
   var html = '<div class="mn-state">' +
     '<div class="mn-st ' + wk + '"><em>оборудование</em><b>' + Math.max(0, Math.round(100 - w)) + ' %</b><span>' + (w > 0.5 ? 'износ ' + mnNum(w, 0) + ' % · ×' + mnNum(1 - w * 0.004, 2) : 'в порядке') + '</span></div>' +
@@ -615,31 +618,32 @@ function mnStepper(kind, label, v, max, rest) {
   '</div>';
 }
 
-// Раз в секунду: ход смены и отдых — по часам клиента от момента ответа сервера
+// Раз в секунду: ход смены и отдых. Отметки сервера (конец смены, отдых) сравниваются со временем
+// сервера (mnSrvNow), а «сколько прошло с ответа» для опроса — по часам телефона (now − mnAt)
 function mnLive() {
   var st = mnState; if (!st) return;
-  var now = Date.now();
-  mnHud(now);
+  var now = Date.now(), srv = mnSrvNow();
+  mnHud(srv);
   if (st.run) {
     var r = st.run, t0 = new Date(r.started_at).getTime(), t1 = new Date(r.ends_at).getTime();
-    var got = mnGot(r, now), full = r.cap != null && got >= r.cap - 0.001;
-    var k = Math.max(0, Math.min(1, (now - t0) / (t1 - t0)));
+    var got = mnGot(r, srv), full = r.cap != null && got >= r.cap - 0.001;
+    var k = Math.max(0, Math.min(1, (srv - t0) / (t1 - t0)));
     var el = document.getElementById('mn-run-bar'); if (el) el.style.width = (k * 100).toFixed(1) + '%';
     el = document.getElementById('mn-run-got'); if (el) el.textContent = '+' + Math.floor(got);
-    var of = r.accrued + r.rate * Math.max(0, t1 - mnAt) / 3600000; if (r.cap != null) of = Math.min(of, r.cap);
+    var of = r.accrued + r.rate * Math.max(0, t1 - mnSrvAt) / 3600000; if (r.cap != null) of = Math.min(of, r.cap);
     el = document.getElementById('mn-run-of'); if (el) el.textContent = 'из ≈ ' + Math.round(of);
-    el = document.getElementById('mn-run-left'); if (el) el.textContent = full ? 'сырьё переработано' : now < t1 ? 'ещё ' + mnLeft(t1 - now) : 'заканчивается…';
+    el = document.getElementById('mn-run-left'); if (el) el.textContent = full ? 'сырьё переработано' : srv < t1 ? 'ещё ' + mnLeft(t1 - srv) : 'заканчивается…';
     // тик сервера раз в минуту закрыл смену (цех — и раньше конца, когда переработал всё взятое)
-    if ((now > t1 + 70000 || (full && now - mnAt > 65000)) && !mnBusy) { mnAt = now; mnLoad(); }
+    if ((srv > t1 + 70000 || (full && now - mnAt > 65000)) && !mnBusy) { mnAt = now; mnLoad(); }
   }
   var rs = document.querySelectorAll('#mn-body .mn-rest[data-until]'), due = false;
   for (var i = 0; i < rs.length; i++) {
     var u = +rs[i].getAttribute('data-until');
-    if (u > now) rs[i].textContent = (rs[i].closest('.mn-step') ? 'отдых ' : (rs[i].textContent.indexOf('обслуж') >= 0 ? 'на обслуживании ' : 'отдыхают ')) + mnLeft(u - now);
+    if (u > srv) rs[i].textContent = (rs[i].closest('.mn-step') ? 'отдых ' : (rs[i].textContent.indexOf('обслуж') >= 0 ? 'на обслуживании ' : 'отдыхают ')) + mnLeft(u - srv);
     else due = true;
   }
   // происшествия: таймеры подхода и следствия по времени сервера
-  var srv = mnSrvNow(), ts = document.querySelectorAll('#mn-body .mn-op-t[data-at]');
+  var ts = document.querySelectorAll('#mn-body .mn-op-t[data-at]');
   for (i = 0; i < ts.length; i++) {
     var at = +ts[i].getAttribute('data-at');
     ts[i].textContent = at > srv ? ts[i].getAttribute('data-pre') + mnLeft(at - srv) : ts[i].getAttribute('data-done');
@@ -688,7 +692,7 @@ function mnCall(fn, args) {
   supabase.rpc(fn, args).then(function(r) {
     mnBusy = false;
     if (!mnBuilding || mnBuilding.id !== bid) return;
-    if (r.error) { mnErr(r.error.message); return; }
+    if (r.error) { mnErr(gameErr(r.error)); return; }
     mnForm.touched = false;
     mnSet(r.data);
     if ((fn === 'mine_hire' || fn === 'mine_upgrade') && typeof refreshCreditsSoon === 'function') refreshCreditsSoon();

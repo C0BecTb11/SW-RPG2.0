@@ -93,6 +93,7 @@ function closeEventsFeed() {
   refreshFeedCounts();
 }
 
+var feedSeq = 0;            // номер запроса ленты: опоздавший ответ прошлой вкладки не рисуется
 function setFeedTab(tab) {
   feedTab = tab;
   paintFeedBadges();
@@ -102,8 +103,11 @@ function setFeedTab(tab) {
 
   if (tab === 'income') { renderIncomePanel(body); return; }
 
+  var my = ++feedSeq;
   supabase.rpc('get_event_feed', { p_category: tab, p_limit: 60 })
     .then(function(res) {
+      // пока ждали ответ, игрок перешёл на другую вкладку — этот ответ не её (и «прочитано» не отмечать)
+      if (my !== feedSeq || feedTab !== tab) return;
       if (res.error) {
         body.innerHTML = '<div class="feed-empty">Не удалось прочитать ленту</div>';
         return;
@@ -344,7 +348,7 @@ function makeDuelRow(e) {
   var en = m.en || {};
   var us = m.us || [];
   var lost = m.lost || [];
-  var ageSec = Math.max(0, (Date.now() - new Date(e.created_at).getTime()) / 1000);
+  var ageSec = Math.max(0, (feedNow() - new Date(e.created_at).getTime()) / 1000);
 
   var state, tone;
   if (m.result === 'won') { state = 'уничтожен'; tone = 'good'; }
@@ -553,8 +557,10 @@ function feedEta(sec) {
   return sec + ' с';
 }
 
+// время сервера (js/credits-bar.js): отметки событий серверные, часы телефона могут спешить или отставать
+function feedNow() { return typeof svNow === 'function' ? svNow() : Date.now(); }
 function feedWhen(iso) {
-  var sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  var sec = Math.max(0, Math.round((feedNow() - new Date(iso).getTime()) / 1000));
   if (sec < 60) return 'только что';
   if (sec < 3600) return Math.floor(sec / 60) + ' мин назад';
   if (sec < 86400) return Math.floor(sec / 3600) + ' ч назад';

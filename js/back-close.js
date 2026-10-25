@@ -24,7 +24,9 @@
     var list = el.querySelectorAll('button, [role="button"], .close, [data-close]');
     for (var i = 0; i < list.length; i++) {
       var b = list[i], id = b.id || '', tx = (b.textContent || '').replace(/\s+/g, ''), al = b.getAttribute('aria-label') || '';
-      if ((/(^|-)close$/.test(id) || tx === '✕' || tx === '×' || /^Закрыть/.test(al)) && visible(b) && !b.disabled) return b;
+      // окно подтверждения (js/game-confirm.js, #gc-confirm) без ✕: «Назад» — это его «Отмена», а не закрытие шторки под ним
+      var cancel = b.classList && b.classList.contains('gc-cancel');
+      if ((/(^|-)close$/.test(id) || tx === '✕' || tx === '×' || /^Закрыть/.test(al) || cancel) && visible(b) && !b.disabled) return b;
     }
     return null;
   }

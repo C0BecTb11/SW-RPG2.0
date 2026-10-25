@@ -3372,7 +3372,8 @@
     var N = G.net; if (!N) return;
     G.net = null;
     if (N.ws) { N.ws.onclose = null; try { N.ws.close(); } catch (e) {} }
-    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    // орбита из игры: адрес (?system=…) — её, не трогать (по нему «Ещё раз», вход и перезагрузка); полигон — убрать код комнаты
+    if (!N.sys) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
     netRow();
     if (!quiet) toast('Бой по сети закрыт', 'gold');
   }

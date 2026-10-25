@@ -223,7 +223,13 @@
     [/user already registered|already been registered/i, 'Такая почта уже зарегистрирована'],
     [/email not confirmed/i, 'Почта не подтверждена — проверь письмо'],
     [/rate limit|too many requests|security purposes/i, 'Слишком много попыток — подожди минуту'],
-    [/password should be at least|weak password/i, 'Пароль слишком короткий'],
+    [/password should be at least/i, 'Пароль слишком короткий'],
+    [/weak.?password|password is known to be weak|easy to guess|pwned/i, 'Пароль слишком простой — придумай другой'],
+    [/signups? not allowed|signup is disabled|signups are disabled/i, 'Регистрация сейчас закрыта'],
+    [/link is invalid or has expired|otp.?expired|token has expired|invalid.?token|flow state/i, 'Ссылка недействительна или устарела — запроси новую'],
+    [/same.?password|new password should be different/i, 'Новый пароль должен отличаться от старого'],
+    [/jwt expired|invalid jwt|refresh token|session.?not.?found|auth session missing/i, 'Вход устарел — обнови страницу'],
+    [/user not found/i, 'Такой учётной записи нет'],
     [/unable to validate email|invalid email|email address .* is invalid/i, 'Почта указана неверно'],
     // раньше сети: «canceling statement due to statement timeout» — база была занята, а не связь пропала
     [/deadlock|could not serialize|canceling statement|lock timeout|could not obtain lock/i, 'Сервер был занят — попробуй ещё раз'],
@@ -231,7 +237,18 @@
     [/violates|duplicate key|null value|row-level security|permission denied|constraint|invalid input syntax|does not exist|out of range|malformed/i,
      'База не приняла изменение — попробуй ещё раз; если повторится — сообщи администрации']
   ];
+  // коды ошибок входа (GoTrue, e.code) — надёжнее текста, который сервис может поменять
+  var CODE = {
+    invalid_credentials: 'Неверная почта или пароль', user_already_exists: 'Такая почта уже зарегистрирована',
+    email_exists: 'Такая почта уже зарегистрирована', email_not_confirmed: 'Почта не подтверждена — проверь письмо',
+    over_request_rate_limit: 'Слишком много попыток — подожди минуту', over_email_send_rate_limit: 'Слишком много писем — подожди немного',
+    weak_password: 'Пароль слишком простой — придумай другой', signup_disabled: 'Регистрация сейчас закрыта',
+    email_provider_disabled: 'Регистрация сейчас закрыта', otp_expired: 'Ссылка недействительна или устарела — запроси новую',
+    same_password: 'Новый пароль должен отличаться от старого', user_not_found: 'Такой учётной записи нет',
+    validation_failed: 'Почта или пароль указаны неверно', email_address_invalid: 'Почта указана неверно'
+  };
   window.gameErr = function(e) {
+    if (e && typeof e === 'object' && typeof e.code === 'string' && CODE[e.code]) return CODE[e.code];
     var m = '';
     try {
       if (e == null) m = '';

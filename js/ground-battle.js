@@ -7099,15 +7099,16 @@ function drawDropCells() {
   // высадки: красим их свободные клетки тем же зелёным, что и при найме.
   // Полоса вторжения хозяину не подсвечивается нигде, в том числе из лотка
   if (!iAmAttacker) {
-    // клетка зелёная, если её накрывает хоть одно свободное место под эту машину (у пехоты — сама клетка)
-    var lit = {};
+    // клетка зелёная ровно тогда, когда касание по ней примет лоток (dtTapPlace → dtWhy): рамка машины
+    // встаёт центром на клетку, вся — в зоне высадки и на свободном месте (у пехоты — сама клетка)
+    var lit = {}, ox = Math.floor((vw - 1) / 2), oy = Math.floor((vh - 1) / 2);
     deployZones.forEach(function(zone) {
       var size = zone.size || DEPLOY_SIZE;
-      for (var dx = 0; dx + vw <= size; dx++) {
-        for (var dy = 0; dy + vh <= size; dy++) {
-          var zx = zone.x + dx, zy = zone.y + dy;
-          if (!isBoxFree(occupied, zx, zy, vw, vh)) continue;
-          for (var ix = 0; ix < vw; ix++) for (var iy = 0; iy < vh; iy++) lit[(zx + ix) + ',' + (zy + iy)] = 1;
+      for (var dx = 0; dx < size; dx++) {
+        for (var dy = 0; dy < size; dy++) {
+          var cx = zone.x + dx, cy = zone.y + dy, bx = cx - ox, by = cy - oy, ok = isBoxFree(occupied, bx, by, vw, vh);
+          for (var ix = 0; ok && ix < vw; ix++) for (var iy = 0; ok && iy < vh; iy++) if (!fighterLandCellAllowed(bx + ix, by + iy)) ok = false;
+          if (ok) lit[cx + ',' + cy] = 1;
         }
       }
     });

@@ -401,11 +401,12 @@ function bdLoad(keepView) {
   return ask.then(null, function(e) { return { data: null, error: { message: (e && e.message) || 'Нет связи с сервером', net: true } }; }).then(function(res) {
     if (my !== bdSeq) return;
     if (res.error || !res.data) {
-      // отказ сервера по-русски («Абордаж не найден» и т. п.) при первой загрузке — окончательно;
-      // сетевая или служебная ошибка, либо бой уже шёл — повторить (до 10 раз при первой загрузке)
+      // отказ сервера по-русски («Абордаж не найден», «Не авторизован» и т. п.) — окончательно, и при первой
+      // загрузке, и посреди боя (повтор его не исправит); сетевая или служебная ошибка — повторить:
+      // посреди боя без счёта, при первой загрузке — до 10 раз
       var msg = res.error ? String(res.error.message || '') : 'Абордаж не найден';
       var refusal = !res.error || (!res.error.net && /[а-яё]/i.test(msg));
-      if ((bdState && res.error) || (!refusal && bdRetryN < 10)) { bdNetRetry(); return; }
+      if (!refusal && (bdState || bdRetryN < 10)) { bdNetRetry(); return; }
       bdFail(refusal ? msg : 'Нет связи с сервером — проверь интернет и открой абордаж снова');
       return;
     }

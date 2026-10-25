@@ -201,14 +201,14 @@
  },
  "js/boarding.js": {
   "v": "3",
-  "sha": "a06072c66d8a"
+  "sha": "a64f88dac4e4"
  },
  "js/bottom-panel.js": {
   "v": "1",
   "sha": "3cb586aab8c5"
  },
  "js/credits-bar.js": {
-  "v": "8",
+  "v": "9",
   "sha": "65e55230d999"
  },
  "js/dev-panel.js": {
@@ -225,10 +225,10 @@
  },
  "js/err-report.js": {
   "v": "5",
-  "sha": "51de03ba3a5a"
+  "sha": "f5d3a3f1dbc6"
  },
  "js/event-live.js": {
-  "v": "21",
+  "v": "22",
   "sha": "fc703eab7e25"
  },
  "js/events-entry.js": {
@@ -281,7 +281,7 @@
  },
  "js/ground-battle.js": {
   "v": "12",
-  "sha": "7637306f5750"
+  "sha": "76fc8b925f5f"
  },
  "js/ground-live.js": {
   "v": "26",
@@ -501,6 +501,6 @@
  },
  "space/space.js": {
   "v": "36",
-  "sha": "e70347bb88e0"
+  "sha": "ca02e282fb33"
  }
 }

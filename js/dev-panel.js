@@ -128,6 +128,8 @@
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_sith:sith">Охота на ситха — ситхом</button></div>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_jedi:hunter">Охота на джедаев — охотником</button></div>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="hunt_jedi:jedi">Охота на джедаев — джедаем</button></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="r_tessara:defender">Оборона «Тессары» — гарнизоном</button></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evtest" data-v="c_siege:defender">Завод под осадой — гарнизоном</button></div>' +
         '<div class="dv-lbl">Уровень</div><div class="dv-chips">' + [1, 2, 3].map(function(n) { return '<button type="button" class="dv-chip' + ((S.evTier || 2) === n ? ' on' : '') + '" data-act="evtier" data-v="' + n + '">' + ['I Новобранец', 'II Ветеран', 'III Легенда'][n - 1] + '</button>'; }).join('') + '</div>' +
         '<p class="dv-note">Карта — случайная, остальные роли — боты (охотников-ботов — двое). Больше настроек и журнал матчей — во вкладке «Тест» в лобби ивентов.</p>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="evlobby">Лобби ивентов</button></div></section>';

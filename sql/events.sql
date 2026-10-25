@@ -1,5 +1,6 @@
 -- Ивенты: каталог, очередь и подбор, матчи, награды, трофеи, титулы, рейтинг, тест из DEV.
 -- Каталог повторяет shared/rt-events-cat.js (награды, роли, титулы; сверка — tools/events/check.js).
+-- Оборона (r_tessara, c_siege) и пары PvE-ивентов — sql/events_defense.sql.
 -- Бой идёт в комнате сервера «ev:<матч>» (server/event-room.js): rt_event_open → бой → rt_event_finish.
 -- Игрокам — только функции ниже; таблицы закрыты (RLS без политик, права сняты).
 
@@ -91,7 +92,9 @@ insert into public.event_catalog (id, kind, theater, sides, title, troops, ready
  ('aces', 'pvp', 'space', '{republic,cis}', 'Дуэль асов', 'event', false, '[]', '{}', '{12,15,18}', 350, '{"cells":30}', '{}', 8),
  ('orbis', 'pvp', 'space', '{republic,cis}', 'Станция «Орбис-9»', 'event', false, '[]', '{}', '{12,15,18}', 520, '{"durasteel":40,"electronics":20}', '{}', 9),
  ('flagship', 'pvp', 'space', '{republic,cis}', 'Абордаж флагмана', 'own', false, '[]', '{}', '{12,15,18}', 650, '{"durasteel":60}', '{}', 10),
- ('r_tessara', 'pve', 'ground', '{republic}', 'Оборона аванпоста «Тессара»', 'own', false, '[]', '{}', '{12,15,18}', 380, '{"durasteel":40}', '{}', 11),
+ ('r_tessara', 'pve', 'ground', '{republic}', 'Оборона аванпоста «Тессара»', 'event', true,
+  '[{"id":"defender","side":"republic","min":1,"max":4,"name":"Гарнизон"}]',
+  '{tessara,tessara_pass}', '{10,15,21}', 420, '{"durasteel":40}', '{"defender":"Щит Тессары"}', 11),
  ('r_veilkrag', 'pve', 'ground', '{republic}', 'Плен на заводе «Вейл-Краг»', 'event', false, '[]', '{}', '{12,15,18}', 400, '{"food":60}', '{}', 12),
  ('r_duun', 'pve', 'ground', '{republic}', 'Логово в кратере Дуун', 'event', false, '[]', '{}', '{12,15,18}', 360, '{"food":50}', '{}', 13),
  ('r_meltarr', 'pve', 'ground', '{republic}', 'Завод «Мелтарр»', 'own', false, '[]', '{}', '{12,15,18}', 460, '{"electronics":40}', '{}', 14),
@@ -112,7 +115,9 @@ insert into public.event_catalog (id, kind, theater, sides, title, troops, ready
  ('c_contract', 'pve', 'ground', '{cis}', 'Контракт на командира', 'event', false, '[]', '{}', '{12,15,18}', 460, '{"electronics":30}', '{}', 29),
  ('c_narkess', 'pve', 'ground', '{cis}', 'Нар-Кесс', 'own', false, '[]', '{}', '{12,15,18}', 420, '{"food":60}', '{}', 30),
  ('c_aurelis', 'pve', 'ground', '{cis}', 'Лаборатория «Аурелис»', 'event', false, '[]', '{}', '{12,15,18}', 440, '{"electronics":40}', '{}', 31),
- ('c_siege', 'pve', 'ground', '{cis}', 'Завод под осадой', 'own', false, '[]', '{}', '{12,15,18}', 460, '{"durasteel":40}', '{}', 32),
+ ('c_siege', 'pve', 'ground', '{cis}', 'Завод под осадой', 'event', true,
+  '[{"id":"defender","side":"cis","min":1,"max":4,"name":"Гарнизон"}]',
+  '{vex,vex_slag}', '{10,15,21}', 420, '{"durasteel":40}', '{"defender":"Стальная стена Векса"}', 32),
  ('c_grotto', 'pve', 'ground', '{cis}', 'Грот Шепчущих', 'own', false, '[]', '{}', '{12,15,18}', 500, '{"crystals":20}', '{}', 33),
  ('c_kolm', 'pve', 'space', '{cis}', 'Дрейф Кольм', 'own', false, '[]', '{}', '{12,15,18}', 480, '{"durasteel":50}', '{}', 34),
  ('c_vigil', 'pve', 'space', '{cis}', 'Ретранслятор «Вигил»', 'event', false, '[]', '{}', '{12,15,18}', 420, '{"electronics":40}', '{}', 35),

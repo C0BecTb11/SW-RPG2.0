@@ -229,8 +229,10 @@
     this.base = lo; this.lag = STEP + Math.min(0.35, Math.max(0.03, hi - lo)) + 0.02;
     if (f.new) for (i = 0; i < f.new.length; i++) {
       var n = f.new[i], a = this.agents[n.id];
-      while (this.agents.length < n.id) this.agents.push({ id: this.agents.length, alive: false, gone: true, T: U.type('rep_dc15a'), team: 0, x: 0, y: 0, hp: 0, hpMax: 1, size: 1 });   // без дыр в списке
-      if (!a) {
+      // без дыр в списке: пустышка (ph) до описания бойца. Описание пришло — пустышка заменяется целиком
+      // (иначе боец оставался «клоном» стороны 0: враг из поздней волны рисовался своим)
+      while (this.agents.length < n.id) this.agents.push({ id: this.agents.length, ph: true, alive: false, gone: true, T: U.type('rep_dc15a'), team: 0, x: 0, y: 0, hp: 0, hpMax: 1, size: 1 });
+      if (!a || a.ph) {
         var Ty = U.type(n.tid) || U.type(n.team === 0 ? 'rep_dc15a' : 'cis_b1');
         a = { id: n.id, tid: n.tid, T: Ty, team: n.team, uid: n.uid, name: n.name, hpMax: n.hpMax, owner: n.owner, npc: n.npc, size: n.size || Ty.size,
               x: 0, y: 0, aim: 0, legs: 0, mv: 0, phase: Math.random() * TAU, hp: n.hpMax, alive: true, gone: false, diedAt: 0, air: Ty.air, fly: Ty.move === 'air',
@@ -242,7 +244,7 @@
     }
     var now = f.T;
     for (i = 0; i < f.n.length; i++) {
-      var u = f.n[i], b = this.agents[u[0]]; if (!b) continue;
+      var u = f.n[i], b = this.agents[u[0]]; if (!b || b.ph) continue;
       // положения по времени сервера; стоящего сервер не повторяет — если он молчал, значит стоял
       // на прежнем месте до прошлого кадра (иначе первый шаг после стоянки был бы прыжком)
       if (!b.vis || !b.ks || !b.ks.length) { b.ks = [{ x: u[1], y: u[2], T: now }]; b.x = u[1]; b.y = u[2]; }

@@ -1,5 +1,6 @@
 /* Сценарии ивентов наземки 2.0 поверх движка shared/rt-ground.js (Ground с opts.noTown).
- * Пока — охоты: на ситха и на джедаев (одна логика, роли зеркальные).
+ * Охоты: на ситха и на джедаев (одна логика, роли зеркальные). Оборона от волн: аванпост
+ * «Тессара» (Республика против дроидов) и завод «Векс» (КНС против клонов) — тоже одна логика.
  *
  *   var H = SWEvents.create(B, { event, tier, map, players: [{ user, role, nick, bot }], seed });
  *   H.setup()          — войска на карту (владелец бойца — игрок или «bot:роль:n»)
@@ -18,11 +19,12 @@
 (function(root, factory) {
   var api = factory(
     typeof require === 'function' ? require('./rt-ground.js') : root.SWGround,
-    typeof require === 'function' ? require('./rt-events-cat.js') : root.SWEventsCat
+    typeof require === 'function' ? require('./rt-events-cat.js') : root.SWEventsCat,
+    typeof require === 'function' ? require('./rt-units.js') : root.SWUnits
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.SWEvents = api;
-})(typeof self !== 'undefined' ? self : this, function(GR, CAT) {
+})(typeof self !== 'undefined' ? self : this, function(GR, CAT, UN) {
   'use strict';
   var RK = GR.RANGE_K;
 
@@ -311,9 +313,311 @@
     B.orderMove(team, own.map(function(a) { return a.id; }), gx, gy);
   };
 
+
+  // ================================================================ оборона от волн
+  // Гарнизон (1–4 игрока) держит базу: ядро в середине площадки, вокруг — окопы, бункеры и турели
+  // из карты (ev.forts). Волны врага высаживаются у краёв и идут к ядру; враг в зоне ядра без помехи
+  // гарнизона ломает базу (прочность 100 → 0 — поражение). Все волны отбиты или время вышло, а база
+  // стоит — победа. Сила волн — в «B1»: √(здоровье × урон) / 32, так дроиды и клоны сравнимы.
+  var DEF = {
+    waves:  [5, 10, 15],
+    first:  [40, 35, 30],          // первая волна, с
+    gapMax: [80, 70, 62],          // следующая волна не позже, с
+    brk: 12,                       // волна зачищена — следующая через столько секунд
+    warn: 12,                      // за сколько секунд объявить волну
+    drain:  [0.45, 0.55, 0.65],    // прочности в секунду на единицу силы врага в зоне
+    base:   [7, 5.5, 5],           // сила волны: base + slope × номер волны (B1, на одного игрока)
+    slope:  [1.9, 1.65, 1.5],
+    pk:     [1, 1.55, 2.05, 2.5],  // сила волн по числу игроков (гарнизон на игрока с числом игроков меньше)
+    squad:  { 1: 28, 2: 21, 3: 18, 4: 16 },     // сила гарнизона одного игрока (B1)
+    reinf:  [[3], [3, 7], [4, 8, 12]], reinfV: 10,   // подкрепление после волн и его сила на игрока
+    heal: 0.15, repair: 0.15,      // волна отбита: раненым +15 % здоровья, укреплениям +15 % прочности
+    cap: 72,                       // живых врагов на карте не больше — остальные высаживаются следом
+    bossEvery: 5
+  };
+  var KITD = {
+    // waveK — поправка силы волн: дроиды хрупче и проще клонов, укрепления выкашивают их быстрее
+    r_tessara: { team: 0, foe: 1, waveK: 1.15, lead: 'rep_officer', basic: 'rep_dc15a', spec: ['rep_heavy', 'rep_heavy', 'rep_sniper', 'rep_launcher'], elite: 'rep_commando', veh: 'rep_atrt',
+      enemy: { basic: 'cis_b1', mix: [[0.15, 'cis_b1_launcher', 0.1], [0.2, 'cis_b1_sniper', 0.08], [0.3, 'cis_b2', 0.25], [0.45, 'cis_wheel', 0.12], [0.5, 'cis_stap', 0.1], [0.65, 'cis_bx', 0.12]],
+               boss: ['cis_aat'], bossLite: ['cis_stap', 'cis_stap', 'cis_bx'] },
+      base: 'аванпост', baseGen: 'аванпоста', foes: 'дроиды', foesGen: 'дроидов', lost: 'Аванпост пал', held: 'Аванпост устоял: флот на подходе', won: 'Все волны дроидов отбиты' },
+    c_siege: { team: 1, foe: 0, lead: 'cis_bx', basic: 'cis_b1', spec: ['cis_b2', 'cis_b2', 'cis_b1_sniper', 'cis_b1_launcher', 'cis_wheel'], elite: 'cis_bounty', veh: 'cis_stap',
+      enemy: { basic: 'rep_dc15a', mix: [[0.15, 'rep_launcher', 0.1], [0.2, 'rep_sniper', 0.08], [0.3, 'rep_heavy', 0.18], [0.45, 'rep_barc', 0.1], [0.5, 'rep_atrt', 0.1], [0.6, 'rep_arc', 0.1], [0.75, 'rep_commando', 0.08]],
+               boss: ['rep_atte'], bossLite: ['rep_barc', 'rep_barc', 'rep_arc'] },
+      base: 'завод', baseGen: 'завода', foes: 'клоны', foesGen: 'клонов', lost: 'Завод захвачен', held: 'Завод устоял: подходит эскадра', won: 'Все волны клонов отбиты' }
+  };
+  function power(tid) {
+    var T = UN.type(tid); if (!T) return 1;
+    return Math.sqrt(Math.max(1, T.hp) * Math.max(1, T.dmg)) / 32 * (T.wheel ? 1.4 : 1);
+  }
+
+  function Defense(B, cfg) {
+    this.B = B; this.cfg = cfg; this.E = CAT.BY[cfg.event]; this.K = KITD[cfg.event];
+    this.tier = Math.max(1, Math.min(3, cfg.tier | 0)); this.ti = this.tier - 1;
+    this.R = rng(cfg.seed || 1977);
+    this.ev = cfg.map.ev; this.team = this.K.team; this.foe = this.K.foe;
+    this.players = (cfg.players || []).slice();
+    this.limit = this.E.minutes[this.ti] * 60;
+    this.W = DEF.waves[this.ti]; this.wave = 0; this.cleared = 0;
+    this.next = DEF.first[this.ti]; this.lastSpawn = 0; this.warned = 0; this.plan = null;
+    this.queue = []; this.hp = 100; this.hpMsg = 100;
+    this.stats = {}; this.deathsT = -1; this.result = null; this.botT = 0; this.aiT = 0; this.zT = 0; this.reinfDone = {};
+    this.n = Math.max(1, Math.min(4, this.owners().length));
+    this.core = { x: this.ev.core[0], y: this.ev.core[1], name: this.ev.core[2] }; this.zone = this.ev.zone || 7;
+    this.posts = []; this.press = 0;
+  }
+  Defense.prototype.owners = function() { return this.players.filter(function(p) { return p.role === 'defender'; }); };
+  Defense.prototype.msg = Hunt.prototype.msg;
+  Defense.prototype.countDeaths = Hunt.prototype.countDeaths;
+  Defense.prototype.setup = function() {
+    var B = this.B, self = this, K = this.K, ev = this.ev;
+    // укрепления карты — гарнизону
+    (ev.forts || []).forEach(function(f) { B.addStruct(f[0], self.team, f[1], f[2]); });
+    // посты: места в окопах и бункерах, потом кольцо вокруг ядра — лицом к высадкам
+    this.posts = this.makePosts();
+    var list = this.owners();
+    list.forEach(function(p, k) { self.squad(p, DEF.squad[self.n] + (self.n === 1 ? 4 : 0), true, k); });
+    this.msg(this.team, 'Держи ' + K.base + ': ' + K.foes + ' пойдут ' + this.W + ' волнами. Первая — через ' + Math.round(this.next) + ' с', 'gold');
+    B.onAI = function() {};
+  };
+  // Сила игрока: лидер, особые, элита на III, техника одиночке, остальное — основными
+  Defense.prototype.squad = function(p, value, first, k) {
+    var K = this.K, list = [], v = 0, self = this, B = this.B;
+    if (first) { list.push(K.lead); K.spec.forEach(function(t) { list.push(t); }); if (this.ti === 2) list.push(K.elite); if (this.n <= 2) list.push(K.veh); }
+    else { list.push(K.spec[Math.floor(this.R() * K.spec.length)]); }
+    list.forEach(function(t) { v += power(t); });
+    var pb = power(K.basic);
+    while (v + pb * 0.5 < value) { list.push(K.basic); v += pb; }
+    var n = 0;
+    list.forEach(function(tid, i) {
+      var slot = self.freePost(tid, k), a = slot ? self.put(tid, self.team, slot, { owner: p.user, aim: slot.aim }) : null;
+      if (!a) { slot = null; a = self.put(tid, self.team, [Math.floor(self.core.x) - 4, Math.floor(self.core.y) + 3, 8, 3], { owner: p.user, aim: 0 }); }
+      if (!a) return;
+      a.evRole = 'defender'; a.post0 = slot ? slot.post : null; n++;
+      if (slot) {
+        slot.post.by = a.id;
+        // в окопе или бункере — держит место (не выбегает за целью); игрок может увести приказом
+        if (slot.post.fort) { var c = B.cellOf(a); a.goal = [c[0], c[1]]; a.at = true; a.hold = true; }
+      }
+    });
+    return n;
+  };
+  Defense.prototype.makePosts = function() {
+    var B = this.B, c = this.core, ev = this.ev, out = [], taken = {}, N = 144, self = this;
+    var dirs = (ev.spawns || []).map(function(s) { var dx = s[0] - c.x, dy = s[1] - c.y, l = Math.sqrt(dx * dx + dy * dy) || 1; return [dx / l, dy / l]; });
+    B.structs.forEach(function(st) {
+      if (!st.enter) return;
+      for (var y = st.y; y < st.y + st.h; y++) for (var x = st.x; x < st.x + st.w; x++) { out.push({ x: x, y: y, fort: true, aim: self.aimAt(x, y, dirs), by: -1 }); taken[y * N + x] = 1; }
+    });
+    // кольцо: на 6–11 клетках от ядра, ближе к направлениям высадок, в шахматном порядке
+    var ring = [];
+    for (var y = Math.floor(c.y) - 12; y <= Math.floor(c.y) + 12; y++) for (var x = Math.floor(c.x) - 12; x <= Math.floor(c.x) + 12; x++) {
+      if (x < 1 || y < 1 || x > N - 2 || y > N - 2 || taken[y * N + x] || (x + y) & 1) continue;
+      var dx = x + 0.5 - c.x, dy = y + 0.5 - c.y, d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 5 || d > 11 || !B.pass.foot1[y * N + x] || B.structAt[y * N + x] >= 0) continue;
+      var dot = -1; dirs.forEach(function(u) { dot = Math.max(dot, (dx * u[0] + dy * u[1]) / d); });
+      ring.push({ x: x, y: y, fort: false, aim: Math.atan2(dy, dx), by: -1, sc: dot * 2 - Math.abs(d - 8.5) * 0.3 + this.R() * 0.2 });
+    }
+    ring.sort(function(a, b) { return b.sc - a.sc; });
+    return out.concat(ring);
+  };
+  Defense.prototype.aimAt = function(x, y, dirs) {
+    var c = this.core, dx = x + 0.5 - c.x, dy = y + 0.5 - c.y, d = Math.sqrt(dx * dx + dy * dy) || 1, best = Math.atan2(dy, dx), bd = -2;
+    dirs.forEach(function(u) { var k = (dx * u[0] + dy * u[1]) / d; if (k > bd) { bd = k; best = Math.atan2(u[1], u[0]); } });
+    return best;
+  };
+  // Пост для бойца: пехоте — укрепления, потом кольцо; технике — кольцо (снаружи укреплений)
+  Defense.prototype.freePost = function(tid, k) {
+    var T = UN.type(tid), inf = T && T.cls === 'infantry' && !T.wheel, B = this.B;
+    for (var i = 0; i < this.posts.length; i++) {
+      var p = this.posts[i]; if (p.fort && !inf) continue;
+      if (p.by >= 0) { var o = B.agents[p.by]; if (o && o.alive) continue; p.by = -1; }
+      if (T && T.size === 2 && !B.pass[T.move + 2][p.y * 144 + p.x]) continue;
+      return { x: p.x, y: p.y, aim: p.aim, post: p, box: [p.x, p.y, 1, 1] };
+    }
+    return null;
+  };
+  // Поставить бойца: box — [x, y, w, h] или пост; техника 2×2 — по своей проходимости
+  Defense.prototype.put = function(tid, team, box, ex) {
+    var B = this.B, R = this.R, T = UN.type(tid); if (!T) return null;
+    if (box.box) { var pp = box; box = pp.box; }
+    for (var t = 0; t < 200; t++) {
+      var x = box[0] + Math.floor(R() * box[2]), y = box[1] + Math.floor(R() * box[3]);
+      var spot = B.nearestOk(T.move, T.size, x, y); if (!spot) continue;
+      var off = T.size === 2 ? 1 : 0.5, taken = false;
+      if (!B.okAt({ move: T.move, size: T.size, team: team, T: T, air: T.air, fly: T.move === 'air' }, spot[0], spot[1]) && t < 150) continue;   // не внутри турели или чужого укрепления
+      for (var i = 0; i < B.agents.length; i++) { var o = B.agents[i]; if (o.alive && Math.abs(o.x - spot[0] - off) < 0.9 && Math.abs(o.y - spot[1] - off) < 0.9) { taken = true; break; } }
+      if (taken && t < 150) continue;
+      return B.add(tid, team, spot[0] + off, spot[1] + off, { owner: ex.owner, aim: ex.aim });
+    }
+    return null;
+  };
+
+  Defense.prototype.foes = function() { var f = this.foe; return this.B.agents.filter(function(a) { return a.alive && a.team === f; }); };
+  Defense.prototype.mine = function() { var tm = this.team; return this.B.agents.filter(function(a) { return a.alive && a.team === tm && a.evRole === 'defender'; }); };
+  Defense.prototype.inZone = function(a) { var dx = a.x - this.core.x, dy = a.y - this.core.y; return dx * dx + dy * dy <= this.zone * this.zone; };
+  Defense.prototype.weight = function(a) { return a.T.size === 2 ? 3 : a.T.vehicle ? 1.5 : 1; };
+
+  // Состав волны: бюджет силы; босс раз в пять волн и в последней
+  Defense.prototype.makeWave = function(w) {
+    var K = this.K.enemy, f = w / this.W, list = [], self = this;
+    // сила: уровень и номер волны × число игроков × поправки ивента и карты (тесная застройка — меньше)
+    var budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1] * (this.K.waveK || 1) * (this.ev.waveK || 1);
+    var boss = w % DEF.bossEvery === 0 || w === this.W;
+    if (boss) { (this.ti === 0 ? K.bossLite : K.boss).forEach(function(t) { list.push(t); budget -= power(t); }); }
+    K.mix.forEach(function(m) {
+      if (f < m[0]) return;
+      var share = budget * m[2], pv = power(m[1]), n = Math.floor(share / pv + self.R() * 0.6);
+      for (var i = 0; i < n; i++) list.push(m[1]);
+      budget -= n * pv;
+    });
+    var pb = power(K.basic), nb = Math.max(2, Math.round(budget / pb));
+    for (var j = 0; j < nb; j++) list.push(K.basic);
+    // высадки: 1 → 2 → 3 по кругу, на чётных — две, босс — со всех
+    var S = this.ev.spawns, from;
+    if (boss || S.length < 2) from = S.map(function(s, i) { return i; });
+    else if (w % 2 === 0) { var a0 = (w / 2) % S.length; from = [a0, (a0 + 1) % S.length]; }
+    else from = [(w - 1) % S.length];
+    return { w: w, list: list, from: from, boss: boss };
+  };
+  Defense.prototype.dirName = function(from) { var S = this.ev.spawns; return from.length >= S.length ? 'со всех сторон' : 'высадка: ' + from.map(function(i) { return '«' + S[i][2] + '»'; }).join(' и '); };
+  function plural(n, a, b, c) { var m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; }
+
+  Defense.prototype.step = function() {
+    var B = this.B; if (this.result) return;
+    var t = B.t, self = this;
+    this.countDeaths();
+    // волны: объявить, высадить
+    if (this.wave < this.W) {
+      if (!this.plan) this.plan = this.makeWave(this.wave + 1);
+      if (this.warned < this.plan.w && this.next - t <= DEF.warn) {
+        this.warned = this.plan.w;
+        var tx = (this.plan.w === this.W ? 'Последняя волна' : 'Волна ' + this.plan.w) + (this.plan.boss ? ' с тяжёлой техникой' : '') + ' через ' + Math.max(1, Math.round(this.next - t)) + ' с — ' + this.dirName(this.plan.from);
+        this.msg(this.team, tx, this.plan.boss ? 'bad' : 'gold');
+      }
+      if (t >= this.next) {
+        var pl = this.plan; this.plan = null; this.wave = pl.w; this.lastSpawn = t;
+        var S = this.ev.spawns;
+        pl.list.forEach(function(tid, i) { var s = S[pl.from[i % pl.from.length]]; self.queue.push({ tid: tid, s: s, w: pl.w }); });
+        this.next = this.wave < this.W ? t + DEF.gapMax[this.ti] : 1e9;
+        this.msg(this.team, (pl.w === this.W ? 'Последняя волна' : 'Волна ' + pl.w + ' из ' + this.W) + ': ' + pl.list.length + ' ' + plural(pl.list.length, 'враг', 'врага', 'врагов') + ' — ' + this.dirName(pl.from), 'bad');
+      }
+    }
+    // высадка из очереди: не больше cap живых врагов
+    if (this.queue.length && t >= (this.dropT || 0)) {
+      this.dropT = t + 0.5;
+      var alive = this.foes().length, k = 0;
+      while (this.queue.length && alive < DEF.cap && k < 8) {
+        var q = this.queue.shift(), a = this.put(q.tid, this.foe, [Math.floor(q.s[0]) - 3, Math.floor(q.s[1]) - 3, 6, 6], { owner: null, aim: Math.atan2(this.core.y - q.s[1], this.core.x - q.s[0]) });
+        if (a) { a.wv = q.w; a.evRole = 'foe'; alive++; k++; }
+      }
+    }
+    var foes = this.foes();
+    // зачищена ли волна; вся зачищена — следующая скоро
+    var live = {}; foes.forEach(function(a) { live[a.wv] = 1; }); this.queue.forEach(function(q) { live[q.w] = 1; });
+    while (this.cleared < this.wave && !live[this.cleared + 1]) {
+      this.cleared++;
+      if (this.cleared < this.W) { this.msg(this.team, 'Волна ' + this.cleared + ' отбита · медики и техники подлатали гарнизон', 'gold'); this.mend(); }
+      if (DEF.reinf[this.ti].indexOf(this.cleared) >= 0 && !this.reinfDone[this.cleared]) this.reinforce(this.cleared);
+    }
+    if (this.wave > 0 && this.wave < this.W && this.cleared === this.wave && t - this.lastSpawn > 15) this.next = Math.min(this.next, Math.max(t + DEF.brk, this.lastSpawn + 25));
+    // ядро: враг в зоне без помехи ломает базу
+    if (t >= this.zT) {
+      var dt = t - (this.zLast || t); this.zLast = t; this.zT = t + 0.5;
+      var e = 0, d = 0;
+      foes.forEach(function(a) { if (self.inZone(a)) e += self.weight(a); });
+      this.mine().forEach(function(a) { if (self.inZone(a)) d += self.weight(a); });
+      this.press = Math.max(0, e - d * 0.5);
+      this.contested = e > 0;
+      if (this.press > 0) {
+        this.hp = Math.max(0, this.hp - this.press * DEF.drain[this.ti] * dt);
+        [75, 50, 25].forEach(function(th) { if (self.hp <= th && self.hpMsg > th) { self.hpMsg = th; self.msg(self.team, 'Враг у ядра! ' + self.core.name + ': ' + th + '%', 'bad'); } });
+      }
+    }
+    // исход
+    if (this.hp <= 0) return this.finish('enemy', this.K.lost);
+    if (!this.mine().length && !this.pendingReinf()) return this.finish('enemy', 'Гарнизон уничтожен');
+    if (this.wave >= this.W && !this.queue.length && !foes.length) return this.finish('defender', this.K.won);
+    if (t >= this.limit) return this.finish('defender', this.K.held);
+    // враги — к ядру; боты гарнизона
+    if (t >= this.aiT) { this.aiT = t + 1; this.foeAI(foes); }
+    if (t >= this.botT) { this.botT = t + 1; this.bots(foes); }
+  };
+  Defense.prototype.pendingReinf = function() { return false; };
+  // Волна отбита: раненым — часть здоровья, укреплениям — часть прочности
+  Defense.prototype.mend = function() {
+    var tm = this.team;
+    this.mine().forEach(function(a) { a.hp = Math.min(a.hpMax, a.hp + a.hpMax * DEF.heal); });
+    this.B.structs.forEach(function(st) { if (!st.dead && st.team === tm) st.hp = Math.min(st.hpMax, st.hp + st.hpMax * DEF.repair); });
+  };
+  Defense.prototype.reinforce = function(w) {
+    var self = this, n = 0;
+    this.reinfDone[w] = true;
+    this.owners().forEach(function(p, k) { n += self.squad(p, DEF.reinfV, false, k); });
+    if (n) this.msg(this.team, 'Подкрепление: +' + n + ' бойцов у ядра', 'gold');
+  };
+  Defense.prototype.finish = function(winner, why) {
+    var B = this.B; B.over = winner === 'defender' ? this.team : this.foe; B.why = why;
+    this.result = { winner: winner, why: why, t: Math.round(B.t), stats: this.stats, tasks: this.cleared, need: this.W, hp: Math.round(this.hp) };
+  };
+  // Враг: свободные — к ядру (точка в зоне), с поправкой, если застряли; занятых боем не трогаем
+  Defense.prototype.foeAI = function(foes) {
+    var B = this.B, c = this.core, self = this, groups = {};
+    foes.forEach(function(a) {
+      if (a.tgt >= 0 || a.focus >= 0 || a.og) return;
+      var dx = a.x - c.x, dy = a.y - c.y, d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= self.zone - 1.5) return;                                   // у ядра — стоит и ломает
+      if (a.goal && !a.at && B.t - (a.ordT || 0) < 20) return;            // идёт
+      a.ordT = B.t;
+      var key = (a.wv || 0) + ':' + (a.T.size === 2 ? 'v' : 'i') + ':' + Math.round(Math.atan2(dy, dx) * 2);
+      (groups[key] = groups[key] || []).push(a.id);
+    });
+    Object.keys(groups).forEach(function(k) {
+      var ids = groups[k], a0 = B.agents[ids[0]], ang = Math.atan2(a0.y - c.y, a0.x - c.x), r = self.zone * 0.45;
+      B.orderMove(self.foe, ids, Math.round(c.x + Math.cos(ang) * r), Math.round(c.y + Math.sin(ang) * r), { auto: true });
+    });
+  };
+  // Гарнизон-бот: враг в зоне ядра — ближние бойцы на него; иначе — на свой пост
+  Defense.prototype.bots = function(foes) {
+    var B = this.B, self = this, team = this.team, intr = foes.filter(function(a) { return self.inZone(a) || (Math.abs(a.x - self.core.x) < self.zone + 4 && Math.abs(a.y - self.core.y) < self.zone + 4); });
+    this.players.forEach(function(p) {
+      if (!p.bot || p.role !== 'defender') return;
+      var own = self.mine().filter(function(a) { return a.owner === p.user; });
+      own.forEach(function(a, i) {
+        if (intr.length && (i % 2 === 0 || intr.length > 3)) {
+          var best = null, bd = 1e9; intr.forEach(function(b) { var dd = d2(b, a.x, a.y); if (dd < bd) { bd = dd; best = b; } });
+          if (best && bd < 22 * 22 && a.focus !== best.id) { B.orderAttack(team, [a.id], best.id); return; }
+          if (best && bd < 22 * 22) return;
+        }
+        if (a.focus >= 0 && !(B.agents[a.focus] && B.agents[a.focus].alive)) a.focus = -1;
+        if (a.tgt >= 0 || a.focus >= 0) return;
+        var po = a.post0; if (!po) return;
+        var far = Math.abs(a.x - po.x - 0.5) + Math.abs(a.y - po.y - 0.5) > 2.5;
+        if (far && (a.at || !a.goal)) { B.goCell(a, po.x, po.y); a.post = false; a.hold = false; }
+        else if (!far && po.fort && a.at && !a.hold) a.hold = true;      // вернулся в укрепление — снова держит место
+      });
+    });
+  };
+  Defense.prototype.view = function(team) {
+    var B = this.B, t = B.t, self = this, S = this.ev.spawns, hot = {};
+    var nextIn = this.wave < this.W ? Math.max(0, Math.ceil(this.next - t)) : -1;
+    if (this.plan && nextIn >= 0 && nextIn <= DEF.warn + 3) this.plan.from.forEach(function(i) { hot[i] = 1; });
+    if (t - this.lastSpawn < 12 && this.wave) { var pw = this.wave; this.queue.forEach(function(q) { if (q.w === pw) S.forEach(function(s, i) { if (s === q.s) hot[i] = 2; }); }); }
+    var foes = this.foes(), inz = 0; foes.forEach(function(a) { if (self.inZone(a)) inz++; });
+    var reinf = DEF.reinf[this.ti].filter(function(w) { return !self.reinfDone[w]; })[0];
+    return { k: 'defense', ev: this.cfg.event, tier: this.tier, role: 'defender', left: Math.max(0, Math.round(this.limit - t)), T: Math.round(t),
+             wave: this.wave, waves: this.W, cleared: this.cleared, next: nextIn, boss: this.plan ? !!this.plan.boss : false,
+             from: this.plan ? this.plan.from : null, hp: Math.round(this.hp * 10) / 10, press: Math.round(this.press * 10) / 10,
+             core: [this.core.x, this.core.y, this.core.name], zone: this.zone,
+             spawns: S.map(function(s, i) { return [s[0], s[1], s[2], hot[i] || 0]; }),
+             foes: foes.length + this.queue.length, inZone: inz, mine: this.mine().length, reinf: reinf || 0,
+             over: this.result ? this.result : null };
+  };
+
   function create(B, cfg) {
     if (cfg.event === 'hunt_sith' || cfg.event === 'hunt_jedi') return new Hunt(B, cfg);
+    if (KITD[cfg.event]) return new Defense(B, cfg);
     throw new Error('ивент ещё не готов: ' + cfg.event);
   }
-  return { create: create, Hunt: Hunt, HUNT: HUNT, KIT: KIT, SQUAD: SQUAD, PREY_HP: PREY_HP, fmt: fmt };
+  return { create: create, Hunt: Hunt, HUNT: HUNT, KIT: KIT, SQUAD: SQUAD, PREY_HP: PREY_HP, Defense: Defense, DEF: DEF, KITD: KITD, power: power, fmt: fmt };
 });

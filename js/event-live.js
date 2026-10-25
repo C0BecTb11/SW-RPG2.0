@@ -4,11 +4,14 @@
  *
  * Худ: таймер и строка задач вверху; на карте — места задач, эвакуация, импульс сенсоров,
  * тревога и где цель видели в последний раз; брифинг в начале, итог с наградой в конце.
+ * Оборона (v.k === 'defense'): волна и отсчёт до следующей, прочность ядра, враги у ядра,
+ * подкрепление; на карте — зона ядра с прочностью по кругу и высадки врага (горят перед волной).
  * Замеры без базы: ?dev=dev-hunt_sith-2-sarn-hunter&srv=http://127.0.0.1:8080. ES5.
  */
 (function() {
   'use strict';
-  var CAT = window.SWEventsCat, EVS = window.SWEvents, HUNT = EVS ? EVS.HUNT : null;
+  var CAT = window.SWEventsCat, EVS = window.SWEvents, HUNT = EVS ? EVS.HUNT : null, DEF = EVS ? EVS.DEF : null;
+  function isDef(id) { return !!(EVS && EVS.KITD && EVS.KITD[id]); }
   var SRV_FALLBACK = 'https://2-31-45-237.sslip.io';
   var Q = function(k) { var m = new RegExp('[?&]' + k + '=([^&]+)').exec(location.search); return m ? decodeURIComponent(m[1]) : ''; };
   var matchId = Q('m'), devRoom = Q('dev');
@@ -21,7 +24,8 @@
   var GLYPH = {
     sith: '<path d="M5 19L17 5M7 5l12 14"/><path d="M4 18l2 2M18 18l2 2" stroke-width="2.4"/>',
     jedi: '<path d="M12 3v13"/><path d="M10 16h4v3h-4zM11 19v2h2v-2"/>',
-    hunter: '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1.5"/>'
+    hunter: '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1.5"/>',
+    defender: '<path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>'
   };
   function glyph(k) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (GLYPH[k] || GLYPH.hunter) + '</svg>'; }
 
@@ -51,7 +55,7 @@
     L.hello = h; var e = h.ev || {}, E = CAT.BY[e.event] || {}, T = CAT.TIERS[(e.tier || 1) - 1] || CAT.TIERS[0];
     $('sp-kicker').textContent = (E.title || 'Ивент') + ' · ' + ['I', 'II', 'III'][(e.tier || 1) - 1] + ' ' + T.name;
     $('gd-planet').textContent = e.place || h.name || '';
-    var g = $('gd-goal'); g.textContent = (e.roleName ? 'ты — ' + e.roleName.toLowerCase() : '') + (e.test ? ' · тест' : ''); g.className = 'gd-goal' + (e.role === 'hunter' ? '' : ' att');
+    var g = $('gd-goal'); g.textContent = (e.roleName ? 'ты — ' + e.roleName.toLowerCase() : '') + (e.test ? ' · тест' : ''); g.className = 'gd-goal' + (e.role === 'hunter' || e.role === 'defender' ? '' : ' att');
     $('gd-globe').innerHTML = glyph(e.role === 'hunter' ? 'hunter' : e.role);
     document.title = (E.title || 'Ивент') + ' — Star Wars: Global Conflict';
     if (!L.briefShown) brief();
@@ -62,7 +66,14 @@
     $('ev-brief-k').textContent = 'Брифинг · ' + (E.title || '') + ' · ' + (CAT.TIERS[ti] || {}).name;
     $('ev-brief-title').textContent = e.place || '';
     $('ev-brief-goal').textContent = e.goal || '';
-    if (HUNT) {
+    if (isDef(e.event) && DEF) {
+      var K = EVS.KITD[e.event];
+      items.push('Волн: <b>' + DEF.waves[ti] + '</b>. Первая — через ' + DEF.first[ti] + ' с, следующие — не реже раза в ' + DEF.gapMax[ti] + ' с; отбил волну раньше — следующая придёт быстрее.');
+      items.push('Перед волной горит её <b>высадка</b> у края карты — туда и смотри. Волна ' + DEF.bossEvery + ', ' + DEF.bossEvery * 2 + ' и последняя — с тяжёлой техникой.');
+      items.push('Круг у ядра — <b>зона ' + K.baseGen + '</b>. Враг в ней без помехи ломает ' + K.base + ': прочность по кругу. Свои бойцы в зоне сдерживают его вдвое.');
+      items.push('Окопы и бункеры дают укрытие, турели бьют сами. Бойцы в укреплениях держат место — уведи их приказом, если нужно.');
+      items.push('Подкрепление приходит после волн ' + DEF.reinf[ti].join(' и ') + '. Время: <b>' + (e.minutes || 15) + ' мин</b> — продержишься до конца, и база спасена.');
+    } else if (HUNT) {
       var word = e.event === 'hunt_jedi' ? 'джедаи' : 'ситх';
       if (prey) {
         items.push('Задач: <b>' + HUNT.tasks[ti] + '</b>. Встань у места задачи и держись <b>' + HUNT.channel[ti] + ' с</b> — прогресс копится, даже если отойдёшь.');
@@ -106,6 +117,7 @@
   setInterval(function() { if (L.v) { var el = $('ev-timer'), t = left(); el.textContent = fmtT(t); el.className = 'ev-timer' + (t < 60 && !L.v.over ? ' low' : ''); } }, 250);
   function line(v, compact) {
     var html = '', prey = v.role !== 'hunter';
+    if (v.k === 'defense') return defLine(v);
     if (prey) {
       (v.tasks || []).forEach(function(k) { html += '<span class="ev-pill' + (k[2] ? ' done' : k[1] > 0 ? ' act' : '') + '">' + (k[2] ? '✓ ' : '') + esc(k[0]) + (k[2] ? '' : '<i><u style="width:' + k[1] + '%"></u></i>') + '</span>'; });
       if (v.exit) html += '<span class="ev-pill exit">⇪ ' + esc(v.exit[2]) + (v.exit[4] > 0 ? ' · шаттл через <b>' + v.exit[4] + ' с</b>' : ' <i><u style="width:' + v.exit[3] + '%;background:#5fd968"></u></i>') + '</span>';
@@ -120,6 +132,17 @@
       if (v.seen) html += '<span class="ev-pill bad">цель видели ' + (v.seen[2] < 1 ? 'сейчас' : v.seen[2] + ' с назад') + '</span>';
       if (v.exit) html += '<span class="ev-pill bad">эвакуация врага: ' + esc(v.exit[2]) + (v.exit[4] > 0 ? ' · шаттл через <b>' + v.exit[4] + ' с</b>' : ' ' + v.exit[3] + '%') + '</span>';
     }
+    return html;
+  }
+  function hpCol(hp) { return hp > 60 ? '#5fd968' : hp > 30 ? '#f0c86a' : '#ff6e5a'; }
+  function defLine(v) {
+    var html = '<span class="ev-pill' + (v.wave >= v.waves ? ' act' : '') + '">волна <b>' + v.wave + '/' + v.waves + '</b></span>';
+    if (v.next >= 0) html += '<span class="ev-pill' + (v.next <= 12 ? (v.boss ? ' bad' : ' act') : '') + '">' + (v.wave ? 'следующая' : 'первая') + ' через <b>' + v.next + ' с</b>' + (v.boss ? ' · техника' : '') + '</span>';
+    else if (v.foes > 0) html += '<span class="ev-pill act">последняя волна — добей</span>';
+    html += '<span class="ev-pill' + (v.hp <= 30 ? ' bad' : '') + '">' + esc((v.core && v.core[2]) || 'ядро') + ' <b style="color:' + hpCol(v.hp) + '">' + Math.ceil(v.hp) + '%</b><i><u style="width:' + Math.max(0, Math.min(100, v.hp)) + '%;background:' + hpCol(v.hp) + '"></u></i></span>';
+    html += '<span class="ev-pill">враги <b>' + v.foes + '</b></span>';
+    if (v.inZone > 0) html += '<span class="ev-pill bad">у ядра: ' + v.inZone + (v.press > 0 ? ' · ломают' : ' · сдерживаем') + '</span>';
+    if (v.reinf) html += '<span class="ev-pill">подкрепление после волны <b>' + v.reinf + '</b></span>';
     return html;
   }
   // нижняя полоса: строка ивента уже вверху — здесь только подсказки экрана
@@ -207,8 +230,26 @@
     return t;
   }
   // Под бойцами: круг, где стоять; удержание Силой; погасшие места; площадка эвакуации и севший шаттл
+  // Оборона под бойцами: зона ядра — кольцо и прочность по кругу; враг в зоне — красная пульсация
+  function defUnder(c, s, v) {
+    if (!v.core) return;
+    var now = performance.now() / 1000, p = GD.toS(v.core[0], v.core[1]), R = v.zone * s, pulse = 0.5 + 0.5 * Math.sin(now * 5), hp = Math.max(0, Math.min(100, v.hp)) / 100, col = hpCol(v.hp);
+    var hot = v.inZone > 0 && v.press > 0;
+    var g = c.createRadialGradient(p[0], p[1], R * 0.2, p[0], p[1], R);
+    g.addColorStop(0, hot ? 'rgba(255,80,60,' + (0.06 + 0.08 * pulse).toFixed(3) + ')' : 'rgba(240,200,106,0.03)');
+    g.addColorStop(1, hot ? 'rgba(255,80,60,' + (0.16 + 0.12 * pulse).toFixed(3) + ')' : 'rgba(240,200,106,0.08)');
+    c.fillStyle = g; c.beginPath(); c.arc(p[0], p[1], R, 0, TAU); c.fill();
+    c.strokeStyle = hot ? 'rgba(255,110,90,0.75)' : 'rgba(240,200,106,0.45)'; c.lineWidth = Math.max(1, s * 0.08); c.setLineDash([s * 0.6, s * 0.4]); c.lineDashOffset = -now * s * 0.6;
+    c.beginPath(); c.arc(p[0], p[1], R, 0, TAU); c.stroke(); c.setLineDash([]); c.lineDashOffset = 0;
+    // прочность — дуга по кругу
+    var lw = Math.max(3, s * 0.22);
+    c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = lw + 2; c.beginPath(); c.arc(p[0], p[1], R + lw, 0, TAU); c.stroke();
+    c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.arc(p[0], p[1], R + lw, -Math.PI / 2, -Math.PI / 2 + TAU * hp); c.stroke();
+  }
   window.GD_UNDER = function(c, s, dpr) {
-    var v = L.v; if (!v || !window.GD || !HUNT) return;
+    var v = L.v; if (!v || !window.GD) return;
+    if (v.k === 'defense') { defUnder(c, s, v); return; }
+    if (!HUNT) return;
     detectZone(c, s, dpr, v);
     var now = performance.now() / 1000, prey = v.role !== 'hunter', fc = forceCol(), B = GD.B, pt = preyTeam();
     (v.sites || []).forEach(function(st) {
@@ -256,9 +297,34 @@
       }
     }
   };
+  // Высадки врага: метка у края; перед волной и во время высадки — горит, к ядру тянется пунктир
+  function defDraw(c, s, v) {
+    var now = performance.now() / 1000, pulse = 0.5 + 0.5 * Math.sin(now * 5), cp = v.core ? GD.toS(v.core[0], v.core[1]) : null;
+    (v.spawns || []).forEach(function(sp) {
+      var p = GD.toS(sp[0], sp[1]), hot = sp[3], r = Math.max(8, 4 * s);
+      if (hot && cp) {
+        c.strokeStyle = 'rgba(255,110,90,' + (0.25 + 0.25 * pulse).toFixed(3) + ')'; c.lineWidth = 2; c.setLineDash([8, 7]); c.lineDashOffset = now * 30;
+        c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(p[0] + (cp[0] - p[0]) * 0.55, p[1] + (cp[1] - p[1]) * 0.55); c.stroke(); c.setLineDash([]); c.lineDashOffset = 0;
+      }
+      c.fillStyle = 'rgba(255,90,70,' + (hot ? 0.14 + 0.12 * pulse : 0.05).toFixed(3) + ')'; c.beginPath(); c.arc(p[0], p[1], r, 0, TAU); c.fill();
+      c.strokeStyle = 'rgba(255,110,90,' + (hot ? 0.95 : 0.4) + ')'; c.lineWidth = hot ? 2 : 1; c.setLineDash(hot ? [] : [4, 4]); c.beginPath(); c.arc(p[0], p[1], r, 0, TAU); c.stroke(); c.setLineDash([]);
+      // шевроны к ядру
+      if (hot && cp) {
+        var ang = Math.atan2(cp[1] - p[1], cp[0] - p[0]);
+        for (var i = 0; i < 3; i++) {
+          var k = ((now * 1.2 + i / 3) % 1), d = r * (0.2 + k * 1.4), x = p[0] + Math.cos(ang) * d, y = p[1] + Math.sin(ang) * d, w = Math.max(5, s * 0.9);
+          c.strokeStyle = 'rgba(255,140,110,' + (0.9 * (1 - k)).toFixed(3) + ')'; c.lineWidth = 2;
+          c.beginPath(); c.moveTo(x - Math.cos(ang - 0.7) * w, y - Math.sin(ang - 0.7) * w); c.lineTo(x, y); c.lineTo(x - Math.cos(ang + 0.7) * w, y - Math.sin(ang + 0.7) * w); c.stroke();
+        }
+      }
+      label(c, (hot === 2 ? 'ВЫСАДКА · ' : hot ? 'СКОРО · ' : '') + sp[2].toUpperCase() + (hot === 1 && v.next >= 0 ? ' · ' + v.next + ' С' : ''), p[0], p[1] - r - 10, hot ? '#ff9a80' : 'rgba(255,154,128,0.6)');
+    });
+    if (cp) label(c, v.core[2].toUpperCase() + ' · ' + Math.ceil(v.hp) + '%', cp[0], cp[1] - v.zone * s - Math.max(3, s * 0.22) * 2 - 10, hpCol(v.hp));
+  }
   window.GD_DRAW = function(c, s, dpr) {
     var v = L.v; if (!v || !window.GD) return;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (v.k === 'defense') { defDraw(c, s, v); return; }
     var now = performance.now() / 1000, pulse = 0.5 + 0.5 * Math.sin(now * 4), prey = v.role !== 'hunter', R = Math.max(7, 2.4 * s);
     // импульс сенсоров
     if (v.ping) {
@@ -308,6 +374,11 @@
   };
   window.GD_MINI = function(c, x0, y0, k) {
     var v = L.v; if (!v) return;
+    if (v.k === 'defense') {
+      if (v.core) { c.strokeStyle = hpCol(v.hp); c.lineWidth = 1.5; c.beginPath(); c.arc(x0 + v.core[0] * k, y0 + v.core[1] * k, Math.max(3, v.zone * k), 0, TAU); c.stroke(); }
+      (v.spawns || []).forEach(function(sp) { c.fillStyle = sp[3] ? '#ff6e5a' : 'rgba(255,110,90,0.45)'; c.fillRect(x0 + sp[0] * k - 2.5, y0 + sp[1] * k - 2.5, 5, 5); });
+      return;
+    }
     (v.sites || []).forEach(function(st) { c.fillStyle = st[3] === 2 ? '#5fd968' : v.role !== 'hunter' ? '#f0c86a' : '#8fa8c4'; c.fillRect(x0 + st[0] * k - 2, y0 + st[1] * k - 2, 4, 4); });
     if (v.exit) { c.strokeStyle = v.role !== 'hunter' ? '#5fd968' : '#ff6e5a'; c.lineWidth = 1.5; c.beginPath(); c.arc(x0 + v.exit[0] * k, y0 + v.exit[1] * k, Math.max(3, 3 * k), 0, TAU); c.stroke(); }
     if (v.ping) { c.strokeStyle = 'rgba(255,110,90,0.9)'; c.lineWidth = 1; c.beginPath(); c.arc(x0 + v.ping[0] * k, y0 + v.ping[1] * k, v.ping[2] * k, 0, TAU); c.stroke(); }
@@ -327,7 +398,9 @@
     $('ev-end-title').textContent = aborted ? 'Бой отменён' : won ? 'Победа' : 'Поражение';
     $('ev-end-why').textContent = res.why || '';
     var mine = m.me ? m.me.kills : 0;
-    $('ev-end-stats').innerHTML = aborted ? '' : '<div><b>' + fmtT(res.t || 0) + '</b><span>длился</span></div><div><b>' + (res.tasks != null ? res.tasks + '/' + res.need : '—') + '</b><span>задач</span></div><div><b>' + mine + '</b><span>твоих убийств</span></div>';
+    var def = isDef(e.event);
+    $('ev-end-stats').innerHTML = aborted ? '' : '<div><b>' + fmtT(res.t || 0) + '</b><span>длился</span></div><div><b>' + (res.tasks != null ? res.tasks + '/' + res.need : '—') + '</b><span>' + (def ? 'волн отбито' : 'задач') + '</span></div>' +
+      (def && res.hp != null ? '<div><b style="color:' + hpCol(res.hp) + '">' + Math.ceil(res.hp) + '%</b><span>прочность</span></div>' : '') + '<div><b>' + mine + '</b><span>твоих убийств</span></div>';
     var a = $('ev-end-award');
     if (aw) {
       var res2 = Object.keys(aw.res || {}).map(function(k) { return aw.res[k] + ' ' + CAT.RES_NAME[k]; }).join(', ');

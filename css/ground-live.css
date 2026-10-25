@@ -21,8 +21,6 @@ body.placing #placement-hint { bottom: calc(14px + env(safe-area-inset-bottom, 0
 .gd-capline i { flex: 1; height: 4px; border-radius: 2px; background: rgba(28,37,48,0.9); overflow: hidden; }
 .gd-capline i b { display: block; height: 100%; background: #4a90d9; }
 .gd-capline.bad i b { background: #d94a4a; }
-/* переключатель режима стройки — над нижней панелью нового экрана */
-#build-switcher { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 /* в доке планеты семь кнопок — панель чуть шире, подписи без переносов и обрезок */
 .sp-panel.sp-bottom { max-width: 520px; }
 .sp-dock .sp-btn { padding-left: 2px; padding-right: 2px; }

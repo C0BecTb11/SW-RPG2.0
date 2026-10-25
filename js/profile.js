@@ -15,9 +15,14 @@ function showNicknamePrompt() {
   prompt.style.display = 'flex';
 
   saveBtn.addEventListener('click', function() {
-    var nickname = input.value.trim();
+    var nickname = input.value.replace(/\s+/g, ' ').trim();
     if (!nickname) {
       messageEl.textContent = 'Введи ник';
+      return;
+    }
+    // как в базе (profiles_nickname_len): 2–24 знака; занятость проверит база (ник уникален)
+    if (nickname.length < 2 || nickname.length > 24) {
+      messageEl.textContent = 'Ник — от 2 до 24 знаков';
       return;
     }
 

@@ -219,6 +219,9 @@
   if (window.gameErr) return;
   var RU = /[А-Яа-яЁё]/;
   var MAP = [
+    // ник: уникальный без учёта регистра (profiles_nickname_unique) и 2–24 знака (profiles_nickname_len)
+    [/profiles_nickname_unique/i, 'Такой ник уже занят — выбери другой'],
+    [/profiles_nickname_len/i, 'Ник — от 2 до 24 знаков'],
     [/invalid login credentials/i, 'Неверная почта или пароль'],
     [/user already registered|already been registered/i, 'Такая почта уже зарегистрирована'],
     [/email not confirmed/i, 'Почта не подтверждена — проверь письмо'],

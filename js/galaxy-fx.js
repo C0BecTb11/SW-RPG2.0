@@ -358,7 +358,7 @@
   // Заливка слабая, к краю территории и к фронту — ярче (как полоса границы у державы).
 
   var SIGMA = 165, G = 10, FAR = SIGMA * 3;
-  var frontPath = '';
+  var frontPath = [];   // [{ d, a }] — ступени яркости линии фронта
 
   function field(gx, gy) {
     var acc = {}, wx = gx * G, wy = gy * G;
@@ -423,24 +423,28 @@
     g.clearRect(0, 0, terr.width, terr.height);
     g.drawImage(small, 0, 0, GW - 1, GH - 1, 0, 0, (GW - 1) * G / 2, (GH - 1) * G / 2);
 
-    // Линия фронта — изолиния «влияния поровну», только там, где обе стороны реально присутствуют
-    var segs = [];
+    // Линия фронта — изолиния «влияния поровну». Там, где территории расходятся и между ними пустота,
+    // линия не обрывается, а гаснет: отрезки разложены по яркости (4 ступени) — каждая ступень своим путём.
+    var segs = [[], [], [], []];
     function interp(a, b) { return a / (a - b); }
     for (gy = 0; gy < GH - 1; gy++) {
       for (gx = 0; gx < GW - 1; gx++) {
         var i0 = gy * GW + gx, i1 = i0 + 1, i2 = i0 + GW + 1, i3 = i0 + GW;
-        if (Math.min(mx[i0], mx[i1], mx[i2], mx[i3]) < TH) continue;
+        var fade = smooth(TH - 0.13, TH + 0.01, Math.min(mx[i0], mx[i1], mx[i2], mx[i3]));
+        if (fade < 0.08) continue;
+        var bucket = segs[Math.min(3, Math.floor(fade * 4))];
         var v0 = diff[i0], v1 = diff[i1], v2 = diff[i2], v3 = diff[i3];
         var pts = [];
         if ((v0 > 0) !== (v1 > 0)) pts.push([gx + interp(v0, v1), gy]);
         if ((v1 > 0) !== (v2 > 0)) pts.push([gx + 1, gy + interp(v1, v2)]);
         if ((v3 > 0) !== (v2 > 0)) pts.push([gx + interp(v3, v2), gy + 1]);
         if ((v0 > 0) !== (v3 > 0)) pts.push([gx, gy + interp(v0, v3)]);
-        if (pts.length >= 2) segs.push(pts[0], pts[1]);
-        if (pts.length === 4) segs.push(pts[2], pts[3]);
+        if (pts.length >= 2) bucket.push(pts[0], pts[1]);
+        if (pts.length === 4) bucket.push(pts[2], pts[3]);
       }
     }
-    frontPath = joinSegments(segs);
+    frontPath = segs.map(function(b, n) { return { d: joinSegments(b), a: (n + 1) / 4 }; })
+      .filter(function(f) { return !!f.d; });
   }
 
   // Отрезки изолинии склеиваем в ломаные — так пунктир идёт ровно, а путь короче
@@ -472,7 +476,7 @@
           if (dir) line.unshift(p); else line.push(p);
         }
       }
-      if (line.length < 3) continue;
+      if (line.length < 2) continue;
       out.push('M' + line.map(function(p) { return (p[0] * G).toFixed(1) + ' ' + (p[1] * G).toFixed(1); }).join('L'));
     }
     return out.join('');
@@ -567,12 +571,14 @@
     var fg = lanesSvg.querySelector('.gx-front-g');
     if (!fg) return;
     while (fg.firstChild) fg.removeChild(fg.firstChild);
-    if (!frontPath) return;
     ['gx-front-glow', 'gx-front'].forEach(function(cls) {
-      var fp = document.createElementNS(SVGNS, 'path');
-      fp.setAttribute('d', frontPath);
-      fp.setAttribute('class', cls);
-      fg.appendChild(fp);
+      frontPath.forEach(function(f) {
+        var fp = document.createElementNS(SVGNS, 'path');
+        fp.setAttribute('d', f.d);
+        fp.setAttribute('class', cls);
+        if (f.a < 1) fp.setAttribute('opacity', f.a.toFixed(2));
+        fg.appendChild(fp);
+      });
     });
   }
 

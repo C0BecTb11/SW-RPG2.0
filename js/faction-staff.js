@@ -277,11 +277,18 @@ function hqOnClick(e) {
   }
 }
 
+// Текст ошибки для игрока: отказы функций — как есть (они по-русски), внутренние ошибки базы — человеческим языком
+function hqErrText(e) {
+  var m = (e && e.message) || '';
+  if (/^(new row|duplicate key|null value|insert or update|update or delete)|violates|constraint/i.test(m)) return 'База не приняла изменение — сообщи администрации';
+  return m || 'Не удалось — попробуй ещё раз';
+}
+
 function hqRun(promise, okText, done) {
   hqState.busy = true;
   return promise.then(function(res) {
     hqState.busy = false;
-    if (res.error) { hqToast(res.error.message, true); if (done) done(false); return; }
+    if (res.error) { hqToast(hqErrText(res.error), true); if (done) done(false); return; }
     if (okText) hqToast(okText);
     if (done) done(true);
     hqAfterChange();
@@ -603,7 +610,7 @@ function hqRoleEditor(role) {
 
   var html = '<div class="hq-role edit">' +
     '<div class="hq-block">' + (role ? 'Правка должности' : 'Новая должность') + '</div>' +
-    '<input id="hq-r-name" class="hq-input" type="text" maxlength="32" placeholder="название — от 2 до 32 знаков" value="' +
+    '<input id="hq-r-name" class="hq-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="название — от 2 до 32 знаков" value="' +
       hqEsc(role ? role.name : '') + '">' +
     '<div class="hq-pw-list">';
 
@@ -676,7 +683,7 @@ var hqEcoErr = null;
 
 function hqLoadEconomy() {
   return supabase.rpc('get_faction_economy').then(function(res) {
-    hqEcoErr = res.error ? res.error.message : null;
+    hqEcoErr = res.error ? hqErrText(res.error) : null;
     hqEco = res.error ? null : (res.data || []);
   });
 }

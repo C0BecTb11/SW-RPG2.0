@@ -112,7 +112,7 @@ SystemRoom.prototype.applyShips = function(list) {
           B.refitShip(old.n, Army.fromGame(s, type0, [], [], {}));
           self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
         }
-        self.upg[s.id] = uk;
+        self.upg[s.id] = uk; old.bon0 = bonOf(s);
         self.syncUnits(old, s); return;
       }
     } else if (old) { if (old.captured < 0 && old.why !== 'left') return; delete self.byId[s.id]; }   // погиб в бою — строка с hp 0 ещё лежит
@@ -126,7 +126,7 @@ SystemRoom.prototype.applyShips = function(list) {
                          x: pose ? pose.x : (s.x + box.w / 2) * CELL_M, y: pose ? pose.y : (s.y + box.h / 2) * CELL_M, hd: pose ? pose.hd : hdOf(s.facing),
                          figMap: FIG.crewFigs(p.faction, ALL), figIds: FIG_IDS, army: army, name: army.name, id: s.id, owner: s.owner_user_id || null,
                          faction: s.faction, dormant: true, stands: s.troop_posts && typeof s.troop_posts === 'object' ? s.troop_posts : null });
-    sh.gameId = s.id; sh.trophy = !!s.trophy; sh.commander = s.commander_id || null;
+    sh.gameId = s.id; sh.trophy = !!s.trophy; sh.commander = s.commander_id || null; sh.bon0 = bonOf(s);
     sh.units = (s.units || []).map(function(u) { return { id: u.id, hpMax: u.hp }; });
     sh.craftIds = (s.craft || []).map(function(c) { return c.id; });
     self.byId[s.id] = sh.n; self.lastSync[s.id] = null; self.upg[s.id] = upgKey(s);
@@ -153,6 +153,8 @@ SystemRoom.prototype.applyShips = function(list) {
   }
   return added;
 };
+// бонусы корпуса и щитов из исследований (щиты: 0 — нос, у него свой бонус)
+function bonOf(s) { return { hp: +s.bonus_hp || 0, sh: +s.bonus_shield || 0, fore: +s.bonus_fore || 0 }; }
 SystemRoom.prototype.lastHp = function(id) { var k = this.lastSync[id]; return k ? k.hp : -1; };
 // Истребитель, стоящий на орбите сам по себе: в бою — малый корабль своего ближайшего крупного
 SystemRoom.prototype.addFree = function(s, type) {
@@ -320,7 +322,9 @@ SystemRoom.prototype.syncNow = function() {
   this.syncAt = Date.now();
   B.ships.forEach(function(sh) {
     if (!sh.gameId || sh.why === 'left' || sh.synced) return;
-    var type = self.types[sh.cls], maxHp = type ? (type.max_hp || 0) : 0, maxSh = type ? (type.max_shield || 0) : 0;
+    // предел — как при загрузке (Army.fromGame): тип + бонусы исследований; без бонусов корабль с ними
+    // терял долю корпуса и щитов при каждом открытии орбиты
+    var type = self.types[sh.cls], bo = sh.bon0 || bonOf({}), maxHp = type ? (type.max_hp || 0) + bo.hp : 0, maxSh = type ? (type.max_shield || 0) + bo.sh : 0;
     if (sh.captured >= 0 && sh.dead) {
       // трофей: хозяину абордажа; строка корабля в базе переходит, бой подхватит его заново
       if (sh.boardBy) captured.push({ id: sh.gameId, by: sh.boardBy, faction: sh.captured === 1 ? 'cis' : 'republic' });
@@ -332,7 +336,7 @@ SystemRoom.prototype.syncNow = function() {
     var cx = Math.max(0, Math.min(self.grid - box.w, Math.round(sh.x / CELL_M - box.w / 2)));
     var cy = Math.max(0, Math.min(self.grid - box.h, Math.round(sh.y / CELL_M - box.h / 2)));
     var hp = sh.dead ? 0 : Math.max(1, Math.round(maxHp * sh.hull / sh.hullMax));
-    var shv = [0, 1, 2, 3].map(function(i) { return sh.dead ? 0 : Math.round(maxSh * Math.max(0, Math.min(1, sh.sh[i] / sh.shMax))); });
+    var shv = [0, 1, 2, 3].map(function(i) { return sh.dead ? 0 : Math.round((maxSh + (i === 0 ? bo.fore : 0)) * Math.max(0, Math.min(1, sh.sh[i] / sh.shMax))); });
     var fire = self.hitAt[sh.n] != null && B.t - self.hitAt[sh.n] < FIRE_HOLD;
     // точная поза (метры и курс) — чтобы при новом открытии орбиты корабль стоял там и так, как его оставили
     var mx = Math.round(sh.x), my = Math.round(sh.y), hd = Math.round(sh.hd * 1000) / 1000;

@@ -140,7 +140,7 @@
       var q = heroName ? sb().rpc('hire_hero', { p_building_id: bld.id, p_name: heroName })
                        : sb().rpc('order_unit', { p_building_id: bld.id, p_unit_type: unitTypeId, p_quantity: quantity, p_upgrades: upgrades || [] });
       q.then(function(res) {
-        if (res.error) { GD.toast('Не удалось нанять: ' + res.error.message, 'bad'); return; }
+        if (res.error) { GD.toast('Не удалось нанять: ' + (typeof gbErr === 'function' ? gbErr(res.error) : res.error.message), 'bad'); return; }
         GD.toast(name + (heroName ? '' : ' ×' + quantity) + ': выйдут у постройки, как будут готовы', 'gold');
         if (typeof loadUnitOrders === 'function') loadUnitOrders();
       });

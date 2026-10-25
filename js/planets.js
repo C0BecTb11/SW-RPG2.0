@@ -59,14 +59,23 @@ function isMapCovered(now) {
   return mapCovered;
 }
 
+// Планета на карте крупнее радиуса из БД: при обзоре всей галактики иначе от неё остаётся точка.
+// Холст рисуется в плотности экрана (до 2×) — при зуме планета не мылится.
+var PLANET_SCALE = 1.3;
+var PLANET_RES = (window.devicePixelRatio || 1) > 1.25 ? 2 : 1;
+
 function renderRotatingPlanet(canvas, tex, radius, speed) {
   var size = radius * 2 + 8;
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = size * PLANET_RES;
+  canvas.height = size * PLANET_RES;
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(PLANET_RES, 0, 0, PLANET_RES, 0, 0);
 
   var entry = {
     canvas: canvas,
-    ctx: canvas.getContext('2d'),
+    ctx: ctx,
     tex: tex,
     radius: radius,
     speed: speed,
@@ -97,9 +106,9 @@ function drawPlanet(p) {
   ctx.clip();
 
   var texH = r * 2;
-  // Полоска шириной 2 пикселя вместо одного: вдвое меньше вызовов отрисовки
+  // Полоска шириной в 2 пикселя экрана вместо одного: вдвое меньше вызовов отрисовки
   // при том же результате — на таком размере разницы не видно.
-  var sliceDestW = 2;
+  var sliceDestW = 2 / PLANET_RES;
 
   for (var dx = 0; dx < r * 2; dx += sliceDestW) {
     var nx = (dx - r) / r;
@@ -111,9 +120,10 @@ function drawPlanet(p) {
     var srcUFrac = p.offsetFrac + 0.5 + uFrac;
     srcUFrac = srcUFrac - Math.floor(srcUFrac);
 
+    // Источник не выходит за правый край текстуры: иначе полоска пропадает и на диске видна щель
     ctx.drawImage(
       p.tex,
-      srcUFrac * p.tex.width, 0, 3, p.tex.height,
+      Math.min(srcUFrac * p.tex.width, p.tex.width - 3), 0, 3, p.tex.height,
       cx - r + dx, cy - r, sliceDestW, texH
     );
   }
@@ -127,10 +137,22 @@ function drawPlanet(p) {
     p.edgeGrad = ctx.createRadialGradient(cx, cy, r * 0.7, cx, cy, r);
     p.edgeGrad.addColorStop(0, 'rgba(0,0,0,0)');
     p.edgeGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    // Атмосфера: светлый ободок по краю диска, тёмную сторону потом гасит терминатор
+    p.rimGrad = ctx.createRadialGradient(cx, cy, r * 0.8, cx, cy, r);
+    p.rimGrad.addColorStop(0, 'rgba(170,205,255,0)');
+    p.rimGrad.addColorStop(1, 'rgba(170,205,255,0.32)');
+    // Блик со стороны света
+    p.glossGrad = ctx.createRadialGradient(cx + r * 0.38, cy - r * 0.32, 0, cx + r * 0.38, cy - r * 0.32, r * 0.9);
+    p.glossGrad.addColorStop(0, 'rgba(255,255,255,0.14)');
+    p.glossGrad.addColorStop(1, 'rgba(255,255,255,0)');
   }
-  ctx.fillStyle = p.shadeGrad;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
   ctx.fillStyle = p.edgeGrad;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  ctx.fillStyle = p.rimGrad;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  ctx.fillStyle = p.glossGrad;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  ctx.fillStyle = p.shadeGrad;
   ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
   ctx.restore();
@@ -233,36 +255,28 @@ function initPlanets() {
       layer.appendChild(flightLayer);
 
       systems.forEach(function(planet) {
+        // Обёртка ровно по диску планеты (подпись — вне потока, под ней): центр обёртки = точка системы,
+        // туда же сходятся гиперлинии. Вид обёртки, ореола и подписи — css/galaxy.css.
         var wrapper = document.createElement('div');
-        wrapper.className = 'planet-wrapper';
-        wrapper.style.position = 'absolute';
+        wrapper.className = 'planet-wrapper f-' + (planet.faction || 'none');
         var pos = positions[planet.id];
         wrapper.style.left = pos.x + 'px';
         wrapper.style.top = pos.y + 'px';
-        wrapper.style.transform = 'translate(-50%, -50%)';
-        wrapper.style.display = 'flex';
-        wrapper.style.flexDirection = 'column';
-        wrapper.style.alignItems = 'center';
         wrapper.setAttribute('data-planet-id', planet.id);
-        wrapper.style.cursor = 'pointer';
         layer.appendChild(wrapper);
+
+        var halo = document.createElement('div');
+        halo.className = 'planet-halo';
+        wrapper.appendChild(halo);
 
         var canvas = document.createElement('canvas');
         canvas.className = 'planet-icon';
-        canvas.style.cursor = 'pointer';
         wrapper.appendChild(canvas);
 
         var label = document.createElement('div');
         label.className = 'planet-label';
         label.textContent = planet.name;
         label.style.color = FACTION_COLORS[planet.faction] || '#8fa8c4';
-        label.style.fontSize = '9px';
-        label.style.fontFamily = "'Courier New', monospace";
-        label.style.marginTop = '2px';
-        label.style.whiteSpace = 'nowrap';
-        label.style.textShadow = '0 1px 3px rgba(0,0,0,0.9)';
-        label.style.pointerEvents = 'none';
-        label.style.transition = 'color 0.6s ease';
         wrapper.appendChild(label);
 
         // Контейнер для маркеров командиров — позиционируется в углу планеты.
@@ -290,8 +304,14 @@ function initPlanets() {
         // texture в БД хранится от корня сайта, а страница галакарты — в подпапке game/,
         // поэтому добавляем ../ при подстановке пути
         tex.src = '../' + planet.texture;
-        renderRotatingPlanet(canvas, tex, planet.radius, planet.speed);
+        renderRotatingPlanet(canvas, tex, Math.round(planet.radius * PLANET_SCALE), planet.speed);
       });
+
+      // Живой космос вокруг (js/galaxy-fx.js): территории, гиперлинии, трафик
+      if (typeof window.gxFxInit === 'function') {
+        try { window.gxFxInit(systems, lanes, positions); }
+        catch (e) { console.error('Галактика:', e); if (window.errReport) errReport(e, 'galaxy-fx.init'); }
+      }
 
       lastCommanders = commanders;
       renderCommanderMarkers(commanders);
@@ -313,6 +333,7 @@ function initPlanets() {
 // позади планет (которые добавляются следом как div'ы).
 function drawHyperlanes(layer, lanes, positions) {
   var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'hyperlanes');
   svg.setAttribute('width', '100%');
   svg.setAttribute('height', '100%');
   svg.style.position = 'absolute';
@@ -500,6 +521,11 @@ function subscribeToSystemChanges() {
 
       var newColor = FACTION_COLORS[updated.faction] || '#8fa8c4';
       els.labelEl.style.color = newColor;
+      els.wrapperEl.className = els.wrapperEl.className.replace(/\bf-[a-z_]+/, 'f-' + updated.faction);
+      if (typeof window.gxFxFaction === 'function') {
+        try { window.gxFxFaction(updated.id, updated.faction); }
+        catch (e) { console.error('Галактика:', e); }
+      }
 
       // краткая вспышка, чтобы смена владельца была заметна визуально
       els.wrapperEl.style.filter = 'brightness(1.8)';
@@ -613,6 +639,7 @@ function renderFlights(commanders) {
       to: to,
       startMs: new Date(c.departed_at).getTime(),
       endMs: new Date(c.arrives_at).getTime(),
+      own: c.user_id === currentUserId,
       finishRequested: false
     });
   });
@@ -753,6 +780,7 @@ var galaxyWorld = null;
 function applyGalaxyTransform() {
   galaxyWorld.style.transform =
     'translate(' + galaxyPanX + 'px, ' + galaxyPanY + 'px) scale(' + galaxyScale + ')';
+  if (typeof window.gxFxView === 'function') window.gxFxView();
 }
 
 // Перенос карты к системе: нужен ленте событий, чтобы кнопка «показать»

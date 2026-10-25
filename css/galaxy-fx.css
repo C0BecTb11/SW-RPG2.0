@@ -1,0 +1,109 @@
+/* Галактическая карта: живой космос (js/galaxy-fx.js).
+   Всё под .gx-on — если модуль не поднялся, карта остаётся прежней (плитка фона, пунктирные линии). */
+
+/* Фон мира теперь рисуют звёзды и туманности — плитка не нужна */
+.gx-on #map-scroll { background: radial-gradient(ellipse at 18% 56%, #0b1020 0%, #05060a 60%, #030407 100%); }
+.gx-on #map-area { background-image: none; }
+
+/* Кинематографичная виньетка по краям экрана — поверх карты, но без касаний */
+.gx-on #map-scroll::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 75% 70% at 50% 50%, rgba(3,4,7,0) 55%, rgba(3,4,7,0.55) 100%);
+}
+
+#gx-sky {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.gx-nebula, .gx-terr, .gx-lanes, .gx-fx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.gx-nebula { opacity: 0; transition: opacity 1.6s ease; }
+.gx-nebula.on { opacity: 1; }
+
+.gx-terr { transition: opacity 1.4s ease; }
+.gx-terr.flash { opacity: 0.25; transition: none; }
+
+.gx-fx { transform-origin: 0 0; }
+
+/* Старые пунктирные линии js/planets.js заменены векторными */
+.gx-on #galaxy-layer svg.hyperlanes { display: none; }
+
+/* ── Гиперлинии ── */
+.gx-lanes line { fill: none; stroke-linecap: round; }
+.gx-lane-halo { stroke-width: 11; opacity: 0.045; }
+.gx-lane-glow { stroke-width: 4; opacity: 0.12; }
+.gx-lane-core { stroke-width: 1.2; opacity: 0.72; }
+.gx-lane-halo.k-front { stroke-width: 14; opacity: 0.07; }
+.gx-lane-glow.k-front { stroke-width: 5; opacity: 0.18; }
+.gx-lane-core.k-front { stroke-width: 1.5; opacity: 0.85; }
+.gx-lane-halo.k-none, .gx-lane-glow.k-none { opacity: 0.04; }
+.gx-lane-core.k-none { opacity: 0.35; stroke-dasharray: 4 5; }
+
+/* ── Линия фронта ── */
+.gx-front-glow { fill: none; stroke: rgba(255, 236, 214, 0.08); stroke-width: 12; stroke-linejoin: round; stroke-linecap: round; }
+.gx-front { fill: none; stroke: rgba(255, 236, 214, 0.55); stroke-width: 1.2; stroke-dasharray: 10 6; stroke-linejoin: round; stroke-linecap: round; }
+
+/* ── Планеты ── */
+/* Столица: двойное кольцо с засечками и более яркая атмосфера */
+.gx-ring {
+  position: absolute;
+  inset: -30%;
+  border-radius: 50%;
+  pointer-events: none;
+  border: 1px solid rgba(var(--pf), 0.65);
+  box-shadow: 0 0 8px rgba(var(--pf), 0.35), inset 0 0 6px rgba(var(--pf), 0.25);
+}
+.gx-ring::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1px dashed rgba(var(--pf), 0.4);
+}
+.gx-capital .planet-halo { inset: -115%; }
+.gx-capital .planet-label { font-size: 11px; letter-spacing: 2px; }
+
+/* Фронт: атмосфера тревожно дышит */
+.gx-front .planet-halo { animation: gx-breathe 3.4s ease-in-out infinite; }
+@keyframes gx-breathe {
+  0%, 100% { opacity: 0.75; }
+  50%      { opacity: 1; }
+}
+
+/* Метки у планеты держат свой размер на экране, как и подпись */
+.gx-on .commander-marker-box { transform: scale(var(--gx-mk, 1)); transform-origin: 0 100%; }
+.gx-on .planet-target { transform: scale(var(--gx-mk, 1)); transform-origin: 100% 100%; }
+.gx-on .ge-mark { transform: scale(var(--gx-mk, 1)); transform-origin: 0 100%; }
+
+/* ── Вход в галактику (раз за сессию): космос проявляется, гиперлинии прочерчиваются волной от Ядра,
+   планеты зажигаются следом ── */
+.gx-intro .gx-terr { animation: gx-fade 2.2s ease 0.9s both; }
+.gx-intro .gx-lane-glow, .gx-intro .gx-lane-halo { animation: gx-fade 1.6s ease 1s both; }
+.gx-intro .gx-lane-core { animation: gx-draw 1.1s cubic-bezier(.5,0,.2,1) both; }
+.gx-intro .gx-front, .gx-intro .gx-front-glow { animation: gx-fade 1.4s ease 2.2s both; }
+.gx-intro .planet-icon { animation: gx-pop 0.7s cubic-bezier(.2,1.4,.4,1) both; }
+.gx-intro .planet-halo, .gx-intro .planet-label, .gx-intro .gx-ring { animation: gx-fade 1s ease 1.4s both; }
+.gx-intro .commander-marker-box, .gx-intro .planet-target, .gx-intro .ge-mark,
+.gx-intro #flight-layer, .gx-intro .gx-fx { animation: gx-fade 0.8s ease 2s both; }
+
+@keyframes gx-fade { from { opacity: 0; } }
+@keyframes gx-draw { to { stroke-dashoffset: 0; } }
+@keyframes gx-pop {
+  from { opacity: 0; transform: scale(0.3); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-front .planet-halo { animation: none; }
+}

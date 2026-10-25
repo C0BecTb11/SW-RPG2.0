@@ -7,7 +7,8 @@
 //
 // Оборона (defense: 'r' — Республика держит аванпост, 'c' — КНС держит завод): layout.kind = 'defense',
 // core — ядро базы [x, y] (предмет coreKind, имя coreName), plaza — радиус ровной площадки базы,
-// zone — радиус зоны ядра (там враг ломает базу), spawns — высадки врага 8×8 [x, y, имя] у краёв.
+// zone — радиус зоны ядра (там враг ломает базу), spawns — высадки врага 8×8 [x, y, имя] у краёв,
+// waveK — поправка силы волн на этой карте.
 'use strict';
 
 const N = 144;
@@ -425,7 +426,7 @@ module.exports = {
       mats: { 1: ['debris', 'rubble'], 2: ['weeds', 'crater'], 3: ['container', 'barrier', 'crate'], 4: ['rock', 'wreck'] }
     },
     layout: {
-      kind: 'defense', core: [72, 44], plaza: 15, zone: 7, coreKind: 'reactor', coreName: 'Главный реактор',
+      kind: 'defense', core: [72, 44], plaza: 15, zone: 7, coreKind: 'reactor', coreName: 'Главный реактор', waveK: 0.85,   // в тесных цехах враг подходит вплотную — волны слабее
       spawns: [[2, 120, 'Сортировочная'], [68, 134, 'Южные ворота'], [134, 116, 'Доки']]
     },
     build(g, T) {

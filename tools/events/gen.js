@@ -178,7 +178,7 @@ class EventGen extends Gen {
       return { id: this.evId, v: VERSION, w: N, h: N, seed: this.seed,
         t: P.pack(this.t), e: P.pack(this.e), m: P.pack(this.m), objs: this.objs, paths: this.paths,
         name: this.prof.name, about: this.prof.about, look: this.prof.look, night: this.prof.night || 0,
-        ev: { kind: 'defense', core: [L.core[0] + 0.5, L.core[1] + 0.5, L.coreName], zone: L.zone || 7, plaza: L.plaza,
+        ev: { kind: 'defense', core: [L.core[0] + 0.5, L.core[1] + 0.5, L.coreName], zone: L.zone || 7, plaza: L.plaza, waveK: L.waveK || 1,
               spawns: L.spawns.map(p => [p[0] + SPAWN / 2, p[1] + SPAWN / 2, p[2]]), forts: this.forts || [] } };
     }
     return { id: this.evId, v: VERSION, w: N, h: N, seed: this.seed,

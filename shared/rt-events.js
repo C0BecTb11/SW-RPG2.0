@@ -326,7 +326,7 @@
     brk: 12,                       // волна зачищена — следующая через столько секунд
     warn: 12,                      // за сколько секунд объявить волну
     drain:  [0.45, 0.55, 0.65],    // прочности в секунду на единицу силы врага в зоне
-    base:   [6, 5.5, 5],           // сила волны: base + slope × номер волны (B1, на одного игрока)
+    base:   [7, 5.5, 5],           // сила волны: base + slope × номер волны (B1, на одного игрока)
     slope:  [1.9, 1.65, 1.5],
     pk:     [1, 1.55, 2.05, 2.5],  // сила волн по числу игроков (гарнизон на игрока с числом игроков меньше)
     squad:  { 1: 28, 2: 21, 3: 18, 4: 16 },     // сила гарнизона одного игрока (B1)
@@ -336,7 +336,8 @@
     bossEvery: 5
   };
   var KITD = {
-    r_tessara: { team: 0, foe: 1, lead: 'rep_officer', basic: 'rep_dc15a', spec: ['rep_heavy', 'rep_heavy', 'rep_sniper', 'rep_launcher'], elite: 'rep_commando', veh: 'rep_atrt',
+    // waveK — поправка силы волн: дроиды хрупче и проще клонов, укрепления выкашивают их быстрее
+    r_tessara: { team: 0, foe: 1, waveK: 1.3, lead: 'rep_officer', basic: 'rep_dc15a', spec: ['rep_heavy', 'rep_heavy', 'rep_sniper', 'rep_launcher'], elite: 'rep_commando', veh: 'rep_atrt',
       enemy: { basic: 'cis_b1', mix: [[0.15, 'cis_b1_launcher', 0.1], [0.2, 'cis_b1_sniper', 0.08], [0.3, 'cis_b2', 0.25], [0.45, 'cis_wheel', 0.12], [0.5, 'cis_stap', 0.1], [0.65, 'cis_bx', 0.12]],
                boss: ['cis_aat'], bossLite: ['cis_stap', 'cis_stap', 'cis_bx'] },
       base: 'аванпост', baseGen: 'аванпоста', foes: 'дроиды', foesGen: 'дроидов', lost: 'Аванпост пал', held: 'Аванпост устоял: флот на подходе', won: 'Все волны дроидов отбиты' },
@@ -458,7 +459,9 @@
 
   // Состав волны: бюджет силы; босс раз в пять волн и в последней
   Defense.prototype.makeWave = function(w) {
-    var K = this.K.enemy, f = w / this.W, budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1], list = [], self = this;
+    var K = this.K.enemy, f = w / this.W, list = [], self = this;
+    // сила: уровень и номер волны × число игроков × поправки ивента и карты (тесная застройка — меньше)
+    var budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1] * (this.K.waveK || 1) * (this.ev.waveK || 1);
     var boss = w % DEF.bossEvery === 0 || w === this.W;
     if (boss) { (this.ti === 0 ? K.bossLite : K.boss).forEach(function(t) { list.push(t); budget -= power(t); }); }
     K.mix.forEach(function(m) {

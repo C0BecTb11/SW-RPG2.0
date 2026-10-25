@@ -1860,7 +1860,7 @@
       call('get_system_buildings', { p_system_id: p.id }).then(function(res) {
         if (res.error || !res.data) { st.hubs[p.id] = null; }
         else {
-          var now = Date.now();
+          var now = (typeof svNow === 'function') ? svNow() : Date.now();   // completes_at — отметка сервера
           st.hubs[p.id] = res.data.some(function(b) {
             // Трофейный хаб чужой стороны сервер не засчитает
             return HUB_CODES[b.type_code] && (!b.completes_at || new Date(b.completes_at).getTime() <= now) &&

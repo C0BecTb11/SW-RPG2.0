@@ -141,7 +141,7 @@
     }).then(function(res) {
       qBusy = false;
       if (res.error) {
-        qToast('Не получилось', res.error.message, false, true);
+        qToast('Не получилось', gameErr(res.error), false, true);
         qRenderSheet();
         return;
       }
@@ -208,7 +208,8 @@
     var cur = qData.current;
     var f = qData.focus || {};
     if (cur.id === 'arrive' && f.commander && f.commander.arrives_at) {
-      var left = Math.round((new Date(f.commander.arrives_at).getTime() - Date.now()) / 1000);
+      // по часам сервера (js/credits-bar.js): arrives_at — отметка сервера
+      var left = Math.round((new Date(f.commander.arrives_at).getTime() - (typeof svNow === 'function' ? svNow() : Date.now())) / 1000);
       if (left > 0) return 'Флот прибудет через ' + qClock(left);
       return 'Флот выходит из прыжка…';
     }

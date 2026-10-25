@@ -58,20 +58,22 @@
   function signed(n) { n = n | 0; return n > 0 ? '+' + n : n < 0 ? '−' + Math.abs(n) : '0'; }
   function trendCls(n) { return n > 0 ? 'up' : n < 0 ? 'down' : 'flat'; }
   function sb() { return typeof supabase !== 'undefined' ? supabase : null; }
+  // время сервера (js/credits-bar.js): сроки — отметки сервера, часы телефона могут спешить или отставать
+  function nowMs() { return typeof svNow === 'function' ? svNow() : Date.now(); }
   function hoursTo(iso) {
-    var ms = new Date(iso).getTime() - Date.now();
+    var ms = new Date(iso).getTime() - nowMs();
     if (!(ms > 0)) return '';
     var h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000);
     return h > 0 ? h + ' ч' + (m ? ' ' + m + ' мин' : '') : m + ' мин';
   }
   // Коротко, для строк карточки и списка: «45 ч» или «12 мин»
   function shortTo(iso) {
-    var ms = new Date(iso).getTime() - Date.now();
+    var ms = new Date(iso).getTime() - nowMs();
     if (!(ms > 0)) return '';
     return ms >= 3600000 ? Math.ceil(ms / 3600000) + ' ч' : Math.max(1, Math.ceil(ms / 60000)) + ' мин';
   }
   function daysTo(iso) {
-    var ms = new Date(iso).getTime() - Date.now();
+    var ms = new Date(iso).getTime() - nowMs();
     if (!(ms > 0)) return '';
     var d = Math.ceil(ms / 86400000);
     return d > 1 ? d + ' ' + (d < 5 ? 'дня' : 'дней') : hoursTo(iso);
@@ -215,7 +217,7 @@
     var go = function() {
       btn.disabled = true; btn.classList.add('busy');
       Promise.resolve(s.rpc('unrest_negotiate', { p_system: sys, p_treasury: bank })).then(function(r) {
-        if (r && r.error) { btn.disabled = false; btn.classList.remove('busy'); alert(r.error.message); return; }
+        if (r && r.error) { btn.disabled = false; btn.classList.remove('busy'); alert(gameErr(r.error)); return; }
         cache.at = 0;
         if (typeof loadSettlementPanel === 'function') loadSettlementPanel();
       }, function() { btn.disabled = false; btn.classList.remove('busy'); });
@@ -262,7 +264,7 @@
     var go = function() {
       var s = sb(); if (!s) return;
       Promise.resolve(s.rpc('leader_revoke_planet', { p_system: p.id })).then(function(r) {
-        if (r && r.error) { if (typeof hqToast === 'function') hqToast(r.error.message, true); else alert(r.error.message); return; }
+        if (r && r.error) { if (typeof hqToast === 'function') hqToast(gameErr(r.error), true); else alert(gameErr(r.error)); return; }
         if (typeof hqToast === 'function') hqToast(p.controller + ' больше не управляет: ' + p.name);
         fetchList().then(function() { if (typeof openPlanetInfo === 'function') openPlanetInfo(p.id); });
       });

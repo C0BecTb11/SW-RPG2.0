@@ -147,7 +147,7 @@ function tsCall(name, args, okText) {
   Promise.resolve(supabase.rpc(name, args)).then(function(r) {
     tsState.busy = false;
     if (r.error) {
-      if (typeof hqToast === 'function') hqToast(r.error.message || 'Не получилось', true);
+      if (typeof hqToast === 'function') hqToast(gameErr(r.error), true);
       tsRepaint();
       return;
     }
@@ -247,7 +247,7 @@ function tsBalanceCard(d) {
   var bal = d.balance | 0, debts = d.debts || [];
   return '<div class="ts-card static' + (bal < 0 ? ' debt' : '') + '"><span class="ts-bal"><b>' + tsNum(bal) + '</b><i>кр. в казне' + (bal < 0 ? ' · долг' : '') + '</i></span>' +
     '<span class="ts-tags">' + ((d.tax | 0) > 0 ? '<em class="up">налог ' + (d.tax | 0) + '% с поселений</em>' : '') +
-      debts.map(function(x) { return '<em class="down">возврат займа «' + tsEsc(x.title) + '» ' + tsNum(x.amount) + ' через ' + tsLeft(x.at) + '</em>'; }).join('') + '</span></div>';
+      debts.map(function(x) { return '<em class="down">возврат займа «' + tsEsc(x.title) + '» ' + tsNum(Math.abs(x.amount | 0)) + ' через ' + tsLeft(x.at) + '</em>'; }).join('') + '</span></div>';
 }
 
 function tsAmounts(input, list) {

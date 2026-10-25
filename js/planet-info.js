@@ -18,9 +18,12 @@ var FACTION_EMBLEMS_INFO = {
 };
 
 var currentPlanetInfoSystemId = null;
+var piSeq = 0;          // номер открытия карточки: ответ прошлого открытия (тап по A, сразу по B) не рисуется
 
 function openPlanetInfo(systemId) {
   currentPlanetInfoSystemId = systemId;
+  var my = ++piSeq;
+  var live = function() { return my === piSeq && currentPlanetInfoSystemId === systemId; };
 
   var overlay = document.getElementById('planet-info-overlay');
   overlay.style.display = 'flex';
@@ -32,6 +35,7 @@ function openPlanetInfo(systemId) {
   document.getElementById('pi-move-btn').style.display = 'none';
 
   supabase.auth.getSession().then(function(sessionRes) {
+    if (!live()) return;
     var viewerId = sessionRes.data.session ? sessionRes.data.session.user.id : null;
 
     Promise.all([
@@ -43,6 +47,7 @@ function openPlanetInfo(systemId) {
       supabase.rpc('get_system_resources', { p_system_id: systemId }),
       supabase.rpc('get_building_slots', { p_system_id: systemId })
     ]).then(function(r) {
+      if (!live()) return;
       var sys = r[0].data;
       if (r[0].error || !sys) {
         document.getElementById('pi-name').textContent = 'Не удалось загрузить';
@@ -95,6 +100,7 @@ function openPlanetInfo(systemId) {
       if (controllerId) {
         supabase.from('profiles').select('nickname').eq('id', controllerId).maybeSingle()
           .then(function(pr) {
+            if (!live()) return;
             ctrlEl.textContent = (pr.data && pr.data.nickname) || 'неизвестно';
           });
       } else {
@@ -175,6 +181,7 @@ function openPlanetInfo(systemId) {
           supabase.from('unit_positions').select('id', { count: 'exact', head: true })
             .eq('system_id', systemId).eq('owner_user_id', viewerId).not('carrier_ship_id', 'is', null)
         ]).then(function(res) {
+          if (!live()) return;                       // карточку уже открыли заново — строка ушла бы в чужую сводку
           var onGround = res[0].count || 0;
           var inHold = res[1].count || 0;
           var total = onGround + inHold;
@@ -421,7 +428,7 @@ function sendChosenCommander() {
     p_target: moveTargetId
   }).then(function(res) {
     if (res.error) {
-      alert('Не удалось отправить: ' + res.error.message);
+      alert('Не удалось отправить: ' + gameErr(res.error));
       paintMoveSend();
       return;
     }

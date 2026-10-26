@@ -510,16 +510,8 @@
           ],
           shipFocus: f.ship
         };
-        return {
-          page: 'space', system: f.ship.system, goLabel: 'Перейти в космос ' + (f.capital_name || ''),
-          targets: [
-            { sel: '.sc-cmd-select', when: ourHud, tip: 'Выбери себя' },
-            { sel: '.sc-cmd-head', when: ourHud, tip: 'Раскрой «Командир»' },
-            { sel: '.sc-tab[data-tab="info"]', when: ourHud, tip: 'Вкладка «Описание»' },
-            { sel: '.ship-sprite' + shipSel, tip: 'Твой корабль' }
-          ],
-          shipFocus: f.ship
-        };
+        // Не с орбиты (window.SL есть только там): кнопка перехода, подсказки — уже на орбите
+        return { page: 'space', system: f.ship.system, goLabel: 'Перейти в космос ' + (f.capital_name || ''), targets: [] };
 
       case 'cargo':
         if (!f.ship) return null;
@@ -534,16 +526,7 @@
             marks: [{ cell: qPadCell, label: 'Площадка сброса' }],
             shipFocus: f.ship
           };
-          if (!qShipInZone('.orbital-drop-zone')) return {
-            page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
-            targets: [
-              { sel: '#sc-go', when: ourHud, tip: 'Подтверди ход' },
-              { sel: '.sc-tile[data-key="move"]', when: ourHud, tip: 'Ход' },
-              { sel: '.ship-sprite' + shipSel, tip: 'Веди в площадку сброса' }
-            ],
-            marks: [{ sel: '.orbital-drop-zone', label: 'Площадка сброса', all: true }],
-            shipFocus: f.ship
-          };
+          return { page: 'space', system: f.ship.system, goLabel: 'Перейти в космос', targets: [] };
         }
         return galaxy([
           { sel: '#shipcargo-list > .cargo-row:first-child .cargo-action',
@@ -567,17 +550,8 @@
             shipFocus: f.ship
           };
         }
-        if (f.ship && !f.ship.in_transit && !f.ship.in_jump_zone && !qShipInZone('.hyperspace-zone')) {
-          return {
-            page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
-            targets: [
-              { sel: '#sc-go', when: ourHud, tip: 'Подтверди ход' },
-              { sel: '.sc-tile[data-key="move"]', when: ourHud, tip: 'Ход' },
-              { sel: '.ship-sprite' + shipSel, tip: 'Веди корабль в зону прыжка' }
-            ],
-            marks: [{ sel: '.hyperspace-zone', label: 'Зона прыжка' }],
-            shipFocus: f.ship
-          };
+        if (f.ship && !f.ship.in_transit && !f.ship.in_jump_zone) {
+          return { page: 'space', system: f.ship.system, goLabel: 'Перейти в космос', targets: [] };
         }
         return galaxy([
           { sel: '#move-send:not([disabled])', tip: 'Отправить' },
@@ -615,21 +589,7 @@
             shipFocus: f.ship
           };
         }
-        var inDrop = f.ship.in_drop || qShipInZone('.orbital-drop-zone');
-        return {
-          page: 'space', system: f.ship.system, goLabel: 'Перейти в космос',
-          targets: inDrop ? [
-            { sel: '#sc-tab-cargo .sc-hangar-btn', when: ourHud, tip: 'Высадить' },
-            { sel: '.sc-tab[data-tab="cargo"]', when: ourHud, tip: 'Вкладка «Трюм»' },
-            { sel: '.ship-sprite' + shipSel, tip: 'Нажми на корабль' }
-          ] : [
-            { sel: '#sc-go', when: ourHud, tip: 'Подтверди ход' },
-            { sel: '.sc-tile[data-key="move"]', when: ourHud, tip: 'Ход' },
-            { sel: '.ship-sprite' + shipSel, tip: 'Веди в площадку сброса' }
-          ],
-          marks: inDrop ? [] : [{ sel: '.orbital-drop-zone', label: 'Площадка сброса', all: true }],
-          shipFocus: f.ship
-        };
+        return { page: 'space', system: f.ship.system, goLabel: 'Перейти в космос', targets: [] };
 
       case 'target':
         if (!f.target) return null;
@@ -889,22 +849,6 @@
     return null;
   }
 
-  // Корабль целиком внутри зоны — сверяем по экрану, это быстрее опроса
-  function qShipInZone(zoneSel) {
-    if (QPAGE !== 'space' || !qData || !qData.focus || !qData.focus.ship || window.SL) return false;
-    var ship = document.querySelector('.ship-sprite[data-ship-id="' + qData.focus.ship.id + '"]');
-    if (!ship) return false;
-    var s = ship.getBoundingClientRect();
-    var zones = document.querySelectorAll(zoneSel);
-    for (var i = 0; i < zones.length; i++) {
-      var z = zones[i].getBoundingClientRect();
-      if (s.left >= z.left - 1 && s.right <= z.right + 1 && s.top >= z.top - 1 && s.bottom <= z.bottom + 1) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   // Клетки поверхности в экранные координаты. Холст теперь размером с
   // экран, а камеру (сдвиг и масштаб) держат panX/panY/scale наземной
   // карты — считаем от окна просмотра по ним
@@ -976,16 +920,6 @@
       if (!window.GD || !GD.CAM) return false;
       if (GD.CAM.s < 14) GD.CAM.s = 14;
       GD.CAM.x = plan.cellFocus.x + 0.5; GD.CAM.y = plan.cellFocus.y + 0.5; GD.follow = '';
-      return true;
-    }
-    if (plan.shipFocus && QPAGE === 'space') {
-      var f = plan.shipFocus;
-      var el = document.querySelector('.ship-sprite[data-ship-id="' + f.id + '"]');
-      if (!el || typeof focusCell !== 'function') return false;
-      // Координаты берём у страницы: корабль мог уже сдвинуться
-      var live = (window.shipsInSystem || []).filter(function(sh) { return sh.id === f.id; })[0];
-      var x = live ? live.x : f.x, y = live ? live.y : f.y;
-      focusCell(x + (f.w || 1) / 2, y + (f.h || 1) / 2);
       return true;
     }
     if (plan.cellFocus && QPAGE === 'ground') {

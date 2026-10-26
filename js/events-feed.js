@@ -205,19 +205,6 @@ function makeFeedRow(e) {
     row.appendChild(go);
   }
 
-  // Абордаж: прямо на палубы — там же видно, если бой уже окончен;
-  // по итоговым записям открывается сводка боя
-  if (e.meta && e.meta.boarding_id && (FEED_BOARD_LIVE[e.type] || FEED_BOARD_END[e.type])) {
-    var board = document.createElement('button');
-    board.className = 'feed-go';
-    board.textContent = FEED_BOARD_END[e.type] ? 'Итог боя' : 'На борт';
-    board.addEventListener('click', function() {
-      closeEventsFeed();
-      window.location.href = 'boarding.html?id=' + encodeURIComponent(e.meta.boarding_id);
-    });
-    row.appendChild(board);
-  }
-
   // Передача войск: карты тут нет, зато есть меню, где её подтверждают
   if (e.meta && e.meta.transfer_id && typeof openTransferPanel === 'function') {
     var open = document.createElement('button');
@@ -410,7 +397,7 @@ function makeDuelRow(e) {
 
 // Число в событии: урон, лечение, кредиты
 var FEED_AMOUNT = {
-  unit_hit: 'dmg', unit_damaged: 'dmg', artillery_hit: 'dmg', ship_hit: 'dmg',
+  unit_hit: 'dmg', unit_damaged: 'dmg', artillery_hit: 'dmg',
   return_fire: 'dmg', npc_return_fire: 'dmg', unit_healed: 'heal',
   settlement_festival: 'cr', settlement_donation: 'cr'
 };
@@ -422,16 +409,11 @@ function feedSet(list) {
 }
 
 // Орбита: корабли, станция, флот в системе
-var FEED_SPACE = feedSet(['ship_built', 'ship_lost', 'ship_destroyed', 'ship_hit', 'ship_missed',
-  'tractor_locked', 'station_built', 'station_started', 'station_demolished', 'refit_done',
+var FEED_SPACE = feedSet(['ship_built', 'ship_lost', 'ship_destroyed',
+  'station_built', 'station_started', 'station_demolished', 'refit_done',
   'hangar_restocked', 'fleet_arrived', 'fleet_pushed_out', 'fleet_stranded', 'cargo_delivered',
-  'cargo_lost', 'overwatch_space']);
+  'cargo_lost']);
 var FEED_STATION = feedSet(['station_built', 'station_started']);
-
-// Абордаж: начало ведёт на палубы, итог — к сводке боя
-var FEED_BOARD_LIVE = feedSet(['boarding_started', 'boarding_launched']);
-var FEED_BOARD_END = feedSet(['boarding_captured', 'boarding_lost', 'boarding_blown', 'boarding_destroyed',
-  'boarding_failed', 'boarding_held', 'boarding_broken']);
 
 // Поселение: открываем его панель
 var FEED_SETTLEMENT = feedSet(['settlement_conditions', 'settlement_remind', 'unrest_level', 'unrest_calm',

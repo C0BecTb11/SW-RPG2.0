@@ -19,7 +19,6 @@
 <link rel="stylesheet" href="../css/quest.css?v=1">
 <link rel="stylesheet" href="../css/supply.css?v=4">
 <link rel="stylesheet" href="../css/lease.css?v=1">
-<link rel="stylesheet" href="../css/overwatch.css?v=1">
 <link rel="stylesheet" href="../space/space.css?v=22">
 <link rel="stylesheet" href="../ground/ground.css?v=8">
 <link rel="stylesheet" href="../css/ground-live.css?v=5">
@@ -36,8 +35,6 @@
   <div class="sl-bar"><i></i></div>
   <div class="sl-step"></div>
 </div>
-
-<button id="ground-back-btn" hidden>← Галактика</button>
 
 <!-- Наземка 2.0: карта планеты и бой в реальном времени (ground/ground.js), поверх — панели планеты -->
 <canvas id="sp-canvas"></canvas>
@@ -156,7 +153,6 @@
 
 <div id="order-queue" style="display:none;"></div>
 
-<div id="capture-bar" style="display:none;"></div>
 <div id="scout-bar" style="display:none;"></div>
 
 <div id="research-panel" style="display:none;">
@@ -204,19 +200,7 @@
   <div id="tree-info"></div>
 </div>
 
-<button id="drop-btn" type="button" style="visibility:hidden;"><span class="db-ico">⇣</span><span class="db-txt"><b>Десант</b><i id="drop-btn-sub">в трюмах</i></span></button>
-
 <div id="pickup-bar" style="visibility:hidden;"></div>
-
-<div id="drop-panel" style="display:none;">
-  <div id="drop-panel-box">
-    <div id="drop-panel-header">
-      <span id="drop-panel-title">Десант на борту</span>
-      <button id="drop-panel-close">✕</button>
-    </div>
-    <div id="drop-panel-list"></div>
-  </div>
-</div>
 
 <div id="placement-hint" style="display:none;"></div>
 
@@ -229,7 +213,6 @@
 <script src="../js/game-confirm.js?v=1"></script>
 <script src="../js/drag-command.js?v=1"></script>
 <script src="../js/production-lease.js?v=2"></script>
-<script src="../js/overwatch.js?v=1"></script>
 <script src="../shared/rt-core.js?v=5"></script>
 <script src="../shared/rt-figures.js?v=7"></script>
 <script src="../shared/rt-army.js?v=4"></script>
@@ -250,8 +233,6 @@
 <script src="../js/spy-map.js?v=2"></script>
 <script src="../js/spy-ops.js?v=3"></script>
 <script src="../js/drop-tray.js?v=3"></script>
-<script src="../js/automove-route.js?v=1"></script>
-<script src="../js/automove-ground.js?v=1"></script>
 <script src="../js/supply-map.js?v=1"></script>
 <script src="../js/supply.js?v=8"></script>
 <script src="../js/quest.js?v=7"></script>

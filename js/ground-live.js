@@ -97,7 +97,6 @@
     syncOldCam(c, s, dpr);
     try {
       if (window.buildMode && typeof drawBuildSlots === 'function') drawBuildSlots();
-      if (window.placingOrder && typeof drawPlacementCells === 'function') drawPlacementCells();
       if (window.placingStructure && typeof drawStructPlacement === 'function') drawStructPlacement();
       if (typeof drawDropCells === 'function') drawDropCells();
       if (typeof dtDraw === 'function') dtDraw();
@@ -160,7 +159,6 @@
       closeDropTray();
     }
     if (window.landingFighter && typeof handleFighterLandingTap === 'function') { handleFighterLandingTap(cx, cy); return true; }
-    if (window.placingOrder && typeof handlePlacementTap === 'function') { handlePlacementTap(cx, cy); return true; }
     if (selCount) return false;
     // площадь города — панель поселения
     if (cx >= B.sx && cx < B.sx + 8 && cy >= B.sy && cy < B.sy + 8 && !agent) { if (typeof openSettlementPanel === 'function') openSettlementPanel(); return true; }
@@ -245,7 +243,7 @@
       var sel = window.GD && GD.selected ? GD.selected() : [];
       eng.hidden = !sel.some(function(a) { return a.T.builder && a.owner === GL.user; });
       document.body.classList.toggle('build', !!window.buildMode);          // стройка: боевой низ не нужен
-      document.body.classList.toggle('placing', !!(window.placingStructure || window.placingOrder));   // выбор клетки — тоже
+      document.body.classList.toggle('placing', !!window.placingStructure);   // выбор клетки — тоже
     }, 400);
     // Десант: у нападающего — всегда (лоток ведёт в полосу вторжения внизу); на своей и союзной
     // планете — когда в трюмах над ней есть войска, техника или истребители (лоток ведёт в зоны высадки).

@@ -1,6 +1,5 @@
 /* Экран планеты на наземке 2.0: новый бой под старыми панелями */
 body { background: #05060a; }
-#ground-back-btn, #drop-btn, #capture-bar { display: none !important; }
 /* лоток десанта открыт, режим стройки, выбор клетки под укрепление или под новобранца —
    боевой низ нового экрана не нужен, подсказка размещения встаёт на его место */
 body.dt-open .sp-bottom, body.build .sp-bottom, body.placing .sp-bottom { display: none; }

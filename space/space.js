@@ -314,6 +314,8 @@
   function intel(s) { if (s.side === G.side) return true; var b = boardOf(s.n); return !!(b && b.over < 0 && b.att === G.side); }
   // корпус и щиты чужого — грубо (корпус шагом 5%, щиты четвертями), как их видно по вспышкам и пробоинам
   function hullK(s) { var k = Math.max(0, s.hull / s.hullMax); return intel(s) ? k : Math.ceil(k * 20 - 0.02) / 20; }
+  // экипаж на борту: свой корабль — число с сервера (там настоящий экипаж), иначе — свой расчёт зеркала
+  function crewN(s) { return s.netAlive != null ? s.netAlive : s.crew.alive(); }
   function shK(s, q) { var k = Math.max(0, s.sh[q] / (s.shMax * (q === 0 && s.foreK > 1 ? s.foreK : 1))); return intel(s) ? k : Math.ceil(k * 4 - 0.04) / 4; }
   function shAll(s) { return (shK(s, 0) + shK(s, 1) + shK(s, 2) + shK(s, 3)) / 4; }
   function liveBoards() {
@@ -2694,7 +2696,7 @@
     var head = '<div class="sp-ship-head"><b>' + esc(sh.name) + '</b><span class="sp-tag">' + Math.max(0, Math.round(sh.hull / sh.hullMax * 100)) + '%</span>' +
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
       (!sh.dead && heldLeft(sh) ? '<span class="sp-tag warn" title="Держит притягивающий луч врага: ход скован, в гиперпространство не уйти">в луче ' + heldLeft(sh) + ' с</span>' : '') +
-      '<span class="r">щиты <i' + (shPct < 25 ? ' class="foe"' : '') + '>' + shPct + '%</i> · экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>';
+      '<span class="r">щиты <i' + (shPct < 25 ? ' class="foe"' : '') + '>' + shPct + '%</i> · экипаж <i>' + crewN(sh) + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>';
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Ген', e.shield) + sysCell('Мост', e.bridge) + '</div>';
     // щиты по секторам: касание — усилить сектор (повторное — вернуть экипажу)
     var SN = ['нос', 'пр', 'корма', 'лев'], shRow = '<div class="sp-shd"><span>щиты</span>';

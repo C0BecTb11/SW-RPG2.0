@@ -37,11 +37,8 @@ function closeProcessesScreen() {
 function loadProcesses() {
   if (processesLoading) return;
   processesLoading = true;
-  // v2 знает, где на карте здание: из списка можно сразу туда перейти
+  // знает, где на карте здание: из списка можно сразу туда перейти
   return supabase.rpc('get_my_processes_v2').then(function(res) {
-    if (res.error) return supabase.rpc('get_my_processes');
-    return res;
-  }).then(function(res) {
     processesLoading = false;
     // Экран уже закрыли — рисовать некуда
     if (!processesTimer) return;

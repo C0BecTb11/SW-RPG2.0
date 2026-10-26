@@ -858,24 +858,13 @@ function sxApplyLink(link) {
   }
 }
 
-// Что делает с кораблём трофейный статус и абордаж: строки для панели
+// Что делает с кораблём трофейный статус: строки для панели
 function sxBoardMarks(ship) {
   var out = [];
   if (!ship) return out;
   if (ship.trophy) {
     var left = ship.jump_lock_until ? new Date(ship.jump_lock_until).getTime() - scServerNow() : 0;
     out.push({ text: 'Трофей: щиты выключены, ход и урон ×½' + (left > 0 ? ', прыжки закрыты ещё ' + Math.ceil(left / 3600000) + ' ч' : '') + ' · ремонт в доке снимет', cls: 'reveal' });
-  }
-  var e = ship.boarding_eff;
-  if (e) {
-    var w = [];
-    if (e.shields) w.push('щиты погашены');
-    if (e.gun_port && e.gun_star) w.push('борта не стреляют');
-    else if (e.gun_port) w.push('левый борт не стреляет');
-    else if (e.gun_star) w.push('правый борт не стреляет');
-    if (e.hangar) w.push('ангар захвачен');
-    if (e.engine) w.push('машинное захвачено');
-    if (w.length) out.push({ text: 'Абордаж: ' + w.join(', '), cls: 'wound' });
   }
   return out;
 }

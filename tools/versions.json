@@ -284,16 +284,16 @@
   "sha": "82d49a9d9668"
  },
  "js/ship-control.js": {
-  "v": "5",
-  "sha": "9896b2d34967"
+  "v": "6",
+  "sha": "ef6f682bb4a7"
  },
  "js/space-battle.js": {
   "v": "6",
   "sha": "139225ce80bf"
  },
  "js/space-live.js": {
-  "v": "20",
-  "sha": "d76d4571aba8"
+  "v": "21",
+  "sha": "fa2a24eb8ded"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -336,8 +336,8 @@
   "sha": "ddf8c69a7db1"
  },
  "shared/rt-army.js": {
-  "v": "4",
-  "sha": "46200012c36b"
+  "v": "5",
+  "sha": "5c8745053256"
  },
  "shared/rt-board.js": {
   "v": "9",
@@ -440,7 +440,7 @@
   "sha": "eddb39e9609f"
  },
  "space/space.js": {
-  "v": "37",
-  "sha": "aa168abe9a39"
+  "v": "38",
+  "sha": "e0f730c58539"
  }
 }

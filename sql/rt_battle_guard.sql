@@ -1,7 +1,8 @@
--- Защита объектов боя 2.0 (rt_battle_guard) — ТЕКУЩАЯ версия из базы (аудит 25.10.2026).
+-- Защита объектов боя 2.0 (rt_battle_guard) — ТЕКУЩАЯ версия из базы (аудит 25.10.2026; 26.10 — без колонок
+-- дозора, луча и абордажа, sql/legacy_step4b_patch.sql).
 -- Ветка 'unit' (погрузка бойца из панелей игры, имя героя) жила только в базе. Более ранние определения
 -- в sql/rt_2_0_core.sql, sql/ground_2_0.sql и sql/space_2_0.sql устарели: их повторный прогон откатит эту версию —
--- после любого из них примени этот файл снова. md5(prosrc) = bf6abc2628adf441157b26f5de438528.
+-- после любого из них примени этот файл снова. md5(prosrc) = fe80e36cc3e0aae738af161849467296.
 CREATE OR REPLACE FUNCTION public.rt_battle_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -38,8 +39,6 @@ begin
        and new.shield_port is not distinct from old.shield_port and new.shield_starboard is not distinct from old.shield_starboard
        and new.trophy is not distinct from old.trophy and new.owner_user_id is not distinct from old.owner_user_id
        and new.faction is not distinct from old.faction and new.carrier_ship_id is not distinct from old.carrier_ship_id
-       and new.tractor_until is not distinct from old.tractor_until and new.tractor_by is not distinct from old.tractor_by
-       and new.boarding_eff is not distinct from old.boarding_eff and new.overwatch is not distinct from old.overwatch
        and new.ap is not distinct from old.ap then
       return new;
     end if;
@@ -62,7 +61,7 @@ begin
     if new.hp = old.hp and new.x is not distinct from old.x and new.y is not distinct from old.y and new.system_id is not distinct from old.system_id
        and new.owner_user_id is not distinct from old.owner_user_id and new.faction is not distinct from old.faction
        and new.carrier_ship_id is not distinct from old.carrier_ship_id and new.carrier_unit_id is not distinct from old.carrier_unit_id
-       and new.ap is not distinct from old.ap and new.overwatch is not distinct from old.overwatch and new.layer is not distinct from old.layer then
+       and new.ap is not distinct from old.ap and new.layer is not distinct from old.layer then
       return new;
     end if;
   end if;

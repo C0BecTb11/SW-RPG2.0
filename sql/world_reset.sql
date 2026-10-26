@@ -8,7 +8,7 @@
 --      напряжение и мятежи, законы, казну, эффекты, донесения, галактические события, тайные операции, участки.
 --   3. Планеты — по сиду (sql/systems_seed.sql): фракции систем как в начале, поселения уровня 1,
 --      без владельцев.
---   4. Игроки остаются (аккаунт, ник, фракция, лидеры фракций): кредиты 1000, персонаж и первый
+--   4. Игроки остаются (аккаунт, ник, фракция, лидеры фракций): кредиты 1000, первый
 --      командир в столице, остальные командиры заблокированы, обучение заново.
 --   5. Игроков рассаживает по планетам своей фракции: лидеру — столица, остальным по планете
 --      в порядке регистрации. Корабль и бойцов в столице выдаёт обучение (шаги «Штаб армии»
@@ -26,15 +26,10 @@ delete from rt_battle_locks;
 update rt_battles set status = 'finished', ended_at = now() where status = 'active';
 
 -- 2. нажитое
-delete from boarding_units;
-delete from boardings;
-delete from unit_effects;
-delete from unit_ability_uses;
 delete from unit_orders;
 delete from auto_move_stops;
 delete from auto_move_reports;
 delete from auto_moves;
-delete from hero_ability_uses;
 delete from hero_kills;
 delete from hero_learned;
 delete from hero_training;
@@ -46,7 +41,7 @@ delete from spotted_pairs;
 delete from npc_brains;
 delete from unit_positions;
 delete from heroes;
-update ships set in_transit = false, tractor_by = null, tractor_until = null;   -- иначе триггер трюма не даст стереть груз корабля в пути
+update ships set in_transit = false;   -- иначе триггер трюма не даст стереть груз корабля в пути
 delete from ship_cargo;
 delete from ship_resource_cargo;
 delete from ship_orders;
@@ -62,7 +57,6 @@ delete from production_leases;
 delete from buildings;
 delete from space_stations;
 delete from player_research;
-delete from commander_inventory;
 delete from market_orders;     -- брони ссылаются на лоты: сначала брони
 delete from market_lots;
 delete from planet_requests;
@@ -117,7 +111,6 @@ update commanders
    set unlocked = (slot_index = 1),
        current_system = case when slot_index = 1 then tutorial_capital(faction) else null end,
        moving_from = null, moving_to = null, departed_at = null, arrives_at = null, warned_at = null, route = null;
-update player_characters pc set current_system = tutorial_capital(p.faction) from profiles p where p.id = pc.user_id and p.faction in ('republic', 'cis');
 
 -- 5. планеты игрокам: лидеру — столица, остальным по одной в порядке регистрации
 insert into system_control (system_id, controller_user_id)

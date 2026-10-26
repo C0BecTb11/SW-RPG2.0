@@ -38,7 +38,6 @@ function loadSettlement() {
   ]).then(function(r) {
     if (!r[0].error && r[0].data && r[0].data.length) settlement = r[0].data[0];
     if (!r[1].error && r[1].data && r[1].data.length) settlementZone = r[1].data[0];
-    redrawScene();
     if (window.sceneLoader) sceneLoader.mark('settlement');
   });
 }
@@ -1232,7 +1231,6 @@ function getBuildingImage(path) {
 
   var img = new Image();
   img.src = '../' + path;
-  img.onload = function() { scheduleRedraw(); };
   img.onerror = function() { img.failed = true; };
   buildingImages[path] = img;
   return img;
@@ -1358,7 +1356,6 @@ function loadGroundSides() {
       // Сторона приходит отдельным запросом и может опоздать за грузом:
       // открытый лоток пересчитывает, куда высаживать
       updateDropBtn();
-      redrawScene();
     });
   });
 }
@@ -1366,15 +1363,11 @@ function loadGroundSides() {
 function loadGroundSettings() {
   return supabase.from('game_settings').select('key, value').then(function(res) {
     if (res.error || !res.data) return;
-    var was = ATTACK_ZONE_H;
     res.data.forEach(function(row) {
       if (row.key === 'ground_attack_zone_height') {
         ATTACK_ZONE_H = parseInt(row.value, 10) || 4;
       }
     });
-    // Перерисовываем, только если значение реально отличается от того,
-    // с которым уже нарисовано. Полная отрисовка тут дорогая.
-    if (was !== ATTACK_ZONE_H) redrawScene();
   });
 }
 
@@ -2542,19 +2535,14 @@ function loadBuildings() {
       });
     }
     buildingsLoaded = true;
-    redrawScene();
     updateRedrawTimer();
     if (window.sceneLoader) sceneLoader.mark('buildings');
   });
 }
 
-// Карту и бой рисует бой 2.0 (ground/ground.js) каждый кадр; старые панели и лоток по привычке просят
-// перерисовку — пустые заглушки
-function scheduleRedraw() {}
-function redrawScene() {}
-
-// Пока на карте есть недостроенное здание, обновляем картинку раз в секунду,
-// чтобы шёл обратный отсчёт. Достроилось всё — таймер выключаем.
+// Карту и бой рисует бой 2.0 (ground/ground.js) каждый кадр — просить перерисовку не нужно.
+// Пока на карте есть недостроенное здание, раз в секунду смотрим, не достроилось ли: достроилось всё —
+// таймер выключаем и перечитываем здания.
 function updateRedrawTimer() {
   var now = gbServerNow();
   var hasPending = Object.keys(buildingsBySlot).some(function(k) {
@@ -2564,7 +2552,6 @@ function updateRedrawTimer() {
 
   if (hasPending && !redrawTimer) {
     redrawTimer = setInterval(function() {
-      redrawScene();
       var stillPending = Object.keys(buildingsBySlot).some(function(k) {
         var b = buildingsBySlot[k];
         return b.completes_at && new Date(b.completes_at).getTime() > gbServerNow();
@@ -3490,16 +3477,12 @@ function getUnitImage(path) {
   if (unitImages[path]) return unitImages[path];
   var img = new Image();
   img.src = '../' + path;
-  img.onload = function() { scheduleRedraw(); };
   img.onerror = function() { img.failed = true; };
   unitImages[path] = img;
   return img;
 }
 
-// Ответы приходят не по порядку: реалтайм и ручная перезагрузка часто
-// летят одновременно. Старый ответ поверх нового откатил бы карту назад
-// и показал бы ложное «лечение» в сводке.
-var loadUnitsSeq = 0;
+// Сколько раз зеркало боя отдало бойцов (js/ground-live.js) — 0, пока карта не пришла ни разу
 var loadUnitsApplied = 0;
 // Бойцы — из зеркала боя 2.0 (js/ground-live.js); старые панели читают unitsOnMap
 function loadUnits() {
@@ -3664,7 +3647,6 @@ function startFighterLanding(f) {
   focusCell(midX, iAmAttacker
     ? GRID_SIZE - ATTACK_ZONE_H + ATTACK_ZONE_H / 2
     : (deployZones.length ? deployZones[0].y : 10));
-  redrawScene();
 }
 
 var landingBusy = false;
@@ -3719,7 +3701,6 @@ function cancelDrop() {
   updateDropBtn();
 
   setBottomInset(0);
-  redrawScene();
   if (typeof dtAfterCancel === 'function') dtAfterCancel();
 }
 
@@ -4721,7 +4702,6 @@ function updateStructTimer() {
   if (pending && !structTimer) {
     structTimer = setInterval(function() {
       var still = fieldStructures.some(function(s) { return !structReady(s); });
-      redrawScene();
       if (selectedStructure && structPanelOpen()) paintStructStatus(selectedStructure);
       if (!still) {
         clearInterval(structTimer);
@@ -5086,7 +5066,6 @@ function startStructurePlacement(unit, st) {
   hidePickup();
   showStructPlacementHint();
   focusCell(unit.x, unit.y);
-  redrawScene();
 }
 
 function showStructPlacementHint() {
@@ -5119,7 +5098,6 @@ function cancelStructurePlacement() {
   placingStructure = null;
   document.getElementById('placement-hint').style.display = 'none';
   setBottomInset(0);
-  redrawScene();
 }
 
 function handleStructurePlacementTap(cellX, cellY) {
@@ -5127,7 +5105,6 @@ function handleStructurePlacementTap(cellX, cellY) {
   var a = structAnchor(p.type, cellX, cellY);
   p.preview = { x: a.x, y: a.y, problem: structPlaceProblem(p.unit, p.type, a.x, a.y) };
   showStructPlacementHint();
-  redrawScene();
 }
 
 function confirmStructurePlacement() {
@@ -5270,13 +5247,11 @@ function openStructurePanel(s, keepView) {
   document.getElementById('gu-close').addEventListener('click', function() {
     selectedStructure = null;
     hidePickup();
-    redrawScene();
   });
 
   bar.style.visibility = 'visible';
   setBottomInset(insetFor(bar));
   if (!keepView) focusCell(s.x + Math.floor(s.w / 2), s.y + Math.floor(s.h / 2));
-  redrawScene();
 }
 
 // Строка состояния: стройка, ближайшая выдача или готовность турели
@@ -5428,7 +5403,6 @@ function gbApplyLink(link) {
     if (!buildingsLoaded) return;
     if (!ls) { alert('Этой постройки на планете уже нет'); return; }
     focusCell(ls.x + SLOT_SIZE / 2 - 0.5, ls.y + SLOT_SIZE / 2 - 0.5);
-    redrawScene();
     gbLoadLeases().then(function() {
       setTimeout(function() { onSlotTapped(leaseSlot); }, 350);
     });
@@ -5443,13 +5417,11 @@ function gbApplyLink(link) {
     if (link.open === 'slot' && bld && (!link.bid || bld.id === link.bid)) {
       setTimeout(function() { onSlotTapped(link.slot); }, 350);
     }
-    redrawScene();
     return;
   }
 
   if (link.x !== null && link.y !== null && !isNaN(link.x) && !isNaN(link.y)) {
     focusCell(link.x, link.y);
-    redrawScene();
   }
 }
 

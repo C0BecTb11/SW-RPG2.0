@@ -127,9 +127,6 @@ function openDropTray() {
   dtRender();
   el.classList.add('open');
 
-  var btn = document.getElementById('drop-btn');
-  if (btn) btn.style.visibility = 'hidden';
-
   // Куда высаживать — на виду над лотком и в рабочем масштабе: при вторжении полоса внизу,
   // на своей планете — первая зона высадки (полоса вторжения хозяину ни к чему)
   setTimeout(function() {
@@ -137,7 +134,6 @@ function openDropTray() {
     setBottomInset(dtInset(el));
     // Середину экрана берём до смены масштаба, иначе карта прыгнет вбок
     var midX = (viewport.clientWidth / 2 - panX) / scale / CELL_PX;
-    if (scale < 0.9) scale = 1;
     var z = iAmAttacker === true ? null : deployZones[0];
     if (z) focusCell(z.x + (z.size || DEPLOY_SIZE) / 2, z.y + (z.size || DEPLOY_SIZE) / 2);
     else if (iAmAttacker === true) focusCell(midX, GRID_SIZE - ATTACK_ZONE_H / 2 - 1);
@@ -453,8 +449,6 @@ function dtAfterCancel() {
   if (!dtOpen) return;
   dtSelKey = null;
   var el = document.getElementById('dt-tray');
-  var btn = document.getElementById('drop-btn');
-  if (btn) btn.style.visibility = 'hidden';
   dtRender();
   if (el) setBottomInset(dtInset(el));
 }
@@ -469,11 +463,13 @@ function dtEdgeTick() {
     // Под лотком скорость не считаем: палец там — значит несут обратно
     if (d.cy < box.bottom) {
       var v = dcEdgeVelocity(box, d.cx, d.cy);
-      if (v.x || v.y) {
-        var px = panX, py = panY;
-        panX += v.x; panY += v.y;
-        clampPan();
-        if (panX !== px || panY !== py) { applyTransform(); dtDragMove(d.cx, d.cy); }
+      // карту двигает камера боя 2.0 (GD.CAM, клетки); старые panX/panY — её отражение (syncOldCam), их
+      // пересчитываем сразу, чтобы клетка под пальцем считалась по новой камере
+      if ((v.x || v.y) && window.GD && GD.CAM && GD.toS) {
+        var C = GD.CAM, ox = C.x, oy = C.y;
+        C.x = Math.max(0, Math.min(GRID_SIZE, C.x - v.x / C.s));
+        C.y = Math.max(0, Math.min(GRID_SIZE, C.y - v.y / C.s));
+        if (C.x !== ox || C.y !== oy) { var o = GD.toS(0, 0); panX = o[0]; panY = o[1]; dtDragMove(d.cx, d.cy); }
       }
     }
   }
@@ -573,7 +569,7 @@ function dtCommit(it, x, y, fx, fy) {
   });
 }
 
-// ── Отрисовка на поле (из drawScene) ─────────────────────────────
+// ── Отрисовка на поле (из GD_DRAW, js/ground-live.js) ─────────────
 
 function dtDraw() {
   if (!dtOpen) return;

@@ -148,8 +148,8 @@
   "sha": "cfc0827a6960"
  },
  "js/battle-stats.js": {
-  "v": "3",
-  "sha": "8c8fb017ab79"
+  "v": "4",
+  "sha": "42cb3d755b04"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -228,8 +228,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "17",
-  "sha": "88eafd1000f3"
+  "v": "18",
+  "sha": "7e2e921e88b1"
  },
  "js/ground-live.js": {
   "v": "29",

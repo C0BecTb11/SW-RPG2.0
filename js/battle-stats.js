@@ -72,6 +72,23 @@ function bsUnitNotes(id) {
 
 // ---- исследования
 
+// Цена дополнения за бойца при найме — как order_unit: researches.unit_price (у B1 — своя, дешёвая:
+// B1 — дешёвая масса), иначе четверть цены изучения. Корабли (order_ship, док) — всегда четверть
+var BS_UNIT_PRICE = null;
+function bsLoadUnitPrices() {
+  if (BS_UNIT_PRICE) return Promise.resolve(BS_UNIT_PRICE);
+  if (typeof supabase === 'undefined' || !supabase.from) return Promise.resolve({});
+  return supabase.from('researches').select('id, unit_price').not('unit_price', 'is', null).then(function(res) {
+    if (res.error) return {};
+    var m = {}; (res.data || []).forEach(function(q) { m[q.id] = q.unit_price; });
+    BS_UNIT_PRICE = m; return m;
+  }, function() { return {}; });
+}
+function bsUpgradePrice(r) {
+  var m = r.scope === 'unit' && BS_UNIT_PRICE || {};
+  return m[r.id] != null ? m[r.id] : Math.floor((r.cost || 0) / 4);
+}
+
 function bsUnitOf(r) { return r && r.applies_units && r.applies_units.length === 1 ? bsType(r.applies_units[0]) : null; }
 function bsArrow(a, b) { return ' (' + a + ' → ' + b + ')'; }
 

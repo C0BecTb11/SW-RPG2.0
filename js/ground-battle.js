@@ -1795,7 +1795,8 @@ function loadResearchPanel() {
   Promise.all([
     supabase.rpc('get_researches'),
     researchNamesLoaded ? Promise.resolve({ data: [] }) : supabase.from('ship_types').select('id, name').eq('is_fighter', false),
-    researchNamesLoaded ? Promise.resolve({ data: [] }) : supabase.from('unit_types').select('id, name')
+    researchNamesLoaded ? Promise.resolve({ data: [] }) : supabase.from('unit_types').select('id, name'),
+    bsLoadUnitPrices()
   ]).then(function(r) {
     if (!r[1].error && !r[2].error && (r[1].data || []).length && (r[2].data || []).length) researchNamesLoaded = true;
     var res = r[0];
@@ -1975,7 +1976,10 @@ function showResearchInfo(r, tile) {
   info.innerHTML =
     '<div class="rs-info-name">' + r.name + '</div>' +
     '<div class="rs-info-text">' + r.description + '</div>' +
-    '<div class="rs-info-meta">' + researchEffectText(r) + '</div>';
+    '<div class="rs-info-meta">' + researchEffectText(r) + '</div>' +
+    // изучение даёт право; само дополнение оплачивается за каждого бойца или корабль
+    (r.scope === 'unit' ? '<div class="rs-info-meta">При найме: +' + bsUpgradePrice(r) + ' кр за бойца</div>'
+     : r.scope === 'ship' ? '<div class="rs-info-meta">На верфи и в доке: +' + bsUpgradePrice(r) + ' кр за корабль</div>' : '');
 
   if (r.done) {
     info.innerHTML += '<div class="rs-info-meta ok">' +
@@ -2843,7 +2847,8 @@ function setUnitButtonsEnabled(on) {
 var unitUpgradesDone = [];
 
 function loadUnitUpgrades() {
-  return supabase.rpc('get_researches').then(function(res) {
+  return Promise.all([supabase.rpc('get_researches'), bsLoadUnitPrices()]).then(function(q) {
+    var res = q[0];
     if (!res.error && res.data) {
       unitUpgradesDone = res.data.filter(function(r) {
         return r.done && r.scope === 'unit';
@@ -2876,11 +2881,11 @@ function openUnitPanel(building) {
 
   // Предел партии задан типом постройки: казарма делает пятёрками,
   // завод техники — по одной машине
-  loadUnitUpgrades();
-
+  // Дополнения и их цены ждём вместе с бойцами: без них первая карточка выходила без плиток дополнений
   Promise.all([
     supabase.from('unit_types').select('*').eq('produced_by', code),
-    supabase.from('building_types').select('max_per_order').eq('code', code).maybeSingle()
+    supabase.from('building_types').select('max_per_order').eq('code', code).maybeSingle(),
+    loadUnitUpgrades()
   ]).then(function(r) {
     var res = r[0];
     var maxPerOrder = (!r[1].error && r[1].data) ? (r[1].data.max_per_order || 5) : 5;
@@ -3256,7 +3261,7 @@ function buildUnitCard(unit) {
       var t = document.createElement('button');
       t.className = 'unit-up-tile';
       t.innerHTML = '<img src="../' + r.icon_image + '" alt="">';
-      t.title = r.name + ' — ' + (bsResearchText(r) || r.description);
+      t.title = r.name + ' — ' + (bsResearchText(r) || r.description) + ' · +' + bsUpgradePrice(r) + ' кр за бойца';
       t.addEventListener('click', function() {
         if (chosen[r.id]) delete chosen[r.id]; else chosen[r.id] = r;
         t.classList.toggle('active', !!chosen[r.id]);
@@ -3277,7 +3282,7 @@ function buildUnitCard(unit) {
 
   function upgradeCost() {
     var sum = 0;
-    for (var k in chosen) sum += Math.floor(chosen[k].cost / 4);
+    for (var k in chosen) sum += bsUpgradePrice(chosen[k]);
     return sum;
   }
 

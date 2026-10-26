@@ -340,6 +340,25 @@
   };
   // Цель корабля: назначенная игроком (видна — она; ушла в туман — курс к её последней
   // засечке, пока не дошли: там не нашли — цель потеряна), иначе ближайший враг
+  // Враг для ИИ на живой орбите: цель корабля (как foeOf), иначе ближайший видимый в датчиках самого
+  // корабля — «увидел — пошёл в атаку». Засечки (где враг стоял когда-то) ИИ сюда не ведут
+  Battle.prototype.aiFoe = function(sh) {
+    if (sh.foeT != null) { var t = this.foeOf(sh); if (t) return t; }
+    var r = this.sensRange(sh), best = null, bd = 1e18;
+    for (var i = 0; i < this.ships.length; i++) {
+      var o = this.ships[i]; if (o.dead || o.side === sh.side || !this.sees(sh.side, o)) continue;
+      var dx = o.x - sh.x, dy = o.y - sh.y, d = dx * dx + dy * dy, lim = r + o.len / 2;
+      if (d <= lim * lim && d < bd) { bd = d; best = o; }
+    }
+    return best;
+  };
+  // Возврат на место после боя (sh.home): дойти и развернуться, как стоял; дошёл — место забыто
+  Battle.prototype.homeStep = function(sh, vmax) {
+    var H = sh.home, dx = H.x - sh.x, dy = H.y - sh.y, d = Math.sqrt(dx * dx + dy * dy);
+    if (d > 150) return { want: Math.atan2(dy, dx), wantV: Math.min(vmax, d / 20) };
+    if (Math.abs(wrap(H.hd - sh.hd)) < 0.03 && sh.v < 1) { sh.home = null; return { want: null, wantV: 0 }; }
+    return { want: H.hd, wantV: 0 };
+  };
   Battle.prototype.foeOf = function(sh) {
     if (sh.foeT != null) {
       var t = this.ships[sh.foeT];
@@ -449,6 +468,7 @@
   Battle.prototype.order = function(shipN, x, y, face) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
     sh.guard = false;                                   // игрок снова ведёт корабль сам
+    if (x != null) sh.home = null;                      // свой курс — место «до боя» забыто: новое место там, где оставит игрок
     if (x === 'hold') { sh.order = null; sh.ai = false; return; }
     if (x != null && !(isFinite(x) && isFinite(y))) return;
     sh.order = x == null ? null : { x: x, y: y, face: !!face }; sh.ai = x == null;
@@ -596,15 +616,19 @@
         else if (this.t - sh.order.bt > (d < sh.len + 1500 ? 12 : 45) && this.t - (sh.touchT || -99) < 2) { sh.order = null; want = null; wantV = 0; }
       }
     } else if (sh.guard) {
-      // на позиции: враг в досягаемости — борт к нему, ход ноль
-      var gf = sh.foeT != null && this.ships[sh.foeT] && !this.ships[sh.foeT].dead && this.sees(sh.side, this.ships[sh.foeT]) ? this.ships[sh.foeT] : this.nearestFoe(sh);
+      // на позиции: враг в досягаемости — борт к нему, ход ноль; врага нет, а бой увёл с места — назад на место
+      var gf = sh.foeT != null && this.ships[sh.foeT] && !this.ships[sh.foeT].dead && this.sees(sh.side, this.ships[sh.foeT]) ? this.ships[sh.foeT] : this.nearestFoe(sh), gNear = false;
       if (gf && !gf.ghost) {
         var gx = gf.x - sh.x, gy = gf.y - sh.y;
-        if (gx * gx + gy * gy < Math.pow(mainRange(sh) * 1.3 + gf.len / 2, 2)) { want = Math.atan2(gy, gx) + bestFacing(sh, false); wantV = 0; }
+        if (gx * gx + gy * gy < Math.pow(mainRange(sh) * 1.3 + gf.len / 2, 2)) { want = Math.atan2(gy, gx) + bestFacing(sh, false); wantV = 0; gNear = true; }
       }
+      if (!gNear && sh.home) { var gh = this.homeStep(sh, vmax); want = gh.want; wantV = gh.wantV; }
     } else if (sh.ai) {
-      var foe = this.foeOf(sh);
+      // живая орбита (seenOnly): враг — только видимый и в датчиках самого корабля; бой кончился — назад на место
+      var foe = this.seenOnly ? this.aiFoe(sh) : this.foeOf(sh);
+      if (!foe && sh.home) { var ah = this.homeStep(sh, vmax); want = ah.want; wantV = ah.wantV; }
       if (foe) {
+        if (this.seenOnly && !sh.home) sh.home = { x: sh.x, y: sh.y, hd: sh.hd };   // где стоял до боя
         var fx = foe.x - sh.x, fy = foe.y - sh.y, fd = Math.sqrt(fx * fx + fy * fy), brg = Math.atan2(fy, fx);
         var range = mainRange(sh) * 0.7;
         if (fd > range) { want = brg; wantV = vmax; }

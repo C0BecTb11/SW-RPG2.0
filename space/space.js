@@ -528,7 +528,7 @@
     return '<span class="sp-bd-ch">' +
       '<i class="' + (far ? 'no' : 'yes') + '" title="Между корпусами, нужно ближе ' + km(c.need) + ' км">' + (far ? km(c.gap) + ' км, нужно ≤' + km(c.need).replace(',0', '') : 'дистанция ✓') + '</i>' +
       '<i class="' + (sh ? 'yes' : 'no') + '" title="Щит цели с той стороны, где наш корабль: нужно ниже 15% (или стоящие двигатели цели)">' +
-      (c.stuck ? 'двигатели стоят ✓' : sh ? 'щит ✓' : 'щит ' + SEC_N[c.sec] + ' ' + Math.round(c.shK * 100) + '%, нужно ≤15%') + '</i></span>';
+      (c.stuck ? (c.beam ? 'в нашем луче ✓' : 'двигатели стоят ✓') : sh ? 'щит ✓' : 'щит ' + SEC_N[c.sec] + ' ' + Math.round(c.shK * 100) + '%, нужно ≤15%') + '</i></span>';
   }
   // Самое срочное для защитника — коротко в полосу
   function defShort(b) {
@@ -1126,6 +1126,7 @@
     }
     // куда бьёт враг по нашим кораблям
     drawThreats(c, T);
+    drawBeams(c, T);
     // цель, которую можно брать на абордаж: золотые скобы-«крючья» вокруг неё
     if (G.bdPick && G.bdPick.n === G.sel && G.mode === 'space') {
       var bt = B.ships[G.bdPick.t];
@@ -2551,14 +2552,74 @@
   function atkLine(sh) {
     if (sh.dead) return '';
     var ft = sh.foeT != null ? G.B.ships[sh.foeT] : null;
-    if (!ft || ft.dead) return '<div class="sp-atk"><span>цель</span><em>сам выбирает ближайшего · коснись врага — атаковать</em></div>';
+    if (!ft || ft.dead) return '<div class="sp-atk"><span>цель</span><em>сам выбирает ближайшего · коснись врага — атаковать</em>' + tbBtn(sh, null) + '</div>';
     return '<div class="sp-atk on"><span>цель</span><b>' + esc(ft.name) + '</b>' + (seen(ft) ? '' : '<em> · нет контакта, идёт к засечке</em>') +
-      '<button class="sp-atk-x" data-atk-off="1" title="Снять цель">✕</button></div>';
+      tbBtn(sh, ft) + '<button class="sp-atk-x" data-atk-off="1" title="Снять цель">✕</button></div>';
+  }
+  // Притягивающий луч (исследование «Притягивающие лучи»): кнопка в строке цели — держит цель корабля.
+  // Держит: сколько осталось (касание — отпустить); перезарядка; цель далеко или её нет — почему
+  function tbBtn(sh, ft) {
+    var B = G.B; if (!sh.tractor || sh.dead) return '';
+    if (sh.tb && sh.tb.until > B.t) {
+      var hd = B.ships[sh.tb.to];
+      return '<button class="sp-tb on" data-tb="off" type="button" title="Держит лучом «' + esc(hd ? hd.name : '') + '» — коснись, чтобы отпустить">⊙ держит <b>' + Math.max(1, Math.ceil(sh.tb.until - B.t)) + ' с</b></button>';
+    }
+    if (sh.tbReady > B.t) return '<button class="sp-tb off" data-tb="why" type="button" title="Притягивающий луч перезаряжается">⊙ луч <em>' + Math.ceil(sh.tbReady - B.t) + ' с</em></button>';
+    var can = ft && !ft.dead ? B.tractorCan(sh.n, ft.n) : null;
+    if (can && can.ok) return '<button class="sp-tb ready" data-tb="go" type="button" title="Притягивающий луч: держит цель ' + SP.TRACTOR.hold + ' с — ход скован, её тянет к нам, в гиперпространство не уйти, абордаж и при поднятых щитах">⊙ Луч</button>';
+    return '<button class="sp-tb off" data-tb="why" type="button" title="' + esc(can ? can.why : 'Выбери цель — коснись вражеского корабля') + '">⊙ луч' + (can && can.gap != null ? ' <em>' + (can.gap / 1000).toFixed(1) + ' км</em>' : '') + '</button>';
+  }
+  // Луч на карте: от держащего к цели — светлый конус с бегущими к держащему кольцами, цель в кольце
+  function drawBeams(c, T) {
+    var B = G.B, s = CAM.s;
+    for (var i = 0; i < B.ships.length; i++) {
+      var a = B.ships[i]; if (a.dead || !a.tb || !(a.tb.until > B.t)) continue;
+      var b = B.ships[a.tb.to]; if (!b || b.dead || !seen(b)) continue;
+      var bp = shownPos(b) || b, bq = toS(bp.x, bp.y), br = Math.max(14, b.len * 0.55 * s);
+      var mine = a.side === G.side, col = mine ? '120,205,255' : '255,140,110';
+      c.save();
+      if (seen(a)) {
+        var ap = shownPos(a) || a, aq = toS(ap.x, ap.y), dx = bq[0] - aq[0], dy = bq[1] - aq[1], d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 4) {
+          var ux = dx / d, uy = dy / d, w0 = Math.max(2, a.wid * 0.12 * s), w1 = Math.max(6, b.wid * 0.6 * s);
+          var g = c.createLinearGradient(aq[0], aq[1], bq[0], bq[1]);
+          g.addColorStop(0, 'rgba(' + col + ',0.45)'); g.addColorStop(1, 'rgba(' + col + ',0.12)');
+          c.fillStyle = g; c.beginPath();
+          c.moveTo(aq[0] - uy * w0, aq[1] + ux * w0); c.lineTo(bq[0] - uy * w1, bq[1] + ux * w1);
+          c.lineTo(bq[0] + uy * w1, bq[1] - ux * w1); c.lineTo(aq[0] + uy * w0, aq[1] - ux * w0); c.closePath(); c.fill();
+          // кольца бегут от цели к держащему — тянет
+          c.strokeStyle = 'rgba(' + col + ',0.55)'; c.lineWidth = 1.2;
+          for (var k = 0; k < 4; k++) {
+            var f = 1 - ((T * 0.6 + k / 4) % 1), px = aq[0] + dx * f, py = aq[1] + dy * f, rw = w0 + (w1 - w0) * f;
+            c.globalAlpha = Math.min(1, f * 3) * 0.8; c.beginPath(); c.moveTo(px - uy * rw, py + ux * rw); c.lineTo(px + uy * rw, py - ux * rw); c.stroke();
+          }
+          c.globalAlpha = 1;
+        }
+      }
+      c.strokeStyle = 'rgba(' + col + ',' + (0.55 + 0.25 * Math.sin(T * 5)) + ')'; c.lineWidth = 1.5; c.setLineDash([6, 4]); c.lineDashOffset = T * 12;
+      c.beginPath(); c.arc(bq[0], bq[1], br, 0, TAU); c.stroke(); c.setLineDash([]);
+      c.restore();
+    }
+  }
+  // Сколько ещё держит луч врага (0 — свободен); раз за захват — предупреждение
+  function heldLeft(sh) {
+    var h = G.B.holder(sh); if (!h || !(h.tb.until > G.B.t)) return 0;
+    return Math.max(1, Math.ceil(h.tb.until - G.B.t));
+  }
+  function heldWarn() {
+    var B = G.B, now = {}; G.heldSeen = G.heldSeen || {};
+    for (var i = 0; i < B.ships.length; i++) {
+      var s = B.ships[i]; if (s.dead || s.side !== G.side || !heldLeft(s)) continue;
+      now[s.n] = 1;
+      if (!G.heldSeen[s.n]) toast('⊙ «' + s.name + '» в притягивающем луче — ход скован, в гиперпространство не уйти', 'bad');
+    }
+    G.heldSeen = now;
   }
   // горящих клеток: в бою по сети снаружи видна только выборка, число — с сервера
   function burnN(s) { return s.netBurn != null && G.net ? s.netBurn : s.crew.burning.length; }
   function hud() {
     var B = G.B; if (!B) return;
+    heldWarn();
     // флот
     B.ships.forEach(function(s) {
       var h = $('sp-u-h' + s.n); if (!h) return;
@@ -2569,7 +2630,7 @@
       h.style.width = hullK(s) * 100 + '%';
       $('sp-u-s' + s.n).style.width = shAll(s) * 100 + '%';
       var ob = boardOf(s.n);
-      $('sp-u-w' + s.n).textContent = s.dead ? (s.why === 'captured' ? (s.captured === G.side ? '⚑ трофей' : '⚑ захвачен') : '✗') : ob && ob.over < 0 ? '⚔ абордаж' : s.crit && intel(s) ? '⚠ ' + Math.ceil(s.crit) : burnN(s) ? '🔥' : s.side === G.side && !ctl(s) ? 'союзник' : '';
+      $('sp-u-w' + s.n).textContent = s.dead ? (s.why === 'captured' ? (s.captured === G.side ? '⚑ трофей' : '⚑ захвачен') : '✗') : ob && ob.over < 0 ? '⚔ абордаж' : s.crit && intel(s) ? '⚠ ' + Math.ceil(s.crit) : B.holder(s) ? '⊙ в луче' : burnN(s) ? '🔥' : s.side === G.side && !ctl(s) ? 'союзник' : '';
       el.classList.toggle('on', s.n === G.sel || s.n === G.foe || inGrp(s.n));
       el.classList.toggle('dead', s.dead);
       el.classList.toggle('ally', !s.dead && s.side === G.side && !ctl(s));
@@ -2608,6 +2669,7 @@
     var e = sh.eff, shPct = Math.round(shAll(sh) * 100);
     var head = '<div class="sp-ship-head"><b>' + esc(sh.name) + '</b><span class="sp-tag">' + Math.max(0, Math.round(sh.hull / sh.hullMax * 100)) + '%</span>' +
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
+      (!sh.dead && heldLeft(sh) ? '<span class="sp-tag warn" title="Держит притягивающий луч врага: ход скован, в гиперпространство не уйти">в луче ' + heldLeft(sh) + ' с</span>' : '') +
       '<span class="r">щиты <i' + (shPct < 25 ? ' class="foe"' : '') + '>' + shPct + '%</i> · экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>';
     var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Ген', e.shield) + sysCell('Мост', e.bridge) + '</div>';
@@ -2840,6 +2902,17 @@
         return;
       }
       if (e.target.closest('[data-ux]')) { e.preventDefault(); G.usel = []; hud(); return; }
+      var tbE = e.target.closest('[data-tb]');
+      if (tbE) {
+        e.preventDefault(); var ts = G.B.ships[G.sel], tk = tbE.getAttribute('data-tb'); if (!ts || ts.dead) return;
+        if (tk === 'go') {
+          var tt = ts.foeT != null ? G.B.ships[ts.foeT] : null, tr = tt ? G.B.tractor(G.sel, tt.n) : 'Выбери цель — коснись вражеского корабля';
+          if (tr) toast('Луч: ' + tr, 'bad');
+          else { toast('⊙ Луч держит «' + tt.name + '» ' + SP.TRACTOR.hold + ' с: ход скован, тянет к нам, в гиперпространство не уйти', 'gold'); try { if (navigator.vibrate) navigator.vibrate(12); } catch (er) {} }
+        } else if (tk === 'off') { G.B.tractor(G.sel, -1); toast('Луч отпущен — перезарядка ' + SP.TRACTOR.cd + ' с', 'gold'); }
+        else toast(tbE.getAttribute('title') || 'Луч не готов', 'bad');
+        hud(); return;
+      }
       if (e.target.closest('[data-atk-off]')) {
         e.preventDefault(); var ms = G.B.ships[G.sel];
         if (ms && !ms.dead) { G.B.attack(G.sel, null); toast(ms.name + ': цель снята — бьёт ближайшего', 'gold'); hud(); }
@@ -3272,7 +3345,7 @@
       if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }
-      if (m.t === 'note') { toast(m.msg, 'gold'); return; }
+      if (m.t === 'note') { toast(m.msg, m.kind === 'bad' ? 'bad' : 'gold'); return; }
       if (m.t === 'pong') return;
       if (N.ready) N.M.onText(m); else N.q.push(m);
     };

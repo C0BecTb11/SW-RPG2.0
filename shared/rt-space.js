@@ -103,6 +103,10 @@
   // Абордаж: сколько бойцов принимают шлюзы цели (старая игра: малый 20, большой 30, флагман 36)
   function boardCap(sh) { return sh.len >= 1200 ? 36 : sh.len >= 700 ? 30 : 20; }
   var BOARD_GAP = 3000, BOARD_CD = 60, SHUTTLE_MAX = 12;
+  // Притягивающий луч (исследование «Притягивающие лучи» в игре): держит вражеский корабль — тот почти
+  // стоит, разворачивается медленно и его подтягивает к нам; в гиперпространство не уйти (база), абордаж —
+  // и при поднятых щитах. Дальность — зазор между корпусами; держит hold с, потом перезарядка cd с
+  var TRACTOR = { range: 4000, hold: 20, cd: 60, pull: 80, near: 1200 };
   var MUSTER_MAX = 75;      // десант собирается у шлюза не дольше (кто не добежал — остаётся на борту)
 
   function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
@@ -184,7 +188,8 @@
       dormant: !!o.dormant, owner: o.owner || null, faction: o.faction || plan.faction,
       vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
       figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1, stands: o.stands || null,
-      guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {}
+      guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {},
+      tractor: !!A.tractor, tb: null, tbReady: 0, heldBy: null
     };
     sh.crew = sh.dormant ? new DormantCrew(plan, sh.crewOpts) : new SWCrew.Crew(plan, sh.crewOpts);
     // орудия с секторами обстрела
@@ -342,6 +347,54 @@
     sh.shMax = b.sh * sh.bon.sh; for (q = 0; q < 4; q++) sh.sh[q] = sh.shMax * sk[q];
     for (q = 0; q < sh.guns.length; q++) if (sh.guns[q].t !== 'pd') sh.guns[q].k = b.k * sh.bon.dmg;
     sh.vmax = (b.move + sh.bon.move) * 9; sh.sens = b.sens + sh.bon.vis * 1000;
+    sh.tractor = !!A.tractor; if (!sh.tractor && sh.tb) this.tbRelease(sh);
+  };
+  // ---- притягивающий луч
+  // Кто держит корабль лучом (или null)
+  Battle.prototype.holder = function(sh) {
+    var h = sh.heldBy != null ? this.ships[sh.heldBy] : null;
+    return h && !h.dead && h.tb && h.tb.to === sh.n ? h : null;
+  };
+  // Можно ли взять цель лучом: { ok, why, gap }
+  Battle.prototype.tractorCan = function(n, t) {
+    var a = this.ships[n], b = t === (t | 0) && t >= 0 ? this.ships[t] : null;
+    if (!a || a.dead) return { ok: false, why: 'корабля нет' };
+    if (!a.tractor) return { ok: false, why: 'на корабле нет притягивающего луча — исследование «Притягивающие лучи»' };
+    if (a.tb) { var hd = this.ships[a.tb.to]; return { ok: false, why: 'луч уже держит ' + (hd ? hd.name : 'цель') }; }
+    if (a.tbReady > this.t) return { ok: false, why: 'луч перезаряжается: ' + Math.ceil(a.tbReady - this.t) + ' с', cd: a.tbReady - this.t };
+    if (!b || b.dead || b.side === a.side) return { ok: false, why: 'выбери вражеский корабль — коснись его' };
+    if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью' };
+    if (this.holder(b)) return { ok: false, why: 'цель уже в луче' };
+    if ((a.eff.reactor == null ? 1 : a.eff.reactor) < 0.3) return { ok: false, why: 'не хватает питания: реактор повреждён' };
+    var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
+    if (gap > TRACTOR.range) return { ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, луч берёт до ' + TRACTOR.range / 1000 + ' км', gap: gap };
+    return { ok: true, why: '', gap: Math.max(0, gap) };
+  };
+  // Приказ: взять цель t лучом ('' — взял, иначе причина); t < 0 — отпустить
+  Battle.prototype.tractor = function(n, t) {
+    var a = this.ships[n]; if (!a || a.dead) return 'корабля нет';
+    if (t == null || t < 0) { if (a.tb) this.tbRelease(a); return ''; }
+    var c = this.tractorCan(n, t); if (!c.ok) return c.why;
+    a.tb = { to: t, until: this.t + TRACTOR.hold };
+    this.ships[t].heldBy = n;
+    return '';
+  };
+  Battle.prototype.tbRelease = function(a) {
+    var b = a.tb ? this.ships[a.tb.to] : null;
+    if (b && b.heldBy === a.n) b.heldBy = null;
+    a.tb = null; a.tbReady = this.t + TRACTOR.cd;
+  };
+  // Каждый шаг: луч рвётся — время вышло, держащий или цель погибли, цель стала своей (трофей),
+  // ушла дальше дальности с запасом или у держащего разбит реактор
+  Battle.prototype.beams = function() {
+    for (var i = 0; i < this.ships.length; i++) {
+      var a = this.ships[i]; if (!a.tb) continue;
+      var b = this.ships[a.tb.to];
+      if (a.dead || !b || b.dead || b.side === a.side || this.t >= a.tb.until || (a.eff.reactor == null ? 1 : a.eff.reactor) < 0.15) { this.tbRelease(a); continue; }
+      var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
+      if (gap > TRACTOR.range * 1.3) { this.tbRelease(a); continue; }
+      b.heldBy = a.n;
+    }
   };
   // Держать позицию (игрок отошёл): корабль стоит на месте, к врагу в досягаемости
   // поворачивается бортом с большим числом стволов; никуда не идёт и абордаж не начинает
@@ -392,6 +445,7 @@
   Battle.prototype.tick = function(dt) {
     this.t += dt;
     var i, sh;
+    this.beams();
     for (i = 0; i < this.ships.length; i++) {
       sh = this.ships[i];
       if (sh.dead) continue;
@@ -504,6 +558,9 @@
   Battle.prototype.drive = function(sh, dt) {
     var e = sh.eff, vmax = sh.vmax * (0.2 + 0.8 * e.engine) * (0.5 + 0.5 * e.power);
     var tr = sh.turn * (0.3 + 0.7 * e.engine) * (0.6 + 0.4 * e.bridge);
+    // в притягивающем луче: ход и поворот режутся (тем сильнее, чем держащий крупнее), скорость сбрасывается
+    var hb = this.holder(sh), hk = hb ? Math.max(0.35, Math.min(1, hb.len / sh.len)) : 0;
+    if (hk) { vmax *= 1 - 0.85 * hk; tr *= 1 - 0.6 * hk; if (sh.v > vmax) sh.v = Math.max(vmax, sh.v - sh.vmax * 0.3 * dt); }
     var want = null, wantV = 0;
     if (sh.order) {
       var dx = sh.order.x - sh.x, dy = sh.order.y - sh.y, d = Math.sqrt(dx * dx + dy * dy);
@@ -553,6 +610,15 @@
     sh.v += Math.max(-acc, Math.min(acc, wantV - sh.v));
     sh.hd = wrap(sh.hd);
     sh.x += Math.cos(sh.hd) * sh.v * dt; sh.y += Math.sin(sh.hd) * sh.v * dt;
+    // луч подтягивает к держащему — до TRACTOR.near между корпусами
+    if (hk) {
+      var px = hb.x - sh.x, py = hb.y - sh.y, pd = Math.sqrt(px * px + py * py), pg = pd - (sh.len + hb.len) / 2;
+      if (pd > 1 && pg > TRACTOR.near) {
+        var st = Math.min(TRACTOR.pull * hk * dt, pg - TRACTOR.near), nx = sh.x + px / pd * st, ny = sh.y + py / pd * st;
+        // орбита системы: не затащить в чужую полосу гиперпространства (сервер даёт pullOk)
+        if (!this.pullOk || this.pullOk(sh, nx, ny)) { sh.x = nx; sh.y = ny; }
+      }
+    }
   };
   // Поворот относительно линии на врага, при котором бьёт больше всего стволов.
   // away — только курсы с отходом (враг слишком близко).
@@ -1183,7 +1249,8 @@
     // что видно игроку в полосе: зазор между корпусами, щит цели со стороны нашего корабля, стоят ли её двигатели
     var gx = b.x - a.x, gy = b.y - a.y, gapM = Math.sqrt(gx * gx + gy * gy) - (a.len + b.len) / 2;
     var sec0 = this.sector(b, a.x, a.y), cap0 = this.shieldCap(b, sec0);
-    var geo = { gap: Math.round(Math.max(0, gapM)), need: BOARD_GAP, sec: sec0, shK: Math.round(b.sh[sec0] / Math.max(1, cap0) * 100) / 100, stuck: b.eff.engine < 0.3 };
+    var hb0 = this.holder(b), beam = !!(hb0 && hb0.side === a.side);    // цель в луче нашей стороны
+    var geo = { gap: Math.round(Math.max(0, gapM)), need: BOARD_GAP, sec: sec0, shK: Math.round(b.sh[sec0] / Math.max(1, cap0) * 100) / 100, stuck: b.eff.engine < 0.3 || beam, beam: beam };
     var res = function(o) { for (var k in geo) o[k] = geo[k]; return o; };
     var tro = this.troopsOf(a, all), avail = tro.length, cap = boardCap(b);
     geo.tro = avail;
@@ -1204,8 +1271,8 @@
     if (gap > BOARD_GAP) return res({ ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, нужно ближе ' + BOARD_GAP / 1000 + ' км', party: party, cap: cap });
     if (!on) {
       var s = this.sector(b, a.x, a.y), cap2 = this.shieldCap(b, s);
-      var down = b.sh[s] <= cap2 * 0.15, stuck = b.eff.engine < 0.3;
-      if (!down && !stuck) return res({ ok: false, why: 'щит цели с этой стороны ' + Math.round(b.sh[s] / Math.max(1, cap2) * 100) + '% — нужно ниже 15% или стоящие двигатели', party: party, cap: cap });
+      var down = b.sh[s] <= cap2 * 0.15, stuck = b.eff.engine < 0.3 || beam;
+      if (!down && !stuck) return res({ ok: false, why: 'щит цели с этой стороны ' + Math.round(b.sh[s] / Math.max(1, cap2) * 100) + '% — нужно ниже 15%, стоящие двигатели' + (a.tractor ? ' или наш притягивающий луч' : ''), party: party, cap: cap });
     }
     return res({ ok: true, why: '', party: party, cap: cap, reinforce: on });
   };
@@ -1526,5 +1593,5 @@
     return e;
   };
 
-  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP };
+  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR };
 });

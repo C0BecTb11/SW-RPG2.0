@@ -143,6 +143,7 @@
       shK: [sh(ship.shield_fore, ship.bonus_fore), sh(ship.shield_starboard), sh(ship.shield_aft), sh(ship.shield_port)],
       shBonus: type && type.max_shield ? maxSh / type.max_shield : 1, dmgK: dmg,
       moveB: ship.bonus_move || 0, visB: ship.bonus_vision || 0,             // ход и сонар из исследований (клетки игры)
+      tractor: !!(ship.has_tractor || (ship.upgrades || []).indexOf('tractor') >= 0),   // исследование «Притягивающие лучи»
       roster: roster, vehicles: vehicles, other: other,
       hangar: (craft || []).map(function(c) { return CRAFT[c.ship_type]; }).filter(Boolean),
       crewLost: ship.crew_lost || 0

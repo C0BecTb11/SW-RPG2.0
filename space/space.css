@@ -622,6 +622,14 @@ body.cisside .sp-hold .hero { color: #ff9a88; }
 .sp-atk.on b { color: #ff8a70; font-weight: normal; letter-spacing: 0.5px; }
 .sp-atk-x { margin-left: auto; width: 22px; height: 18px; padding: 0; border: 1px solid rgba(255,110,90,0.35); border-radius: 6px; background: rgba(255,110,90,0.08); color: #ff8a70; font: inherit; font-size: 10px; cursor: pointer; }
 .sp-atk-x:active { background: rgba(255,110,90,0.2); }
+/* притягивающий луч — в строке цели, справа (перед ✕) */
+.sp-tb { margin-left: auto; flex: none; height: 18px; padding: 0 7px; border: 1px solid #2a3644; border-radius: 6px; background: rgba(8,11,17,0.9); color: #55606c; font: inherit; font-size: 10px; letter-spacing: 0.3px; white-space: nowrap; cursor: pointer; }
+.sp-tb em { font-style: normal; color: #55606c; }
+.sp-tb b { font-weight: normal; color: #bfe6ff; }
+.sp-tb.ready { border-color: rgba(120,205,255,0.6); color: #bfe6ff; background: rgba(120,205,255,0.1); }
+.sp-tb.on { border-color: rgba(120,205,255,0.8); color: #8fd4ff; background: rgba(120,205,255,0.16); }
+.sp-tb:active { background: rgba(120,205,255,0.24); }
+.sp-tb + .sp-atk-x { margin-left: 0; }
 /* группа кораблей: кнопка в полосе и строка над кораблём-ведущим */
 #sp-grp.on { border-color: rgba(217,169,64,0.75); color: #f0c86a; background: rgba(217,169,64,0.1); }
 .sp-grp { display: flex; align-items: center; gap: 6px; margin: 0 0 5px; padding: 4px 6px 4px 8px; border: 1px solid rgba(217,169,64,0.3); border-radius: 8px; background: rgba(217,169,64,0.06); font-size: 10px; color: #8fa8c4; line-height: 1.35; }

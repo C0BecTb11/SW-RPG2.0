@@ -2986,7 +2986,7 @@
       uid = ses.user.id; FLEET.uid = uid;
       return Promise.all([
         sb.from('profiles').select('faction').eq('id', uid).maybeSingle(),
-        sb.from('ships').select('id,ship_type,name,hp,system_id,faction,in_transit,carrier_ship_id,shield_fore,shield_aft,shield_port,shield_starboard,shields_updated_at,trophy,boarding_eff,bonus_hp,bonus_shield,bonus_fore,bonus_damage,bonus_move,bonus_vision,upgrades').eq('owner_user_id', uid),
+        sb.from('ships').select('id,ship_type,name,hp,system_id,faction,in_transit,carrier_ship_id,shield_fore,shield_aft,shield_port,shield_starboard,shields_updated_at,trophy,bonus_hp,bonus_shield,bonus_fore,bonus_damage,bonus_move,bonus_vision,upgrades').eq('owner_user_id', uid),
         sb.from('unit_positions').select('id,unit_type,quantity,hp,bonus_hp,bonus_damage,hero_name,carrier_ship_id').eq('owner_user_id', uid).not('carrier_ship_id', 'is', null),
         sb.from('ship_types').select('id,name,max_hp,max_shield,shield_regen,damage,capacity'),
         sb.from('systems').select('id,name'),

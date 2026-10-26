@@ -125,13 +125,13 @@
     var maxSh = type ? (type.max_shield || 0) + (ship.bonus_shield || 0) : null;
     var dmg = type && type.damage ? (type.damage + (ship.bonus_damage || 0)) / type.damage : 1;
     // щит, как его считает игра: записанное при последнем ударе + подзарядка с тех пор, не выше предела;
-    // трофей до ремонта и корабль, чей генератор держит абордаж, — без щитов
+    // трофей до ремонта — без щитов
     var regen = 0;
     if (ship.shields_updated_at && type && type.shield_regen) {
       var step = (opt.regenSec || 30) * 1000, now = opt.now || Date.now();
       regen = Math.max(0, Math.floor((now - new Date(ship.shields_updated_at).getTime()) / step)) * type.shield_regen;
     }
-    var off = !!(ship.trophy || (ship.boarding_eff && ship.boarding_eff.shields));
+    var off = !!ship.trophy;
     var sh = function(v, extra) {
       if (maxSh == null) return null;
       var cap = Math.max(1, maxSh + (extra || 0));

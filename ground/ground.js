@@ -1190,7 +1190,7 @@
   });
 
   resize(); bind(); requestAnimationFrame(frame);
-  G.CAM = CAM; G.TW = TW; G.focusOn = function(id) { var a = G.B && G.B.agents[id]; if (a) { CAM.x = a.x; CAM.y = a.y; } };
+  G.CAM = CAM; G.TW = TW;
   G.toast = toast; G.hud = hud; G.toW = toW; G.toS = toS; G.selected = selected; G.select = function(ids) { G.usel = ids.slice(); hud(); };
   window.GD = G;
 })();

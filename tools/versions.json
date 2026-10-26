@@ -112,8 +112,8 @@
   "sha": "7dbe235506f3"
  },
  "ground/ground.js": {
-  "v": "28",
-  "sha": "fd57d9c0a531"
+  "v": "29",
+  "sha": "da85a5e8f03f"
  },
  "ground/preview.css": {
   "v": "1",
@@ -160,8 +160,8 @@
   "sha": "f765387cdf62"
  },
  "js/drag-command.js": {
-  "v": "1",
-  "sha": "c75b869ab7b7"
+  "v": "2",
+  "sha": "600a768e44ae"
  },
  "js/drop-tray.js": {
   "v": "4",
@@ -172,16 +172,16 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "22",
-  "sha": "fc703eab7e25"
+  "v": "23",
+  "sha": "1fd40cc31c70"
  },
  "js/events-entry.js": {
   "v": "2",
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "10",
-  "sha": "6351f2cca47c"
+  "v": "11",
+  "sha": "37d25e425998"
  },
  "js/events.js": {
   "v": "6",
@@ -200,8 +200,8 @@
   "sha": "640618fe6a6e"
  },
  "js/faction-staff.js": {
-  "v": "4",
-  "sha": "b1849b9e361c"
+  "v": "5",
+  "sha": "0c903a110cb5"
  },
  "js/faction-treasury.js": {
   "v": "2",
@@ -224,20 +224,20 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "14",
-  "sha": "0e4cd2ed8f72"
+  "v": "15",
+  "sha": "21681fb636f6"
  },
  "js/ground-live.js": {
-  "v": "28",
-  "sha": "d1173e4ac626"
+  "v": "29",
+  "sha": "51186c8c6d39"
  },
  "js/map-layer.js": {
   "v": "2",
   "sha": "40edf2e28ad0"
  },
  "js/mine-scene.js": {
-  "v": "8",
-  "sha": "28d2d73b964f"
+  "v": "9",
+  "sha": "6ffecfa76900"
  },
  "js/mine-site.js": {
   "v": "10",
@@ -268,12 +268,12 @@
   "sha": "659379e26e9e"
  },
  "js/quest.js": {
-  "v": "8",
-  "sha": "07a93ab3eac0"
+  "v": "9",
+  "sha": "87d61fd00e32"
  },
  "js/reports.js": {
-  "v": "5",
-  "sha": "741ba128f275"
+  "v": "6",
+  "sha": "523a43f623bc"
  },
  "js/scene-loader.js": {
   "v": "2",

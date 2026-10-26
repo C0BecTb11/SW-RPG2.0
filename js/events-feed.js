@@ -313,7 +313,6 @@ function duelSide(label, side, cls) {
     '<span class="duel-side-lbl">' + label + '</span>' +
     '<b>' + (shots ? hits + ' из ' + shots : '—') + '</b>' +
     (side.dmg ? '<em>−' + side.dmg + '</em>' : '<em class="zero">урона нет</em>') +
-    (side.ow ? '<u>◉ ' + side.ow + ' на чеку</u>' : '') +
   '</div>';
 }
 
@@ -397,8 +396,7 @@ function makeDuelRow(e) {
 
 // Число в событии: урон, лечение, кредиты
 var FEED_AMOUNT = {
-  unit_hit: 'dmg', unit_damaged: 'dmg', artillery_hit: 'dmg',
-  return_fire: 'dmg', npc_return_fire: 'dmg', unit_healed: 'heal',
+  unit_damaged: 'dmg', npc_return_fire: 'dmg',
   settlement_festival: 'cr', settlement_donation: 'cr'
 };
 
@@ -409,9 +407,8 @@ function feedSet(list) {
 }
 
 // Орбита: корабли, станция, флот в системе
-var FEED_SPACE = feedSet(['ship_built', 'ship_lost', 'ship_destroyed',
-  'station_built', 'station_started', 'station_demolished', 'refit_done',
-  'hangar_restocked', 'fleet_arrived', 'fleet_pushed_out', 'fleet_stranded', 'cargo_delivered',
+var FEED_SPACE = feedSet(['ship_built', 'ship_lost',
+  'station_built', 'station_started', 'station_demolished', 'fleet_arrived', 'fleet_pushed_out', 'fleet_stranded', 'cargo_delivered',
   'cargo_lost']);
 var FEED_STATION = feedSet(['station_built', 'station_started']);
 
@@ -419,7 +416,7 @@ var FEED_STATION = feedSet(['station_built', 'station_started']);
 var FEED_SETTLEMENT = feedSet(['settlement_conditions', 'settlement_remind', 'unrest_level', 'unrest_calm',
   'unrest_near', 'unrest_riot', 'unrest_riot_end', 'unrest_riot_lost',
   'district_built', 'district_started', 'settlement_upgrade',
-  'settlement_level_up', 'settlement_hungry', 'settlement_failed', 'settlement_gift',
+  'settlement_level_up', 'settlement_hungry', 'settlement_gift',
   'settlement_donation', 'settlement_festival', 'settlement_income', 'capture_started',
   'planet_captured', 'marauder_raid', 'marauder_loot',
   // Дневной налёт: разведка, подход, итог — к строке задачи в панели поселения
@@ -428,16 +425,15 @@ var FEED_SETTLEMENT = feedSet(['settlement_conditions', 'settlement_remind', 'un
 
 // Земля без точного места — просто карта планеты
 var FEED_GROUND = feedSet(['unit_deployed', 'unit_loaded', 'unit_killed', 'unit_damaged',
-  'unit_missed', 'unit_hit', 'unit_healed', 'hero_died', 'hero_hired', 'hero_trained',
-  'hero_training', 'artillery_strike', 'artillery_hit', 'return_fire', 'npc_return_fire', 'turret_report', 'overwatch_report',
+  'hero_died', 'hero_hired', 'hero_trained', 'hero_training', 'npc_return_fire', 'turret_report',
   'structure_built', 'structure_started', 'structure_lost', 'structure_destroyed',
   'scout_arrived', 'scout_jammed', 'building_built', 'building_started', 'building_demolished',
-  'research_done', 'production_idle', 'mind_released', 'troops_pushed_out', 'militia_raised', 'ability_used', 'enemy_spotted',
+  'research_done', 'production_idle', 'troops_pushed_out', 'militia_raised', 'enemy_spotted',
   'repair_done']);
 
 // Поселение: события налёта и условий — сразу на вкладку «Условия»
 var FEED_STL_TASKS = feedSet(['marauder_scouted', 'marauder_approach', 'marauder_defeated',
-  'marauder_left', 'settlement_failed', 'settlement_hungry', 'settlement_conditions', 'settlement_remind']);
+  'marauder_left', 'settlement_hungry', 'settlement_conditions', 'settlement_remind']);
 
 // Здание: по готовности сразу открываем его занятие (наём, исследования); диверсии на участке — окно участка
 var FEED_OPEN_SLOT = feedSet(['building_built', 'research_done', 'production_idle',

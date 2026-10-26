@@ -1215,7 +1215,7 @@ function insetFor(el) {
 }
 
 function focusCell(cx, cy) {
-  if (window.GL) GL.focusCell(cx, cy);
+  GL.focusCell(cx, cy);
 }
 var systemFaction = null;
 var buildingsBySlot = {};  // slot_index(1..N) -> запись из buildings (с подставленным building_type)
@@ -3501,14 +3501,9 @@ function getUnitImage(path) {
 // и показал бы ложное «лечение» в сводке.
 var loadUnitsSeq = 0;
 var loadUnitsApplied = 0;
-// Справочник типов не меняется по ходу боя: раньше он целиком приходил
-// заново на каждое движение любого бойца. Берём один раз и перечитываем,
-// только если на карте появился неизвестный тип.
-var unitTypesFresh = false;
-
 // Бойцы — из зеркала боя 2.0 (js/ground-live.js); старые панели читают unitsOnMap
 function loadUnits() {
-  return window.GL ? GL.loadUnits() : Promise.resolve();
+  return GL.loadUnits();
 }
 
 // Юнит занимает одну клетку. Свои — зелёные, союзные — синие,
@@ -3801,12 +3796,10 @@ var TREE_PAD = 70;          // поля вокруг полотна
 
 var treeUnit = null;
 var treeNodes = [];
-var treeSelected = null;
 var treePan = { x: 0, y: 0, scale: 1 };
 
 function openHeroTree(unit) {
   treeUnit = unit;
-  treeSelected = null;
 
   var panel = document.getElementById('tree-panel');
   var title = document.getElementById('tree-title');
@@ -3830,7 +3823,6 @@ function closeHeroTree() {
   document.getElementById('tree-panel').style.display = 'none';
   treeUnit = null;
   treeNodes = [];
-  treeSelected = null;
 }
 
 function buildHeroTree() {
@@ -3918,8 +3910,6 @@ function buildHeroTree() {
 }
 
 function selectTreeNode(id) {
-  treeSelected = id;
-
   var nodes = document.querySelectorAll('.tree-node');
   var idx = 0;
   treeNodes.forEach(function(n) {
@@ -4688,8 +4678,6 @@ function renderEconomyPanel(body, st, capParts) {
 var fieldStructures = [];
 var structTypeById = {};
 var structResearchDone = {};
-var structDaySeconds = 86400;
-var structBuildRange = 2;
 var structTimer = null;
 var selectedStructure = null;
 var placingStructure = null;      // { unit, type, preview }
@@ -4700,17 +4688,9 @@ var STRUCT_KIND_ROLE = {
 };
 
 function loadStructureTypes() {
-  return Promise.all([
-    supabase.from('structure_types').select('*').order('sort_order'),
-    supabase.from('game_settings').select('key, value')
-      .in('key', ['settlement_day_seconds', 'engineer_build_range'])
-  ]).then(function(r) {
+  return supabase.from('structure_types').select('*').order('sort_order').then(function(r) {
     structTypeById = {};
-    (r[0].error ? [] : (r[0].data || [])).forEach(function(t) { structTypeById[t.id] = t; });
-    (r[1].error ? [] : (r[1].data || [])).forEach(function(s) {
-      if (s.key === 'settlement_day_seconds') structDaySeconds = parseInt(s.value, 10) || 86400;
-      if (s.key === 'engineer_build_range') structBuildRange = parseInt(s.value, 10) || 2;
-    });
+    (r.error ? [] : (r.data || [])).forEach(function(t) { structTypeById[t.id] = t; });
   });
 }
 
@@ -4884,20 +4864,12 @@ function boxOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
-function boxGap(ax, ay, aw, ah, bx, by, bw, bh) {
-  return Math.max(Math.max(bx - (ax + aw - 1), ax - (bx + bw - 1), 0),
-                  Math.max(by - (ay + ah - 1), ay - (by + bh - 1), 0));
-}
-
 function structPlaceProblem(unit, st, x, y) {
   var w = st.width_cells || 1, h = st.height_cells || 1;
-  var ub = unitBox(unit);
 
+  // дальность не проверяем: в бою 2.0 инженер сам идёт к месту (сервер боёв, onBuild)
   if (x < 0 || y < 0 || x + w > GRID_SIZE || y + h > GRID_SIZE) return 'за краем карты';
   if (y + h > GRID_SIZE - ATTACK_ZONE_H) return 'в полосе вторжения не строят';
-  if (boxGap(unit.x, unit.y, ub.w, ub.h, x, y, w, h) > structBuildRange) {
-    return 'далеко: инженер строит в ' + structBuildRange + ' клетках от себя';
-  }
 
   for (var i = 0; i < deployZones.length; i++) {
     var z = deployZones[i];
@@ -4942,30 +4914,10 @@ function structAnchor(st, cellX, cellY) {
 
 function drawStructPlacement() {
   var p = placingStructure;
-  var u = p.unit, st = p.type;
-  var ub = unitBox(u);
+  var st = p.type;
   var w = st.width_cells || 1, h = st.height_cells || 1;
-  var r = structBuildRange;
-  var ox = Math.floor((w - 1) / 2), oy = Math.floor((h - 1) / 2);
 
-  // Досягаемость инженера
-  var rx = (u.x - r - w + 1), ry = (u.y - r - h + 1);
-  var rw = ub.w + (r + w - 1) * 2, rh = ub.h + (r + h - 1) * 2;
-  ctx.strokeStyle = 'rgba(217,169,64,0.75)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([7, 5]);
-  ctx.strokeRect(rx * CELL_PX, ry * CELL_PX, rw * CELL_PX, rh * CELL_PX);
-  ctx.setLineDash([]);
-
-  // Клетки, тап по которым даст годное место
-  for (var ax = rx; ax < rx + rw; ax++) {
-    for (var ay = ry; ay < ry + rh; ay++) {
-      if (structPlaceProblem(u, st, ax, ay)) continue;
-      ctx.fillStyle = 'rgba(95,217,104,0.22)';
-      ctx.fillRect((ax + ox) * CELL_PX + 3, (ay + oy) * CELL_PX + 3, CELL_PX - 6, CELL_PX - 6);
-    }
-  }
-
+  // место выбирает игрок где угодно на карте — инженер дойдёт сам; здесь только превью
   if (!p.preview) return;
 
   var pv = p.preview;
@@ -5058,7 +5010,7 @@ function renderStructureCards(unit, list) {
   var note = document.createElement('div');
   note.className = 'struct-note' + (own ? '' : ' warn');
   note.textContent = own
-    ? (window.GL ? 'Инженер сам дойдёт до места и заложит за одно действие. ' : 'Строит в ' + structBuildRange + ' клетках от себя за одно действие. ') +
+    ? 'Инженер сам дойдёт до места и заложит. ' +
       'Нельзя: зоны высадки, участки зданий, поселение с кольцом захвата и полоса вторжения.'
     : 'Строить можно только на планетах своей фракции.';
   list.appendChild(note);
@@ -5145,7 +5097,7 @@ function showStructPlacementHint() {
   var head = escHtml(st.name) + ' ' + st.width_cells + '×' + st.height_cells;
 
   if (!p.preview) {
-    hint.innerHTML = '<span>' + head + ' · ткни подсвеченную клетку</span>' +
+    hint.innerHTML = '<span>' + head + ' · коснись места на карте — инженер дойдёт сам</span>' +
                      '<button id="struct-cancel">Отмена</button>';
   } else if (p.preview.problem) {
     hint.innerHTML = '<span>' + head + ' · <b class="warn-own">' + escHtml(p.preview.problem) + '</b></span>' +
@@ -5191,7 +5143,7 @@ function confirmStructurePlacement() {
     sub: st.width_cells + '×' + st.height_cells + ' · клетка ' + p.preview.x + ':' + p.preview.y +
          (st.build_seconds ? ' · ' + formatBuildTime(st.build_seconds) : ''),
     rows: [{ label: 'Спишется', items: gcCostItems(st.cost, st.cost_resources) }],
-    note: 'Инженер потратит действие. Разобрать можно потом — вернётся половина, ' +
+    note: 'Инженер сам дойдёт до места. Разобрать можно потом — вернётся половина, ' +
           'если укрепление цело.',
     ok: 'Построить'
   }, function() {

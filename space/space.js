@@ -1115,9 +1115,9 @@
     var i;
     for (i = 0; i < B.ships.length; i++) { var o = B.ships[i]; if (!o.dead && o.side === G.side) hole(o.x, o.y, B.sensRange(o)); }
     for (i = 0; i < B.craft.length; i++) { var cr = B.craft[i]; if (!cr.dead && cr.side === G.side) hole(cr.x, cr.y, 3500); }
-    // орбита: своя готовая станция видит на 12 км (как на сервере)
+    // орбита: своя готовая станция видит на SENS_STATION (как на сервере)
     var S0 = G.sys, st0 = S0 && S0.station, sl0 = S0 && S0.slot;
-    if (st0 && sl0 && st0.ready !== false && st0.faction === (G.side === 1 ? 'cis' : 'republic')) hole((sl0.x + sl0.size / 2) * S0.cellM, (sl0.y + sl0.size / 2) * S0.cellM, 12000);
+    if (st0 && sl0 && st0.ready !== false && st0.faction === (G.side === 1 ? 'cis' : 'republic')) hole((sl0.x + sl0.size / 2) * S0.cellM, (sl0.y + sl0.size / 2) * S0.cellM, SP.SENS_STATION || 8000);
     c.drawImage(FOG.cv, 0, 0, w * k, h * k);
     // кромка датчиков выбранного корабля
     var me = B.ships[G.sel];

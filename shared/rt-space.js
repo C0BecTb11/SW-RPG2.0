@@ -238,7 +238,8 @@
     if (A.hpBonus) { sh.hullMax *= A.hpBonus; sh.hull = sh.hullMax; }
     if (A.hpK != null) sh.hull = Math.max(1, sh.hullMax * A.hpK);
     if (A.shBonus) sh.shMax *= A.shBonus;
-    for (var q = 0; q < 4; q++) sh.sh[q] = sh.shMax * (A.shK && A.shK[q] != null ? A.shK[q] : 1);
+    sh.foreK = A.foreK > 1 ? A.foreK : 1;              // «Мастер лобовой атаки»: носовой сектор держит больше
+    for (var q = 0; q < 4; q++) sh.sh[q] = this.secMax(sh, q) * (A.shK && A.shK[q] != null ? A.shK[q] : 1);
     this.ships.push(sh);
     if (!sh.dormant) this.applyStands(sh);
     this.place(sh);
@@ -343,8 +344,9 @@
     var hk = sh.hull / Math.max(1, sh.hullMax), b = sh.base, q;
     sh.bon = { hp: A.hpBonus || 1, sh: A.shBonus || 1, dmg: A.dmgK || 1, move: A.moveB || 0, vis: A.visB || 0 };
     sh.hullMax = b.hull * sh.bon.hp; sh.hull = Math.max(1, sh.hullMax * hk);
-    var sk = sh.sh.map(function(v) { return v / Math.max(1, sh.shMax); });
-    sh.shMax = b.sh * sh.bon.sh; for (q = 0; q < 4; q++) sh.sh[q] = sh.shMax * sk[q];
+    var self = this, sk = sh.sh.map(function(v, i) { return v / Math.max(1, self.secMax(sh, i)); });
+    sh.shMax = b.sh * sh.bon.sh; sh.foreK = A.foreK > 1 ? A.foreK : 1;
+    for (q = 0; q < 4; q++) sh.sh[q] = this.secMax(sh, q) * sk[q];
     for (q = 0; q < sh.guns.length; q++) if (sh.guns[q].t !== 'pd') sh.guns[q].k = b.k * sh.bon.dmg;
     sh.vmax = (b.move + sh.bon.move) * 9; sh.sens = b.sens + sh.bon.vis * 1000;
     sh.tractor = !!A.tractor; if (!sh.tractor && sh.tb) this.tbRelease(sh);
@@ -504,9 +506,11 @@
   //    усиленный сектор — ×1,4. Скорость зависит от класса корабля (shK).
   //  - Перекачка: спокойные сектора с запасом больше половины отдают (xfer ед/с)
   //    самому просевшему из тех, что под огнём, — без хозяина корабля это делает экипаж.
+  // Предел сектора без усиления и поломок: носовой (0) — больше на исследование «Мастер лобовой атаки»
+  Battle.prototype.secMax = function(sh, s) { return sh.shMax * (s === 0 && sh.foreK > 1 ? sh.foreK : 1); };
   Battle.prototype.shieldCap = function(sh, s) {
     var k = sh.focus < 0 ? 1 : s === sh.focus ? 1.25 : 0.9;
-    return sh.shMax * k * (0.4 + 0.6 * (sh.eff.shield == null ? 1 : sh.eff.shield));
+    return this.secMax(sh, s) * k * (0.4 + 0.6 * (sh.eff.shield == null ? 1 : sh.eff.shield));
   };
   Battle.prototype.shields = function(sh, dt) {
     var e = sh.eff, s, base = sh.regen * e.shield * e.power;

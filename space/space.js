@@ -314,7 +314,7 @@
   function intel(s) { if (s.side === G.side) return true; var b = boardOf(s.n); return !!(b && b.over < 0 && b.att === G.side); }
   // корпус и щиты чужого — грубо (корпус шагом 5%, щиты четвертями), как их видно по вспышкам и пробоинам
   function hullK(s) { var k = Math.max(0, s.hull / s.hullMax); return intel(s) ? k : Math.ceil(k * 20 - 0.02) / 20; }
-  function shK(s, q) { var k = Math.max(0, s.sh[q] / s.shMax); return intel(s) ? k : Math.ceil(k * 4 - 0.04) / 4; }
+  function shK(s, q) { var k = Math.max(0, s.sh[q] / (s.shMax * (q === 0 && s.foreK > 1 ? s.foreK : 1))); return intel(s) ? k : Math.ceil(k * 4 - 0.04) / 4; }
   function shAll(s) { return (shK(s, 0) + shK(s, 1) + shK(s, 2) + shK(s, 3)) / 4; }
   function liveBoards() {
     var out = [];
@@ -3366,6 +3366,8 @@
       if (m.t === 'hello') { N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return; }
       if (m.t === 'roster') { N.seats = m.seats; N.own = m.own || null; netRow(); return; }
       if (m.t === 'ships') { netShips(m.ships || []); return; }
+      // верфь или док поставили улучшения: пределы корпуса и щитов корабля — как на сервере
+      if (m.t === 'refit') { var rs = G.B && G.B.ships[m.n]; if (rs) { rs.hullMax = m.hm; rs.shMax = m.sm; rs.foreK = m.fk || 1; } return; }
       if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }

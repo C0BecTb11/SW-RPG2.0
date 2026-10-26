@@ -118,6 +118,8 @@ SystemRoom.prototype.applyShips = function(list, base) {
         var uk = upgKey(s);
         if (self.upg[s.id] != null && self.upg[s.id] !== uk && type0) {
           B.refitShip(old.n, Army.fromGame(s, type0, [], [], {}));
+          var rmsg = JSON.stringify({ t: 'refit', n: old.n, hm: Math.round(old.hullMax), sm: Math.round(old.shMax * 100) / 100, fk: old.foreK || 1 });
+          self.clients.forEach(function(c) { self.send(c, rmsg); });
           self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
         }
         self.upg[s.id] = uk; old.bon0 = bonOf(s);
@@ -196,8 +198,9 @@ SystemRoom.prototype.syncUnits = function(sh, s) {
 };
 // строка корабля для клиента: [класс, сторона, x, y, армия, курс, { id, owner, name, faction, trophy }]
 SystemRoom.prototype.shipRow = function(sh) {
-  var A = { roster: [], hangar: (sh.hangar || []).slice(), vehicles: (sh.vehicles || []).slice(), hpK: sh.hull / sh.hullMax, shK: [0, 1, 2, 3].map(function(i) { return sh.sh[i] / sh.shMax; }),
-            hpBonus: 1, shBonus: 1, dmgK: 1, crewLost: sh.crewOpts.crewLost || 0, name: sh.name, id: sh.gameId };
+  // пределы корпуса и щитов (bon, foreK) — как на сервере, иначе у клиента доли выше 100 %
+  var self = this, A = { roster: [], hangar: (sh.hangar || []).slice(), vehicles: (sh.vehicles || []).slice(), hpK: sh.hull / sh.hullMax, shK: [0, 1, 2, 3].map(function(i) { return sh.sh[i] / self.B.secMax(sh, i); }),
+            hpBonus: sh.bon ? sh.bon.hp : 1, shBonus: sh.bon ? sh.bon.sh : 1, dmgK: 1, foreK: sh.foreK || 1, crewLost: sh.crewOpts.crewLost || 0, name: sh.name, id: sh.gameId };
   return [sh.cls, sh.side, Math.round(sh.x), Math.round(sh.y), A, Math.round(sh.hd * 1000) / 1000, { id: sh.gameId, owner: sh.owner, name: sh.name, faction: sh.faction, trophy: !!sh.trophy, n: sh.n }];
 };
 
@@ -347,7 +350,7 @@ SystemRoom.prototype.syncNow = function() {
     var cx = Math.max(0, Math.min(self.grid - box.w, Math.round(sh.x / CELL_M - box.w / 2)));
     var cy = Math.max(0, Math.min(self.grid - box.h, Math.round(sh.y / CELL_M - box.h / 2)));
     var hp = sh.dead ? 0 : Math.max(1, Math.round(maxHp * sh.hull / sh.hullMax));
-    var shv = [0, 1, 2, 3].map(function(i) { return sh.dead ? 0 : Math.round((maxSh + (i === 0 ? bo.fore : 0)) * Math.max(0, Math.min(1, sh.sh[i] / sh.shMax))); });
+    var shv = [0, 1, 2, 3].map(function(i) { return sh.dead ? 0 : Math.round((maxSh + (i === 0 ? bo.fore : 0)) * Math.max(0, Math.min(1, sh.sh[i] / B.secMax(sh, i)))); });
     var fire = self.hitAt[sh.n] != null && B.t - self.hitAt[sh.n] < FIRE_HOLD;
     // в притягивающем луче: база не пустит в гиперпространство, пока держат (rt_battle_guard по снимку боя)
     var hbS = B.holder(sh), held = hbS ? Math.max(1, Math.ceil(hbS.tb.until - B.t)) : 0;

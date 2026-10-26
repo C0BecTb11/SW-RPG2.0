@@ -136,9 +136,9 @@
     // корпус с шагом 5%, щиты по сектору четвертями, без систем, реактора и экипажа
     var bdI = sh.crew.board, intel = own || (bdI && bdI.started && bdI.over < 0 && bdI.att === this.side);
     var hq = intel ? r0(sh.hull) : Math.ceil(sh.hull / (sh.hullMax * 0.05)) * sh.hullMax * 0.05;
-    var sq = function(v) { return intel ? r0(v) : Math.min(4, Math.ceil(v / (sh.shMax * 0.25) - 0.01)) * sh.shMax * 0.25; };
+    var sq = function(q) { var v = sh.sh[q], m = B.secMax(sh, q); return intel ? r0(v) : Math.min(4, Math.ceil(v / (m * 0.25) - 0.01)) * m * 0.25; };
     var o = { n: sh.n, x: r1(sh.x), y: r1(sh.y), hd: Math.round(sh.hd * 1000) / 1000, v: r1(sh.v), hull: r0(hq),
-              sh: [r0(sq(sh.sh[0])), r0(sq(sh.sh[1])), r0(sq(sh.sh[2])), r0(sq(sh.sh[3]))], f: own ? sh.focus : -1, fa: sh.focusAuto ? 1 : 0,
+              sh: [r0(sq(0)), r0(sq(1)), r0(sq(2)), r0(sq(3))], f: own ? sh.focus : -1, fa: sh.focusAuto ? 1 : 0,
               e: intel ? [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0)] : null,
               crit: intel ? r1(sh.crit) : 0, dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
               burn: sh.crew.burning.length, ct: r2(sh.crew.t) };

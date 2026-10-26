@@ -43,10 +43,10 @@
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=28'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=29'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=28'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=29'; document.body.appendChild(s);
     });
   }
   var toastQ = [];
@@ -74,7 +74,7 @@
     return sb().from('unit_types').select('*').then(function(r) {
       if (r.error || !r.data || !r.data.length) return;
       var m = {}; r.data.forEach(function(t) { m[t.id] = t; });
-      window.unitTypeById = m; window.unitTypesFresh = true;
+      window.unitTypeById = m;
     }, function() {});
   }
   GL.rowByAgent = function(id) { for (var i = 0; i < GL.rows.length; i++) if (GL.rows[i]._agent === id) return GL.rows[i]; return null; };
@@ -119,11 +119,6 @@
 
   // ---- стройка инженера: место выбирается как раньше, но боец сам идёт к нему, а закладывает комната
   function bindBuild() {
-    var problem = window.structPlaceProblem;
-    if (typeof problem === 'function') window.structPlaceProblem = function(unit, st, x, y) {
-      var r = problem(unit, st, x, y);
-      return r && r.indexOf('далеко') === 0 ? null : r;          // дальность не ограничена: инженер дойдёт
-    };
     window.sendStructurePlacement = function() {
       var p = window.placingStructure; if (!p || !p.preview || p.preview.problem) return;
       var aid = p.unit && p.unit._agent; if (aid == null || !window.GD || !GD.B || !GD.B.orderBuild) return;

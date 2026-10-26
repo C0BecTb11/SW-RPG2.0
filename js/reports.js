@@ -230,11 +230,6 @@
     for (var i = 0; i < p.length; i++) if (p[i].id === id) return p[i];
     return null;
   }
-  function find(id) {
-    var a = reports();
-    for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i];
-    return null;
-  }
   function effects() { return (st.data && st.data.effects) || []; }
 
   // ── Отрисовка ──────────────────────────────────────────────────────

@@ -1189,7 +1189,6 @@
       S.skew = isNaN(sn) ? 0 : sn - at;                    // время сервера: фигурки группы идут по нему
       assign(first);
     },
-    stop: function() { S.on = false; if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; },
-    theme: function(id) { return THEME[id] || THEME.ore; }
+    stop: function() { S.on = false; if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }
   };
 })(typeof self !== 'undefined' ? self : this);

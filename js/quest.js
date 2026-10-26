@@ -593,21 +593,12 @@
 
       case 'target':
         if (!f.target) return null;
-        if (window.GL) return {
+        // цели смотрятся только на странице планеты (бой 2.0); с галактики — кнопка перехода
+        return {
           page: 'ground', system: f.target.system, goLabel: 'На поверхность',
           targets: [
             { cell: qTargetCell, when: qGdSelected, tip: 'Коснись мародёра — огонь' },
             { cell: qNearestOwnUnit, tip: 'Коснись своего бойца' }
-          ],
-          marks: [{ cell: qTargetCell, label: 'Мародёр' }],
-          cellFocus: { x: f.target.x, y: f.target.y }
-        };
-        return {
-          page: 'ground', system: f.target.system, goLabel: 'На поверхность',
-          targets: [
-            { cell: qTargetCell, when: function() { return !!window.attackingUnit; }, tip: 'Бей сюда' },
-            { sel: '.gu-tile[data-key="attack"]', tip: 'Атака' },
-            { cell: qNearestOwnUnit, tip: 'Выбери бойца' }
           ],
           marks: [{ cell: qTargetCell, label: 'Мародёр' }],
           cellFocus: { x: f.target.x, y: f.target.y }
@@ -676,23 +667,13 @@
 
       case 'guard':
         if (!f.planet) return null;
-        if (window.GL) return {
+        return {
           page: 'ground', system: f.planet, goLabel: 'На поверхность: ' + f.planet_name,
           targets: [
             { cell: qGuardCell, when: qGdSelected, tip: 'Коснись площади — боец пойдёт' },
             { cell: qNearestInfantry, tip: 'Коснись бойца' }
           ],
           marks: [{ cell: qSettlementZoneCell, label: 'Площадь' }],
-          cellFocus: f.infantry ? { x: f.infantry.x, y: f.infantry.y } : { x: 70, y: 70 }
-        };
-        return {
-          page: 'ground', system: f.planet, goLabel: 'На поверхность: ' + f.planet_name,
-          targets: [
-            { cell: qGuardCell, when: function() { return !!window.movingUnit; }, tip: 'Ближе к рамке' },
-            { sel: '.gu-tile[data-key="move"]', tip: 'Идти' },
-            { cell: qNearestInfantry, tip: 'Выбери бойца' }
-          ],
-          marks: [{ cell: qSettlementZoneCell, label: 'Зона охраны' }],
           cellFocus: f.infantry ? { x: f.infantry.x, y: f.infantry.y } : { x: 70, y: 70 }
         };
     }
@@ -849,9 +830,7 @@
     return null;
   }
 
-  // Клетки поверхности в экранные координаты. Холст теперь размером с
-  // экран, а камеру (сдвиг и масштаб) держат panX/panY/scale наземной
-  // карты — считаем от окна просмотра по ним
+  // Клетки карты в экранные координаты: камера боя 2.0 (планета — GD, орбита — __sp)
   function qCellRect(c) {
     if (!c) return null;
     // наземка 2.0: камера нового холста (клетка — GD.CAM.s px)
@@ -864,15 +843,7 @@
       var M = __sp.G.sys.cellM, sp = __sp.toS(c.x * M, c.y * M), sk = M * __sp.CAM.s;
       return { left: sp[0], top: sp[1], width: c.w * sk, height: c.h * sk };
     }
-    var vp = document.getElementById('ground-viewport');
-    if (!vp || typeof window.scale !== 'number') return null;
-    var r = vp.getBoundingClientRect();
-    var k = (window.CELL_PX || 32) * window.scale;
-    if (!k) return null;
-    return {
-      left: r.left + (window.panX || 0) + c.x * k, top: r.top + (window.panY || 0) + c.y * k,
-      width: c.w * k, height: c.h * k
-    };
+    return null;
   }
 
   // ===== Переходы и наведение камеры =====
@@ -920,14 +891,6 @@
       if (!window.GD || !GD.CAM) return false;
       if (GD.CAM.s < 14) GD.CAM.s = 14;
       GD.CAM.x = plan.cellFocus.x + 0.5; GD.CAM.y = plan.cellFocus.y + 0.5; GD.follow = '';
-      return true;
-    }
-    if (plan.cellFocus && QPAGE === 'ground') {
-      if (!window.terrainCache || typeof focusCell !== 'function') return false;
-      // С обзорного масштаба боец — точка в пару пикселей: приближаем
-      // до читаемого, но не отдаляем, если игрок уже приблизил сам
-      if (typeof window.scale === 'number' && window.scale < 0.7) window.scale = 0.7;
-      focusCell(plan.cellFocus.x, plan.cellFocus.y);
       return true;
     }
     return true;

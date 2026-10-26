@@ -48,8 +48,6 @@ function hqEsc(s) {
 
 function hqHas(p) { return hqState.powers.indexOf(p) >= 0; }
 
-function hqIsLeader() { return !!(hqState.staff && hqState.staff.is_leader); }
-
 function hqSubset(a, b) {
   for (var i = 0; i < (a || []).length; i++) if ((b || []).indexOf(a[i]) < 0) return false;
   return true;

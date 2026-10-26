@@ -1101,7 +1101,8 @@
     if (FOG.cv.width !== w || FOG.cv.height !== h) { FOG.cv.width = w; FOG.cv.height = h; }
     var f = FOG.cx;
     f.globalCompositeOperation = 'source-over'; f.clearRect(0, 0, w, h);
-    f.fillStyle = 'rgba(2,3,7,0.5)'; f.fillRect(0, 0, w, h);
+    // вне датчиков — заметно темнее (0,5 на тёмном небе почти не читался: казалось, тумана нет)
+    f.fillStyle = 'rgba(2,3,7,0.7)'; f.fillRect(0, 0, w, h);
     f.globalCompositeOperation = 'destination-out';
     function hole(x, y, r) {
       var q = toS(x, y), R = r * CAM.s / k; if (R < 1) return;

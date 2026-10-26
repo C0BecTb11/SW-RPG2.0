@@ -78,6 +78,7 @@ SystemRoom.prototype.open = function() {
     // туман войны: враг виден в дальности датчиков своих кораблей, истребителей и станции (и по вспышкам
     // главного калибра); «засечек» на месте, где видели, игрокам орбиты не шлём
     var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [false, false], endless: true, fog: true });
+    B.seenOnly = true;                               // ИИ кораблей — по тому, что видят датчики, и назад на место после боя
     B.defHuman = function(sh) { return !!(sh.owner && self.here(sh.owner)); };
     // притягивающий луч не затаскивает цель в чужую для неё полосу гиперпространства (как приказы — clampY);
     // уже там — тянуть можно только наружу
@@ -246,12 +247,16 @@ SystemRoom.prototype.leave = function(c) {
   if (this.B) this.syncAi();
 };
 // Корабли хозяина в сети — его; без хозяина — держат позицию (guard): стоят, отвечают огнём
+// хозяин корабля в сети (или замер dev за его сторону) — кораблём командует игрок
+SystemRoom.prototype.ctlHere = function(sh) {
+  var dev = this.clients.some(function(c) { return c.side === sh.side && c.who && c.who.user === 'dev'; });
+  return dev || !!(sh.owner && this.here(sh.owner));
+};
 SystemRoom.prototype.syncAi = function() {
   var B = this.B, self = this;
   B.ships.forEach(function(sh) {
     if (sh.dead) return;
-    var dev = self.clients.some(function(c) { return c.side === sh.side && c.who && c.who.user === 'dev'; });
-    if (dev || (sh.owner && self.here(sh.owner))) { if (sh.guard) { sh.guard = false; sh.ai = false; } return; }
+    if (self.ctlHere(sh)) { if (sh.guard) { sh.guard = false; sh.ai = false; } return; }
     if (!sh.guard) B.guard(sh.n, true);
   });
 };
@@ -295,6 +300,9 @@ SystemRoom.prototype.wakeStep = function() {
   for (i = 0; i < S.length; i++) {
     var a = S[i]; if (a.dead || !a.dormant) continue;
     if (viewed[i] || a.order || a.foeT != null) { B.wake(a); continue; }
+    // хозяин в сети (не «держит позицию»): враг в датчиках — пушки «сама» бьют, ИИ («Ход: сам») идёт в атаку.
+    // Спящий корабль не стреляет — без этого флоты стояли бок о бок, пока игрок не отдаст приказ
+    if (this.ctlHere(a) && B.aiFoe(a)) { B.wake(a); continue; }
     // рядом идёт бой (враг не спит и в дальности датчиков) — корабль просыпается и отвечает
     var near = false;
     for (j = 0; j < S.length && !near; j++) {

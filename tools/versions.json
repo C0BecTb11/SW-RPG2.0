@@ -296,8 +296,8 @@
   "sha": "2371cf90901d"
  },
  "js/space-live.js": {
-  "v": "27",
-  "sha": "c178c8c9a929"
+  "v": "28",
+  "sha": "7c09c6daca07"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -392,8 +392,8 @@
   "sha": "1dc8adb9f9b0"
  },
  "shared/rt-space.js": {
-  "v": "31",
-  "sha": "677d27a4d4f9"
+  "v": "32",
+  "sha": "ccbef8024d28"
  },
  "shared/rt-town.js": {
   "v": "2",
@@ -444,7 +444,7 @@
   "sha": "8fdc8322ba63"
  },
  "space/space.js": {
-  "v": "44",
-  "sha": "290ed4e1b04c"
+  "v": "45",
+  "sha": "9c8db048950b"
  }
 }

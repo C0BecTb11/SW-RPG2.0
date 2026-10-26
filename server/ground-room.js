@@ -236,6 +236,9 @@ GroundRoom.prototype.syncNow = function() {
     // мародёр ушёл с карты: строку в базе убирает rt_ground_sync (как погибшего, без засчёта)
     if (a && a.left) { if (self.lastSync[uid] !== 'left') { self.lastSync[uid] = 'left'; var lc = B.cellOf(a); rows.push({ id: uid, x: lc[0], y: lc[1], hp: 0, fire: false }); } return; }
     if (!a || a.removed) return;
+    // погиб, когда база уже снимает его с карты (погрузка, вылет): гибель не пишем — иначе база стёрла бы
+    // бойца, который уже на борту или в пути. Не вышло снять — запишется следующей сверкой
+    if (!a.alive && a.loading) return;
     var c = B.cellOf(a), hp = a.alive ? Math.max(1, Math.round(a.hp)) : 0, fire = a.alive && B.t - (a.hitT || -99) < 30;
     var key = c[0] + ',' + c[1] + ',' + hp + ',' + (fire ? 1 : 0);
     if (self.lastSync[uid] === key) return;
@@ -307,7 +310,7 @@ GroundRoom.prototype.onLoad = function(ids, ship, user, c) {
   var B = this.B, self = this, n = 0;
   if (!/^[0-9a-f-]{36}$/.test(ship)) return;
   ids.forEach(function(id) {
-    var a = B.agents[id]; if (!a || !a.alive || !a.uid) return;
+    var a = B.agents[id]; if (!a || !a.alive || !a.uid || a.loading) return;
     var z = self.zoneFor(a); if (!z) return;
     a.loadShip = ship; a.scoutTo = null; a.loadZone = z; a.loadUser = user;
     if (!(a.x >= z.x && a.x < z.x + z.w && a.y >= z.y && a.y < z.y + z.h)) B.orderMove(c.side, [id], z.cx, z.cy);
@@ -323,9 +326,9 @@ GroundRoom.prototype.loadsStep = function() {
     var z = a.loadZone; if (!(a.x >= z.x && a.x < z.x + z.w && a.y >= z.y && a.y < z.y + z.h)) continue;
     a.loading = true;
     if (a.scoutTo) { this.scoutGo(a); continue; }
-    (function(a) {
+    (function(a, ship, user) {
       self.sync().then(function() {
-        return self.rpc('rt_ground_act', { p_user: a.loadUser, p_fn: a.T.vehicle ? 'load_vehicle_to_ship' : 'load_unit_from_ground', p_args: { unit: a.uid, ship: a.loadShip } });
+        return self.rpc('rt_ground_act', { p_user: user, p_fn: a.T.vehicle ? 'load_vehicle_to_ship' : 'load_unit_from_ground', p_args: { unit: a.uid, ship: ship } });
       }).then(function() {
         self.drop(a);
         B.msg((a.name || a.T.name) + ' — на борту', a.team, 'gold');
@@ -333,7 +336,7 @@ GroundRoom.prototype.loadsStep = function() {
         a.loading = false; a.loadShip = null;
         B.msg('Погрузка: ' + String(e.message || e).replace(/^.*?: /, ''), a.team, 'bad');
       });
-    })(a);
+    })(a, a.loadShip, a.loadUser);
   }
 };
 
@@ -349,7 +352,7 @@ GroundRoom.prototype.onScout = function(id, to, user, c) {
   if (!a || !a.alive || !a.uid) return;
   if (!a.T.scout) { B.msg('Сам по себе летать умеет только разведчик', c.side, 'bad'); return; }
   if (to === this.system) { B.msg('Он уже здесь', c.side, 'bad'); return; }
-  if (a.loading) return;
+  if (a.loading || a.scoutTo === to) return;                 // уже улетает / уже идёт туда
   var z = this.zoneFor(a);
   if (!z) { B.msg('Нет зоны вылета: разведчик улетает из зоны высадки', c.side, 'bad'); return; }
   a.scoutTo = to; a.scoutName = hasMap(to) ? (mapJson(to).name || '') : ''; a.loadShip = null; a.build = null; a.loadZone = z; a.loadUser = user;
@@ -381,6 +384,7 @@ function boxGap(ax, ay, aw, ah, bx, by, bw, bh) {
 GroundRoom.prototype.onBuild = function(id, job, user, c) {
   var B = this.B, a = B.agents[id];
   if (!a || !a.alive || !a.uid || !a.T.builder) { B.msg('Строить умеет только инженер', c.side, 'bad'); return; }
+  if (a.loading) { B.msg((a.name || a.T.name) + ' уже грузится на борт', c.side, 'bad'); return; }
   if (a.loadShip || a.scoutTo) { a.loadShip = null; a.scoutTo = null; a.loading = false; }
   a.build = { type: job.type, x: job.x, y: job.y, w: job.w, h: job.h, user: user, busy: false };
   // цель хода: ближайшая к бойцу проходимая клетка в кольце на 1 клетку от коробки

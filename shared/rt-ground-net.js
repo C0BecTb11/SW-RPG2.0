@@ -146,11 +146,16 @@
   Viewer.prototype.command = function(m) {
     var B = this.B, side = this.side, ids = this.ids(m.ids);
     // новый приказ игрока отменяет ждущее дело сервера (погрузка, вылет разведчика, стройка), если оно ещё не начато
-    if (m.k === 'move' || m.k === 'attack' || m.k === 'hold' || m.k === 'stop') ids.forEach(function(id) {
-      var a = B.agents[id]; if (!a) return;
-      if (!a.loading) { a.loadShip = null; a.scoutTo = null; }
-      if (a.build && !a.build.busy) a.build = null;
-    });
+    if (m.k === 'move' || m.k === 'attack' || m.k === 'hold' || m.k === 'stop') {
+      var nLoad = 0, nScout = 0;
+      ids.forEach(function(id) {
+        var a = B.agents[id]; if (!a) return;
+        if (!a.loading) { if (a.scoutTo) nScout++; else if (a.loadShip) nLoad++; a.loadShip = null; a.scoutTo = null; }
+        if (a.build && !a.build.busy) a.build = null;
+      });
+      if (nScout) B.msg('Вылет разведчика отменён', side, 'gold');
+      if (nLoad) B.msg('Погрузка отменена' + (nLoad > 1 ? ': ' + nLoad : ''), side, 'gold');
+    }
     switch (m.k) {
       case 'move': { var x = m.x | 0, y = m.y | 0; if (x < 0 || y < 0 || x >= N || y >= N) return; if (ids.length) B.orderMove(side, ids, x, y); return; }
       case 'attack': { var tg = B.agents[m.tid | 0]; if (!tg || !tg.alive || !this.visible(tg) || B.ctl(tg) === side) return; if (ids.length) B.orderAttack(side, ids, tg.id); return; }

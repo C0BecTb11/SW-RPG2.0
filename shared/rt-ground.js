@@ -940,7 +940,12 @@
         // по скоплению: в области хотя бы двое врагов (или цель в окопе, бункере)
         var r = Math.max(1.6, (s.v || 2) * RANGE_K * 0.55);
         if (s.k === 'grenade' && tg.d > Math.min(a.range, 4 * RANGE_K)) continue;
-        if (this.foesAt(team, tg.x, tg.y, r, s.k === 'he') < 2 && !(b.inside >= 0)) continue;
+        var nf = this.foesAt(team, tg.x, tg.y, r, s.k === 'he');
+        if (nf < 2 && !(b.inside >= 0)) continue;
+        // область бьёт и своих (решение Артёма): себе под ноги не бросает, а своих в области должно быть
+        // меньше, чем врагов (по одиночке в окопе — ни одного своего рядом)
+        if (s.k !== 'suppression' && tg.d < r + 0.5) continue;
+        if (this.alliesAt(team, tg.x, tg.y, r, s.k === 'he', a) >= Math.max(1, nf)) continue;
         var dm = (s.dmg || S.dmg) * a.dmgK;
         if (s.k === 'grenade') this.ev.shells.push({ t0: t, t1: t + 0.8, x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: r, dmg: dm, by: a.id, foe: true });
         else { this.shot(a, tg, true, 0, b.id); this.blast(team, a.id, tg.x, tg.y, r, dm, s.k === 'he', s.k === 'suppression'); }
@@ -999,6 +1004,15 @@
     best.hp = Math.min(best.hpMax, best.hp + MEDIC.hp);
     this.ev.fx.push({ t: this.t, k: 'healed', x: best.x, y: best.y, id: best.id });
   };
+  // своих команды team (пехоты — inf) в круге, кроме самого бойца me
+  Ground.prototype.alliesAt = function(team, x, y, r, inf, me) {
+    var n = 0, ag = this.agents;
+    for (var i = 0; i < ag.length; i++) {
+      var e = ag[i]; if (e === me || !e.alive || e.air || this.ctl(e) !== team || (inf && e.T.vehicle)) continue;
+      var dx = e.x - x, dy = e.y - y; if (dx * dx + dy * dy < r * r) n++;
+    }
+    return n;
+  };
   // врагов команды team (пехоты — inf) в круге
   Ground.prototype.foesAt = function(team, x, y, r, inf) {
     var n = 0, ag = this.agents;
@@ -1017,14 +1031,15 @@
     }
     return best;
   };
-  // взрыв способности: только по врагам (своих граната бойца не задевает), inf — фугас не берёт технику,
-  // supp — заградительный огонь: кто уцелел, тот залёг
+  // взрыв способности: бьёт всех в круге — и своих (решение Артёма), кроме самого стрелка; inf — фугас не
+  // берёт технику; supp — заградительный огонь: кто уцелел, тот залёг. Свои ранены «без стрелка» (by −1):
+  // гибель своего не засчитывается бойцу, а раненый не ищет стрелка среди своих
   Ground.prototype.blast = function(team, by, x, y, r, dmg, inf, supp) {
     var ag = this.agents;
     for (var j = 0; j < ag.length; j++) {
-      var e = ag[j]; if (!e.alive || e.air || this.ctl(e) === team || (inf && e.T.vehicle)) continue;
+      var e = ag[j]; if (!e.alive || e.air || e.id === by || (inf && e.T.vehicle)) continue;
       var dx = e.x - x, dy = e.y - y, d2 = dx * dx + dy * dy; if (d2 >= r * r) continue;
-      this.hurt(e, dmg * (1 - Math.sqrt(d2) / r * 0.4) * (e.hero ? 0.5 : 1), by);
+      this.hurt(e, dmg * (1 - Math.sqrt(d2) / r * 0.4) * (e.hero ? 0.5 : 1), this.ctl(e) === team ? -1 : by);
       if (supp && e.alive) e.suppT = this.t + SUPP_T;
     }
     this.ev.booms.push({ t: this.t, x: x, y: y, r: r * 0.6 });

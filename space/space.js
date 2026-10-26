@@ -202,6 +202,8 @@
       CAM.x += (G.fpt.x - CAM.x) * kp; CAM.y += (G.fpt.y - (vp.cy - CAM.vh / 2) / CAM.s - CAM.y) * kp;
     }
     if (G.mode === 'inside' && (!B.ships[G.view] || B.ships[G.view].dead)) setMode('space');
+    // небо орбиты (space/space-sky.js): туманность, звёзды, планета системы, солнце — под боем; на стенде — Набу
+    if (window.SPSky) window.SPSky.draw(CAM, G.sys || { id: 'naboo' }, { hidden: G.mode === 'inside' });
     if (G.mode === 'inside') { loadStep(); drawInside(t / 1000); } else drawSpace(t / 1000);
     FR.hud += dt;
     if (FR.hud > 0.25) { FR.hud = 0; hud(); taskRow(); speedUi(); $('sp-fps').textContent = Math.round(FR.fps); }
@@ -3407,7 +3409,7 @@
     var sc = sys ? m.sc : m.cfg ? scObj({ cfg: m.cfg }) : SCEN[m.scen]; if (!sc) { netFail('Сервер прислал неизвестный бой'); return; }
     if (m.cfg) N.cfg = m.cfg;
     N.ready = false; N.q = []; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
-    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station };
+    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, deep: !!m.deep, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station };
     var token = ++START;
     // переподключение к тому же бою: вернуть, где игрок был (внутри корабля, выбор, камера)
     var keep = N.M && G.B ? { mode: G.mode, view: G.view, sel: G.sel, cam: { x: CAM.x, y: CAM.y, s: CAM.s }, follow: G.follow } : null;

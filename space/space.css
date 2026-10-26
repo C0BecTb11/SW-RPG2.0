@@ -19,6 +19,8 @@ html, body {
 }
 
 #sp-canvas { position: fixed; inset: 0; display: block; touch-action: none; }
+/* небо орбиты (space-sky.js, WebGL) — под холстом боя; нет WebGL — остаётся фон страницы */
+#sp-sky { position: fixed; inset: 0; display: block; pointer-events: none; }
 button { font-family: inherit; }
 
 #sp-back {

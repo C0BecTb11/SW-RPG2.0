@@ -159,6 +159,16 @@
     s = Math.max(0.012, Math.min(0.25, s));
     return { s: s, x: (x0 + x1) / 2, y: (y0 + y1) / 2 - (v.cy - CAM.vh / 2) / s };
   }
+  // Место под станцию: камера летит к нему, место подсвечено несколько секунд (кнопка «Строительство»).
+  // Места в системе нет — false
+  function focusSlot() {
+    var S = G.sys, sl = S && S.slot; if (!sl) return false;
+    if (G.mode !== 'space') setMode('space');
+    var v = view(), side = sl.size * S.cellM;
+    G.fpt = { x: (sl.x + sl.size / 2) * S.cellM, y: (sl.y + sl.size / 2) * S.cellM, s: clampS(Math.min(CAM.vw, v.h) * 0.45 / side) };
+    G.follow = 'pt'; G.slotHi = performance.now() + 5000;
+    return true;
+  }
   function focusShip(sh, scale) {
     var v = view();
     CAM.s = scale || Math.max(CAM.s, Math.min(0.5, (Math.min(CAM.vw, v.h) * 0.8) / sh.len));
@@ -185,6 +195,11 @@
     } else if (G.mode === 'space' && G.follow === 'all') {
       var f = fitRect(), k = Math.min(1, dt * 1.5);
       if (f) { CAM.s = Math.exp(Math.log(CAM.s) + (Math.log(f.s) - Math.log(CAM.s)) * k); CAM.x += (f.x - CAM.x) * k; CAM.y += (f.y - CAM.y) * k; }
+    } else if (G.mode === 'space' && G.follow === 'pt' && G.fpt) {
+      // полёт камеры к точке (место станции): масштаб плавно, точка — в середину свободной части экрана
+      var vp = view(), kp = Math.min(1, dt * 4);
+      CAM.s = Math.exp(Math.log(CAM.s) + (Math.log(G.fpt.s) - Math.log(CAM.s)) * kp);
+      CAM.x += (G.fpt.x - CAM.x) * kp; CAM.y += (G.fpt.y - (vp.cy - CAM.vh / 2) / CAM.s - CAM.y) * kp;
     }
     if (G.mode === 'inside' && (!B.ships[G.view] || B.ships[G.view].dead)) setMode('space');
     if (G.mode === 'inside') { loadStep(); drawInside(t / 1000); } else drawSpace(t / 1000);
@@ -1271,6 +1286,15 @@
         if (st) { c.beginPath(); c.arc(q2[0], q2[1], Math.max(3, r * 0.45), 0, Math.PI * 2); c.stroke(); for (var k = 0; k < 4; k++) { var an = k * Math.PI / 2 + Math.PI / 4; c.beginPath(); c.moveTo(q2[0] + Math.cos(an) * r * 0.45, q2[1] + Math.sin(an) * r * 0.45); c.lineTo(q2[0] + Math.cos(an) * r, q2[1] + Math.sin(an) * r); c.stroke(); } }
       }
       if (r > 18) { c.fillStyle = 'rgba(232,217,168,0.7)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(st ? (st.name || 'Станция').toUpperCase() : 'МЕСТО ПОД СТАНЦИЮ', q2[0], q2[1] + r + 4); }
+      // подсветка места (кнопка «Строительство»): золотое кольцо и расходящийся от него импульс, к концу гаснет
+      var hiLeft = G.slotHi ? (G.slotHi - performance.now()) / 1000 : 0;
+      if (hiLeft > 0) {
+        var ha = Math.min(1, hiLeft / 1.2), hr = Math.max(8, r * (art ? 1.04 : 1)), ph = (performance.now() % 1400) / 1400;
+        c.setLineDash([]); c.lineWidth = 2;
+        c.strokeStyle = 'rgba(217,169,64,' + (0.85 * ha) + ')'; c.beginPath(); c.arc(q2[0], q2[1], hr, 0, TAU); c.stroke();
+        c.lineWidth = 1.5; c.strokeStyle = 'rgba(217,169,64,' + ((1 - ph) * 0.6 * ha) + ')';
+        c.beginPath(); c.arc(q2[0], q2[1], hr + ph * Math.max(12, r * 0.35), 0, TAU); c.stroke();
+      } else if (G.slotHi) G.slotHi = 0;
     }
     c.restore();
   }
@@ -3596,5 +3620,5 @@
     if (!m1) { POLY.side = side; polyOpen(true); }
   }
   requestAnimationFrame(frame);
-  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, toW: toW, start: start, itoS: itoS, toast: toast, hud: hud, focusShip: focusShip };
+  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, toW: toW, start: start, itoS: itoS, toast: toast, hud: hud, focusShip: focusShip, focusSlot: focusSlot };
 })();

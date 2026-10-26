@@ -118,7 +118,7 @@ SystemRoom.prototype.applyShips = function(list, base) {
         var uk = upgKey(s);
         if (self.upg[s.id] != null && self.upg[s.id] !== uk && type0) {
           B.refitShip(old.n, Army.fromGame(s, type0, [], [], {}));
-          var rmsg = JSON.stringify({ t: 'refit', n: old.n, hm: Math.round(old.hullMax), sm: Math.round(old.shMax * 100) / 100, fk: old.foreK || 1 });
+          var rmsg = JSON.stringify({ t: 'refit', n: old.n, hm: Math.round(old.hullMax), sm: Math.round(old.shMax * 100) / 100, fk: old.foreK || 1, tb: old.tractor ? 1 : 0 });
           self.clients.forEach(function(c) { self.send(c, rmsg); });
           self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
         }

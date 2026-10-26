@@ -292,8 +292,8 @@
   "sha": "9b730c71a58a"
  },
  "js/space-live.js": {
-  "v": "25",
-  "sha": "f533b5f4e563"
+  "v": "26",
+  "sha": "2de6606234e1"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -368,8 +368,8 @@
   "sha": "9b497775afb7"
  },
  "shared/rt-ground.js": {
-  "v": "15",
-  "sha": "e861ea80ba6d"
+  "v": "16",
+  "sha": "a08899035175"
  },
  "shared/rt-heroes.js": {
   "v": "2",
@@ -388,8 +388,8 @@
   "sha": "1dc8adb9f9b0"
  },
  "shared/rt-space.js": {
-  "v": "28",
-  "sha": "b9cfd1c4e4ca"
+  "v": "29",
+  "sha": "ee4407bc7270"
  },
  "shared/rt-town.js": {
   "v": "2",
@@ -440,7 +440,7 @@
   "sha": "8fdc8322ba63"
  },
  "space/space.js": {
-  "v": "42",
-  "sha": "89baa93628e8"
+  "v": "43",
+  "sha": "4ed7043e0ba8"
  }
 }

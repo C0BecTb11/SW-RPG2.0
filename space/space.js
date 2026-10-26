@@ -2695,7 +2695,6 @@
       (sh.dead ? '<span class="sp-tag warn">уничтожен</span>' : sh.crit ? '<span class="sp-tag warn">реактор ' + Math.ceil(sh.crit) + ' с</span>' : '') +
       (!sh.dead && heldLeft(sh) ? '<span class="sp-tag warn" title="Держит притягивающий луч врага: ход скован, в гиперпространство не уйти">в луче ' + heldLeft(sh) + ' с</span>' : '') +
       '<span class="r">щиты <i' + (shPct < 25 ? ' class="foe"' : '') + '>' + shPct + '%</i> · экипаж <i>' + sh.crew.alive() + '</i>' + (burnN(sh) ? ' · огонь <i style="color:#ffb070">' + burnN(sh) + '</i>' : '') + '</span></div>';
-    var shv = function(v) { return '<b' + (v <= 0 ? ' class="z"' : '') + '>' + Math.round(v / sh.shMax * 100) + '</b>'; };
     var sys = '<div class="sp-sys">' + sysCell('Ход', e.engine) + sysCell('Пит', e.reactor) + sysCell('Ген', e.shield) + sysCell('Мост', e.bridge) + '</div>';
     // щиты по секторам: касание — усилить сектор (повторное — вернуть экипажу)
     var SN = ['нос', 'пр', 'корма', 'лев'], shRow = '<div class="sp-shd"><span>щиты</span>';
@@ -3366,8 +3365,9 @@
       if (m.t === 'hello') { N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return; }
       if (m.t === 'roster') { N.seats = m.seats; N.own = m.own || null; netRow(); return; }
       if (m.t === 'ships') { netShips(m.ships || []); return; }
-      // верфь или док поставили улучшения: пределы корпуса и щитов корабля — как на сервере
-      if (m.t === 'refit') { var rs = G.B && G.B.ships[m.n]; if (rs) { rs.hullMax = m.hm; rs.shMax = m.sm; rs.foreK = m.fk || 1; } return; }
+      // верфь или док поставили улучшения: пределы корпуса и щитов, луч — как на сервере.
+      // До готовности боя и пока корабль в очереди появления — ждёт (netRefit)
+      if (m.t === 'refit') { (N.refit = N.refit || {})[m.n] = m; if (N.ready) netRefit(N); return; }
       if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }
@@ -3425,6 +3425,7 @@
         if (keep.mode === 'inside' && okN(keep.view)) { try { setMode('inside', keep.view); } catch (e) {} }
       }
       N.ready = true; N.vkey = ''; N.addQ = Promise.resolve();
+      if (N.refit) netRefit(N);
       netRow();
       var q = N.q; N.q = [];
       for (var i = 0; i < q.length; i++) { if (q[i] instanceof ArrayBuffer) N.M.onBin(q[i]); else N.M.onText(q[i]); }
@@ -3433,6 +3434,16 @@
     }).catch(function(e) { netFail('Не загрузилось: ' + e.message); });
   }
   // Орбита: пришли новые корабли (из гиперпространства, с верфи) — по порядку сервера
+  function netRefit(N) {
+    N.addQ = N.addQ.then(function() {
+      if (G.net !== N || !G.B) return;
+      var all = N.refit || {}; N.refit = null;
+      Object.keys(all).forEach(function(k) {
+        var q = all[k], rs = G.B.ships[q.n]; if (!rs || rs.dead) return;
+        rs.hullMax = q.hm; rs.shMax = q.sm; rs.foreK = q.fk || 1; rs.tractor = !!q.tb;
+      });
+    });
+  }
   function netShips(rows) {
     var N = G.net; if (!N || !N.ready) return;
     N.addQ = N.addQ.then(function() {

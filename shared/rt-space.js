@@ -772,7 +772,7 @@
     var sys = null;
     // на борту свой абордаж: бить по орудиям цели, мимо отсеков, где наши
     if (this.ourBoard(sh.side, foe)) return { ship: foe, room: this.gunRoomFree(foe, sh.side, g) };
-    if (g.t === 'ion') sys = foe.sh[this.sector(foe, g.x, g.y)] > foe.shMax * 0.2 ? (hasType(foe.plan, 'shield') ? 'shield' : 'engine') : 'engine';
+    if (g.t === 'ion') sys = foe.sh[this.sector(foe, g.x, g.y)] > this.secMax(foe, this.sector(foe, g.x, g.y)) * 0.2 ? (hasType(foe.plan, 'shield') ? 'shield' : 'engine') : 'engine';
     else if (g.t === 'heavy') sys = this.sector(foe, g.x, g.y) === 2 ? 'engine' : 'guns';
     else if (g.t === 'pd') return { ship: foe, room: 0 };
     else sys = 'bridge';

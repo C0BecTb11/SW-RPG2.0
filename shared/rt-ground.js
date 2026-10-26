@@ -251,7 +251,7 @@
     // бонусы из игры (bonus_*): дальность и обзор — клетки игры, ход — клетки за ход, меткость и уклонение — проценты
     var bo = extra.bonus || null;
     if (bo) {
-      if (bo.range) { a.range += bo.range * RANGE_K; a.rangeB = bo.range; }   // спад меткости — на всю новую дальность (statsOf)
+      if (bo.range && !Ty.hero) { a.range += bo.range * RANGE_K; a.rangeB = bo.range; }   // спад меткости — на всю новую дальность (statsOf); у героя клинок
       if (bo.vision) a.vision += bo.vision * RANGE_K;
       if (bo.move) a.speed = Math.max(0.2, (Ty.speed / U.SPEED_K + bo.move) * U.SPEED_K);
       if (bo.damage && Ty.dmg > 0) a.dmgK *= (Ty.dmg + bo.damage) / Ty.dmg;
@@ -988,7 +988,7 @@
     a.healT = (a.healT == null ? this.R() * MEDIC.every : a.healT) - dt;
     if (a.healT > 0) return;
     a.healT = MEDIC.every;
-    if (a.left || a.stun > 0 || a.fear > 0 || a.choke >= 0) return;
+    if (a.left || a.stun > 0 || a.fear > 0 || a.choke >= 0 || a.mind && a.mind.until > this.t) return;
     var ag = this.agents, team = this.ctl(a), best = null, bk = 1, r2 = MEDIC.r * MEDIC.r;
     for (var i = 0; i < ag.length; i++) {
       var b = ag[i]; if (b === a || !b.alive || b.left || b.T.vehicle || b.hp >= b.hpMax || this.ctl(b) !== team) continue;

@@ -164,8 +164,8 @@
   "sha": "600a768e44ae"
  },
  "js/drop-tray.js": {
-  "v": "4",
-  "sha": "1139ce90c4a2"
+  "v": "5",
+  "sha": "4e8b27018f80"
  },
  "js/err-report.js": {
   "v": "6",
@@ -224,8 +224,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "15",
-  "sha": "21681fb636f6"
+  "v": "16",
+  "sha": "70185c981ae4"
  },
  "js/ground-live.js": {
   "v": "29",

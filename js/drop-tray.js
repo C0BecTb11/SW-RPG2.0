@@ -137,7 +137,6 @@ function openDropTray() {
     var z = iAmAttacker === true ? null : deployZones[0];
     if (z) focusCell(z.x + (z.size || DEPLOY_SIZE) / 2, z.y + (z.size || DEPLOY_SIZE) / 2);
     else if (iAmAttacker === true) focusCell(midX, GRID_SIZE - ATTACK_ZONE_H / 2 - 1);
-    redrawScene();
   }, 30);
 }
 
@@ -151,7 +150,6 @@ function closeDropTray() {
   if (el) el.classList.remove('open');
   setBottomInset(0);
   updateDropBtn();
-  redrawScene();
 }
 
 // Свежие данные трюмов (loadDropCargo) — перерисовываем лоток
@@ -221,7 +219,6 @@ function dtSelect(it) {
   var hint = document.getElementById('dt-hint');
   if (hint) hint.textContent = it ? 'Выбрано: ' + it.name + ' — ' + dtWhere('тапни', true) + ' или тяни карточку'
                                   : dtWhere('Перетащи карточку');
-  redrawScene();
 }
 
 // ── Жест: карточка из лотка на поле ──────────────────────────────
@@ -388,7 +385,7 @@ function dtDragMove(x, y) {
   if (overTray) {
     // Над лотком карточка висит над пальцем: видно, что её несут
     d.ghost.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y - 44) + 'px)';
-    if (d.cell) { d.cell = null; d.ok = false; d.key = ''; redrawScene(); }
+    if (d.cell) { d.cell = null; d.ok = false; d.key = ''; }
     if (typeof dcHideChip === 'function') dcHideChip();
     return;
   }
@@ -401,7 +398,7 @@ function dtDragMove(x, y) {
   var it = d.it;
   // Корпус встаёт серединой под палец
   var cx = c.x - Math.floor((it.w - 1) / 2), cy = c.y - Math.floor((it.h - 1) / 2);
-  // Клетка та же — карту не перерисовываем, двигаем только подсказку
+  // Клетка та же — место заново не проверяем, двигаем только подсказку
   var key = cx + ':' + cy + ':' + dtPending.length + (d.occRef === unitsOnMap ? '' : '*');
   var same = key === d.key;
   if (!same) {
@@ -416,7 +413,6 @@ function dtDragMove(x, y) {
     if (d.ok) dcChip(x, y, 'Высадить сюда', it.name + ' · ' + cx + ':' + cy, 'move');
     else dcChip(x, y, d.why, iAmAttacker ? 'тяни в полосу вторжения' : it.kind === 'fighter' ? 'садятся в зону высадки' : 'тяни в зону высадки', 'bad');
   }
-  if (!same) redrawScene();
 }
 
 // Почему сюда нельзя (или null — можно)
@@ -505,7 +501,6 @@ function dtCancelDrag() {
   dtCardTouch = false;
   if (typeof dcHideChip === 'function') dcHideChip();
   if (dtDirty && dtOpen) dtRender();
-  redrawScene();
 }
 
 // Тап по полосе, когда карточка выбрана тапом: те же проверки и та же
@@ -528,7 +523,6 @@ function dtCommit(it, x, y, fx, fy) {
   var pend = { x: x, y: y, w: it.w, h: it.h, img: it.img, key: it.key };
   dtPending.push(pend);
   dtRefresh();
-  redrawScene();
 
   var req;
   if (it.kind === 'unit') {
@@ -548,28 +542,36 @@ function dtCommit(it, x, y, fx, fy) {
   Promise.resolve(req).then(function(r) {
     if (r && r.error) {
       done();
-      redrawScene();
       if (typeof dcFlash === 'function') dcFlash(fx, fy, 'Не вышло', typeof gbErr === 'function' ? gbErr(r.error) : r.error.message, 'bad', 2600);
       return;
     }
     if (typeof dcBuzz === 'function') dcBuzz(10);
     // Боец на земле: в счёт трюма он больше не входит (свежий трюм уже
-    // без него), а отметка на поле держится до свежей карты — dtDraw
-    // уберёт её сам, чтобы боец не мигнул
+    // без него), а отметка на поле держится, пока он не появится в бою
+    // (сервер боёв подхватывает новых раз в 5 с) — dtDraw уберёт её сам,
+    // чтобы боец не мигнул; не появился за 5 с — уйдёт по таймеру
     pend.landed = true;
     pend.holdRef = dtHoldList(it.kind);
     loadUnits();
-    pend.seq = loadUnitsSeq;      // отметка уйдёт с ответом именно этой загрузки
     loadDropCargo();
-    setTimeout(function() { done(); redrawScene(); }, 5000);
+    setTimeout(done, 5000);
   }, function(e) {
     done();
-    redrawScene();
     if (typeof dcFlash === 'function') dcFlash(fx, fy, 'Не вышло', (e && e.message) || 'нет связи с сервером', 'bad', 2600);
   });
 }
 
 // ── Отрисовка на поле (из GD_DRAW, js/ground-live.js) ─────────────
+
+// Высаженный уже стоит в бою: свой боец в клетке отметки (до высадки она была свободна — dtWhy)
+function dtLandedHere(p) {
+  var rows = window.unitsOnMap || [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.x >= p.x && r.x < p.x + p.w && r.y >= p.y && r.y < p.y + p.h) return true;
+  }
+  return false;
+}
 
 function dtDraw() {
   if (!dtOpen) return;
@@ -602,9 +604,9 @@ function dtDraw() {
     });
   }
 
-  // Ждут ответа сервера. Высаженные уходят, как только пришла свежая карта
+  // Ждут ответа сервера. Высаженные уходят, как только боец появился на своём месте в бою
   for (var i = dtPending.length - 1; i >= 0; i--) {
-    if (dtPending[i].landed && loadUnitsApplied >= dtPending[i].seq) dtPending.splice(i, 1);
+    if (dtPending[i].landed && dtLandedHere(dtPending[i])) dtPending.splice(i, 1);
   }
   dtPending.forEach(function(p) { dtDrawBox(p.x, p.y, p.w, p.h, p.img, 'pending'); });
 

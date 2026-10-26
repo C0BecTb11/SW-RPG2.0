@@ -4,7 +4,6 @@
 // shipsInSystem, shipTypeById, stationRecord, spaceMyFaction.
 
 var systemId = null;
-var buildMode = false;   // пустой слот станции показываем только в режиме стройки
 var STATION_SIZE = 8;      // слот станции, размер приходит из БД
 
 // Арт станции по фракции. Своей таблицы типов у станций нет — вариант
@@ -322,11 +321,6 @@ function getSystemIdFromUrl() {
   return params.get('system');
 }
 
-function isBuildMode() {
-  var params = new URLSearchParams(window.location.search);
-  return params.get('mode') === 'build';
-}
-
 // Доводит камеру боя до клетки (клетка орбиты — 200 м)
 function focusCell(cx, cy) {
   if (!window.__sp) return;
@@ -361,7 +355,6 @@ function subscribeToSpaceChanges() {
 
 function initSpaceBattle() {
   systemId = getSystemIdFromUrl();
-  buildMode = isBuildMode();
 
   var stationPanelClose = document.getElementById('station-panel-close');
   if (stationPanelClose) stationPanelClose.addEventListener('click', closeStationPanel);
@@ -397,7 +390,7 @@ function initSpaceBattle() {
     Promise.all([loadStationSlot(), checkStationRights(), loadHyperspaceZone(), spLoadLeases()]).then(function() {
       loadStation();
       loadShips();
-      initBuildToggle(true);
+      initBuildToggle();
       subscribeToSpaceChanges();
       // Пока вкладка спала, реалтайм мог пропустить события. Слушаем
       // только после загрузки: раньше это сбило бы экран загрузки
@@ -1343,20 +1336,27 @@ function loadShipOrders() {
     });
 }
 
-// Переключатель режима стройки прямо на карте: осмотр и наём войск —
-// в обычном режиме, а слоты и постройка зданий — по этой кнопке.
-function initBuildToggle(isSpace) {
-  if (!isController) return;
+// Кнопка «Строительство» управляющего системой: на орбите строят одну станцию —
+// камера летит к месту под неё, место подсвечивается, открывается панель станции
+// (заложить, верфь, снос). Без перезагрузки: бой и выбранный корабль остаются как были.
+function initBuildToggle() {
+  if (!isController || document.getElementById('build-toggle')) return;
 
   var btn = document.createElement('button');
   btn.id = 'build-toggle';
-  btn.textContent = buildMode ? 'Выйти из стройки' : 'Строительство';
-  if (buildMode) btn.classList.add('active');
+  btn.textContent = 'Строительство';
   document.body.appendChild(btn);
 
   btn.addEventListener('click', function() {
-    var page = isSpace ? 'space-battle.html' : 'ground-battle.html';
-    window.location.href = page + '?system=' + systemId + (buildMode ? '' : '&mode=build');
+    var S = window.__sp;
+    if (!stationSlot) {
+      if (S && S.toast) S.toast('В этой системе нет места под станцию', 'bad');
+      return;
+    }
+    // место берём у боя (оно пришло с сервера), пока бой не загружен — из базы
+    if (!(S && S.focusSlot && S.focusSlot())) focusCell(stationSlot.x + STATION_SIZE / 2 - 0.5, stationSlot.y + STATION_SIZE / 2 - 0.5);
+    clearTimeout(btn._open);
+    btn._open = setTimeout(onStationSlotTapped, 550);   // панель — когда камера почти долетела
   });
 }
 

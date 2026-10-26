@@ -814,8 +814,7 @@ function sxDeepLink() {
   if (link.ship && window.SL) window.SL.wantShip = link.ship;
 
   try {
-    var keep = '?system=' + encodeURIComponent(systemId) +
-               (typeof isBuildMode === 'function' && isBuildMode() ? '&mode=build' : '');
+    var keep = '?system=' + encodeURIComponent(systemId);
     window.history.replaceState(null, '', window.location.pathname + keep);
   } catch (e) {}
 
@@ -836,7 +835,7 @@ function sxApplyLink(link) {
   if (link.open === 'shipyard' || link.open === 'station') {
     // Слота станции в системе нет — показывать нечего, остаёмся на обзоре
     if (typeof stationSlot === 'undefined' || !stationSlot) return;
-    focusCell(stationSlot.x + STATION_SIZE / 2 - 0.5, stationSlot.y + STATION_SIZE / 2 - 0.5);
+    if (!(window.__sp && __sp.focusSlot && __sp.focusSlot())) focusCell(stationSlot.x + STATION_SIZE / 2 - 0.5, stationSlot.y + STATION_SIZE / 2 - 0.5);
     setTimeout(function() {
       if (typeof onStationSlotTapped !== 'function') return;
       // Панель станции сама решает, доступна ли верфь: стройка, трофей,

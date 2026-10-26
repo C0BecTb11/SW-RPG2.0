@@ -284,16 +284,16 @@
   "sha": "82d49a9d9668"
  },
  "js/ship-control.js": {
-  "v": "6",
-  "sha": "ef6f682bb4a7"
+  "v": "7",
+  "sha": "d557e452976d"
  },
  "js/space-battle.js": {
-  "v": "6",
-  "sha": "139225ce80bf"
+  "v": "7",
+  "sha": "9b730c71a58a"
  },
  "js/space-live.js": {
-  "v": "22",
-  "sha": "70ef1a1cdfc0"
+  "v": "23",
+  "sha": "2549bd503101"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -440,7 +440,7 @@
   "sha": "8fdc8322ba63"
  },
  "space/space.js": {
-  "v": "39",
-  "sha": "d69328d79849"
+  "v": "40",
+  "sha": "c037a70e8f7a"
  }
 }

@@ -20,8 +20,9 @@
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
   function $(s) { return el.querySelector(s); }
-  function player(id) { return (CAT.players || []).filter(function(p) { return p.id === id; })[0] || null; }
-  function sys(id) { return (CAT.systems || []).filter(function(s) { return s.id === id; })[0] || null; }
+  // каталог (dev_catalog) приходит не сразу: до ответа — пусто, а не падение
+  function player(id) { return ((CAT && CAT.players) || []).filter(function(p) { return p.id === id; })[0] || null; }
+  function sys(id) { return ((CAT && CAT.systems) || []).filter(function(s) { return s.id === id; })[0] || null; }
   var FAC = { republic: 'Республика', cis: 'КНС' };
 
   function rpc(fn, args) {
@@ -94,6 +95,8 @@
   function chips(name, list) { return '<div class="dv-chips">' + list.map(function(v) { return '<button type="button" class="dv-chip" data-set="' + name + '" data-v="' + v + '">' + (v > 0 ? '+' : '') + fmt(v) + '</button>'; }).join('') + '</div>'; }
   function render() {
     [].forEach.call(el.querySelectorAll('.dv-tabs button'), function(b) { b.classList.toggle('on', b.getAttribute('data-tab') === tab); });
+    // вкладку тронули раньше ответа каталога (или он не пришёл): вкладка откроется, когда каталог будет
+    if (!CAT) { say('Каталог ещё грузится — вкладка откроется сама'); return; }
     var p = player(S.user) || {}, s = sys(S.system) || {}, h = '';
     if (tab === 'res') {
       h += '<section><h4>Кредиты игроку <em>' + esc(p.nick || '') + ' · сейчас ' + fmt(p.credits || 0) + '</em></h4>' +

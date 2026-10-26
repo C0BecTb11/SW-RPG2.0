@@ -11,7 +11,9 @@
  *   - старый тап-роутер не вызывается: касания идут через GD_ON_TAP (режимы высадки и
  *     размещения, площадь, участки, полевые постройки), остальное — выбор и приказы;
  *   - поверх боя старые наложения рисуются в старых координатах (GD_DRAW): клетки
- *     размещения, лоток десанта, установка укрепления, участки в режиме стройки.
+ *     размещения, лоток десанта, установка укрепления, участки в режиме стройки;
+ *   - зонд-разведчик улетает на соседнюю планету из листа «Войска»: куда — get_scout_destinations,
+ *     сам вылет ведёт сервер боёв (идёт в зону вылета, start_scout_move).
  * ES5.
  */
 (function() {
@@ -191,8 +193,33 @@
       if (hero) html += '<button class="sp-chip" data-gl="tree" data-id="' + hero.id + '">Древо героя</button>';
       html += '</div>';
     }
+    var scout = mine.filter(function(a) { return a.T.scout && a.uid; })[0];
+    if (scout) {
+      var d = scoutDest(scout);
+      html += '<div class="sp-bd-row gl-row"><span class="lab">Разведка</span>';
+      if (d.list && d.list.length) d.list.forEach(function(p) {
+        html += '<button class="sp-chip" data-gl="scout" data-id="' + scout.id + '" data-to="' + escapeHtml(p.system_id) + '" title="Вылет из зоны высадки (при штурме — из полосы вторжения). К своим прибудет в зону высадки, к чужим — в полосу вторжения">' +
+          escapeHtml(p.name) + ' <em' + (p.friendly ? '' : ' class="foe"') + '>' + (p.friendly ? 'своя' : 'чужая') + ' · ' + (+p.seconds || 0) + ' с</em></button>';
+      });
+      else html += '<span class="sp-dim">' + (d.loading ? 'ищем маршруты…' : d.err ? escapeHtml(d.err) : 'связанных планет нет') + '</span>';
+      html += '</div>';
+    }
     return html;
   };
+  // Куда может улететь разведчик: список считает база по нитям (раз в минуту на бойца)
+  GL.scoutDest = {};
+  function scoutDest(a) {
+    var c = GL.scoutDest[a.uid];
+    if (c && (c.loading || Date.now() - c.at < 60000)) return c;
+    c = GL.scoutDest[a.uid] = { at: Date.now(), loading: true, list: c ? c.list : null, err: '' };
+    var done = function() { c.loading = false; c.at = Date.now(); if (window.GD && GD.hud) GD.hud(); };
+    sb().rpc('get_scout_destinations', { p_unit_id: a.uid }).then(function(r) {
+      if (r.error) { c.err = typeof gbErr === 'function' ? gbErr(r.error) : 'Маршруты не загрузились'; c.list = null; }
+      else { c.err = ''; c.list = r.data || []; }
+      done();
+    }, function() { c.err = 'Маршруты не загрузились'; done(); });
+    return c;
+  }
   function escapeHtml(s) { return String(s || '').replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function loadShips(force) {
     if (!force && Date.now() - GL.shipsAt < 20000) return Promise.resolve(GL.ships);
@@ -210,6 +237,11 @@
       GD.toast('На борт: ' + ids.length + ' — идут в зону погрузки', 'gold');
     } else if (k === 'ships') { loadShips(true).then(function() { GD.hud(); }); }
     else if (k === 'build') { var row = GL.rowByAgent(+t.getAttribute('data-id')); if (row && typeof openStructureBuildPanel === 'function') { window.selectedUnit = row; openStructureBuildPanel(row); } }
+    else if (k === 'scout') {
+      var sid = +t.getAttribute('data-id'), sa = GD.B.agents[sid];
+      if (!sa || !sa.alive || sa.owner !== GL.user || !GD.B.orderScout) return;
+      GD.B.orderScout(sid, t.getAttribute('data-to'));
+    }
     else if (k === 'tree') { var hr = GL.rowByAgent(+t.getAttribute('data-id')); if (hr && typeof openHeroTree === 'function') openHeroTree(hr); }
   }
 

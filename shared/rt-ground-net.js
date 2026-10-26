@@ -145,6 +145,17 @@
   };
   Viewer.prototype.command = function(m) {
     var B = this.B, side = this.side, ids = this.ids(m.ids);
+    // новый приказ игрока отменяет ждущее дело сервера (погрузка, вылет разведчика, стройка), если оно ещё не начато
+    if (m.k === 'move' || m.k === 'attack' || m.k === 'hold' || m.k === 'stop') {
+      var nLoad = 0, nScout = 0;
+      ids.forEach(function(id) {
+        var a = B.agents[id]; if (!a) return;
+        if (!a.loading) { if (a.scoutTo) nScout++; else if (a.loadShip) nLoad++; a.loadShip = null; a.scoutTo = null; }
+        if (a.build && !a.build.busy) a.build = null;
+      });
+      if (nScout) B.msg('Вылет разведчика отменён', side, 'gold');
+      if (nLoad) B.msg('Погрузка отменена' + (nLoad > 1 ? ': ' + nLoad : ''), side, 'gold');
+    }
     switch (m.k) {
       case 'move': { var x = m.x | 0, y = m.y | 0; if (x < 0 || y < 0 || x >= N || y >= N) return; if (ids.length) B.orderMove(side, ids, x, y); return; }
       case 'attack': { var tg = B.agents[m.tid | 0]; if (!tg || !tg.alive || !this.visible(tg) || B.ctl(tg) === side) return; if (ids.length) B.orderAttack(side, ids, tg.id); return; }
@@ -168,6 +179,13 @@
         var bx = m.x | 0, by = m.y | 0, bw = Math.max(1, Math.min(6, m.w | 0)), bh = Math.max(1, Math.min(6, m.h | 0));
         if (bx < 0 || by < 0 || bx + bw > N || by + bh > N || !/^[a-z0-9_]{1,40}$/.test(String(m.type || ''))) return;
         this.opts.onBuild(bid, { type: String(m.type), x: bx, y: by, w: bw, h: bh }, this.user);
+        return;
+      }
+      case 'scout': {
+        // зонд-разведчик — на соседнюю планету (связь по нити и тип проверяет база)
+        var sid = this.ids([m.id])[0], to = String(m.to || '');
+        if (sid == null || !this.opts.onScout || !/^[a-z0-9_]{2,32}$/.test(to)) return;
+        this.opts.onScout(sid, to, this.user);
         return;
       }
       default: return;
@@ -213,6 +231,7 @@
   Mirror.prototype.useAbility = function(team, id, ab, tgt) { this.cmd('ability', { id: id, ab: ab, tgt: tgt }); return null; };
   Mirror.prototype.orderLoad = function(ids, ship) { this.cmd('load', { ids: ids, ship: ship }); };
   Mirror.prototype.orderBuild = function(id, type, x, y, w, h) { this.cmd('build', { id: id, type: type, x: x, y: y, w: w, h: h }); };
+  Mirror.prototype.orderScout = function(id, to) { this.cmd('scout', { id: id, to: to }); };
   Mirror.prototype.onText = function(m) {
     if (m.t === 'f') this.frame(m);
     else if (m.t === 'note') this.ev.msgs.push({ seq: ++this.seq, t: this.t, text: m.msg, team: this.side, kind: m.kind || '' });

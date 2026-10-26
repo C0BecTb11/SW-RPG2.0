@@ -40,8 +40,8 @@
   "sha": "9ba72c0232fa"
  },
  "css/ground-battle.css": {
-  "v": "6",
-  "sha": "8d70f4838210"
+  "v": "7",
+  "sha": "5685716aaf43"
  },
  "css/ground-live.css": {
   "v": "6",
@@ -228,8 +228,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "18",
-  "sha": "7e2e921e88b1"
+  "v": "19",
+  "sha": "e3a904287cce"
  },
  "js/ground-live.js": {
   "v": "30",

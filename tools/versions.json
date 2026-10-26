@@ -148,8 +148,8 @@
   "sha": "cfc0827a6960"
  },
  "js/battle-stats.js": {
-  "v": "2",
-  "sha": "f808e98844f8"
+  "v": "3",
+  "sha": "8c8fb017ab79"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -372,8 +372,8 @@
   "sha": "9b497775afb7"
  },
  "shared/rt-ground.js": {
-  "v": "16",
-  "sha": "a08899035175"
+  "v": "17",
+  "sha": "4a301dce51ef"
  },
  "shared/rt-heroes.js": {
   "v": "2",

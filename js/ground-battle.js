@@ -2152,10 +2152,14 @@ function gbPaintUnitLease(building) {
 function openBuildPanel(slotIndex) {
   var panel = document.getElementById('build-panel');
   var list = document.getElementById('build-panel-list');
-  list.innerHTML = '';
+  list.innerHTML = '<div class="build-panel-empty">Загрузка…</div>';
   panel.classList.remove('struct-mode');
-  var head = panel.querySelector('.build-panel-title');
-  if (head) head.textContent = 'Выбери постройку';
+  panel.classList.add('bp-mode');
+  bpHeader(slotIndex);
+  var oldStrip = document.getElementById('stock-strip');
+  if (oldStrip) oldStrip.remove();
+  panel.style.display = 'flex';
+  var seq = ++bpSeq;
 
   // Карточки решают по справочнику и по запасу планеты, можно ли здесь
   // строить. Оба приходят с сервера асинхронно, и раньше карточки
@@ -2169,6 +2173,9 @@ function openBuildPanel(slotIndex) {
   function ready() {
     pending--;
     if (pending > 0) return;
+    // Окно успели закрыть или открыть заново (другой участок, инженер) — старое не рисуем
+    if (seq !== bpSeq || panel.style.display === 'none' || !panel.classList.contains('bp-mode')) return;
+    bpHeader(slotIndex);
     renderStockStrip(slotIndex);
     renderBuildCards(slotIndex, panel, list);
   }
@@ -2177,7 +2184,231 @@ function openBuildPanel(slotIndex) {
   loadPlanetStock(ready);
 }
 
+// ===== Панель строительства =====
+// Постройки разложены по делу, которое они делают для планеты. У каждой —
+// что даёт и что ест в сутки, цена, сколько таких уже стоит и предел, а если
+// заложить нельзя — почему. Сервер (construct_building) проверяет всё то же
+// самое, панель лишь говорит об этом заранее.
+
+var bpSeq = 0;   // номер открытия: поздний ответ сервера не рисует в чужое окно
+
+var BP_ARMY = { barracks: 1, droid: 1, vehicle: 1, medical: 1, repair: 1, temple: 1, sith: 1 };
+
+var BP_GROUPS = [
+  { id: 'mine', title: 'Добыча' },
+  { id: 'work', title: 'Переработка', hint: 'Цеха превращают сырьё со склада в материалы' },
+  { id: 'army', title: 'Войска', hint: 'Найм, лечение и ремонт' },
+  { id: 'rear', title: 'Командование и тыл', hint: 'Разведка, снабжение, наука и склад' }
+];
+
+function bpRole(t) {
+  if (t.needs_local_resource) return 'mine';
+  if (t.produces_resource) return 'work';
+  var k = String(t.code || '').replace(/^(rep|cis)_/, '');
+  return BP_ARMY[k] ? 'army' : 'rear';
+}
+
+function bpTypeOfBuilding(b) {
+  var code = b && (b.type_code || (b.building_types && b.building_types.code));
+  return code ? buildingTypeByCode(code) : null;
+}
+
+// Сколько таких на планете — по тому же правилу, что на сервере: добывающие
+// одного сырья делят залежь, чьи бы они ни были и достроены или нет
+function bpCountHere(type) {
+  var n = 0;
+  for (var k in buildingsBySlot) {
+    if (!Object.prototype.hasOwnProperty.call(buildingsBySlot, k)) continue;
+    var bt = bpTypeOfBuilding(buildingsBySlot[k]);
+    if (!bt) continue;
+    if (bt.id === type.id ||
+        (type.needs_local_resource && bt.needs_local_resource &&
+         bt.produces_resource === type.produces_resource)) n++;
+  }
+  return n;
+}
+
+// Баланс берём с плашки кредитов: она живая (realtime). Нет цифры — не судим.
+function bpCredits() {
+  var el = document.getElementById('credits-value');
+  if (!el) return null;
+  var n = parseInt(String(el.textContent).replace(/[^\d]/g, ''), 10);
+  return isNaN(n) ? null : n;
+}
+
+function bpNum(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function bpHeader(slotIndex) {
+  var head = document.querySelector('#build-panel .build-panel-title');
+  if (!head) return;
+  var open = 0, used = 0;
+  buildSlots.forEach(function(sl, i) {
+    if (!sl || sl.locked) return;
+    open++;
+    if (buildingsBySlot[sl.index || i + 1]) used++;   // запасные участки без номера — по порядку
+  });
+  var cr = bpCredits();
+  var sub = [];
+  if (open) sub.push('Свободно участков: ' + (open - used) + ' из ' + open);
+  if (cr !== null) sub.push('<b>◈ ' + bpNum(cr) + '</b>');
+  head.innerHTML =
+    '<div class="bp-kicker">Строительство · участок ' + escHtml(slotIndex) + '</div>' +
+    '<div class="bp-title">Выбери постройку</div>' +
+    (sub.length ? '<div class="bp-sub">' + sub.join('<i>·</i>') + '</div>' : '');
+}
+
+function bpChip(resId, text, cls) {
+  var c = gcResColor(resId) || '#55606c';
+  return '<span class="bp-chip' + (cls ? ' ' + cls : '') + '">' +
+         '<i style="background:' + escHtml(c) + '"></i>' + escHtml(text) + '</span>';
+}
+
+// Что постройка делает с запасом планеты за сутки
+function bpFlowHtml(type) {
+  if (type.produces_resource) {
+    var outRes = type.produces_resource;
+    var out = bpChip(outRes, resourceName(outRes) + ' +' + stockRateFor(type), 'out');
+    var ins = [];
+    for (var k in (type.consumes || {})) {
+      if (!Object.prototype.hasOwnProperty.call(type.consumes, k)) continue;
+      ins.push(bpChip(k, resourceName(k) + ' −' + type.consumes[k], 'in'));
+    }
+    // Стрелка держится за выход: при переносе строки она не повиснет в конце
+    return '<div class="bp-flow">' + ins.join('') +
+      '<span class="bp-out">' + (ins.length ? '<span class="bp-arrow">→</span>' : '') +
+      out + '<span class="bp-per">в сутки</span></span></div>';
+  }
+  if (type.storage_bonus > 0) {
+    return '<div class="bp-flow"><span class="bp-chip store"><i></i>Склад +' +
+           type.storage_bonus + '</span><span class="bp-per">к пределу каждого ресурса</span></div>';
+  }
+  return '';
+}
+
+// Цех без притока сырья встанет: предупреждаем, но строить не мешаем —
+// сырьё можно завезти
+function bpInputWarn(type) {
+  if (!type.produces_resource || type.needs_local_resource || !planetStock.length) return '';
+  var dry = [], left = [];
+  for (var k in (type.consumes || {})) {
+    if (!Object.prototype.hasOwnProperty.call(type.consumes, k)) continue;
+    var row = stockRow(k);
+    if (row && row.per_day > 0) continue;
+    var need = Number(type.consumes[k]) || 1;
+    var days = row ? Math.floor((Number(row.amount) || 0) / need) : 0;
+    if (days > 0) left.push(resourceName(k).toLowerCase() + ' на ' + days + ' сут.');
+    else dry.push(resourceName(k).toLowerCase());
+  }
+  if (dry.length) return 'Здесь не добывают: ' + dry.join(', ') + ' — цех будет стоять';
+  if (left.length) return 'Не добывают, запаса хватит: ' + left.join(', ');
+  return '';
+}
+
+function bpPips(have, max) {
+  var h = '';
+  for (var i = 0; i < max; i++) h += '<i' + (i < have ? ' class="on"' : '') + '></i>';
+  return '<span class="bp-pips">' + h + '</span>';
+}
+
+function bpCardFor(slotIndex, type, credits) {
+  var item = document.createElement('button');
+  item.className = 'build-panel-item bp-card';
+  item.setAttribute('data-code', type.code);
+
+  var have = bpCountHere(type);
+  var max = type.max_per_planet || 0;
+  var capped = max > 0 && have >= max;
+  var broke = credits !== null && credits < type.cost;
+  var shortRes = !canAffordResources(type.cost_resources);
+  var resCost = consumesText(type.cost_resources);
+
+  var why = '', tone = '';
+  if (capped) {
+    why = type.needs_local_resource
+      ? 'Залежь занята: ' + have + ' из ' + max + ' — больше эта планета не выдержит'
+      : 'Предел на планете: ' + have + ' из ' + max;
+    tone = 'cap';
+  } else if (broke) {
+    why = 'Не хватает кредитов: ещё ' + bpNum(type.cost - credits);
+  } else if (shortRes) {
+    why = 'На складе не хватает сырья';
+  }
+  var warn = why ? '' : bpInputWarn(type);
+
+  var badge = '';
+  if (max) badge = '<span class="bp-count' + (capped ? ' full' : '') + '">' + have + '/' + max + '</span>';
+  else if (have) badge = '<span class="bp-count">×' + have + '</span>';
+
+  var costs = '<span class="bp-cr' + (broke ? ' short' : '') + '">' + bpNum(type.cost) + ' кр.</span>';
+  for (var k in (type.cost_resources || {})) {
+    if (!Object.prototype.hasOwnProperty.call(type.cost_resources, k)) continue;
+    var need = Number(type.cost_resources[k]) || 0;
+    if (!need) continue;
+    var row = stockRow(k);
+    var low = planetStock.length > 0 && (!row || row.amount < need);
+    costs += bpChip(k, resourceName(k) + ' ' + need, low ? 'short' : '');
+  }
+
+  // Цифры выхода и расхода уже стоят плашками — фразы с ними из описания
+  // убираем, чтобы не читать одно и то же дважды
+  var desc = String(type.description || '');
+  if (type.produces_resource || type.storage_bonus > 0) {
+    desc = (desc.match(/[^.!?]+[.!?]*/g) || []).filter(function(x) { return !/\d/.test(x); })
+      .join('').replace(/^\s+|\s+$/g, '');
+  }
+
+  var meta = '';
+  if (max) {
+    meta = '<div class="bp-meta">' + bpPips(have, max) +
+      '<span>' + (type.needs_local_resource ? 'на залежи ' : 'на планете ') + have + ' из ' + max + '</span></div>';
+  }
+
+  item.innerHTML =
+    '<div class="bp-thumb">' +
+      (type.image ? '<img src="../' + escHtml(type.image) + '" alt="">' : '<b>' + escHtml(type.icon || '■') + '</b>') +
+      badge +
+    '</div>' +
+    '<div class="bp-body">' +
+      '<div class="bp-name">' + escHtml(type.name) + '</div>' +
+      (desc ? '<div class="bp-desc">' + escHtml(desc) + '</div>' : '') +
+      bpFlowHtml(type) +
+      meta +
+      '<div class="bp-costs"' + (resCost ? ' title="Сырьё платит склад планеты"' : '') + '>' + costs + '</div>' +
+      (why ? '<div class="bp-why' + (tone ? ' ' + tone : '') + '">' + escHtml(why) + '</div>' : '') +
+      (warn ? '<div class="bp-warn">' + escHtml(warn) + '</div>' : '') +
+    '</div>';
+
+  var img = item.querySelector('.bp-thumb img');
+  if (img) {
+    img.onerror = function() {
+      var b = document.createElement('b');
+      b.textContent = type.icon || '■';
+      img.parentNode.replaceChild(b, img);
+    };
+  }
+
+  if (why) {
+    item.classList.add('blocked');
+    if (tone === 'cap') item.classList.add('capped');
+  }
+
+  item.addEventListener('click', function() {
+    if (why) {
+      // Причина уже написана на карточке — коротко подсвечиваем её
+      var w = item.querySelector('.bp-why');
+      if (w) { w.classList.remove('flash'); void w.offsetWidth; w.classList.add('flash'); }
+      return;
+    }
+    askConstructBuilding(slotIndex, type);
+  });
+
+  return { el: item, ok: !why, cost: Number(type.cost) || 0 };
+}
+
 function renderBuildCards(slotIndex, panel, list) {
+  list.innerHTML = '';
 
   // Показываем только постройки своей фракции и только наземные —
   // космическая станция ставится на орбитальной карте.
@@ -2191,88 +2422,71 @@ function renderBuildCards(slotIndex, panel, list) {
     return;
   }
 
-  available.forEach(function(type) {
-    var item = document.createElement('button');
-    item.className = 'build-panel-item';
-    item.setAttribute('data-code', type.code);
+  var credits = bpCredits();
+  var known = planetStock.length > 0;
 
-    var thumb = document.createElement('div');
-    thumb.className = 'build-panel-thumb';
-    if (type.image) {
-      var im = document.createElement('img');
-      im.src = '../' + type.image;
-      im.alt = '';
-      im.onerror = function() { thumb.textContent = type.icon || '■'; im.remove(); };
-      thumb.appendChild(im);
-    } else {
-      thumb.textContent = type.icon || '■';
-    }
-    item.appendChild(thumb);
+  // Склад — в начало списка: листается вместе с карточками и не отнимает
+  // у них высоту экрана
+  var strip = document.getElementById('stock-strip');
+  if (strip) list.appendChild(strip);
 
-    var info = document.createElement('div');
-    info.className = 'build-panel-info';
+  BP_GROUPS.forEach(function(g) {
+    var types = available.filter(function(t) { return bpRole(t) === g.id; });
+    if (!types.length) return;
 
-    var nameEl = document.createElement('div');
-    nameEl.className = 'build-panel-name';
-    nameEl.textContent = type.name;
-    info.appendChild(nameEl);
-
-    if (type.description) {
-      var descEl = document.createElement('div');
-      descEl.className = 'build-panel-desc';
-      descEl.textContent = type.description;
-      info.appendChild(descEl);
+    // Добыча без залежи на этой планете — одной строкой внизу раздела, а не
+    // мёртвыми карточками. Запас не пришёл — не знаем, где что лежит, и
+    // показываем всё: сервер сам скажет, если сырья нет.
+    var absent = [];
+    if (g.id === 'mine' && known) {
+      types = types.filter(function(t) {
+        if (planetHasResource(t.produces_resource)) return true;
+        absent.push(t);
+        return false;
+      });
     }
 
-    var costEl = document.createElement('div');
-    costEl.className = 'build-panel-cost';
-    costEl.textContent = type.cost + ' кр.';
+    var sec = document.createElement('section');
+    sec.className = 'bp-sec bp-sec-' + g.id;
 
-    // Что постройка даёт планете
-    if (type.produces_resource) {
-      var rate = stockRateFor(type);
-      var eats = consumesText(type.consumes);
-      costEl.textContent += eats
-        ? ' · ' + eats + ' → ' + resourceName(type.produces_resource) + ' ' + rate
-        : ' · ' + resourceName(type.produces_resource) + ' ' + rate + ' в сутки';
-    } else if (type.storage_bonus > 0) {
-      costEl.textContent += ' · запас +' + type.storage_bonus;
-    }
-    info.appendChild(costEl);
-
-    // Цена в ресурсах отдельной строкой: её платит склад планеты,
-    // а не кошелёк, и нехватка видна сразу по красному
-    var resCost = consumesText(type.cost_resources);
-    if (resCost) {
-      var rc = document.createElement('div');
-      rc.className = 'build-panel-rescost' +
-                     (canAffordResources(type.cost_resources) ? '' : ' short');
-      rc.textContent = 'Со склада: ' + resCost;
-      info.appendChild(rc);
+    var hint = g.hint || '';
+    if (g.id === 'mine') {
+      var prim = null, second = null;
+      planetStock.forEach(function(r) {
+        if (r.is_primary) prim = r;
+        else if (r.is_secondary) second = r;
+      });
+      var parts = [];
+      if (prim) parts.push(prim.name.toLowerCase() + ' — основная');
+      if (second) parts.push(second.name.toLowerCase() + ' — попутная, вдвое медленнее');
+      hint = parts.length ? 'Залежи: ' + parts.join(', ') : 'Только то сырьё, что залегает на планете';
     }
 
-    item.appendChild(info);
+    sec.innerHTML = '<div class="bp-sec-head"><span>' + escHtml(g.title) + '</span>' +
+      (hint ? '<em>' + escHtml(hint) + '</em>' : '') + '</div>';
 
-    // Добывающую нельзя ставить там, где сырья нет. Сервер это отобьёт,
-    // но честнее сказать заранее, чем после нажатия.
-    var blocked = type.needs_local_resource && !planetHasResource(type.produces_resource);
+    var grid = document.createElement('div');
+    grid.className = 'bp-grid';
 
-    if (blocked) {
-      item.classList.add('blocked');
-      var why = document.createElement('div');
-      why.className = 'build-panel-why';
-      why.textContent = 'На этой планете нет такого сырья';
-      info.appendChild(why);
-    }
-
-    item.addEventListener('click', function() {
-      if (blocked) {
-        alert('На этой планете нет такого сырья');
-        return;
-      }
-      askConstructBuilding(slotIndex, type);
+    var cards = types.map(function(t) { return bpCardFor(slotIndex, t, credits); });
+    // Сначала то, что можно заложить прямо сейчас; внутри — по цене
+    cards.sort(function(a, b) {
+      if (a.ok !== b.ok) return a.ok ? -1 : 1;
+      return a.cost - b.cost;
     });
-    list.appendChild(item);
+    cards.forEach(function(c) { grid.appendChild(c.el); });
+    if (cards.length) sec.appendChild(grid);
+
+    if (absent.length) {
+      var no = document.createElement('div');
+      no.className = 'bp-absent';
+      no.innerHTML = '<span class="bp-absent-lbl">Нет залежей</span>' + absent.map(function(t) {
+        return bpChip(t.produces_resource, t.name, 'off');
+      }).join('');
+      sec.appendChild(no);
+    }
+
+    list.appendChild(sec);
   });
 
   panel.style.display = 'flex';
@@ -2282,6 +2496,7 @@ function closeBuildPanel() {
   var panel = document.getElementById('build-panel');
   panel.style.display = 'none';
   panel.classList.remove('struct-mode');
+  panel.classList.remove('bp-mode');
 }
 
 // Строительство идёт через защищённую серверную функцию: она сама проверяет
@@ -4022,14 +4237,14 @@ function loadResourceNames(done) {
       resourceColors[r.id] = r.color;
     });
     if (done) done();
-  });
+  }, function() { if (done) done(); });   // сеть упала — панель не должна висеть на «Загрузке»
 }
 
 function loadPlanetStock(done) {
   supabase.rpc('get_planet_stock', { p_system_id: systemId }).then(function(res) {
     planetStock = (res.error || !res.data) ? [] : res.data;
     if (done) done();
-  });
+  }, function() { if (done) done(); });
 }
 
 function stockRow(resourceId) {
@@ -4096,8 +4311,8 @@ function renderStockStrip(slotIndex) {
   var strip = document.createElement('div');
   strip.id = 'stock-strip';
 
-  var cap = planetStock[0].cap;
-  strip.innerHTML = '<div class="stock-head">Запас планеты · предел ' + cap + '</div>';
+  var cap = Number(planetStock[0].cap) || 0;
+  strip.innerHTML = '<div class="stock-head"><span>Склад планеты</span><em>предел ' + cap + '</em></div>';
 
   var row = document.createElement('div');
   row.className = 'stock-row';
@@ -4106,25 +4321,28 @@ function renderStockStrip(slotIndex) {
     // Чего на планете нет и не производится — не засоряем строку
     if (!r.amount && !r.per_day && !r.is_primary && !r.is_secondary) return;
 
+    var color = r.color || '#2a3644';
+    var rcap = Number(r.cap) || cap;
+    var pct = rcap ? Math.min(100, Math.round(r.amount / rcap * 100)) : 0;
+    var full = rcap && r.amount >= rcap;
+
     var cell = document.createElement('div');
-    cell.className = 'stock-cell';
+    cell.className = 'stock-cell' + (r.is_primary ? ' primary' : r.is_secondary ? ' secondary' : '') +
+                     (full ? ' full' : '');
+    // Цвет ресурса кромкой слева — как на складе в окне поселения
+    cell.style.borderLeftColor = color;
 
-    if (r.is_primary) cell.classList.add('primary');
-    else if (r.is_secondary) cell.classList.add('secondary');
+    var rate = full ? 'склад полон'
+             : r.per_day ? '+' + r.per_day + '/сут'
+             : r.is_primary ? 'нужна добыча'
+             : r.is_secondary ? 'попутное' : 'не добывают';
 
-    // Цвет ресурса кромкой слева — тот же, что на плашках в карточке планеты
-    if (r.color) cell.style.borderLeft = '3px solid ' + r.color;
-
-    if (r.cap && r.amount >= r.cap) cell.classList.add('full');
-
+    // Залежи планеты (основная и попутная) подсвечены фоном плитки
     cell.innerHTML =
-      '<span class="stock-name">' + r.name + '</span>' +
+      '<span class="stock-name">' + escHtml(r.name) + '</span>' +
       '<span class="stock-val">' + r.amount + '</span>' +
-      '<span class="stock-rate">' +
-        (r.per_day ? '+' + r.per_day + ' в сутки'
-         : r.is_primary ? 'нужна добыча'
-         : r.is_secondary ? 'попутное' : '') +
-      '</span>';
+      '<span class="stock-bar"><i style="width:' + pct + '%;background:' + escHtml(color) + '"></i></span>' +
+      '<span class="stock-rate' + (r.per_day && !full ? ' up' : '') + '">' + rate + '</span>';
 
     row.appendChild(cell);
   });
@@ -4920,6 +5138,7 @@ function openStructureBuildPanel(unit) {
   list.innerHTML = '<div class="build-panel-empty">Загрузка…</div>';
   var oldStrip = document.getElementById('stock-strip');
   if (oldStrip) oldStrip.remove();
+  panel.classList.remove('bp-mode');
   panel.classList.add('struct-mode');
   panel.style.display = 'flex';
 

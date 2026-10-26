@@ -333,6 +333,9 @@ server.on('upgrade', function(req, sock, head) {
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
         var r = m.room ? getRoom(String(m.room).slice(0, 40), m.cfg, who) : null;   // без комнаты — не в нагрузочный бой по умолчанию
+        // бой ивента окончен (комната закрыта по итогу): не ошибка — экран покажет «Бой окончен» и не будет переподключаться
+        var epR = !r && Ev.parse(String(m.room || '')), wR = epR && ROOMS.get(epR.key);
+        if (wR && wR.closed && (!wR.failed || /матч уже (done|aborted)/.test(wR.failed))) { ws.send(JSON.stringify({ t: 'error', end: 1, msg: 'Этот бой ивента уже окончен. Итог и награда — в «Истории» ивентов.' })); ws.close(4004); return; }
         if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : Ev.parse(String(m.room || '')) ? 'Бой ивента уже окончен или сервер занят' : 'нет такого боя' })); ws.close(4004); return; }
         if (r.kind === 'space') {
           c.side = -1;

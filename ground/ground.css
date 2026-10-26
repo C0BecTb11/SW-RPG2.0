@@ -59,6 +59,7 @@
 .gp-stuck { position: fixed; inset: 0; z-index: 1150; display: grid; place-items: center; padding: 16px; background: rgba(5,6,10,0.72); }
 .gp-stuck[hidden] { display: none; }
 .gp-stuck-box { width: 100%; max-width: 340px; box-sizing: border-box; padding: 16px 16px 14px; background: rgba(8,11,17,0.96); border: 1px solid #1c2530; border-left: 3px solid #d94a4a; border-radius: 10px; font-family: 'Courier New', monospace; }
+.gp-stuck-box.final { border-left-color: #d9a940; }          /* бой окончен — не сбой */
 .gp-stuck-box b { display: block; font-weight: normal; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: #e8d9a8; }
 .gp-stuck-box p { margin: 8px 0 0; font-size: 11px; line-height: 1.5; color: #8fa8c4; }
 .gp-stuck-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

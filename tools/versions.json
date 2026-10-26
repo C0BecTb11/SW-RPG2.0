@@ -228,8 +228,8 @@
   "sha": "0e4cd2ed8f72"
  },
  "js/ground-live.js": {
-  "v": "27",
-  "sha": "2ffe95548c98"
+  "v": "28",
+  "sha": "d1173e4ac626"
  },
  "js/map-layer.js": {
   "v": "2",
@@ -364,8 +364,8 @@
   "sha": "29de229d9ace"
  },
  "shared/rt-ground-net.js": {
-  "v": "9",
-  "sha": "36c6c0074f63"
+  "v": "10",
+  "sha": "e7c80a83d519"
  },
  "shared/rt-ground.js": {
   "v": "13",

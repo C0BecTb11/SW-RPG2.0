@@ -1,8 +1,8 @@
 -- Защита объектов боя 2.0 (rt_battle_guard) — ТЕКУЩАЯ версия из базы (аудит 25.10.2026; 26.10 — без колонок
--- дозора, луча и абордажа, sql/legacy_step4b_patch.sql).
+-- дозора, луча и абордажа, sql/legacy_step4b_patch.sql; притягивающий луч 2.0 — sql/tractor_2_0.sql).
 -- Ветка 'unit' (погрузка бойца из панелей игры, имя героя) жила только в базе. Более ранние определения
 -- в sql/rt_2_0_core.sql, sql/ground_2_0.sql и sql/space_2_0.sql устарели: их повторный прогон откатит эту версию —
--- после любого из них примени этот файл снова. md5(prosrc) = fe80e36cc3e0aae738af161849467296.
+-- после любого из них примени этот файл снова. md5(prosrc) = 14a125a24b4f8235c48b9f7f624db92f.
 CREATE OR REPLACE FUNCTION public.rt_battle_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -30,6 +30,10 @@ begin
       select (b.snapshot->'fire'->>old.id::text)::timestamptz into fire_at from rt_battles b where b.id = bid;
       if fire_at is not null and fire_at > now() - interval '30 seconds' then
         raise exception 'Корабль под огнём — в гиперпространство не уйти' using errcode = 'P0001', hint = 'rt_busy';
+      end if;
+      select (b.snapshot->'held'->>old.id::text)::timestamptz into fire_at from rt_battles b where b.id = bid;
+      if fire_at is not null and fire_at > now() then
+        raise exception 'Корабль в притягивающем луче — в гиперпространство не уйти' using errcode = 'P0001', hint = 'rt_busy';
       end if;
       return new;
     end if;

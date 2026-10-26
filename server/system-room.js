@@ -346,12 +346,14 @@ SystemRoom.prototype.syncNow = function() {
     var hp = sh.dead ? 0 : Math.max(1, Math.round(maxHp * sh.hull / sh.hullMax));
     var shv = [0, 1, 2, 3].map(function(i) { return sh.dead ? 0 : Math.round((maxSh + (i === 0 ? bo.fore : 0)) * Math.max(0, Math.min(1, sh.sh[i] / sh.shMax))); });
     var fire = self.hitAt[sh.n] != null && B.t - self.hitAt[sh.n] < FIRE_HOLD;
+    // в притягивающем луче: база не пустит в гиперпространство, пока держат (rt_battle_guard по снимку боя)
+    var hbS = B.holder(sh), held = hbS ? Math.max(1, Math.ceil(hbS.tb.until - B.t)) : 0;
     // точная поза (метры и курс) — чтобы при новом открытии орбиты корабль стоял там и так, как его оставили
     var mx = Math.round(sh.x), my = Math.round(sh.y), hd = Math.round(sh.hd * 1000) / 1000;
-    var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0) + ',' +
+    var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0) + ',' + (held ? 1 : 0) + ',' +
               Math.round(mx / 20) + ',' + Math.round(my / 20) + ',' + Math.round(hd * 50);
     var last = self.lastSync[sh.gameId];
-    if (!last || last.key !== key) { ships.push({ id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, mx: mx, my: my, hd: hd }); self.lastSync[sh.gameId] = { key: key, hp: hp }; }
+    if (!last || last.key !== key) { ships.push({ id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, held: held, mx: mx, my: my, hd: hd }); self.lastSync[sh.gameId] = { key: key, hp: hp }; }
     // бойцы на борту: по телам экипажа (uid), пока экипаж спит — как были
     if (sh.dead) { (sh.units || []).forEach(function(u) { if (self.unitHp[u.id] !== 0) { units.push({ id: u.id, hp: 0 }); self.unitHp[u.id] = 0; } }); sh.craftIds.forEach(function(id) { if (self.craftHp[id] !== 0) { craft.push({ id: id, hp: 0 }); self.craftHp[id] = 0; } }); sh.synced = true; return; }
     if (!sh.dormant) {
@@ -506,7 +508,12 @@ SystemRoom.prototype.command = function(c, m) {
     // заглянуть внутрь: свой — всегда, чужой — только если его видно
     var vs = m.k === 'view' && m.view != null && m.view >= 0 ? this.B.ships[m.view | 0] : null;
     if (vs && vs.dormant && (vs.side === c.side || this.B.sees(c.side, vs))) this.B.wake(vs);
-    c.viewer.command(m);
+    var ok = c.viewer.command(m);
+    // притягивающий луч: отказ — игроку словами; взял — сразу в базу (прыжок цели закрыт)
+    if (m.k === 'tractor' && m.to != null && m.to >= 0) {
+      if (!ok && c.viewer.lastWhy) this.send(c, JSON.stringify({ t: 'note', msg: 'Луч: ' + c.viewer.lastWhy }));
+      else if (ok) this.sync().catch(function() {});
+    }
     return;
   }
   if (m.t === 'dbg' && this.cfg.dev) {

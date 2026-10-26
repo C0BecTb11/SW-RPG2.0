@@ -142,7 +142,10 @@
               e: intel ? [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0)] : null,
               crit: intel ? r1(sh.crit) : 0, dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
               burn: sh.crew.burning.length, ct: r2(sh.crew.t) };
+    if (sh.tb) o.tb = [sh.tb.to, r1(sh.tb.until - B.t)];               // притягивающий луч: кого держит, сколько осталось
     if (own) {
+      if (sh.tractor) { o.tx = 1; if (sh.tbReady > B.t) o.tc = r1(sh.tbReady - B.t); }
+      var hbO = B.holder(sh); if (hbO) o.hb = [hbO.n, r1(hbO.tb.until - B.t)];   // нас держат (держащий может быть в тумане)
       o.ow = this.ctl(sh) ? 1 : 2; o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.gd = sh.guard ? 1 : 0; o.at = sh.foeT != null ? sh.foeT : -1; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
       o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
       // трюм: десант на борту / всего, герои, техника, недобор экипажа
@@ -257,7 +260,7 @@
       var own = B.ships[p[0]].crew.board, all = !!(own && own.started && own.over < 0 && own.def === side);
       var cb = B.canBoard(p[0], p[1], all);
       return { n: p[0], t: p[1], ok: cb.ok, why: cb.why || '', party: cb.party || 0, reinforce: !!cb.reinforce, cap: cb.cap || 0,
-               gap: cb.gap, need: cb.need, sec: cb.sec, shK: cb.shK, stuck: !!cb.stuck, tro: cb.tro };
+               gap: cb.gap, need: cb.need, sec: cb.sec, shK: cb.shK, stuck: !!cb.stuck, beam: cb.beam ? 1 : 0, tro: cb.tro };
     });
     return out;
   };
@@ -432,6 +435,7 @@
       case 'board': if (!mine || !B.ships[m.to | 0]) return false; return B.board(m.n, m.to | 0, !!m.all);
       case 'hold': if (!mine) return false; B.setHold(m.n, m.to | 0, !!m.on); return true;
       case 'stand': if (!mine || !Array.isArray(m.ids)) return false; return B.standTroops(m.n, m.ids.slice(0, 128).map(Number), m.cell == null ? -1 : m.cell | 0) > 0;
+      case 'tractor': if (!mine) return false; this.lastWhy = B.tractor(m.n, m.to == null ? -1 : m.to | 0); return !this.lastWhy;
     }
     // абордаж: по кораблю-цели, сторона — игрока
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;
@@ -523,6 +527,15 @@
       self.can = (self.can || []).filter(function(x) { return !(x.n === n && x.t === t); });   // до ответа — не жать дважды
       return { ok: true, party: c.party, shuttles: Math.ceil(c.party / 12), muster: true };
     };
+    // притягивающий луч: проверка — по тому, что видно (решает сервер); взял — на экране сразу
+    var tractor0 = B.tractor;
+    B.tractor = function(n, to) {
+      var sh = B.ships[n]; if (!sh || sh.dead) return 'корабля нет';
+      if (to != null && to >= 0) { var c = B.tractorCan(n, to); if (!c.ok) return c.why; }
+      send({ t: 'cmd', k: 'tractor', n: n, to: to == null ? -1 : to });
+      var r = tractor0.call(B, n, to); lock(sh);
+      return r;
+    };
     B.sensRange = function(sh) { return sh.netSens || sh.sens; };
     B.step = function() {};
     B.takeEvents = function() { var q = self.queue; self.queue = { shots: [], booms: [], shields: [], kills: [], boards: [], rams: [] }; return q; };
@@ -550,6 +563,13 @@
     // малые корабли — новые кадр за кадром; если предыдущий не успели разобрать, позиции из нового
     if (this.craftNext) for (i = 0; i < this.craftNext.length; i++) { var q0 = this.craftNext[i]; if (q0.length > 5 && !this.craftMeta[q0[0]]) this.craftMeta[q0[0]] = { type: q0[5], side: q0[6], role: q0[7], faction: q0[8], img: q0[9] || null, len: q0[10], max: q0[11], tgt: q0[12] >= 0 ? q0[12] : null }; }
     for (i = 0; i < m.ships.length; i++) this.shipState(m.ships[i]);
+    // притягивающий луч: держащий в тумане — его луч знаем по своему кораблю
+    for (i = 0; i < B.ships.length; i++) B.ships[i].heldBy = null;
+    for (i = 0; i < B.ships.length; i++) {
+      var hs = B.ships[i];
+      if (hs.netHb && B.ships[hs.netHb.by] && !(B.ships[hs.netHb.by].tb && B.ships[hs.netHb.by].tb.to === hs.n)) B.ships[hs.netHb.by].tb = { to: hs.n, until: hs.netHb.until, fog: true };
+    }
+    for (i = 0; i < B.ships.length; i++) { var hb = B.ships[i]; if (hb.tb && !hb.dead && B.ships[hb.tb.to]) { if (hb.tb.fog && !(B.ships[hb.tb.to].netHb && B.ships[hb.tb.to].netHb.by === hb.n)) { hb.tb = null; continue; } B.ships[hb.tb.to].heldBy = hb.n; } }
     // события: в очередь отрисовки
     var Q = this.queue, e = m.ev;
     e.shots.forEach(function(s) { Q.shots.push({ x0: s[0], y0: s[1], x1: s[2], y1: s[3], t0: s[4], dur: s[5], side: s[6], t: s[7], miss: !!s[8] }); });
@@ -586,6 +606,7 @@
     if (o.hid) {
       // ушёл из датчиков: его прицелы больше не знаем; абордаж на нём — по сводке
       sh.netHid = true; for (var hg = 0; hg < sh.guns.length; hg++) sh.guns[hg].aimAt = null;
+      sh.tb = null;                                                   // его луч не видно (держит нас — узнаем по своему кораблю)
       this.boardState(sh, o.bd); return;
     }
     var wasHid = sh.netHid; sh.netHid = false;
@@ -601,6 +622,12 @@
     if (o.e) { sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5]; }
     else { sh.eff.engine = sh.eff.reactor = sh.eff.shield = sh.eff.bridge = sh.eff.hangar = sh.eff.power = 1; }   // чужой: систем не видно — рисуем как исправный
     sh.crit = o.crit; if (o.dead && !sh.dead) { sh.dead = true; sh.deadAt = B.t; } sh.why = o.why || sh.why; if (o.cap != null) sh.captured = o.cap; sh.inbound = o.inb;
+    var T0 = this.curT != null ? this.curT : B.t;
+    if (mine) sh.tb = o.tb ? { to: o.tb[0], until: T0 + o.tb[1] } : null;   // только что взял лучом сам — ждём кадр с сервера (LOCK)
+    if (sh.side === this.side) {
+      sh.tractor = !!o.tx; if (mine) sh.tbReady = o.tc ? T0 + o.tc : 0;
+      sh.netHb = o.hb ? { by: o.hb[0], until: T0 + o.hb[1] } : null;
+    }
     sh.netBurn = o.burn; if (this.viewN !== sh.n) { sh.netCt = o.ct; sh.netCtAt = Date.now(); sh.netCtT = this.curT; }
     if (o.fs) {
       // наружный огонь: прислали выборку клеток

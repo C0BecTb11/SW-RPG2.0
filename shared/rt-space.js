@@ -109,6 +109,9 @@
   var TRACTOR = { range: 4000, hold: 20, cd: 60, pull: 80, near: 1200 };
   var MUSTER_MAX = 75;      // десант собирается у шлюза не дольше (кто не добежал — остаётся на борту)
 
+  // Дальность датчиков, м: у больших кораблей дальше (6–10 км по длине корпуса) + 1 км на единицу сонара.
+  // Отдаётся наружу — карточки верфи и корабля пишут те же километры, что видит бой
+  function sensOf(lenM, visB) { return Math.max(6000, Math.min(10000, 6000 + (lenM || 0) * 2.5)) + (visB || 0) * 1000; }
   function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
   function rng(seed) {
     var s = (seed >>> 0) || 1;
@@ -181,7 +184,7 @@
       shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, foeT: null, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
       vmax: (C.move + (A.moveB || 0)) * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
-      sens: Math.max(6000, Math.min(10000, 6000 + plan.h * plan.cellM * 2.5)) + (A.visB || 0) * 1000, flash: -99,
+      sens: sensOf(plan.h * plan.cellM, A.visB), flash: -99,
       crew: null, crewOpts: { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
                               roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0,
                               guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null },
@@ -1597,5 +1600,5 @@
     return e;
   };
 
-  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR };
+  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR, sensOf: sensOf };
 });

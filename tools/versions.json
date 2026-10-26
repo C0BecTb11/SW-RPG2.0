@@ -40,8 +40,8 @@
   "sha": "9ba72c0232fa"
  },
  "css/ground-battle.css": {
-  "v": "5",
-  "sha": "82de393b7b2f"
+  "v": "6",
+  "sha": "8d70f4838210"
  },
  "css/ground-live.css": {
   "v": "6",
@@ -76,8 +76,8 @@
   "sha": "b93ecc6d9b77"
  },
  "css/space-battle.css": {
-  "v": "2",
-  "sha": "521358044fe2"
+  "v": "3",
+  "sha": "00c770faf932"
  },
  "css/space-live.css": {
   "v": "6",
@@ -146,6 +146,10 @@
  "js/banner.js": {
   "v": "1",
   "sha": "cfc0827a6960"
+ },
+ "js/battle-stats.js": {
+  "v": "2",
+  "sha": "f808e98844f8"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -224,8 +228,8 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "16",
-  "sha": "70185c981ae4"
+  "v": "17",
+  "sha": "88eafd1000f3"
  },
  "js/ground-live.js": {
   "v": "29",
@@ -288,8 +292,8 @@
   "sha": "d557e452976d"
  },
  "js/space-battle.js": {
-  "v": "7",
-  "sha": "9b730c71a58a"
+  "v": "8",
+  "sha": "2371cf90901d"
  },
  "js/space-live.js": {
   "v": "26",
@@ -388,8 +392,8 @@
   "sha": "1dc8adb9f9b0"
  },
  "shared/rt-space.js": {
-  "v": "29",
-  "sha": "ee4407bc7270"
+  "v": "30",
+  "sha": "1c816920140d"
  },
  "shared/rt-town.js": {
   "v": "2",

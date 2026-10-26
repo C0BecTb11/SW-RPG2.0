@@ -221,6 +221,9 @@ html, body {
 
 .ship-card-stats span, #ship-info-stats span { color: #55606c; }
 .ship-card-stats b, #ship-info-stats b { color: #cfd8dc; }
+/* Строка на всю ширину: оговорка (трофей до ремонта) */
+#ship-info-stats div.wide { grid-column: 1 / -1; }
+#ship-info-stats div.wide b { color: #d9a940; }
 
 .ship-order-btn {
   margin-top: auto;

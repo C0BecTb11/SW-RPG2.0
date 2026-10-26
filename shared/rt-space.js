@@ -109,9 +109,12 @@
   var TRACTOR = { range: 4000, hold: 20, cd: 60, pull: 80, near: 1200 };
   var MUSTER_MAX = 75;      // десант собирается у шлюза не дольше (кто не добежал — остаётся на борту)
 
-  // Дальность датчиков, м: у больших кораблей дальше (6–10 км по длине корпуса) + 1 км на единицу сонара.
+  // Дальность датчиков, м: у больших кораблей дальше (4–7 км по длине корпуса) + 1 км на единицу сонара.
+  // Станция на орбите видит на SENS_STATION. Решение Артёма (26.10): орбита 30×30 км, при 6–10 км у кораблей
+  // и 12 км у станции туман почти не показывался — враг виден, только когда подошёл.
   // Отдаётся наружу — карточки верфи и корабля пишут те же километры, что видит бой
-  function sensOf(lenM, visB) { return Math.max(6000, Math.min(10000, 6000 + (lenM || 0) * 2.5)) + (visB || 0) * 1000; }
+  var SENS_STATION = 8000;
+  function sensOf(lenM, visB) { return Math.max(4000, Math.min(7000, 4000 + (lenM || 0) * 2)) + (visB || 0) * 1000; }
   function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
   function rng(seed) {
     var s = (seed >>> 0) || 1;
@@ -1636,5 +1639,5 @@
     return e;
   };
 
-  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR, sensOf: sensOf };
+  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR, sensOf: sensOf, SENS_STATION: SENS_STATION };
 });

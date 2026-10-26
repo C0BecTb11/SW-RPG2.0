@@ -94,7 +94,7 @@ SystemRoom.prototype.open = function() {
 };
 
 // Станция видит вокруг себя — для своей стороны (готовая; строящаяся ещё слепа)
-var STATION_SENS = 12000;
+var STATION_SENS = SWSpace.SENS_STATION;     // станция видит на 8 км (shared/rt-space.js)
 SystemRoom.prototype.setEyes = function() {
   var st = this.state && this.state.station, sl = this.state && this.state.slot;
   this.B.eyes = st && st.ready && st.faction ? [[sideOf(st.faction), ((st.x != null ? st.x : sl.x) + (st.size || sl.size) / 2) * CELL_M, ((st.y != null ? st.y : sl.y) + (st.size || sl.size) / 2) * CELL_M, STATION_SENS]] : [];

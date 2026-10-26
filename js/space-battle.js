@@ -447,18 +447,39 @@ function openShipInfo(ship, type) {
   var panel = document.getElementById('ship-info');
   document.getElementById('ship-info-name').textContent = ship.name ? '«' + ship.name + '» · ' + type.name : type.name;
   fillShipCommanders(ship);
-  // как ship_stats в базе: тип + бонусы исследований; трофей до ремонта — урон и ход вдвое
+  // как бой 2.0 видит корабль: тип + бонусы исследований (shared/rt-army.js, rt-space.js);
+  // трофей до ремонта — без щитов
   var bn = function(k) { return Number(ship[k]) || 0; };
-  var dmg = (type.damage || 0) + bn('bonus_damage'), mv = (type.move_range || 0) + bn('bonus_move');
-  if (ship.trophy) { dmg = Math.max(1, Math.ceil(dmg / 2)); mv = Math.max(1, Math.floor(mv / 2)); }
-  document.getElementById('ship-info-stats').innerHTML =
+  var sh = (type.max_shield || 0) + bn('bonus_shield'), fore = bn('bonus_fore');
+  var el = document.getElementById('ship-info-stats');
+  el.innerHTML =
     '<div><span>Прочность</span><b>' + ship.hp + ' / ' + ((type.max_hp || 0) + bn('bonus_hp')) + '</b></div>' +
-    '<div><span>Урон</span><b>' + dmg + '</b></div>' +
-    '<div><span>Обзор</span><b>' + ((type.vision_range || 0) + bn('bonus_vision')) + ' кл.</b></div>' +
-    '<div><span>Ход</span><b>' + mv + ' кл.</b></div>' +
-    '<div><span>Трюм</span><b>' + ((type.capacity || 0) + bn('bonus_capacity')) + ' слотов</b></div>' +
-    '<div><span>Размер</span><b>' + type.width_cells + '×' + type.height_cells + '</b></div>';
+    '<div><span>Щит сектора</span><b>' + (ship.trophy ? 'нет' : sh) + '</b></div>' +
+    (fore && !ship.trophy ? '<div><span>Щит носа</span><b>' + (sh + fore) + '</b></div>' : '') +
+    '<div><span>Урон</span><b>' + ((type.damage || 0) + bn('bonus_damage')) + '</b></div>' +
+    '<div><span>Скорость</span><b>' + spSpeed(type, bn('bonus_move')) + '</b></div>' +
+    '<div><span>Датчики</span><b data-sens>…</b></div>' +
+    '<div><span>Трюм</span><b>' + ((type.capacity || 0) + bn('bonus_capacity')) + ' мест</b></div>' +
+    (ship.trophy ? '<div class="wide"><span>Трофей до ремонта</span><b>щиты не работают</b></div>' : '');
+  spSensFill(el.querySelector('[data-sens]'), type.id, bn('bonus_vision'));
   panel.style.display = 'flex';
+}
+
+// Скорость в бою: ход × 9 м/с (rt-space.js: vmax = (move + moveB) × 9)
+function spSpeed(type, moveB) { return ((type.move_range || 0) + (moveB || 0)) * 9 + ' м/с'; }
+// Датчики в бою — по длине корпуса (shared/ships/index.json) и сонару; список длин грузится один раз
+var spShipLen = null;
+function spSensFill(el, typeId, visB) {
+  if (!el) return;
+  if (!spShipLen) {
+    spShipLen = fetch('../shared/ships/index.json?v=1').then(function(r) { return r.ok ? r.json() : []; })
+      .then(function(list) { var m = {}; (list || []).forEach(function(s) { m[s.id] = s.length_m; }); return m; })
+      .catch(function() { spShipLen = null; return {}; });
+  }
+  spShipLen.then(function(m) {
+    var L = m[typeId];
+    el.textContent = L && window.SWSpace && SWSpace.sensOf ? String(Math.round(SWSpace.sensOf(L, visB) / 100) / 10).replace('.', ',') + ' км' : '—';
+  });
 }
 
 // Передача корабля командиру: в списке только свои командиры, которые
@@ -858,7 +879,7 @@ function makeDockCard(s, box) {
       t.className = 'ship-up';
       t.innerHTML = '<img src="../' + r.icon_image + '" alt="">' +
                     '<span>' + r.name + '</span>';
-      t.title = r.description || '';
+      t.title = (typeof bsResearchText === 'function' && bsResearchText(r)) || r.description || '';
       t.addEventListener('click', function() {
         if (chosen[r.id]) delete chosen[r.id]; else chosen[r.id] = r;
         t.classList.toggle('active', !!chosen[r.id]);
@@ -1097,9 +1118,12 @@ function makeShipCard(type) {
   stats.className = 'ship-card-stats';
   stats.innerHTML =
     '<div><span>Прочность</span><b>' + type.max_hp + '</b></div>' +
+    '<div><span>Щит сектора</span><b>' + (type.max_shield || 0) + '</b></div>' +
     '<div><span>Урон</span><b>' + type.damage + '</b></div>' +
-    '<div><span>Обзор</span><b>' + type.vision_range + ' кл.</b></div>' +
+    '<div><span>Скорость</span><b>' + spSpeed(type, 0) + '</b></div>' +
+    '<div><span>Датчики</span><b data-sens>…</b></div>' +
     '<div><span>Трюм</span><b>' + type.capacity + '</b></div>';
+  spSensFill(stats.querySelector('[data-sens]'), type.id, 0);
   body.appendChild(stats);
 
   // Сырьё со склада планеты: нехватку видно сразу
@@ -1272,7 +1296,7 @@ function makeShipCard(type) {
       t.className = 'ship-up';
       t.innerHTML = '<img src="../' + r.icon_image + '" alt="">' +
         '<span>' + r.name + '</span>';
-      t.title = r.description;
+      t.title = (typeof bsResearchText === 'function' && bsResearchText(r)) || r.description || '';
 
       t.addEventListener('click', function() {
         if (chosen[r.id]) delete chosen[r.id];

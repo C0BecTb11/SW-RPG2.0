@@ -2014,47 +2014,9 @@ function showResearchInfo(r, tile) {
   info.appendChild(go);
 }
 
-// Человеческое описание эффекта: из вида и величины
+// Что исследование даёт в бою 2.0 (js/battle-stats.js); постройки инженера — своим текстом
 function researchEffectText(r) {
-  var v = r.effect_value;
-  var d = r.ability_damage;
-
-  switch (r.effect_kind) {
-    case 'hp':           return '+' + v + ' к прочности';
-    case 'hp_slow':      return '+' + v + ' к прочности, −1 к дальности хода';
-    case 'move':         return '+' + v + ' к дальности хода';
-    case 'weapon_range': return '+' + v + ' к дальности атаки';
-
-    case 'ability_grenade':
-      return 'урон ' + d + ' по области ' + v + '×' + v;
-    case 'ability_he':
-      return 'урон ' + d + ' по области ' + v + '×' + v + ', только по пехоте';
-    case 'ability_suppression':
-      return 'урон ' + d + ' по области ' + v + '×' + v + ' и залегание: цель не ходит и не стреляет';
-    case 'ability_stun':
-      return v >= 100 ? 'оглушает цель наверняка' : 'шанс ' + v + '% оглушить цель';
-    case 'ability_ap':   return 'двойной урон по технике';
-    case 'ability_headshot': return 'уничтожает выбранную цель';
-    case 'ability_twin':
-      return 'бьёт первую цель, вторую рядом с шансом ' + v + '%';
-    case 'ability_lunge':
-      return 'рывок к врагу до ' + v + ' клеток и удар клинком · урон ' + d + ', укрытие не спасает';
-    case 'unlock_structure':
-      return structUnlockText(r);
-  }
-
-  switch (r.effect_kind) {
-    case 'hull':        return '+' + v + ' к прочности';
-    case 'shield':      return '+' + v + ' к щитам всех секторов';
-    case 'fore_shield': return '+' + v + ' к носовому щиту';
-    case 'damage':      return '+' + v + ' к урону';
-    case 'vision':      return '+' + v + ' к дальности обзора';
-    case 'move':        return '+' + v + ' к дальности хода';
-    case 'hangar':      return '+' + v + ' к местам в ангаре';
-    case 'capacity':    return '+' + v + ' к вместимости трюма';
-    case 'tractor':     return 'способность: удержание вражеского судна';
-    default:            return '';
-  }
+  return r.effect_kind === 'unlock_structure' ? structUnlockText(r) : bsResearchText(r);
 }
 
 function closeBuildingInfo() {
@@ -3169,28 +3131,25 @@ function buildUnitCard(unit) {
     body.appendChild(desc);
   }
 
+  // Характеристики — как их считает бой 2.0 (js/battle-stats.js): темп, дальность и обзор в клетках
+  // поля боя, ход — скорость. Нет типа в таблице боя — прежние четыре числа из базы
   var stats = document.createElement('div');
   stats.className = 'unit-card-stats';
-  stats.appendChild(makeStat('❤', 'Прочность', unit.max_hp));
-  stats.appendChild(makeStat('⚔', 'Урон', unit.damage));
-  stats.appendChild(makeStat('➔', 'Манёвр', unit.move_range + ' кл.'));
-  stats.appendChild(makeStat('◉', 'Обзор', unit.vision_range + ' кл.'));
+  var rows = bsUnitStats(unit.id) || [['❤', 'Прочность', unit.max_hp], ['⚔', 'Урон', unit.damage]];
+  rows.forEach(function(q) { var st = makeStat(q[0], q[1], q[2]); if (q[3]) st.title = q[3]; stats.appendChild(st); });
   body.appendChild(stats);
 
-  if (unit.splash_size > 0) {
-    var arty = document.createElement('div');
-    arty.className = 'unit-card-relay unit-card-arty';
-    arty.textContent = '✹ Залп ' + unit.splash_size + '×' + unit.splash_size +
-      ' через всю карту · ' + (unit.shot_ap || 2) + ' действия · откат ' +
-      (unit.action_seconds || 30) + ' с';
-    body.appendChild(arty);
-  }
-
-  if (unit.is_relay) {
-    var relay = document.createElement('div');
-    relay.className = 'unit-card-relay';
-    relay.textContent = '⌖ Держит связь: делится обзором с союзниками';
-    body.appendChild(relay);
+  var notes = bsUnitMatrix(unit.id).concat(bsUnitNotes(unit.id));
+  if (notes.length) {
+    var nbox = document.createElement('div');
+    nbox.className = 'unit-card-notes';
+    notes.forEach(function(q) {
+      var note = document.createElement('div');
+      note.className = 'unit-card-relay' + (q[0] === 'arty' ? ' unit-card-arty' : q[0] === 'up' ? ' unit-card-up' : q[0] === 'down' ? ' unit-card-down' : '');
+      note.textContent = q[1];
+      nbox.appendChild(note);
+    });
+    body.appendChild(nbox);
   }
 
   // Ресурсы со склада планеты — отдельной строкой перед кнопкой найма. Сервер (order_unit →
@@ -3297,7 +3256,7 @@ function buildUnitCard(unit) {
       var t = document.createElement('button');
       t.className = 'unit-up-tile';
       t.innerHTML = '<img src="../' + r.icon_image + '" alt="">';
-      t.title = r.name + ' — ' + r.description;
+      t.title = r.name + ' — ' + (bsResearchText(r) || r.description);
       t.addEventListener('click', function() {
         if (chosen[r.id]) delete chosen[r.id]; else chosen[r.id] = r;
         t.classList.toggle('active', !!chosen[r.id]);
@@ -4928,16 +4887,11 @@ function structCountHere(typeId) {
   return fieldStructures.filter(function(s) { return s.type_id === typeId; }).length;
 }
 
+// Что постройка делает: боевые — в единицах боя 2.0 (js/battle-stats.js), доходные — в сутки
 function structEffectLine(st) {
+  var fight = bsStructLine(st);
+  if (fight) return fight;
   switch (st.kind) {
-    case 'trench':    return 'урон по бойцу −' + st.cover_pct + '% · ответный огонь';
-    case 'bunker':    return 'урон по пехоте −' + st.cover_pct + '% · её урон ×' + Number(st.damage_mult);
-    case 'camo':      return 'прячет своих в ' + (st.width_cells + st.radius * 2) + '×' +
-                             (st.height_cells + st.radius * 2) + ' клетках';
-    case 'turret':    return 'урон ' + st.damage + ' · радиус ' + st.radius + ' · раз в ' +
-                             Math.round(st.cooldown_seconds / 60) + ' мин';
-    case 'jammer':    return 'сжигает разведчиков в ' + st.radius + ' клетках вокруг';
-    case 'radar':     return 'видит всех врагов в ' + st.radius + ' клетках вокруг, даже под маскировкой';
     case 'extractor': return '+' + st.produces_per_day + ' ' +
                              resourceName(st.produces_resource).toLowerCase() + ' в сутки';
     case 'cantina':   return '+' + st.credits_per_day + ' кр. в сутки · довольство +' + st.satisfaction_bonus;
@@ -5151,14 +5105,7 @@ function openStructurePanel(s, keepView) {
   var props = [];
   if (st.cover_pct) props.push('<span title="укрытие">⛨ −' + st.cover_pct + '%</span>');
   if (Number(st.damage_mult) > 1) props.push('<span title="урон стрелка">◎ ×' + Number(st.damage_mult) + '</span>');
-  if (st.kind === 'turret') {
-    props.push('<span title="урон">◎ ' + st.damage + '</span>');
-    props.push('<span title="радиус">➶ ' + st.radius + '</span>');
-    props.push('<span title="перезарядка">◷ ' + Math.round(st.cooldown_seconds / 60) + ' мин</span>');
-  }
-  if (st.kind === 'jammer') props.push('<span title="поле помех">◈ ' + st.radius + ' кл.</span>');
-  if (st.kind === 'radar') props.push('<span title="зона обнаружения">◉ ' + st.radius + ' кл.</span>');
-  if (st.kind === 'camo') props.push('<span title="укрывает">◌ ' + (s.w + st.radius * 2) + '×' + (s.h + st.radius * 2) + '</span>');
+  bsStructProps(st).forEach(function(q) { props.push('<span title="' + escHtml(q[1]) + '">' + q[0] + ' ' + q[2] + '</span>'); });
   if (st.produces_per_day) props.push('<span title="в сутки">⛏ +' + st.produces_per_day + ' ' +
                                       escHtml(resourceName(st.produces_resource).toLowerCase()) + '</span>');
   if (st.credits_per_day) props.push('<span title="в сутки">◈ +' + st.credits_per_day + '</span>');
@@ -5295,8 +5242,8 @@ function paintStructStatus(s) {
       text = 'Выдача — в 04:00 по серверу';
     }
   } else if (st.kind === 'turret' && structSide(s) !== 'enemy') {
-    text = s.spotted_at ? 'Цель в прицеле — огонь раз в ' + Math.round(st.cooldown_seconds / 60) + ' мин'
-                        : 'Врагов в радиусе нет';
+    // в бою 2.0 турель стреляет сама, сервер боя ведёт её цель — здесь только что она умеет
+    text = 'На страже: бьёт врагов в ' + st.radius * BS_RK + ' кл., раз в ' + bsTurretEvery() + ' с';
   }
   box.innerHTML = '<span class="struct-st-label ok">' + text + '</span>';
 }
@@ -5306,7 +5253,7 @@ function paintStructStatus(s) {
 function structUnlockText(r) {
   var names = Object.keys(structTypeById).map(function(k) { return structTypeById[k]; })
     .filter(function(t) { return t.research_id === r.id; })
-    .map(function(t) { return t.name + ' ' + t.width_cells + '×' + t.height_cells; });
+    .map(function(t) { var e = bsStructLine(t); return t.name + ' ' + t.width_cells + '×' + t.height_cells + (e ? ' — ' + e : ''); });
   return names.length ? 'инженер сможет строить: ' + names.join(', ')
                       : 'открывает постройку для инженера';
 }

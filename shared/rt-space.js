@@ -106,7 +106,7 @@
   // Притягивающий луч (исследование «Притягивающие лучи» в игре): держит вражеский корабль — тот почти
   // стоит, разворачивается медленно и его подтягивает к нам; в гиперпространство не уйти (база), абордаж —
   // и при поднятых щитах. Дальность — зазор между корпусами; держит hold с, потом перезарядка cd с
-  var TRACTOR = { range: 4000, hold: 20, cd: 60, pull: 50, near: 1200 };
+  var TRACTOR = { range: 4000, hold: 20, cd: 60, pull: 80, near: 1200 };
   var MUSTER_MAX = 75;      // десант собирается у шлюза не дольше (кто не добежал — остаётся на борту)
 
   function shK(C) { return Math.max(0.35, Math.min(1.25, C.dmg / 120)); }
@@ -365,7 +365,7 @@
     if (!b || b.dead || b.side === a.side) return { ok: false, why: 'выбери вражеский корабль — коснись его' };
     if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью' };
     if (this.holder(b)) return { ok: false, why: 'цель уже в луче' };
-    if ((a.eff.power == null ? 1 : a.eff.power) < 0.6) return { ok: false, why: 'не хватает питания: реактор повреждён' };
+    if ((a.eff.reactor == null ? 1 : a.eff.reactor) < 0.3) return { ok: false, why: 'не хватает питания: реактор повреждён' };
     var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
     if (gap > TRACTOR.range) return { ok: false, why: 'далеко: ' + (gap / 1000).toFixed(1) + ' км, луч берёт до ' + TRACTOR.range / 1000 + ' км', gap: gap };
     return { ok: true, why: '', gap: Math.max(0, gap) };
@@ -385,12 +385,12 @@
     a.tb = null; a.tbReady = this.t + TRACTOR.cd;
   };
   // Каждый шаг: луч рвётся — время вышло, держащий или цель погибли, цель стала своей (трофей),
-  // ушла дальше дальности с запасом или у держащего просело питание
+  // ушла дальше дальности с запасом или у держащего разбит реактор
   Battle.prototype.beams = function() {
     for (var i = 0; i < this.ships.length; i++) {
       var a = this.ships[i]; if (!a.tb) continue;
       var b = this.ships[a.tb.to];
-      if (a.dead || !b || b.dead || b.side === a.side || this.t >= a.tb.until || (a.eff.power == null ? 1 : a.eff.power) < 0.4) { this.tbRelease(a); continue; }
+      if (a.dead || !b || b.dead || b.side === a.side || this.t >= a.tb.until || (a.eff.reactor == null ? 1 : a.eff.reactor) < 0.15) { this.tbRelease(a); continue; }
       var dx = b.x - a.x, dy = b.y - a.y, gap = Math.sqrt(dx * dx + dy * dy) - (a.len + b.len) / 2;
       if (gap > TRACTOR.range * 1.3) { this.tbRelease(a); continue; }
       b.heldBy = a.n;
@@ -613,7 +613,11 @@
     // луч подтягивает к держащему — до TRACTOR.near между корпусами
     if (hk) {
       var px = hb.x - sh.x, py = hb.y - sh.y, pd = Math.sqrt(px * px + py * py), pg = pd - (sh.len + hb.len) / 2;
-      if (pd > 1 && pg > TRACTOR.near) { var st = Math.min(TRACTOR.pull * hk * dt, pg - TRACTOR.near); sh.x += px / pd * st; sh.y += py / pd * st; }
+      if (pd > 1 && pg > TRACTOR.near) {
+        var st = Math.min(TRACTOR.pull * hk * dt, pg - TRACTOR.near), nx = sh.x + px / pd * st, ny = sh.y + py / pd * st;
+        // орбита системы: не затащить в чужую полосу гиперпространства (сервер даёт pullOk)
+        if (!this.pullOk || this.pullOk(sh, nx, ny)) { sh.x = nx; sh.y = ny; }
+      }
     }
   };
   // Поворот относительно линии на врага, при котором бьёт больше всего стволов.

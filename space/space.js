@@ -3345,7 +3345,7 @@
       if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }
-      if (m.t === 'note') { toast(m.msg, 'gold'); return; }
+      if (m.t === 'note') { toast(m.msg, m.kind === 'bad' ? 'bad' : 'gold'); return; }
       if (m.t === 'pong') return;
       if (N.ready) N.M.onText(m); else N.q.push(m);
     };

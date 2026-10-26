@@ -58,3 +58,31 @@ end $$;
 update researches
    set description = 'Луч держит вражеский корабль 20 с: ход скован, его тянет к вам, в гиперпространство не уйти, абордаж — даже при поднятых щитах. На орбите — кнопка «⊙ Луч» в строке цели, перезарядка 60 с.'
  where id = 'tractor';
+
+-- 4) снабжение: флот, корабль которого держит луч, ждёт (как под огнём), а не встаёт с ошибкой;
+-- 5) текст отказа называет корабль (во флоте из многих — какой именно держат)
+do $$
+declare v_def text; a text; b text;
+begin
+  v_def := pg_get_functiondef('public.supply_route_step'::regproc);
+  if position('притягивающем луче' in v_def) = 0 then
+    a := $x$        if v_err like 'Корабль под огнём%' or v_err like '%в бою 2.0%' then
+$x$;
+    b := $x$        if v_err like '%притягивающем луче%' then
+          update supply_routes set last_note = 'Корабль флота в притягивающем луче врага — прыжок, когда отпустят', updated_at = now()
+           where id = r.id and last_note is distinct from 'Корабль флота в притягивающем луче врага — прыжок, когда отпустят';
+          exit;
+        end if;
+$x$ || a;
+    if (length(v_def) - length(replace(v_def, a, ''))) / length(a) <> 1 then raise exception 'supply_route_step: якорь не один'; end if;
+    execute replace(v_def, a, b);
+  end if;
+  v_def := pg_get_functiondef('public.rt_battle_guard()'::regprocedure);
+  a := $x$        raise exception 'Корабль в притягивающем луче — в гиперпространство не уйти' using errcode = 'P0001', hint = 'rt_busy';$x$;
+  if position(a in v_def) > 0 then
+    b := $x$        raise exception 'Корабль «%» в притягивающем луче — в гиперпространство не уйти',
+          coalesce(old.name, (select t.name from ship_types t where t.id = old.ship_type), '') using errcode = 'P0001', hint = 'rt_busy';$x$;
+    if (length(v_def) - length(replace(v_def, a, ''))) / length(a) <> 1 then raise exception 'rt_battle_guard: текст не один'; end if;
+    execute replace(v_def, a, b);
+  end if;
+end $$;

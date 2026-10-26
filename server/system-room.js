@@ -79,6 +79,9 @@ SystemRoom.prototype.open = function() {
     // главного калибра); «засечек» на месте, где видели, игрокам орбиты не шлём
     var B = new SWSpace.Battle({ seed: 1977 + Math.floor(Math.random() * 100000), aiBoard: [false, false], endless: true, fog: true });
     B.defHuman = function(sh) { return !!(sh.owner && self.here(sh.owner)); };
+    // притягивающий луч не затаскивает цель в чужую для неё полосу гиперпространства (как приказы — clampY);
+    // уже там — тянуть можно только наружу
+    B.pullOk = function(sh, x, y) { var c = self.clampY(sh.side, y); return c === y || Math.abs(y - c) < Math.abs(sh.y - self.clampY(sh.side, sh.y)); };
     // кто пошёл на абордаж — тому и трофей
     var board0 = B.board;
     B.board = function(n, t, all, now) { var r = board0.call(B, n, t, all, now); if (r && r.ok && B.ships[t]) B.ships[t].boardBy = B.ships[n].owner || null; return r; };
@@ -350,7 +353,7 @@ SystemRoom.prototype.syncNow = function() {
     var hbS = B.holder(sh), held = hbS ? Math.max(1, Math.ceil(hbS.tb.until - B.t)) : 0;
     // точная поза (метры и курс) — чтобы при новом открытии орбиты корабль стоял там и так, как его оставили
     var mx = Math.round(sh.x), my = Math.round(sh.y), hd = Math.round(sh.hd * 1000) / 1000;
-    var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0) + ',' + (held ? 1 : 0) + ',' +
+    var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0) + ',' + (hbS ? hbS.n + ':' + Math.round(hbS.tb.until) : 0) + ',' +
               Math.round(mx / 20) + ',' + Math.round(my / 20) + ',' + Math.round(hd * 50);
     var last = self.lastSync[sh.gameId];
     if (!last || last.key !== key) { ships.push({ id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, held: held, mx: mx, my: my, hd: hd }); self.lastSync[sh.gameId] = { key: key, hp: hp }; }
@@ -511,7 +514,7 @@ SystemRoom.prototype.command = function(c, m) {
     var ok = c.viewer.command(m);
     // притягивающий луч: отказ — игроку словами; взял — сразу в базу (прыжок цели закрыт)
     if (m.k === 'tractor' && m.to != null && m.to >= 0) {
-      if (!ok && c.viewer.lastWhy) this.send(c, JSON.stringify({ t: 'note', msg: 'Луч: ' + c.viewer.lastWhy }));
+      if (!ok && c.viewer.lastWhy) this.send(c, JSON.stringify({ t: 'note', msg: 'Луч: ' + c.viewer.lastWhy, kind: 'bad' }));
       else if (ok) this.sync().catch(function() {});
     }
     return;

@@ -435,7 +435,7 @@
       case 'board': if (!mine || !B.ships[m.to | 0]) return false; return B.board(m.n, m.to | 0, !!m.all);
       case 'hold': if (!mine) return false; B.setHold(m.n, m.to | 0, !!m.on); return true;
       case 'stand': if (!mine || !Array.isArray(m.ids)) return false; return B.standTroops(m.n, m.ids.slice(0, 128).map(Number), m.cell == null ? -1 : m.cell | 0) > 0;
-      case 'tractor': if (!mine) return false; this.lastWhy = B.tractor(m.n, m.to == null ? -1 : m.to | 0); return !this.lastWhy;
+      case 'tractor': this.lastWhy = ''; if (!mine) return false; this.lastWhy = B.tractor(m.n, m.to == null ? -1 : m.to | 0); return !this.lastWhy;
     }
     // абордаж: по кораблю-цели, сторона — игрока
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;

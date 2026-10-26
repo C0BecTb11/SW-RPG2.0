@@ -221,8 +221,6 @@ button { font-family: inherit; }
 .sp-sys b { color: #cfd8dc; font-weight: normal; font-size: 10.5px; margin-left: 3px; }
 .sp-sys .bad b { color: #ff8a5c; }
 .sp-sys .mid b { color: #e8d9a8; }
-.sp-sys .shd b { color: #6fb8ff; margin-left: 2px; }
-.sp-sys .shd b.z { color: #ff8a5c; }
 
 .sp-guns-head { display: flex; align-items: center; gap: 4px; margin-top: 6px; padding-top: 5px; border-top: 1px solid #141a22; }
 .sp-guns-head span { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; margin-right: auto; }
@@ -324,8 +322,6 @@ body.spectate #sp-move, body.spectate #sp-grp, body.spectate #sp-inside, body.sp
 .sp-bd-ch i { font-style: normal; font-size: 9.5px; padding: 1px 6px; border-radius: 6px; border: 1px solid #1c2530; white-space: nowrap; }
 .sp-bd-ch i.no { color: #ff9a80; border-color: rgba(255,110,90,0.35); background: rgba(255,110,90,0.06); }
 .sp-bd-ch i.yes { color: #7fdc88; border-color: rgba(95,217,104,0.3); background: rgba(95,217,104,0.05); }
-.sp-bd-count { display: flex; flex-wrap: wrap; gap: 0 5px; margin-top: 3px; font-size: 10px; color: #55606c; }
-.sp-bd-count b { color: #cfe3ff; font-weight: normal; }
 .sp-bd-goal { margin-top: 6px; font-size: 10.5px; color: #8fa8c4; line-height: 1.4; }
 .sp-bd-goal b { color: #e8d9a8; font-weight: normal; }
 .sp-bd-goal .sp-bar { height: 3px; margin-top: 4px; }
@@ -359,7 +355,6 @@ body.cisside .sp-ucard .nm b.hero { color: #ff9a88; }
 .sp-bd-row .sp-chip b { color: #e8d9a8; font-weight: bold; }
 .sp-bd-row .sp-chip em { font-style: normal; color: #55606c; font-size: 9px; }
 .sp-bd-row .sp-chip.dead { opacity: 0.35; }
-.sp-bd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
 .sp-bd-obj {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; padding: 4px 5px 5px;
   border: 1px solid #1c2530; border-radius: 7px; background: rgba(5,6,10,0.6); color: #cfd8dc; font-size: 10px;

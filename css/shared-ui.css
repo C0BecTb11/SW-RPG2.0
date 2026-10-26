@@ -499,10 +499,8 @@ body.gc-open #quest-tip { z-index: 4002; }
   font-size: 10px;
   color: #8fa8c4;
 }
-#dc-chip.tone-attack { --dc-accent: #ff6b6b; }
 #dc-chip.tone-bad    { --dc-accent: #9aa6b2; }
 #dc-chip.tone-bad b  { color: #e3c37a; }
-#dc-chip.tone-wait   { --dc-accent: #d9a940; }
 
 /* Хвостик к пальцу */
 #dc-chip::after {
@@ -527,10 +525,3 @@ body.gc-open #quest-tip { z-index: 4002; }
   border-right: none;
 }
 
-/* Долгое нажатие на карте — это жест, а не выделение текста или меню */
-#ground-viewport,
-#space-viewport {
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-}

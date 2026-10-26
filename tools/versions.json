@@ -156,12 +156,12 @@
   "sha": "3cb586aab8c5"
  },
  "js/credits-bar.js": {
-  "v": "9",
-  "sha": "65e55230d999"
+  "v": "10",
+  "sha": "d2ebd39824a8"
  },
  "js/dev-panel.js": {
-  "v": "8",
-  "sha": "f765387cdf62"
+  "v": "9",
+  "sha": "794c20420a02"
  },
  "js/drag-command.js": {
   "v": "2",

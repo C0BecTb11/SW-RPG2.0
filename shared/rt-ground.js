@@ -77,6 +77,9 @@
     lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 }
   };
   var SUPP_T = 6, STUN_T = 5;
+  // Медик (клон-медик, дроид-техник): раз в every с лечит самого раненого своего пехотинца или героя
+  // в r клетках боя (не себя) на hp; оглушённый, залёгший в страхе или под чужой волей — не лечит
+  var MEDIC = { every: 2, r: 3, hp: 8 };
   // Колесо Смерти (флаг w): катится — быстрый и увёртливый, но не стреляет; встал — за open с
   // раскрывается и ставит щит, чтобы покатиться дальше — за fold с сворачивается. Щит держит огонь
   // пехоты, техники издали (её выстрел садит щит в heavy раз сильнее), турелей и воздуха; не держит
@@ -248,7 +251,7 @@
     // бонусы из игры (bonus_*): дальность и обзор — клетки игры, ход — клетки за ход, меткость и уклонение — проценты
     var bo = extra.bonus || null;
     if (bo) {
-      if (bo.range) a.range += bo.range * RANGE_K;
+      if (bo.range && !Ty.hero) { a.range += bo.range * RANGE_K; a.rangeB = bo.range; }   // спад меткости — на всю новую дальность (statsOf); у героя клинок
       if (bo.vision) a.vision += bo.vision * RANGE_K;
       if (bo.move) a.speed = Math.max(0.2, (Ty.speed / U.SPEED_K + bo.move) * U.SPEED_K);
       if (bo.damage && Ty.dmg > 0) a.dmgK *= (Ty.dmg + bo.damage) / Ty.dmg;
@@ -741,11 +744,12 @@
     if (og.g && !og.at) { a.goal = og.g; a.key = og.key; a.at = false; a.stuck = 0; a.lastD = 1e9; }
     else { a.goal = og.g; a.at = true; }
   };
-  // Меткость и уклонение бойца с бонусами игры (остальное — у типа)
+  // Меткость, уклонение и дальность (клетки игры) — с исследованиями и пассивами героя
   Ground.prototype.statsOf = function(a) {
-    if (a.wh && a.wh.k < 0.5) return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0) + WHEEL.eva, range: a.T.range, cls: a.T.cls, dmg: a.T.dmg };   // катится — попасть труднее
-    if (!a.accB && !a.evaB) return a.T;
-    return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0), range: a.T.range, cls: a.T.cls, dmg: a.T.dmg };
+    var rg = a.T.range + (a.rangeB || 0);
+    if (a.wh && a.wh.k < 0.5) return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0) + WHEEL.eva, range: rg, cls: a.T.cls, dmg: a.T.dmg };   // катится — попасть труднее
+    if (!a.accB && !a.evaB && !a.rangeB) return a.T;
+    return { acc: a.T.acc + (a.accB || 0), eva: a.T.eva + (a.evaB || 0), range: rg, cls: a.T.cls, dmg: a.T.dmg };
   };
   Ground.prototype.nearestEnemy = function(a, r) {
     var ag = this.agents, best = null, bd = r * r, team = this.ctl(a);
@@ -942,9 +946,12 @@
         else { this.shot(a, tg, true, 0, b.id); this.blast(team, a.id, tg.x, tg.y, r, dm, s.k === 'he', s.k === 'suppression'); }
         ok = true;
       } else if (s.k === 'stun') {
+        // верное оглушение (100 %) — разряд без урона; с шансом — обычный верный выстрел, который может оглушить
         if (b.stun > 0 || b.hero) continue;
-        this.shot(a, tg, true, 0, b.id);
-        if (this.R() * 100 < (s.v || 10)) { b.stun = Math.max(b.stun, STUN_T); b.tgt = -1; }
+        var sv = s.v || 10, sd = sv < 100 ? U.damage(a.T, b.T, a.inside >= 0 ? this.structs[a.inside].inMul : 1) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
+        this.shot(a, tg, true, sd, b.id);
+        if (sd) this.hurt(b, sd, a.id);
+        if (b.alive && this.R() * 100 < sv) { b.stun = Math.max(b.stun, STUN_T); b.tgt = -1; }
         ok = true;
       } else if (s.k === 'headshot') {
         if (b.T.vehicle) continue;
@@ -976,6 +983,21 @@
       }
     }
     return false;
+  };
+  Ground.prototype.medicStep = function(a, dt) {
+    a.healT = (a.healT == null ? this.R() * MEDIC.every : a.healT) - dt;
+    if (a.healT > 0) return;
+    a.healT = MEDIC.every;
+    if (a.left || a.stun > 0 || a.fear > 0 || a.choke >= 0 || a.mind && a.mind.until > this.t) return;
+    var ag = this.agents, team = this.ctl(a), best = null, bk = 1, r2 = MEDIC.r * MEDIC.r;
+    for (var i = 0; i < ag.length; i++) {
+      var b = ag[i]; if (b === a || !b.alive || b.left || b.T.vehicle || b.hp >= b.hpMax || this.ctl(b) !== team) continue;
+      var dx = b.x - a.x, dy = b.y - a.y; if (dx * dx + dy * dy > r2) continue;
+      var k = b.hp / b.hpMax; if (k < bk) { bk = k; best = b; }
+    }
+    if (!best) return;
+    best.hp = Math.min(best.hpMax, best.hp + MEDIC.hp);
+    this.ev.fx.push({ t: this.t, k: 'healed', x: best.x, y: best.y, id: best.id });
   };
   // врагов команды team (пехоты — inf) в круге
   Ground.prototype.foesAt = function(team, x, y, r, inf) {
@@ -1071,7 +1093,8 @@
     if (act === 'slash' && b && b.alive) {
       var dx = b.x - a.x, dy = b.y - a.y;
       if (dx * dx + dy * dy <= (SABER + 0.4) * (SABER + 0.4)) {
-        var p = U.hitChance(a.T, b.T, 0, 1) * (1 + (h.passive.acc || 0) / 100), hit = this.R() < p;
+        // меткость героя и уклонение цели — с пассивами (Форма боя, тренировки) и исследованиями
+        var p = U.hitChance(this.statsOf(a), this.statsOf(b), 0, 1) * (1 + (h.passive.acc || 0) / 100), hit = this.R() < p;
         var dmg = hit ? U.damage(a.T, b.T) * dmgK * (0.85 + this.R() * 0.3) : 0;
         this.ev.shots.push({ t: this.t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: hit, w: 'saber', d: Math.round(dmg), ti: b.id, from: a.id, melee: true });
         if (hit) this.hurt(b, dmg, a.id);
@@ -1548,6 +1571,7 @@
       if (a.hero && a.hero.pend) this.pendStep(a);
       this.think(a, dt);
       if (a.wh) this.wheelStep(a, dt);
+      if (a.T.medic) this.medicStep(a, dt);
     }
     this.collide(dt);
     this.fire(dt);
@@ -1569,5 +1593,5 @@
     return s;
   };
 
-  return { SKILL: SKILL, WHEEL: WHEEL, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
+  return { SKILL: SKILL, WHEEL: WHEEL, MEDIC: MEDIC, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
 });

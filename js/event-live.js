@@ -47,7 +47,7 @@
   function start(srv, room, token) {
     window.GD_TOKEN = token;
     window.GD_LIVE = { system: 'ev', room: room, srv: srv, ws: null, tries: 0 };
-    var s = document.createElement('script'); s.src = '../ground/ground.js?v=29'; document.body.appendChild(s);
+    var s = document.createElement('script'); s.src = '../ground/ground.js?v=30'; document.body.appendChild(s);
   }
 
   // ---------------------------------------------------------------- бой открылся
@@ -391,6 +391,7 @@
     m = m || L.end || {};
     var e = L.hello && L.hello.ev || {}, won = !aborted && res.winner === e.role;
     L.endShown = true;
+    if (window.GD) GD.evOver = true;                 // комната закроется по итогу — экран не будет переподключаться
     var el = $('ev-end');
     el.className = 'sp-end ev-end ' + (aborted ? '' : won ? 'win' : 'loss');
     $('ev-end-k').textContent = 'Итог · ' + ((CAT.BY[e.event] || {}).title || 'ивент');

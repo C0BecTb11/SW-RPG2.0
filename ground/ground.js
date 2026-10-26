@@ -85,6 +85,8 @@
         // сервер отказал (планета не открылась, бой прерван): не тост, который исчезнет, оставив пустой экран, —
         // окно с причиной и кнопками
         G.closing = true; LIVE.waitSince = 0;
+        // бой ивента уже окончен: не сбой — окно «Бой окончен» без «Повторить», в журнал не пишем
+        if (m.end) { if (!G.evOver) stuckShow('Бой окончен', m.msg || 'Этот бой уже окончен', true); return; }
         stuckShow('Планета не открылась', m.msg || 'Ошибка связи с сервером боёв');
         if (window.errReport) errReport({ name: 'Сервер боёв', message: String(m.msg || 'ошибка без текста').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '‹id›') }, 'rt.server');
         return;
@@ -95,8 +97,10 @@
       if (m.t === 'ev' || m.t === 'evend') { if (window.GD_ON_EV) window.GD_ON_EV(m); return; }     // ивент: худ и итог (js/event-live.js)
       if (G.B && G.B.onText) G.B.onText(m);
     };
-    ws.onclose = function() {
+    ws.onclose = function(e) {
       if (G.closing || LIVE.ws !== ws) return;
+      // комната ивента закрылась после итога (4008): переподключаться некуда — итог уже на экране
+      if (e && e.code === 4008 && G.evOver) { G.closing = true; toast('Бой окончен — поле закрыто', 'gold'); return; }
       LIVE.tries++;
       if (LIVE.hadHello && !LIVE.stuckOn) toast('Связь с планетой прервана, переподключение…', 'bad');   // до первого входа — молча, ждёт сторож
       retryLive(Math.min(5000, 1000 * LIVE.tries) + Math.random() * 500);
@@ -132,7 +136,8 @@
     }
   }
   function stuckEsc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function stuckShow(title, why) {
+  // final — бой окончен: повторять нечего, только назад
+  function stuckShow(title, why, final) {
     var el = $('gd-stuck');
     if (!el) {
       el = document.createElement('div'); el.id = 'gd-stuck'; el.className = 'gp-stuck'; document.body.appendChild(el);
@@ -149,10 +154,10 @@
       });
     }
     var inGame = location.pathname.indexOf('/game/') >= 0;
-    el.innerHTML = '<div class="gp-stuck-box"><b>' + stuckEsc(title) + '</b><p>' + stuckEsc(why) + '</p>' +
-      '<div class="gp-stuck-btns"><button type="button" class="sp-btn gold" data-stuck="retry">Повторить</button>' +
-      '<button type="button" class="sp-btn" data-stuck="reload">Перезагрузить</button>' +
-      (inGame ? '<button type="button" class="sp-btn" data-stuck="back">' + (LIVE.system === 'ev' ? 'К ивентам' : 'В галактику') + '</button>' : '') + '</div></div>';
+    el.innerHTML = '<div class="gp-stuck-box' + (final ? ' final' : '') + '"><b>' + stuckEsc(title) + '</b><p>' + stuckEsc(why) + '</p>' +
+      '<div class="gp-stuck-btns">' + (final ? '' : '<button type="button" class="sp-btn gold" data-stuck="retry">Повторить</button>' +
+      '<button type="button" class="sp-btn" data-stuck="reload">Перезагрузить</button>') +
+      (inGame ? '<button type="button" class="sp-btn' + (final ? ' gold' : '') + '" data-stuck="back">' + (LIVE.system === 'ev' ? 'К ивентам' : 'В галактику') + '</button>' : '') + '</div></div>';
     el.hidden = false; LIVE.stuckOn = true;
     loading(false);
     if (window.sceneLoader && sceneLoader.isOpen()) sceneLoader.hide('сервер боёв');

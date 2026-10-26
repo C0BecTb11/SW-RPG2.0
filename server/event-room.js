@@ -35,8 +35,16 @@ function EventRoom(name, match, cfg) {
   var self = this;
   this.open().then(function() { self.ready = true; self.waiting.forEach(function(c) { self.admit(c); }); self.waiting = []; },
                    function(e) {
-                     self.failed = e.message || String(e); self.cfg.log('error', 'ивент не открылся', { room: name, err: self.failed });
-                     self.waiting.forEach(function(c) { self.err(c, 'Ивент не открылся: ' + self.failed, 4007); }); self.waiting = []; self.closed = true;
+                     self.failed = e.message || String(e);
+                     // матч уже окончен или отменён (зашли по старой ссылке, вернулись после закрытия комнаты) — не сбой:
+                     // игроку «Бой окончен», в журнал — сведения
+                     var over = /матч уже (done|aborted)/.test(self.failed);
+                     self.cfg.log(over ? 'info' : 'error', over ? 'ивент уже окончен' : 'ивент не открылся', { room: name, err: self.failed });
+                     self.waiting.forEach(function(c) {
+                       if (over) { try { c.ws.send(JSON.stringify({ t: 'error', end: 1, msg: 'Этот бой ивента уже окончен. Итог и награда — в «Истории» ивентов.' })); c.ws.close(4007); } catch (x) {} }
+                       else self.err(c, 'Ивент не открылся: ' + self.failed, 4007);
+                     });
+                     self.waiting = []; self.closed = true;
                      // база уже пометила матч «идёт» — отменяем, чтобы игроки не застряли
                      if (self.match && !(self.cfg.dev && /^dev-/.test(self.matchId))) self.rpc('rt_event_abort', { p_match: self.matchId, p_why: 'сервер не открыл бой: ' + self.failed }).catch(function() {});
                    });

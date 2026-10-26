@@ -374,32 +374,6 @@
 
 .gu-desc { font-size: 11px; color: #8fa8c4; line-height: 1.5; }
 
-.gu-tile {
-  width: 58px;
-  height: 58px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  background: #10151e;
-  border: 1px solid #2a3644;
-  border-radius: 9px;
-  color: #8fa8c4;
-  font-family: 'Courier New', monospace;
-}
-
-.gu-tile.active {
-  border-color: #4a90d9;
-  background: #16283c;
-  color: #cfd8dc;
-  box-shadow: 0 0 0 2px rgba(74,144,217,0.25);
-}
-
-/* Недоступная способность видна, но приглушена: игрок должен знать,
-   что она есть, и понимать, почему сейчас нельзя */
-.gu-tile.locked { opacity: 0.4; }
-
 .gu-abil-go {
   width: 100%;
   margin-top: 9px;

@@ -310,7 +310,6 @@
 }
 .ui-mark.cover  { color: #c9a45c; border-color: rgba(201,164,92,0.45); }
 .ui-mark.reveal { color: #d9a940; border-color: rgba(217,169,64,0.45); }
-.ui-mark.wound  { color: #d94a4a; border-color: rgba(217,74,74,0.45); }
 
 /* Груз в трюме: ресурсы делят место с десантом. Полоса слева — цвет
    ресурса, как на складе планеты */

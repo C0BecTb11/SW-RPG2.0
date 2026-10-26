@@ -12,20 +12,20 @@
   "sha": "6809dc8c4ba5"
  },
  "css/drop.css": {
-  "v": "2",
-  "sha": "1d204d952454"
+  "v": "3",
+  "sha": "aafdf9e2b289"
  },
  "css/event-live.css": {
-  "v": "3",
-  "sha": "084533cb1fce"
+  "v": "4",
+  "sha": "8a41bcdded97"
  },
  "css/events.css": {
-  "v": "2",
-  "sha": "93cab287ed79"
+  "v": "3",
+  "sha": "ec8bc32fa54d"
  },
  "css/faction.css": {
-  "v": "1",
-  "sha": "3a3c1392ca17"
+  "v": "2",
+  "sha": "ac0e63e70dbe"
  },
  "css/galaxy-events.css": {
   "v": "1",
@@ -36,8 +36,8 @@
   "sha": "c97ba3765a6e"
  },
  "css/galaxy.css": {
-  "v": "4",
-  "sha": "712020b5c271"
+  "v": "5",
+  "sha": "9ba72c0232fa"
  },
  "css/ground-battle.css": {
   "v": "5",
@@ -60,20 +60,20 @@
   "sha": "add56566bb45"
  },
  "css/reports.css": {
-  "v": "2",
-  "sha": "addfa9a4ee77"
+  "v": "3",
+  "sha": "bde728ff484d"
  },
  "css/senate.css": {
   "v": "1",
   "sha": "5c6e4c806f33"
  },
  "css/shared-ui.css": {
-  "v": "2",
-  "sha": "3e9d1be0c074"
+  "v": "3",
+  "sha": "a1d577d388c7"
  },
  "css/ship-control.css": {
-  "v": "2",
-  "sha": "ca0db4a573f8"
+  "v": "3",
+  "sha": "b93ecc6d9b77"
  },
  "css/space-battle.css": {
   "v": "2",
@@ -436,8 +436,8 @@
   "sha": "26a531e80361"
  },
  "space/space.css": {
-  "v": "23",
-  "sha": "a66ddeb40c3c"
+  "v": "24",
+  "sha": "8fdc8322ba63"
  },
  "space/space.js": {
   "v": "39",

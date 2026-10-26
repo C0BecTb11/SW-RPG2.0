@@ -189,7 +189,7 @@ SystemRoom.prototype.syncUnits = function(sh, s) {
   var self = this;
   if (!sh.dormant) return;
   var army = Army.fromGame(s, this.types[s.ship_type] || null, s.units || [], s.craft || [], { regenSec: (this.state.settings && this.state.settings.regen) || 30 });
-  sh.crewOpts.roster = army.roster || []; sh.crew.n = sh.crewOpts.roster.length + (sh.crewOpts.guards ? sh.crewOpts.guards.n : 0);
+  sh.crewOpts.roster = army.roster || []; if (sh.crew.recount) sh.crew.recount(sh.crewOpts);
   sh.hangar = (army.hangar || []).slice(); sh.vehicles = (army.vehicles || []).slice();
   sh.units = (s.units || []).map(function(u) { return { id: u.id, hpMax: u.hp }; });
   sh.craftIds = hangarIds(s.craft);

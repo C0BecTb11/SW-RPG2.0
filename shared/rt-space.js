@@ -150,9 +150,21 @@
       var r = plan.rooms[i], st = { n: r.n, t: r.t, r: r, integ: 100, stun: 0, need: 0, fires: 0, anchor: null, staffed: 0, assigned: 0, fixers: 0, fighters: 0, firedAt: -99, runner: 0, spots: null };
       this.rooms[r.n] = st; this.roomList.push(st);
     }
-    // сколько людей будет на борту, когда корабль проснётся (для сводок)
-    this.n = (opts.roster || []).length + (opts.guards ? opts.guards.n : 0);
+    this.recount(opts);
   }
+  // сколько людей будет на борту, когда корабль проснётся (для сводок и строки «экипаж»): посты отсеков —
+  // как их заполняет SWCrew.Crew (казармы при поимённом десанте пусты), без погибших в прошлых боях,
+  // плюс десант трюма и охрана. Раньше считался только десант: у спящего корабля «экипаж 8», а проснувшись — 181
+  DormantCrew.prototype.recount = function(opts) {
+    var roster = opts.roster || null, posts = 0, P = SWCrew && SWCrew.POST || {};
+    for (var i = 0; i < this.roomList.length; i++) {
+      var r = this.roomList[i].r;
+      if (roster && (r.t === 'troops' || r.t === 'droids')) continue;
+      var base = P[r.t] || 1;
+      posts += Math.min(base * 3, base + Math.floor((r.area || r.w * r.h) / 140));
+    }
+    this.n = Math.max(0, posts - (opts.crewLost || 0)) + (roster ? roster.length : 0) + (opts.guards ? opts.guards.n : 0);
+  };
   DormantCrew.prototype.step = function() {};
   DormantCrew.prototype.sysEff = function() { return 1; };
   DormantCrew.prototype.roomEff = function() { return 1; };

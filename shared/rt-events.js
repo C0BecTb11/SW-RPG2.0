@@ -363,7 +363,8 @@
     reinf:  [[3], [3, 7], [4, 8, 12]], reinfV: 10,   // подкрепление после волн и его сила на игрока
     heal: 0.15, repair: 0.15,      // волна отбита: раненым +15 % здоровья, укреплениям +15 % прочности
     cap: 72,                       // живых врагов на карте не больше — остальные высаживаются следом
-    bossEvery: 5
+    bossEvery: 5,
+    formK: 0.88                    // 27.10: волны идут строем и бьют разом, а не гуськом по одному — сила волны ×0,88 (прогон ботов)
   };
   var KITD = {
     // waveK — поправка силы волн: дроиды хрупче и проще клонов, укрепления выкашивают их быстрее
@@ -492,7 +493,7 @@
   Defense.prototype.makeWave = function(w) {
     var K = this.K.enemy, f = w / this.W, list = [], self = this;
     // сила: уровень и номер волны × число игроков × поправки ивента и карты (тесная застройка — меньше)
-    var budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1] * (this.K.waveK || 1) * (this.ev.waveK || 1);
+    var budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1] * (this.K.waveK || 1) * (this.ev.waveK || 1) * DEF.formK;
     var boss = w % DEF.bossEvery === 0 || w === this.W;
     if (boss) { (this.ti === 0 ? K.bossLite : K.boss).forEach(function(t) { list.push(t); budget -= power(t); }); }
     K.mix.forEach(function(m) {

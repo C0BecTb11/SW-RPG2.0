@@ -143,7 +143,9 @@ GroundRoom.prototype.applyStructs = function(list, base) {
     }
     if (s.building) return;                                   // ещё строится — подхватим, когда готова
     if (!U.ST[s.kind]) return;
-    var st = B.addStruct(s.kind, teamOf(s.faction), s.x, s.y, { w: s.w, h: s.h, hp: Math.min(s.hp, s.hpMax || s.hp), uid: s.id });
+    // сырьё добытчика — из типа (rep_mine_gas → gas): экран рисует баки, теплицу или друзу
+    var res = s.kind === 'extractor' ? String(s.type || '').replace(/^(rep|cis)_mine_/, '') || null : null;
+    var st = B.addStruct(s.kind, teamOf(s.faction), s.x, s.y, { w: s.w, h: s.h, hp: Math.min(s.hp, s.hpMax || s.hp), uid: s.id, res: res });
     if (!st) return;
     if (s.hpMax) st.hpMax = s.hpMax;
     if (s.hp <= 0) st.dead = true;

@@ -107,13 +107,17 @@
   "v": "3",
   "sha": "55b5c151ff6c"
  },
+ "ground/fort-gfx.js": {
+  "v": "2",
+  "sha": "cf257bed5ca5"
+ },
  "ground/ground.css": {
   "v": "10",
   "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "31",
-  "sha": "a80cc0bc5967"
+  "v": "32",
+  "sha": "196350671c55"
  },
  "ground/preview.css": {
   "v": "1",
@@ -176,8 +180,8 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "25",
-  "sha": "a1ae7297fb67"
+  "v": "26",
+  "sha": "2c88c0e6e38c"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -228,12 +232,12 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "19",
-  "sha": "e3a904287cce"
+  "v": "20",
+  "sha": "986a7537bcc6"
  },
  "js/ground-live.js": {
-  "v": "31",
-  "sha": "f2e4129481c0"
+  "v": "32",
+  "sha": "39b8d9b2a374"
  },
  "js/map-layer.js": {
   "v": "2",
@@ -368,12 +372,12 @@
   "sha": "29de229d9ace"
  },
  "shared/rt-ground-net.js": {
-  "v": "10",
-  "sha": "9b497775afb7"
+  "v": "11",
+  "sha": "4df6cb42c32a"
  },
  "shared/rt-ground.js": {
-  "v": "17",
-  "sha": "4a301dce51ef"
+  "v": "18",
+  "sha": "c266f0233157"
  },
  "shared/rt-heroes.js": {
   "v": "2",

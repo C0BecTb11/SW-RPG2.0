@@ -77,8 +77,13 @@
     aa:       { air: 2.5, infantry: 0.5, vehicle: 0.4, aa: 0.8, hero: 0.5, artillery: 0.4, structure: 0.5 },
     hero:     { infantry: 1, vehicle: 1, aa: 1, air: 0.6, hero: 1, artillery: 1, structure: 1 },
     artillery:{ infantry: 1.2, vehicle: 1, aa: 1, hero: 1, artillery: 1, structure: 2, air: 0.3 },
-    turret:   { infantry: 1, vehicle: 0.5, air: 0.6, aa: 0.6, hero: 0.8, artillery: 0.6, structure: 0.5 }
+    turret:   { infantry: 1, vehicle: 0.5, air: 0.6, aa: 0.6, hero: 0.8, artillery: 0.6, structure: 0.5 },
+    // мина бьёт снизу: днище техники рвёт сильнее, одарённый успевает отпрянуть, воздух не задевает
+    mine:     { infantry: 1, vehicle: 1.5, aa: 1.5, artillery: 1.5, hero: 0.6, air: 0, structure: 0.5 }
   };
+  // Мина: срабатывает, когда враг (не воздух) ближе trig клетки к её середине (технике 2×2 — плюс trig2),
+  // взрыв радиусом r клеток, урон к краю падает вдвое; своих не трогает только до взрыва
+  var MINE = { r: 2, trig: 0.7, trig2: 0.6 };
   function mult(a, t) { var r = DM[a]; return r && r[t] != null ? r[t] : 1; }
 
   // Полевые постройки инженеров (structure_types): [имя, вид, размер, прочность, укрытие %, множитель урона изнутри,
@@ -92,6 +97,8 @@
     radar:     ['Радар', 2, 50, 0, 1, 10, 0, 0, false, false],
     extractor: ['Добытчик', 2, 250, 0, 1, 0, 0, 0, false, false],
     cantina:   ['Кантина', 3, 600, 0, 1, 0, 0, 0, false, false],
+    // мина: проходима, врагу не видна; под врагом — взрыв (MINE), сама исчезает
+    landmine:  ['Мина', 1, 40, 0, 1, 0, 150, 0, false, false],
     // город (shared/rt-town): ворота — свои проходят, чужие ломают; башня — турель на бастионе 2×2
     gate:      ['Ворота', 1, 1200, 0, 1, 0, 0, 0, true, false],
     tower:     ['Башня', 2, 500, 0, 1, 7, 40, 78, false, false]
@@ -132,5 +139,5 @@
   }
   function all(side) { var out = []; for (var k in U) if (side == null || U[k][1] === side) out.push(k); return out; }
 
-  return { U: U, DM: DM, ST: ST, SPEED_K: SPEED_K, ROF: ROF, TURRET_TURN: TURRET_TURN, get: get, type: type, mult: mult, hitChance: hitChance, damage: damage, all: all, structKind: structKind, hasFlag: hasFlag };
+  return { U: U, DM: DM, ST: ST, MINE: MINE, SPEED_K: SPEED_K, ROF: ROF, TURRET_TURN: TURRET_TURN, get: get, type: type, mult: mult, hitChance: hitChance, damage: damage, all: all, structKind: structKind, hasFlag: hasFlag };
 });

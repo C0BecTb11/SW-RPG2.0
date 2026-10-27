@@ -272,7 +272,8 @@
   Ground.prototype.addStruct = function(kind, team, x, y, extra) {
     var S = U.ST[kind]; if (!S) return null;
     var s = { i: this.structs.length, kind: kind, team: team, x: x, y: y, w: (extra && extra.w) || S[1], h: (extra && extra.h) || S[1], hp: (extra && extra.hp) || S[2], hpMax: (extra && extra.hp) || S[2], cover: S[3], inMul: S[4], radius: S[5], dmg: S[6], acc: S[7], enter: S[8], infOnly: S[9], cd: 0, tgt: -1, dead: false, name: S[0], uid: extra && extra.uid, res: (extra && extra.res) || null };
-    for (var j = 0; j < s.h; j++) for (var i = 0; i < s.w; i++) { var c = (y + j) * N + x + i; if (c >= 0 && c < N * N) this.structAt[c] = s.i; }
+    // мина клетку не занимает: по ней ходят все — свои спокойно, враг до первого шага
+    if (kind !== 'landmine') for (var j = 0; j < s.h; j++) for (var i = 0; i < s.w; i++) { var c = (y + j) * N + x + i; if (c >= 0 && c < N * N) this.structAt[c] = s.i; }
     this.structs.push(s);
     return s;
   };
@@ -394,6 +395,7 @@
   };
   // постройку видели, если открыта хоть одна её клетка (луч обзора упирается в ближнюю сторону)
   Ground.prototype.structSeen = function(team, st) {
+    if (st.kind === 'landmine' && st.team !== team) return false;          // чужую мину не видно — не по чему стрелять
     var sn = this.seen[team]; if (!sn) return true;
     for (var y = st.y; y < st.y + st.h; y++) for (var x = st.x; x < st.x + st.w; x++) if (x >= 0 && y >= 0 && x < N && y < N && sn[y * N + x] >= 1) return true;
     return false;
@@ -1072,8 +1074,41 @@
       sh.splice(i, 1);
     }
   };
+  // Мины: враг на мине — взрыв. Урон по классу цели (U.DM.mine), к краю вдвое меньше; задевает всех рядом,
+  // и своих тоже. Хозяевам — «сработала», пострадавшим — «подрыв на мине».
+  Ground.prototype.minesStep = function() {
+    var M = U.MINE, ag = this.agents;
+    for (var i = 0; i < this.structs.length; i++) {
+      var s = this.structs[i]; if (s.dead || s.kind !== 'landmine') continue;
+      var cx = s.x + s.w / 2, cy = s.y + s.h / 2, hit = null;
+      for (var j = 0; j < ag.length; j++) {
+        var b = ag[j]; if (!b.alive || b.air || b.fly || this.ctl(b) === s.team) continue;
+        var dx = b.x - cx, dy = b.y - cy, tr = M.trig + (b.size === 2 ? M.trig2 : 0);
+        if (dx * dx + dy * dy < tr * tr) { hit = b; break; }
+      }
+      if (!hit) continue;
+      s.hp = 0; s.dead = true;
+      this.ev.booms.push({ t: this.t, x: cx, y: cy, r: M.r, big: true });
+      var victims = {};
+      for (j = 0; j < ag.length; j++) {
+        var v = ag[j]; if (!v.alive || v.air || v.fly) continue;
+        var vx = v.x - cx, vy = v.y - cy, d2 = vx * vx + vy * vy; if (d2 >= M.r * M.r) continue;
+        var k = U.mult('mine', v.T.cls); if (!k) continue;
+        victims[v.team] = 1;
+        this.hurt(v, s.dmg * k * (1 - Math.sqrt(d2) / M.r * 0.5), 100000 + i);
+      }
+      for (j = 0; j < this.structs.length; j++) {
+        var o = this.structs[j]; if (o === s || o.dead) continue;
+        var ox = Math.max(o.x, Math.min(cx, o.x + o.w)) - cx, oy = Math.max(o.y, Math.min(cy, o.y + o.h)) - cy;
+        if (ox * ox + oy * oy < M.r * M.r) this.hurtStruct(o, s.dmg * U.mult('mine', 'structure'));
+      }
+      this.msg('Мина сработала' + (hit.T && hit.T.name ? ': ' + hit.T.name : ''), s.team, 'gold');
+      for (var tm in victims) if (+tm !== s.team) this.msg('Подрыв на мине!', +tm, 'bad');
+    }
+  };
   // Полевые турели: сами стреляют по видимым врагам в радиусе
   Ground.prototype.structsStep = function(dt) {
+    this.minesStep();
     for (var i = 0; i < this.structs.length; i++) {
       var s = this.structs[i]; if (s.dead || (s.kind !== 'turret' && s.kind !== 'tower')) continue;
       s.cd -= dt; if (s.cd > 0) continue;

@@ -142,6 +142,7 @@ function bsResearchText(r) {
 // ---- полевые постройки (structure_types): что делают в бою 2.0
 // Радиусы в базе — клетки игры (×3), турель стреляет раз в ROF.turret с, маскировка прячет только бойца внутри
 function bsTurretEvery() { var U = bsU(); return U && U.ROF ? U.ROF.turret : 6; }
+function bsMineR() { var U = bsU(); return U && U.MINE ? U.MINE.r : 2; }
 function bsStructLine(st) {
   switch (st.kind) {
     case 'trench': return 'по бойцу внутри попадают на ' + st.cover_pct + '% реже · сразу отвечает огнём';
@@ -150,6 +151,7 @@ function bsStructLine(st) {
     case 'turret': return 'сама бьёт врагов в ' + st.radius * BS_RK + ' кл. · урон ' + st.damage + ' раз в ' + bsTurretEvery() + ' с';
     case 'jammer': return 'враги в ' + st.radius * BS_RK + ' кл. видят всего на ' + 2 * BS_RK + ' кл.';
     case 'radar':  return 'видит всех врагов в ' + st.radius * BS_RK + ' кл., даже под маскировкой';
+    case 'landmine': return 'врагу не видна · под врагом взрыв: урон ' + st.damage + ' в ' + bsMineR() + ' кл., технике ×1,5';
     default:       return null;
   }
 }
@@ -160,6 +162,7 @@ function bsStructProps(st) {
     case 'jammer': return [['◈', 'поле помех: враги видят на ' + 2 * BS_RK + ' кл.', st.radius * BS_RK + ' кл.']];
     case 'radar':  return [['◉', 'зона обнаружения', st.radius * BS_RK + ' кл.']];
     case 'camo':   return [['◌', 'боец внутри виден лишь ближе', 3 * BS_RK + ' кл.']];
+    case 'landmine': return [['✸', 'урон взрыва (технике ×1,5, к краю вдвое меньше)', st.damage], ['◎', 'радиус взрыва', bsMineR() + ' кл.']];
     default:       return [];
   }
 }

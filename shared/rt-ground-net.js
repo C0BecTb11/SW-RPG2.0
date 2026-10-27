@@ -52,7 +52,12 @@
   }
   Viewer.prototype.lost = function() { this.full = true; this.known = {}; this.shown = {}; this.last = {}; };
   // постройка для клиента (hello и появившиеся позже)
-  function structRow(s) {
+  // side — кому: чужую мину не показываем даже в данных (иначе её место прочтут из сети) — только
+  // заглушка за картой, чтобы номера построек совпадали; взрыв враг увидит по вспышке
+  function structRow(s, side) {
+    if (s.kind === 'landmine' && side != null && s.team !== side && typeof side === 'number' && side >= 0 && side <= 1) {
+      return { i: s.i, kind: 'landmine', team: s.team, x: -99, y: -99, w: 1, h: 1, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: null, res: null, cover: 0, enter: false, infOnly: false, hid: true };
+    }
     return { i: s.i, kind: s.kind, team: s.team, x: s.x, y: s.y, w: s.w, h: s.h, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: s.uid || null, res: s.res || null, cover: s.cover || 0, enter: !!s.enter, infOnly: !!s.infOnly };
   }
   Viewer.prototype.visible = function(a) {
@@ -113,7 +118,7 @@
     var st = [], stNew = [];
     for (i = 0; i < B.structs.length; i++) {
       var s = B.structs[i], key = Math.round(s.hp) + ':' + (s.dead ? 1 : 0);
-      if (!this.stKnown[i]) { this.stKnown[i] = 1; stNew.push(structRow(s)); }           // появилось после входа (инженер, база)
+      if (!this.stKnown[i]) { this.stKnown[i] = 1; stNew.push(structRow(s, side)); }           // появилось после входа (инженер, база)
       if (this.stHp[i] !== key || full) { this.stHp[i] = key; st.push([i, Math.round(s.hp), s.dead ? 1 : 0]); }
     }
     if (st.length) f.st = st;

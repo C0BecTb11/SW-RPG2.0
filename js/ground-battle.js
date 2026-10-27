@@ -4857,7 +4857,8 @@ var placingStructure = null;      // { unit, type, preview }
 
 var STRUCT_KIND_ROLE = {
   trench: 'Укрытие', bunker: 'Укрытие', camo: 'Маскировка', turret: 'Оборона',
-  jammer: 'Радиоэлектроника', radar: 'Разведка', extractor: 'Добыча', cantina: 'Заработок'
+  jammer: 'Радиоэлектроника', radar: 'Разведка', extractor: 'Добыча', cantina: 'Заработок',
+  landmine: 'Минирование'
 };
 
 function loadStructureTypes() {

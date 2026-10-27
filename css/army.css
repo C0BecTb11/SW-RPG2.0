@@ -232,6 +232,34 @@
 .ar-trip-route i { margin: 0 4px; font-style: normal; color: #3a4654; }
 #army-screen .ar-stop { margin-top: 8px; }
 
+/* груз в трюмах без рейса: напоминание, чтобы не увести флот в бой с занятыми трюмами */
+.ar-cargo-warn {
+  margin-top: 10px;
+  padding: 9px 10px 10px;
+  background: linear-gradient(180deg, rgba(217, 169, 64, 0.08), rgba(217, 169, 64, 0.03));
+  border: 1px solid rgba(217, 169, 64, 0.32);
+  border-radius: 8px;
+}
+.ar-cargo-head { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #f0c86a; }
+.ar-cargo-head i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d9a940;
+  box-shadow: 0 0 6px rgba(217, 169, 64, 0.8);
+  animation: ar-cargo-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ar-cargo-pulse { 50% { opacity: 0.4; } }
+.ar-cargo-text { margin-top: 4px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+.ar-cargo-warn .ar-goods { margin: 7px 0 0; }
+.ar-cargo-warn .ar-ship-acts { margin-top: 9px; }
+#army-screen .ar-btn.warn { margin: 0; border-color: rgba(217, 169, 64, 0.55); color: #f0c86a; background: rgba(217, 169, 64, 0.08); }
+#army-screen .ar-btn.danger { margin: 0; border-color: rgba(217, 74, 74, 0.45); color: #ff8a7a; }
+#army-screen .ar-btn.danger.confirm { background: #d94a4a; border-color: #d94a4a; color: #0a0d14; }
+#army-screen .ar-btn:disabled { opacity: 0.5; cursor: default; }
+.ar-cargo-err { margin-top: 7px; font-size: 10px; line-height: 1.45; color: #ff8a7a; }
+
 /* ---- корабль */
 .ar-fleet { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .ar-ship {

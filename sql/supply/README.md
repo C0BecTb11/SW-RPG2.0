@@ -6,6 +6,9 @@
 Шаг 5 (уборка): `sql/supply_cleanup.sql` отвязал живые функции от конвоев, `sql/supply_drop_convoys.sql` (вручную, SQL Editor)
 удаляет таблицу `convoys` и 9 функций конвоев — в снимке их уже нет.
 Выход флота к гиперлинии (`sql/supply_zone.sql`, `sql/supply_zone_live.sql` — и в живой орбите через сервер боя): `supply_fleet_to_zone`, `rt_space_orders_take`, правка `supply_route_step` — 84 функции.
+Груз меняют у площадки сброса (`sql/supply_pad.sql`, 27.10.2026): `supply_fleet_to_pad`, `supply_unload_room`, `jettison_commander_cargo`, правки `supply_route_step`, `supply_stop_actions`, `set_supply_route_status`, фаза `returning`.
+Тогда же снимок досверен с базой: убраны проверки абордажа и луча, снятые шагом 4б старого кода (`start_commander_move`, `supply_fleet_to_zone`, `transfer_block_ship`),
+удалённая `boarding_drop_cargo`; `cancel_market_lot` и `dispatch_market_pickup` — как в базе после #130. 86 функций, md5 всех сверены.
 
 Это **справка о том, что лежит в базе**, а не миграция. Правки снабжения делаются отдельными файлами `sql/supply_*.sql`
 и потом переносятся сюда, чтобы снимок оставался верным. План переделки — `claude/supply-plan.md` в проекте.

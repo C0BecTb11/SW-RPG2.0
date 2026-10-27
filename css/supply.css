@@ -527,6 +527,44 @@
   background: linear-gradient(90deg, rgba(217, 74, 74, 0.08), #0a0d14 60%);
 }
 
+/* рейс завершён, а груз остался в трюмах — не тускнеет, пока игрок не решит, куда его деть */
+.sup-route.stopped.cargo {
+  opacity: 1;
+  border-color: rgba(217, 169, 64, 0.32);
+  border-left-color: #d9a940;
+  background: linear-gradient(90deg, rgba(217, 169, 64, 0.07), #0a0d14 60%);
+}
+.sup-pill.stopped.cargo { color: #d9a940; border-color: rgba(217, 169, 64, 0.45); }
+.sup-pill.stopped.cargo i { animation: sup-pulse-o 1.4s ease-in-out infinite; }
+.sup-route.stopped.cargo .sup-node.here .sup-node-dot { border-color: #d9a940; background: rgba(217, 169, 64, 0.14); color: #d9a940; }
+
+.sup-cargo-left {
+  margin-top: 6px;
+  padding: 6px 9px;
+  border-left: 2px solid #d9a940;
+  border-radius: 0 6px 6px 0;
+  background: rgba(217, 169, 64, 0.06);
+  font-size: 10px;
+  line-height: 1.45;
+  color: #8fa8c4;
+}
+.sup-cargo-left b { display: block; margin-bottom: 1px; font-weight: normal; font-size: 11px; color: #d9a940; }
+.sup-ed-body > .sup-cargo-left { margin: 0 0 4px; }
+
+/* «везти N» — урезать погрузку под место на складах назначения одним касанием */
+.sup-fit {
+  margin-left: 6px;
+  padding: 1px 8px;
+  min-height: 22px;
+  background: rgba(217, 169, 64, 0.1);
+  border: 1px solid rgba(217, 169, 64, 0.45);
+  border-radius: 5px;
+  color: #d9a940;
+  font-size: 10px;
+  vertical-align: baseline;
+}
+.sup-fit:active { background: #d9a940; color: #0a0d14; }
+
 .sup-route-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; cursor: pointer; }
 .sup-route-top > div { min-width: 0; }
 .sup-route-name { font-size: 12px; color: #cfd8dc; line-height: 1.35; }
@@ -1066,6 +1104,8 @@ body > .sup-toast { z-index: 2400; }
 .sup-avail.need b { color: #d9a940; }
 .sup-avail.bad { color: #ff8a7a; }
 .sup-avail.warn { color: #d9a940; }
+.sup-avail.warn b { color: #f0d79a; }
+.sup-avail.bad b { color: #ffb4a8; }
 
 .sup-add-act {
   width: 100%;

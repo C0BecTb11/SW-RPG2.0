@@ -61,10 +61,8 @@ begin
   select * into l from market_lots where id = p_lot_id for update;
   if not found or not l.active then raise exception 'Лот не найден'; end if;
   if l.seller_user_id <> v_user then raise exception 'Это не твой лот'; end if;
-  -- товар возвращается на склад планеты — только если планета всё ещё твоя
-  if not exists (select 1 from system_control sc where sc.system_id = l.system_id and sc.controller_user_id = v_user) then
-    raise exception 'Планета больше не под твоим контролем — товар лота остался на ней';
-  end if;
+  -- товар возвращается на склад планеты, с которой выставлен (и если планету уже передали другому управляющему —
+  -- иначе лот висел бы вечно); при захвате врагом лоты закрываются раньше (refund_pending_on_capture)
   -- пока есть оплаченные брони, снимать нельзя: покупатель уже в пути
   if exists (select 1 from market_orders o where o.lot_id = p_lot_id and o.status = 'reserved') then
     raise exception 'По лоту есть неисполненные брони — дождись вывоза или их истечения';
@@ -307,6 +305,9 @@ declare
   v_id uuid; v_name text; v_pname text;
 begin
   if v_user is null then raise exception 'Не авторизован'; end if;
+  if not supply_has_hub(v_user) then
+    raise exception 'Нужен штаб снабжения: достроенный логистический узел хотя бы на одной планете';
+  end if;
 
   select * into o from market_orders where id = p_order_id for update;
   if not found or o.buyer_user_id <> v_user then raise exception 'Бронь не найдена'; end if;

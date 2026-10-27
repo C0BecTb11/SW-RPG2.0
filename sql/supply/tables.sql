@@ -151,7 +151,7 @@ CREATE TABLE public.supply_routes (
   order_id uuid,                       -- вывоз покупки: бронь, за которой летит рейс (sql/supply_fixes.sql)
   CONSTRAINT supply_routes_pkey PRIMARY KEY (id),
   CONSTRAINT supply_routes_order_id_fkey FOREIGN KEY (order_id) REFERENCES market_orders(id),
-  CONSTRAINT supply_routes_phase_check CHECK (phase = ANY (ARRAY['travel','at_stop','waiting'])),
+  CONSTRAINT supply_routes_phase_check CHECK (phase = ANY (ARRAY['travel','at_stop','waiting','returning'])),  -- 'returning' — sql/supply_pad.sql
   CONSTRAINT supply_routes_status_check CHECK (status = ANY (ARRAY['active','paused','stalled','stopped']))
 );
 CREATE UNIQUE INDEX supply_routes_one_per_commander ON public.supply_routes USING btree (commander_id) WHERE (status <> 'stopped');
@@ -205,6 +205,7 @@ CREATE INDEX supply_takes_sys_res_at ON public.supply_takes USING btree (system_
 --   travel_seconds       = 60       (start_commander_move, dispatch_market_pickup, start_interception)
 --   payout_hour          = 4        (last_payout_at → суточные лимиты снабжения, production_tick)
 --   approach_warn_pct    = 80       (approach_warning_tick)
+--   supply_pad_reach     = 7        (supply_fleet_to_pad — sql/supply_pad.sql: «у площадки» — середина корабля ближе 7 клеток)
 --   mine_site_cap = 300, capture_seconds = 21600, deploy_capacity = 72 (к снабжению не относятся)
 -- district_types 'warehouses'.effect_value = 300 (прибавка к пределу склада планеты)
 -- building_types: rep_depot/cis_depot storage_bonus = 800 (цена 1800); rep_logistics / cis_logistics — 2000 (до sql/supply_fixes.sql 1500 / 3000) и

@@ -1,7 +1,7 @@
 {
  "css/army.css": {
-  "v": "2",
-  "sha": "0b9351d26941"
+  "v": "3",
+  "sha": "77008352adfe"
  },
  "css/auth.css": {
   "v": "1",
@@ -96,8 +96,8 @@
   "sha": "fcbc0147b451"
  },
  "css/supply.css": {
-  "v": "4",
-  "sha": "0c4d4b30eac4"
+  "v": "5",
+  "sha": "dd06fb4031a0"
  },
  "css/transfer.css": {
   "v": "1",
@@ -140,8 +140,8 @@
   "sha": "906a3b485d01"
  },
  "js/army.js": {
-  "v": "2",
-  "sha": "3d966d02f908"
+  "v": "3",
+  "sha": "1d199be83763"
  },
  "js/auth.js": {
   "v": "3",
@@ -324,8 +324,8 @@
   "sha": "30106420e278"
  },
  "js/supply.js": {
-  "v": "8",
-  "sha": "5ee803136cda"
+  "v": "9",
+  "sha": "a1eb5b5e9502"
  },
  "js/troop-transfer.js": {
   "v": "1",

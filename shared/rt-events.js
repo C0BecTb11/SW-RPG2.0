@@ -62,9 +62,10 @@
   };
   // Прочность добычи: множитель по уровню и числу охотников (1–4), подобран прогоном ботов
   // (tools/events/sim.js). На II–III добыча скрытна — против одного охотника ей нужно меньше прочности.
+  // 27.10: охотники-боты стали умнее (строй, полукольцо на дистанции) — ситху ×2,1–2,3, джедаям ×1,25
   var PREY_HP = {
-    hunt_sith: [[0.61, 1.79, 3.06, 4.25], [0.31, 0.8, 1.53, 2.13], [0.38, 0.89, 1.53, 2.5]],
-    hunt_jedi: [[1.42, 3.9, 3.78, 5.4], [1.05, 2.7, 2.8, 4.5], [0.89, 2.21, 2.38, 3.4]]
+    hunt_sith: [[1.4, 4.12, 7.04, 8.93], [1.4, 2.18, 3.85, 4.94], [0.8, 1.87, 3.21, 5.25]],
+    hunt_jedi: [[1.77, 4.88, 4.72, 6.75], [1.31, 3.38, 3.5, 5.62], [1.11, 2.76, 3.56, 6.4]]
   };
 
   function rng(seed) { var s = (seed >>> 0) || 7; return function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
@@ -236,6 +237,14 @@
     var B = this.B, t = B.t, team = this.preyTeam, self = this, hpk = a.hp / a.hpMax;
     var foes = hunters.filter(function(h) { return B.canSee(team, h); }), near = null, nd = 1e9, close = 0;
     foes.forEach(function(h) { var d = Math.sqrt(d2(h, a.x, a.y)); if (d < nd) { nd = d; near = h; } if (d < 10) close++; });
+    // кого резать: не просто ближнего — одиночку без прикрытия, сенсорщика (нет его — нет импульсов), снайпера
+    var pick = null, ps = 1e9;
+    foes.forEach(function(h) {
+      var d = Math.sqrt(d2(h, a.x, a.y)); if (d > 11) return;
+      var cover = 0; foes.forEach(function(o) { if (o !== h && d2(o, h.x, h.y) < 25) cover++; });
+      var sc = d + cover * 2 - (h.evScan ? 4 : 0) - (/sniper/.test(h.tid) ? 2 : 0);
+      if (sc < ps) { ps = sc; pick = h; }
+    });
     // самолечение и купол
     if (hpk < 0.55) { B.useAbility(team, a.id, 'heal_light', { tid: a.id }); B.useAbility(team, a.id, 'drain_dark', near && nd < 4 ? { tid: near.id } : null); }
     if (close >= 3) B.useAbility(team, a.id, 'barrier_light', null);
@@ -245,7 +254,8 @@
       if (ab === 'fear_dark' && close < 3) continue;
       if ((ab === 'push_dark' || ab === 'push_light') && close < 2) continue;
       if ((ab === 'dash_dark' || ab === 'dash_light') && nd < 3) continue;
-      var tg = ab === 'mind_enslave' || ab === 'mind_suasion' || ab === 'pacify_light' ? self.strongest(foes, a, A[2] * RK) : near;
+      var tg = ab === 'mind_enslave' || ab === 'mind_suasion' || ab === 'pacify_light' ? self.strongest(foes, a, A[2] * RK)
+        : (ab === 'dash_dark' || ab === 'dash_light' || ab === 'throw_dark' || ab === 'throw_light') && pick ? pick : near;
       if (!tg) continue;
       if (Math.sqrt(d2(tg, a.x, a.y)) > A[2] * RK) continue;
       if (!B.useAbility(team, a.id, ab, A[1] === 'area' ? { x: tg.x, y: tg.y } : { tid: tg.id })) break;
@@ -256,7 +266,8 @@
     if (this.exit && !this.exit.landed && this.exit.land - t > Math.sqrt(d2(a, this.exit.x, this.exit.y)) / Math.max(0.5, a.speed) + 4) goal = null;
     var danger = foes.filter(function(h) { return d2(h, a.x, a.y) < 15 * 15; }).length;
     if (near && nd < 11 && (hpk > 0.4 || nd < 3) && danger <= (this.tier === 3 ? 5 : 4)) {
-      if (a.focus !== near.id) { a.focus = near.id; a.goal = null; a.at = true; a.post = false; a.hold = false; }
+      var fo = nd < 2.5 ? near : pick || near;           // вплотную — рубит того, кто рядом; иначе — выбранного
+      if (a.focus !== fo.id) { a.focus = fo.id; a.goal = null; a.at = true; a.post = false; a.hold = false; }
       return;
     }
     if (a.focus >= 0) { a.focus = -1; }
@@ -285,16 +296,7 @@
     if (!own.length) return;
     var B = this.B, t = B.t, team = this.hunterTeam, st = this.hunt[p.user] || (this.hunt[p.user] = { i: this.players.indexOf(p), site: -1, until: 0, goal: null });
     var vis = preys.filter(function(a) { return B.canSee(team, a); });
-    if (vis.length) {
-      // цель видна: стрелять с дистанции; кого герой достаёт клинком — отходит (меч бьёт в упор)
-      var tg = vis[0];
-      own.forEach(function(a) {
-        var d = Math.sqrt(d2(a, tg.x, tg.y));
-        if (d < 5 && !(a.T.vehicle)) { var c = B.away(a, tg, Math.min(a.range * 0.8, d + 6)); if (c) { B.goCell(a, c[0], c[1]); a.post = true; a.focus = -1; a.hold = false; return; } }
-        if (a.focus !== tg.id && !(a.post && !a.at && a.goal && d < 7)) B.orderAttack(team, [a.id], tg.id);
-      });
-      st.goal = null; return;
-    }
+    if (vis.length) { this.surround(team, own, vis); st.goal = null; return; }
     var g = null;
     if (this.seen && t - this.seen.t < 25) g = [this.seen.x, this.seen.y];
     else if (this.exit) g = [this.exit.x, this.exit.y];
@@ -310,7 +312,35 @@
     if (st.goal && Math.abs(st.goal[0] - gx) + Math.abs(st.goal[1] - gy) < 5 && own.some(function(a) { return a.goal && !a.at; })) return;
     st.goal = [gx, gy];
     own.forEach(function(a) { a.focus = -1; });
-    B.orderMove(team, own.map(function(a) { return a.id; }), gx, gy);
+    B.orderMove(team, own.map(function(a) { return a.id; }), gx, gy, { form: true });
+  };
+  // Цель видна: отряд берёт её в полукольцо на дистанции своего оружия (снайпер — дальше, штурмовик — ближе),
+  // а не бежит толпой в лоб. С места видно и достаёт — стоит и бьёт; иначе — к своему месту на дуге, стреляя на ходу.
+  // Кого герой достаёт клинком — отходит (меч бьёт в упор). Дуга шире, чем больше бойцов: до 150°
+  Hunt.prototype.surround = function(team, own, vis) {
+    var B = this.B, mx = 0, my = 0;
+    own.forEach(function(a) { mx += a.x; my += a.y; }); mx /= own.length; my /= own.length;
+    var tg = vis[0], bd = 1e18;
+    vis.forEach(function(v) { var d = d2(v, mx, my); if (d < bd) { bd = d; tg = v; } });
+    var base = Math.atan2(my - tg.y, mx - tg.x), n = own.length, arc = Math.min(2.6, 0.45 * (n - 1));
+    var ring = own.map(function(a) { var ang = Math.atan2(a.y - tg.y, a.x - tg.x) - base; while (ang > Math.PI) ang -= Math.PI * 2; while (ang < -Math.PI) ang += Math.PI * 2; return { a: a, k: ang }; });
+    ring.sort(function(p, q) { return p.k - q.k; });
+    ring.forEach(function(o, i) {
+      var a = o.a, d = Math.sqrt(d2(a, tg.x, tg.y));
+      if (d < 5 && !a.T.vehicle) { var c = B.away(a, tg, Math.min(a.range * 0.8, d + 6)); if (c) { B.goCell(a, c[0], c[1]); a.post = true; a.focus = -1; a.hold = false; return; } }
+      var want = base + (n > 1 ? (i / (n - 1) - 0.5) * arc : 0), R = Math.max(5, Math.min(a.range * 0.8, 16));
+      // с места цель достаётся и видна — стоять и бить
+      if (d <= a.range * 0.95 && d >= 4 && B.los(a.x, a.y, tg.x, tg.y)) { if (a.focus !== tg.id || a.post) B.orderAttack(team, [a.id], tg.id); return; }
+      // дошёл до места, а цель не видна (скала, заросли) — место сдвигается вдоль дуги и ближе
+      if (a.at && a.post && a.goal && Math.abs(a.x - 0.5 - a.goal[0]) + Math.abs(a.y - 0.5 - a.goal[1]) < 2) a.arcJ = (a.arcJ || 0) + 1;
+      else if (!a.post) a.arcJ = 0;
+      if (a.arcJ > 8) a.arcJ = 1;
+      if (a.arcJ) { want += (a.arcJ % 2 ? 1 : -1) * Math.ceil(a.arcJ / 2) * 0.3; R = Math.max(4, R - a.arcJ); }
+      var sx = Math.round(tg.x + Math.cos(want) * R), sy = Math.round(tg.y + Math.sin(want) * R);
+      var c2 = B.nearestOk(a.move, a.size, Math.max(1, Math.min(142, sx)), Math.max(1, Math.min(142, sy))); if (!c2) return;
+      if (a.goal && !a.at && a.post && Math.abs(a.goal[0] - c2[0]) + Math.abs(a.goal[1] - c2[1]) < 3) return;   // уже идёт туда
+      B.goCell(a, c2[0], c2[1]); a.post = true; a.hold = false; a.focus = tg.id;    // на ходу бьёт её, если достаёт
+    });
   };
 
 
@@ -333,7 +363,8 @@
     reinf:  [[3], [3, 7], [4, 8, 12]], reinfV: 10,   // подкрепление после волн и его сила на игрока
     heal: 0.15, repair: 0.15,      // волна отбита: раненым +15 % здоровья, укреплениям +15 % прочности
     cap: 72,                       // живых врагов на карте не больше — остальные высаживаются следом
-    bossEvery: 5
+    bossEvery: 5,
+    formK: 0.88                    // 27.10: волны идут строем и бьют разом, а не гуськом по одному — сила волны ×0,88 (прогон ботов)
   };
   var KITD = {
     // waveK — поправка силы волн: дроиды хрупче и проще клонов, укрепления выкашивают их быстрее
@@ -341,7 +372,8 @@
       enemy: { basic: 'cis_b1', mix: [[0.15, 'cis_b1_launcher', 0.1], [0.2, 'cis_b1_sniper', 0.08], [0.3, 'cis_b2', 0.25], [0.45, 'cis_wheel', 0.12], [0.5, 'cis_stap', 0.1], [0.65, 'cis_bx', 0.12]],
                boss: ['cis_aat'], bossLite: ['cis_stap', 'cis_stap', 'cis_bx'] },
       base: 'аванпост', baseGen: 'аванпоста', foes: 'дроиды', foesGen: 'дроидов', lost: 'Аванпост пал', held: 'Аванпост устоял: флот на подходе', won: 'Все волны дроидов отбиты' },
-    c_siege: { team: 1, foe: 0, lead: 'cis_bx', basic: 'cis_b1', spec: ['cis_b2', 'cis_b2', 'cis_b1_sniper', 'cis_b1_launcher', 'cis_wheel'], elite: 'cis_bounty', veh: 'cis_stap',
+    // клоны в строю бьют плотнее дроидов (крепче и метче) — их волны ещё ×0,82 (прогон ботов 27.10)
+    c_siege: { team: 1, foe: 0, waveK: 0.82, lead: 'cis_bx', basic: 'cis_b1', spec: ['cis_b2', 'cis_b2', 'cis_b1_sniper', 'cis_b1_launcher', 'cis_wheel'], elite: 'cis_bounty', veh: 'cis_stap',
       enemy: { basic: 'rep_dc15a', mix: [[0.15, 'rep_launcher', 0.1], [0.2, 'rep_sniper', 0.08], [0.3, 'rep_heavy', 0.18], [0.45, 'rep_barc', 0.1], [0.5, 'rep_atrt', 0.1], [0.6, 'rep_arc', 0.1], [0.75, 'rep_commando', 0.08]],
                boss: ['rep_atte'], bossLite: ['rep_barc', 'rep_barc', 'rep_arc'] },
       base: 'завод', baseGen: 'завода', foes: 'клоны', foesGen: 'клонов', lost: 'Завод захвачен', held: 'Завод устоял: подходит эскадра', won: 'Все волны клонов отбиты' }
@@ -462,7 +494,7 @@
   Defense.prototype.makeWave = function(w) {
     var K = this.K.enemy, f = w / this.W, list = [], self = this;
     // сила: уровень и номер волны × число игроков × поправки ивента и карты (тесная застройка — меньше)
-    var budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1] * (this.K.waveK || 1) * (this.ev.waveK || 1);
+    var budget = (DEF.base[this.ti] + DEF.slope[this.ti] * w) * DEF.pk[this.n - 1] * (this.K.waveK || 1) * (this.ev.waveK || 1) * DEF.formK;
     var boss = w % DEF.bossEvery === 0 || w === this.W;
     if (boss) { (this.ti === 0 ? K.bossLite : K.boss).forEach(function(t) { list.push(t); budget -= power(t); }); }
     K.mix.forEach(function(m) {
@@ -574,7 +606,7 @@
     });
     Object.keys(groups).forEach(function(k) {
       var ids = groups[k], a0 = B.agents[ids[0]], ang = Math.atan2(a0.y - c.y, a0.x - c.x), r = self.zone * 0.45;
-      B.orderMove(self.foe, ids, Math.round(c.x + Math.cos(ang) * r), Math.round(c.y + Math.sin(ang) * r), { auto: true });
+      B.orderMove(self.foe, ids, Math.round(c.x + Math.cos(ang) * r), Math.round(c.y + Math.sin(ang) * r), { auto: true, form: true });
     });
   };
   // Гарнизон-бот: враг в зоне ядра — ближние бойцы на него; иначе — на свой пост

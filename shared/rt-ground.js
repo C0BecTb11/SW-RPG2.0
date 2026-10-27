@@ -39,6 +39,9 @@
   var SHELL_T = 2.4;               // полёт снаряда артиллерии, с
   var SQUARE = 8;                  // площадь города: SQUARE×SQUARE в центре
   var SPREAD = 0.9;                // шаг строя при приказе нескольким
+  // Строй на ходу (боты ивентов, orderMove с form): ширина ряда, шаг между бойцами, дальше какого
+  // расстояния от места боец его догоняет по полю направлений, за сколько клеток до цели строй распускается
+  var FORM_COLS = 4, FORM_GAP = 1.35, FORM_LOST = 6, FORM_END = 5;
   // Радиус расталкивания техники (клетки): по её виду сверху, чтобы машины не наезжали друг
   // на друга и на пехоту. Проходимость считается по-прежнему 2×2 клетки.
   // = 0,42 × размах машины сверху (rt-vehicles span), чтобы пехота не стояла «внутри»
@@ -314,7 +317,65 @@
       this.goCell(a, spot[0], spot[1], [cx, cy]); a.post = !(opts && opts.auto); a.hold = false; a.focus = -1; n++;
       if (!(opts && opts.auto)) { a.auto = false; a.dpost = null; a.sortie = false; }
     }
+    if (opts && opts.form) this.formation(list, cx, cy);
     return n;
+  };
+  // Строй (opts.form — боты ивентов): пехота идёт за ведущим своими местами в строю, а не гуськом по одной
+  // тропе. Ведущий — кто ближе к цели; места — ряды по FORM_COLS, ближе к своему месту в группе.
+  // Место в строю закрыто (скала, стена) или отстал — идёт по полю направлений, потом догоняет строй
+  Ground.prototype.formation = function(list, cx, cy) {
+    var inf = list.filter(function(a) { return a.size === 1 && !a.hero && !a.air && !a.fly && a.goal && !a.at; }), i, j;
+    for (i = 0; i < list.length; i++) list[i].fm = null;
+    if (inf.length < 3) return;
+    var mx = 0, my = 0; inf.forEach(function(a) { mx += a.x; my += a.y; }); mx /= inf.length; my /= inf.length;
+    var hx = cx + 0.5 - mx, hy = cy + 0.5 - my, L = Math.sqrt(hx * hx + hy * hy); if (L < 8) return;
+    var ux = hx / L, uy = hy / L;
+    // ведущий — впереди всех по ходу; остальные — по местам: ряды за ним (клин), ближайшее к себе место
+    inf.sort(function(a, b) { return ((b.x - mx) * ux + (b.y - my) * uy) - ((a.x - mx) * ux + (a.y - my) * uy); });
+    var lead = inf[0], cols = Math.min(FORM_COLS, Math.max(2, Math.ceil(Math.sqrt(inf.length)) + 1)), slots = [];
+    for (var r = 0; slots.length < inf.length + 4; r++) for (var c = 0; c < cols + 1; c++) {
+      var l = (c - cols / 2) * FORM_GAP; if (r === 0 && Math.abs(l) < 0.01) continue;
+      slots.push({ f: -r * FORM_GAP - Math.abs(l) * 0.35, l: l, k: r + Math.abs(l) * 0.4 });
+    }
+    slots.sort(function(a, b) { return a.k - b.k; });
+    var speed = Math.min.apply(null, inf.map(function(a) { return a.speed; }));
+    lead.fm = { lead: lead.id, self: true, sp: speed };
+    var free = inf.slice(1);
+    for (i = 0; i < slots.length && free.length; i++) {
+      var sl = slots[i], best = -1, bd = 1e9;
+      for (j = 0; j < free.length; j++) {
+        var b = free[j], rx = b.x - lead.x, ry = b.y - lead.y, f = rx * ux + ry * uy, ll = rx * -uy + ry * ux;
+        var d = (f - sl.f) * (f - sl.f) + (ll - sl.l) * (ll - sl.l); if (d < bd) { bd = d; best = j; }
+      }
+      free[best].fm = { lead: lead.id, f: sl.f, l: sl.l, sp: speed };
+      free.splice(best, 1);
+    }
+  };
+  // Шаг в строю: true — шаг сделан (место в строю видно и досягаемо), false — идти как обычно
+  Ground.prototype.formStep = function(a, dt, dist) {
+    var fm = a.fm, Ld = this.agents[fm.lead];
+    if (!Ld || !Ld.alive || Ld.at || !Ld.goal || !Ld.fm || Ld.fm.lead !== Ld.id) { a.fm = null; return false; }
+    var lv = Math.sqrt(Ld.vx * Ld.vx + Ld.vy * Ld.vy), h = lv > 0.05 ? Math.atan2(Ld.vy, Ld.vx) : Ld.legs;
+    var fx = Math.cos(h), fy = Math.sin(h);
+    var sx = Ld.x + fx * fm.f - fy * fm.l, sy = Ld.y + fy * fm.f + fx * fm.l;
+    var dx = sx - a.x, dy = sy - a.y, d = Math.sqrt(dx * dx + dy * dy);
+    if (d > FORM_LOST) return false;                                       // отстал — догоняет по полю
+    var gx = Math.floor(sx), gy = Math.floor(sy);
+    if (!this.okAt(a, gx, gy) || !this.straight(a, sx, sy)) return false;
+    // скорость: как у ведущего, отставший — быстрее (но не быстрее себя)
+    var spc = P.speed(this.map, Math.floor(a.x), Math.floor(a.y), a.move) || 1, sp = Math.min(a.speed * 1.15, lv + d * 0.9);
+    var vx, vy;
+    if (d > 0.08) { vx = dx / d * sp * spc; vy = dy / d * sp * spc; }
+    else { vx = Ld.vx; vy = Ld.vy; }
+    // по пути — снова ведущим к своей точке строй держит место; на месте в строю — шаг ведущего
+    if (d < 0.6 && lv > 0.05) { vx = vx * 0.5 + Ld.vx * 0.5; vy = vy * 0.5 + Ld.vy * 0.5; }
+    a.dvx = vx; a.dvy = vy;
+    if (dist < a.lastD - 0.05) { a.lastD = dist; a.stuck = 0; a.jam = 0; } else a.stuck = Math.max(0, a.stuck - dt);
+    var ang = Math.atan2(vy, vx), v = Math.sqrt(vx * vx + vy * vy);
+    if (v > 0.05) { a.legs = turn(a.legs, ang, LEGS * dt); if (!(a.tgt >= 0 || a.focus >= 0)) a.aim = turn(a.aim, ang, TURN * dt); }
+    a.mv += ((v > 0.05 ? 1 : 0) - a.mv) * Math.min(1, dt * 6);
+    a.phase = (a.phase + dt * 7 * (v / Math.max(0.5, a.T.speed))) % TAU;
+    return true;
   };
   // Занять клетки под бойца: пехота — свою, техника — свои 2×2 и пояс вокруг по радиусу расталкивания
   Ground.prototype.mark = function(taken, x, y, a) {
@@ -340,7 +401,7 @@
   // key — общая точка отряда: поле направлений строится к ней одно на всех, последние клетки — напрямую
   Ground.prototype.goCell = function(a, cx, cy, key) {
     if (a.og) { a.og = { g: [cx, cy], key: key || null, at: false }; return; }     // занят повадкой в бою — приказ подождёт
-    a.goal = [cx, cy]; a.key = key || null; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wait = 0;
+    a.goal = [cx, cy]; a.key = key || null; a.at = false; a.stuck = 0; a.lastD = 1e9; a.wait = 0; a.fm = null;
   };
   // Прямой ход до клетки: все клетки на отрезке проходимы
   Ground.prototype.straight = function(a, tx, ty) {
@@ -549,10 +610,18 @@
 
   // ---- ход
   Ground.prototype.nav = function(a, dt, sp) {
+    // точки нет (приказ ждёт конца повадки: goCell при a.og кладёт его в og) — стоять, а не падать
+    if (!a.goal) { a.at = true; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     var c = this.cellOf(a), cx = c[0], cy = c[1], gx = a.goal[0], gy = a.goal[1];
     var off = a.size === 2 ? 1 : 0.5;
     var ddx = gx + off - a.x, ddy = gy + off - a.y, dist = Math.sqrt(ddx * ddx + ddy * ddy);
-    if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.2 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; return; }
+    if ((cx === gx && cy === gy && dist < 0.3) || (dist < 1.2 && a.stuck > 0.8)) { a.at = true; a.vx = a.vy = 0; a.fm = null; return; }
+    // в строю: ведущий идёт шагом самого медленного, остальные держат места; у цели — каждый к своей клетке
+    if (a.fm && !a.og) {
+      if (dist <= FORM_END) a.fm = null;
+      else if (a.fm.self) sp = Math.min(sp, a.fm.sp * 0.9);
+      else if (this.formStep(a, dt, dist)) return;
+    }
     var tx, ty;
     var key = a.key || a.goal;
     if ((a.air || a.fly) || (dist < 6 && this.straight(a, gx + off, gy + off))) { tx = gx + off; ty = gy + off; }

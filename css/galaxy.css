@@ -248,102 +248,10 @@ body {
   white-space: nowrap;
 }
 
-/* Экран армии — полноэкранный оверлей поверх карты */
-#army-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 1800;
-  background: rgba(5,6,10,0.97);
-  overflow-y: auto;
-  padding: 16px;
-}
-
-#army-screen-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 18px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #1c2530;
-}
-
-.army-screen-title {
-  font-size: 14px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #cfd8dc;
-}
-
-#army-screen-close {
-  background: none;
-  border: 1px solid #2a3644;
-  color: #8fa8c4;
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.army-section {
-  margin-bottom: 24px;
-}
-
-.army-section-title {
-  font-size: 11px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: #55606c;
-  margin-bottom: 10px;
-}
-
 .army-empty {
   font-size: 12px;
   color: #3d4652;
   padding: 12px 0;
-}
-
-.commander-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  margin-bottom: 6px;
-  border-radius: 4px;
-  border: 1px solid #1c2530;
-  background: #0a0d14;
-}
-
-.commander-row.locked {
-  opacity: 0.45;
-}
-
-.commander-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  background: #161b24;
-  border: 1px solid #2a3644;
-  flex-shrink: 0;
-}
-
-.commander-info {
-  flex: 1;
-}
-
-.commander-name {
-  font-size: 12px;
-  color: #cfd8dc;
-}
-
-.commander-status {
-  font-size: 10px;
-  color: #55606c;
-  margin-top: 2px;
 }
 
 /* Оборвать дальний маршрут — тихая кнопка, не главное действие */
@@ -593,126 +501,9 @@ body {
 
 #pi-move-btn:disabled { background: #2a4a2c; color: #6a8a6c; }
 
-
 .flight-rocket {
   pointer-events: none;
   z-index: 5;
-}
-
-/* ===== Армия: командиры с отрядом и войска по планетам ===== */
-.commander-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.inventory-title {
-  font-family: 'Courier New', monospace;
-  font-size: 9px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: #55606c;
-  margin-bottom: 8px;
-}
-
-.inventory-empty {
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  color: #3d4652;
-}
-
-.inventory-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.unit-chip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: #10151e;
-  border: 1px solid #22303f;
-  border-radius: 8px;
-  padding: 5px 9px 5px 5px;
-}
-
-.unit-chip-thumb {
-  position: relative;
-  width: 38px;
-  height: 38px;
-  border-radius: 5px;
-  overflow: hidden;
-  background: #05070b;
-  border: 1px solid #22303f;
-  flex-shrink: 0;
-}
-
-/* Исходник — фигура в полный рост 1:2. В миниатюре 38 пикселей она
-   превращается в неразличимое пятно, поэтому показываем не всю фигуру,
-   а увеличенный фрагмент с головой и торсом — так юнит узнаётся. */
-.unit-chip-thumb img {
-  position: absolute;
-  width: 190%;
-  height: auto;
-  left: -45%;
-  top: -7%;
-  display: block;
-}
-
-.unit-chip-label {
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-  color: #cfd8dc;
-}
-
-.unit-chip-count {
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  color: #d9a940;
-  font-weight: bold;
-}
-
-.garrison-block {
-  margin-bottom: 8px;
-  border: 1px solid #1c2530;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.garrison-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #0a0d14;
-  border: none;
-  padding: 12px;
-  cursor: pointer;
-  font-family: 'Courier New', monospace;
-}
-
-.garrison-arrow {
-  color: #8fa8c4;
-  font-size: 10px;
-}
-
-.garrison-name {
-  flex: 1;
-  text-align: left;
-  font-size: 12px;
-  color: #cfd8dc;
-}
-
-.garrison-total {
-  font-size: 11px;
-  color: #d9a940;
-  font-weight: bold;
-}
-
-.garrison-body {
-  padding: 10px 12px 12px;
-  background: #080b11;
 }
 
 /* ===== Панель погрузки ===== */
@@ -901,91 +692,7 @@ body {
 
 .cargo-action:disabled { background: #55606c; }
 
-/* ===== Флот командира ===== */
-.fleet-section {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #161b24;
-}
-
-.ship-block {
-  border: 1px solid #1c2530;
-  border-radius: 6px;
-  overflow: hidden;
-  margin-bottom: 6px;
-}
-
-.ship-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: #0d1119;
-  border: none;
-  padding: 8px 10px;
-  cursor: pointer;
-  font-family: 'Courier New', monospace;
-}
-
-.ship-thumb {
-  width: 22px;
-  height: 34px;
-  flex-shrink: 0;
-  background: #05070b;
-  border: 1px solid #22303f;
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ship-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-.ship-title {
-  flex: 1;
-  text-align: left;
-  font-size: 11px;
-  color: #cfd8dc;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ship-title em {
-  font-style: normal;
-  font-size: 9px;
-  color: #55606c;
-}
-
-.ship-capacity {
-  font-size: 10px;
-  color: #d9a940;
-  font-weight: bold;
-}
-
-/* ===== Трюм корабля ===== */
-.ship-manage-btn {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 10px;
-  background: #4a90d9;
-  border: none;
-  color: #0a0d14;
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  font-weight: bold;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
+/* ===== Трюм корабля (js/ship-cargo.js) ===== */
 #shipcargo-panel {
   position: fixed;
   inset: 0;
@@ -1611,30 +1318,6 @@ body {
   font-size: 9px;
   line-height: 1.4;
   color: #55606c;
-}
-
-/* Трюм в списке флота: полный подсвечен, груз — фишками с цветом ресурса */
-.ship-capacity.full { color: #d94a4a; }
-
-.goods-block { margin-top: 10px; }
-
-.goods-head {
-  margin-bottom: 6px;
-  font-family: 'Courier New', monospace;
-  font-size: 9px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: #55606c;
-}
-
-.unit-chip.goods-chip { padding: 6px 9px; }
-
-.goods-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #8fa8c4;
-  flex-shrink: 0;
 }
 
 /* ===== Схватка в ленте: счёт боя с одним противником ===== */

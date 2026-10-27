@@ -12,9 +12,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Global Conflict">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<link rel="stylesheet" href="../css/galaxy.css?v=5">
+<link rel="stylesheet" href="../css/galaxy.css?v=6">
 <link rel="stylesheet" href="../css/shared-ui.css?v=3">
-<link rel="stylesheet" href="../css/faction.css?v=2">
+<link rel="stylesheet" href="../css/faction.css?v=3">
 <link rel="stylesheet" href="../css/staff.css?v=1">
 <link rel="stylesheet" href="../css/senate.css?v=1">
 <link rel="stylesheet" href="../css/treasury.css?v=1">
@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="../css/unrest.css?v=3">
 <link rel="stylesheet" href="../css/transfer.css?v=1">
 <link rel="stylesheet" href="../css/lease.css?v=1">
+<link rel="stylesheet" href="../css/army.css?v=2">
 <link rel="stylesheet" href="../css/quest.css?v=1">
 <link rel="stylesheet" href="../css/supply.css?v=4">
 <link rel="stylesheet" href="../css/reports.css?v=3">
@@ -106,13 +107,32 @@
 <div id="supply-screen" style="display:none;"></div>
 
 <div id="army-screen" style="display:none;">
-  <div id="army-screen-header">
-    <span class="army-screen-title">Армия</span>
-    <button id="army-screen-close">✕</button>
+  <div class="ar-head">
+    <div class="ar-top">
+      <div class="ar-titles">
+        <div class="ar-kicker">Командование</div>
+        <div class="ar-title">Армия</div>
+      </div>
+      <button id="army-screen-close" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="ar-stats" id="ar-stats"></div>
+    <div class="ar-tabs" role="tablist">
+      <button class="ar-tab on" data-tab="fleet" role="tab">Флот <em></em></button>
+      <button class="ar-tab" data-tab="troops" role="tab">Войска <em></em></button>
+      <button class="ar-tab" data-tab="allies" role="tab">Союзники <span class="ar-tab-badge" hidden></span></button>
+    </div>
   </div>
 
-  <div class="army-section">
-    <div class="army-section-title">Союзники</div>
+  <div class="ar-pane" data-tab="fleet">
+    <div id="army-commanders-list"><div class="ar-empty">Загрузка…</div></div>
+  </div>
+
+  <div class="ar-pane" data-tab="troops" hidden>
+    <div id="army-garrisons-list"><div class="ar-empty">Загрузка…</div></div>
+  </div>
+
+  <div class="ar-pane" data-tab="allies" hidden>
+    <div class="ar-note">Союзникам можно отдать корабли, технику и бойцов, а у них — арендовать казармы, заводы и верфи.</div>
     <div class="tr-entry">
       <button id="tr-open-give" class="tr-entry-btn">
         <span class="tr-entry-ico">⇄</span>
@@ -131,16 +151,6 @@
         <em id="pl-inbox-badge"></em>
       </button>
     </div>
-  </div>
-
-  <div class="army-section">
-    <div class="army-section-title">Командиры</div>
-    <div id="army-commanders-list"></div>
-  </div>
-
-  <div class="army-section">
-    <div class="army-section-title">Войска по планетам</div>
-    <div id="army-garrisons-list"></div>
   </div>
 </div>
 
@@ -379,7 +389,7 @@
 <script src="../js/galaxy.js?v=1"></script>
 <script src="../js/profile.js?v=3"></script>
 <script src="../js/bottom-panel.js?v=1"></script>
-<script src="../js/army.js?v=1"></script>
+<script src="../js/army.js?v=2"></script>
 <script src="../js/game-confirm.js?v=1"></script>
 <script src="../js/troop-transfer.js?v=1"></script>
 <script src="../js/production-lease.js?v=2"></script>

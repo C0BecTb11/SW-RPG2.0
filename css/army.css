@@ -1,0 +1,491 @@
+/* ===== Экран «Армия» (js/army.js) =====
+   Язык окон игры: тёмные карточки, золото — главное, синий — Республика, полоски как у бойцов
+   на поле (зелёный / золото / красный). Шапка со сводкой и вкладками стоит, список листается. */
+
+#army-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0 14px calc(28px + env(safe-area-inset-bottom, 0px));
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(217, 169, 64, 0.08), rgba(0, 0, 0, 0) 60%),
+    rgba(5, 6, 10, 0.98);
+  font-family: 'Courier New', monospace;
+  color: #cfd8dc;
+}
+
+#army-screen > * { max-width: 560px; margin-left: auto; margin-right: auto; }
+
+/* шапка */
+.ar-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 -14px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 14px 0;
+  background: linear-gradient(180deg, rgba(6, 8, 13, 0.99) 82%, rgba(6, 8, 13, 0.92));
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid #1c2530;
+}
+@media (min-width: 588px) { .ar-head { margin: 0 auto; padding-left: 0; padding-right: 0; } }
+
+.ar-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.ar-kicker { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #d9a940; }
+.ar-title { margin-top: 4px; font-size: 18px; letter-spacing: 1px; color: #e6edf2; }
+
+#army-screen-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background: #0d1119;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #8fa8c4;
+  font-size: 12px;
+  cursor: pointer;
+}
+#army-screen-close:active { border-color: #d9a940; color: #e8d9a8; }
+
+/* сводка: четыре плитки */
+.ar-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+.ar-stat {
+  min-width: 0;
+  padding: 8px 8px 7px;
+  background: linear-gradient(180deg, #10151e, #0b0f16);
+  border: 1px solid #1c2530;
+  border-radius: 9px;
+}
+.ar-stat span { display: block; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar-stat b { display: block; margin-top: 4px; font-size: 17px; font-weight: normal; line-height: 1.1; color: #e6edf2; }
+.ar-stat b small { font-size: 11px; color: #55606c; }
+.ar-stat em { display: block; margin-top: 3px; font-size: 9px; font-style: normal; letter-spacing: -0.2px; color: #6b7886; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar-stat.ok b { color: #8fe89a; }
+.ar-stat.mid b { color: #f0c86a; }
+.ar-stat.low b { color: #ff8a7a; }
+
+/* вкладки */
+.ar-tabs { display: flex; gap: 4px; margin-top: 12px; }
+.ar-tab {
+  position: relative;
+  flex: 1;
+  padding: 10px 4px 11px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #6b7886;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ar-tab em { font-style: normal; font-size: 10px; letter-spacing: 0; color: #3a4654; }
+.ar-tab.on { color: #e8d9a8; border-bottom-color: #d9a940; }
+.ar-tab.on em { color: #8a7a52; }
+.ar-tab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #d94a4a;
+  color: #0a0d14;
+  font-size: 9px;
+  font-weight: bold;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+.ar-tab-badge[hidden] { display: none; }
+
+.ar-pane { padding-top: 14px; }
+.ar-pane[hidden] { display: none; }
+
+.ar-empty { padding: 18px 4px; font-size: 11px; line-height: 1.5; color: #55606c; text-align: center; }
+.ar-note {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(74, 144, 217, 0.06);
+  border-left: 2px solid rgba(74, 144, 217, 0.6);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #8fa8c4;
+}
+.ar-note b { font-weight: normal; color: #cfeaff; }
+
+.ar-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 20px 0 9px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #cfd8dc;
+}
+.ar-sec em { font-style: normal; font-size: 9.5px; letter-spacing: 0.5px; text-transform: none; color: #55606c; }
+
+/* планета шариком — та же текстура, что на галактической карте */
+.ar-globe {
+  flex: none;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  vertical-align: -3px;
+  border-radius: 50%;
+  background: #1c2530 center / 200% 100% no-repeat;
+  box-shadow: inset -4px -3px 5px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.ar-globe.big { width: 30px; height: 30px; margin-right: 0; box-shadow: inset -8px -6px 10px rgba(0, 0, 0, 0.7), 0 0 10px rgba(111, 184, 255, 0.12); }
+.ar-globe.hyper {
+  width: 30px;
+  height: 30px;
+  margin-right: 0;
+  background: radial-gradient(circle, #cfeaff 0, #4a90d9 30%, rgba(10, 13, 20, 0) 72%);
+  box-shadow: none;
+}
+
+/* ---- командир */
+.ar-cmd {
+  margin-bottom: 10px;
+  padding: 12px;
+  background: linear-gradient(180deg, #111723 0%, #0b0f16 100%);
+  border: 1px solid #1f2935;
+  border-left: 3px solid #d9a940;
+  border-radius: 11px;
+}
+.ar-cmd.moving { border-left-color: #6fb8ff; }
+
+.ar-cmd-head { display: flex; align-items: center; gap: 11px; }
+.ar-medal {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 45% 35%, #2a2214, #0e0b06);
+  box-shadow: 0 0 0 1px rgba(217, 169, 64, 0.55), 0 0 12px rgba(217, 169, 64, 0.15);
+}
+.ar-medal svg { width: 18px; height: 18px; fill: none; stroke: #f0c86a; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ar-medal b {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #d9a940;
+  color: #0a0d14;
+  font-size: 9px;
+  line-height: 16px;
+  text-align: center;
+}
+.ar-cmd-who { min-width: 0; }
+.ar-cmd-name { font-size: 13px; color: #e6edf2; overflow-wrap: anywhere; }
+.ar-cmd-where { margin-top: 4px; font-size: 10.5px; color: #8fa8c4; }
+.ar-cmd-where .go { font-weight: normal; color: #9fd8ff; }
+
+.ar-cmd-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed #1f2935;
+  font-size: 10px;
+  color: #6b7886;
+}
+.ar-cmd-sum b { font-weight: normal; color: #e6edf2; }
+.ar-cmd-sum .ok b { color: #8fe89a; }
+.ar-cmd-sum .mid b { color: #f0c86a; }
+.ar-cmd-sum .low b { color: #ff8a7a; }
+.ar-cmd-empty { margin-top: 10px; font-size: 10px; line-height: 1.5; color: #55606c; }
+
+/* перелёт */
+.ar-trip {
+  margin-top: 10px;
+  padding: 9px 10px 8px;
+  background: rgba(74, 144, 217, 0.06);
+  border: 1px solid rgba(74, 144, 217, 0.25);
+  border-radius: 8px;
+}
+.ar-trip-ends { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 10px; color: #cfd8dc; }
+.ar-trip-ends > span { white-space: nowrap; }
+.ar-trip-ends > span:last-child .ar-globe { margin: 0 0 0 5px; }
+.ar-eta-txt { color: #9fd8ff; }
+.ar-trip-bar { position: relative; height: 3px; margin-top: 7px; background: #141a22; border-radius: 2px; overflow: hidden; }
+.ar-trip-bar i { display: block; width: 0; height: 100%; background: linear-gradient(90deg, #4a90d9, #9fd8ff); box-shadow: 0 0 6px rgba(111, 184, 255, 0.6); transition: width 1s linear; }
+.ar-trip-route { margin-top: 6px; font-size: 9.5px; color: #6b7886; }
+.ar-trip-route span { color: #8fa8c4; }
+.ar-trip-route i { margin: 0 4px; font-style: normal; color: #3a4654; }
+#army-screen .ar-stop { margin-top: 8px; }
+
+/* ---- корабль */
+.ar-fleet { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.ar-ship {
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.ar-ship.crit { border-color: rgba(217, 74, 74, 0.45); }
+.ar-ship-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+  cursor: pointer;
+}
+.ar-ship-head:active { background: rgba(217, 169, 64, 0.05); }
+.ar-ship-img {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 45%, #182132, #070a10 75%);
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ar-ship-img { position: relative; }
+.ar-ship-img img { position: absolute; left: 50%; top: 50%; width: 118%; height: 118%; max-width: none; object-fit: contain; transform: translate(-50%, -50%) rotate(45deg); }
+.ar-ship-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ar-ship-name { font-size: 12px; color: #e6edf2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar-ship-name.named { color: #f0d79a; }
+.ar-ship-sub { font-size: 9.5px; color: #55606c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ar-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.ar-bar { display: block; height: 3px; background: #141a22; border-radius: 2px; overflow: hidden; }
+.ar-bar i { display: block; height: 100%; border-radius: 2px; }
+.ar-bar.hp.ok i { background: #5fd968; }
+.ar-bar.hp.mid i { background: #f0c86a; }
+.ar-bar.hp.low i { background: #ff6e5a; }
+.ar-bar.hold i { background: #4a90d9; }
+.ar-bar.hold.full i { background: #d9a940; }
+
+.ar-ship-nums { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 44px; }
+.ar-ship-nums b { font-size: 12px; font-weight: normal; }
+.ar-ship-nums b.ok { color: #8fe89a; }
+.ar-ship-nums b.mid { color: #f0c86a; }
+.ar-ship-nums b.low { color: #ff8a7a; }
+.ar-ship-nums em { font-size: 9.5px; font-style: normal; color: #6b7886; white-space: nowrap; }
+.ar-ship-nums em.full { color: #d9a940; }
+
+.ar-chev {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 2px 0 2px;
+  border-right: 1.5px solid #55606c;
+  border-bottom: 1.5px solid #55606c;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s ease;
+}
+[aria-expanded="true"] > .ar-chev { transform: rotate(-135deg) translate(-2px, -2px); border-color: #d9a940; }
+
+#army-screen .ar-ship-body { padding: 0 10px 10px; background: none; }
+.ar-ship-body[hidden] { display: none; }
+.ar-ship-facts { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; border-top: 1px dashed #1f2935; font-size: 10px; color: #6b7886; }
+.ar-ship-facts b { font-weight: normal; color: #e6edf2; }
+.ar-hold-empty { margin-bottom: 8px; font-size: 10px; color: #3d4652; }
+.ar-goods { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.ar-goods span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  background: #0d1119;
+  border: 1px solid #1f2935;
+  border-radius: 6px;
+  font-size: 10px;
+  color: #cfd8dc;
+}
+.ar-goods i { width: 5px; height: 5px; border-radius: 1px; transform: rotate(45deg); }
+.ar-goods b { font-weight: normal; color: #e8d9a8; }
+
+.ar-ship-acts { display: flex; gap: 6px; margin-top: 8px; }
+.ar-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px;
+  background: #0d1119;
+  border: 1px solid #2a3644;
+  border-radius: 8px;
+  color: #8fa8c4;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+#army-screen .ar-btn.gold { margin: 0; background: #d9a940; border-color: #d9a940; color: #0a0d14; box-shadow: 0 0 12px rgba(217, 169, 64, 0.18); }
+.ar-btn:active { transform: translateY(1px); }
+
+/* ---- корабли без командира, по планетам */
+.ar-group { margin-bottom: 8px; background: #0b0f16; border: 1px solid #1c2530; border-radius: 11px; overflow: hidden; }
+.ar-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: 'Courier New', monospace;
+  text-align: left;
+  cursor: pointer;
+}
+.ar-group-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ar-group-txt b { font-size: 12px; font-weight: normal; color: #e6edf2; }
+.ar-group-txt em { font-size: 9.5px; font-style: normal; color: #6b7886; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar-group-txt u { text-decoration: none; color: #f0c86a; }
+.ar-count {
+  flex: none;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(74, 144, 217, 0.15);
+  border: 1px solid rgba(74, 144, 217, 0.4);
+  color: #9fd8ff;
+  font-size: 10px;
+  text-align: center;
+}
+.ar-group-body { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 10px; }
+.ar-group-body[hidden] { display: none; }
+
+.ar-link {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 2px 0;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #d9a940;
+  text-decoration: none;
+}
+.ar-link span { font-size: 14px; line-height: 1; }
+
+/* закрытые места командиров — одной строкой */
+.ar-locked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed #1f2935;
+  border-radius: 11px;
+  font-size: 10px;
+  color: #55606c;
+}
+.ar-locks { display: flex; gap: 4px; }
+.ar-locks i {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid #2a3644;
+  font-size: 9px;
+  font-style: normal;
+  color: #3a4654;
+}
+
+/* ---- войска на планете */
+.ar-planet {
+  margin-bottom: 10px;
+  padding: 12px;
+  background: linear-gradient(180deg, #111723 0%, #0b0f16 100%);
+  border: 1px solid #1f2935;
+  border-radius: 11px;
+}
+.ar-planet-head { display: flex; align-items: center; gap: 11px; }
+.ar-planet-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ar-planet-txt b { font-size: 13px; font-weight: normal; color: #e6edf2; }
+.ar-planet-txt em { font-size: 10px; font-style: normal; color: #6b7886; }
+.ar-planet-hp { flex: none; width: 64px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.ar-planet-hp b { font-size: 12px; font-weight: normal; }
+.ar-planet-hp span { width: 100%; height: 3px; background: #141a22; border-radius: 2px; overflow: hidden; }
+.ar-planet-hp i { display: block; height: 100%; }
+.ar-planet-hp.ok b { color: #8fe89a; } .ar-planet-hp.ok i { background: #5fd968; }
+.ar-planet-hp.mid b { color: #f0c86a; } .ar-planet-hp.mid i { background: #f0c86a; }
+.ar-planet-hp.low b { color: #ff8a7a; } .ar-planet-hp.low i { background: #ff6e5a; }
+
+.ar-units { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px; margin-top: 10px; }
+.ar-unit {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 5px 6px;
+  background: #0a0d14;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+}
+.ar-unit-pic {
+  position: relative;
+  display: block;
+  height: 58px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #182132, #05070b 80%);
+}
+/* модель сверху в круге прицела: пехоту приближаем, чтобы фигура занимала плитку, технику — чуть */
+.ar-unit-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scale(1.7); transform-origin: 50% 54%; display: block; }
+.ar-unit.veh .ar-unit-pic img { transform: scale(1.2); transform-origin: 50% 50%; }
+.ar-unit-pic b {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  background: rgba(8, 11, 17, 0.88);
+  border: 1px solid rgba(217, 169, 64, 0.5);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: normal;
+  color: #f0d79a;
+}
+.ar-unit-name { font-size: 9.5px; line-height: 1.3; color: #cfd8dc; overflow-wrap: anywhere; }
+.ar-unit-note { font-size: 9px; color: #f0c86a; }
+
+
+/* Телефон боком: сводка в одну строку плотнее, плитки бойцов мельче */
+@media (orientation: landscape) and (max-height: 520px) {
+  .ar-head { position: static; padding-top: 8px; }
+  .ar-title { font-size: 15px; }
+  .ar-stats { margin-top: 8px; }
+  .ar-stat { padding: 6px 8px; }
+  .ar-stat b { font-size: 14px; }
+  .ar-tab { padding: 7px 4px 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) { .ar-trip-bar i, .ar-chev { transition: none; } }
+
+/* старые общие правила корабля (galaxy.css) — здесь не нужны */
+#army-screen .ar-ship.ship-block { margin: 0; }
+#army-screen .ar-btn.ship-manage-btn { width: auto; }

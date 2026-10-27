@@ -1196,50 +1196,6 @@ button.fs-ev:active { background: #16202e; }
   object-fit: contain;
 }
 
-/* Гарнизоны в списке армии */
-.garrison-section-title {
-  margin: 18px 0 8px;
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #55606c;
-}
-
-.garrison-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 0;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.garrison-head .garrison-arrow {
-  flex: none;
-  width: 12px;
-  color: #4a90d9;
-  font-size: 11px;
-}
-
-.garrison-head .commander-status {
-  color: #8fa8c4;
-}
-
-.garrison-count {
-  display: inline-block;
-  margin-left: 7px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: #4a90d9;
-  color: #0a0d14;
-  font-size: 10px;
-  font-weight: bold;
-}
-
 /* Блок командира в HUD корабля */
 #sc-cmd {
   margin-top: 12px;

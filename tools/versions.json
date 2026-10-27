@@ -1,4 +1,8 @@
 {
+ "css/army.css": {
+  "v": "2",
+  "sha": "0b9351d26941"
+ },
  "css/auth.css": {
   "v": "1",
   "sha": "62fe58aef8df"
@@ -24,8 +28,8 @@
   "sha": "ec8bc32fa54d"
  },
  "css/faction.css": {
-  "v": "2",
-  "sha": "ac0e63e70dbe"
+  "v": "3",
+  "sha": "68d738a428cc"
  },
  "css/galaxy-events.css": {
   "v": "1",
@@ -36,8 +40,8 @@
   "sha": "c97ba3765a6e"
  },
  "css/galaxy.css": {
-  "v": "5",
-  "sha": "9ba72c0232fa"
+  "v": "6",
+  "sha": "35d378e13a1a"
  },
  "css/ground-battle.css": {
   "v": "7",
@@ -136,8 +140,8 @@
   "sha": "906a3b485d01"
  },
  "js/army.js": {
-  "v": "1",
-  "sha": "210432ea379d"
+  "v": "2",
+  "sha": "3d966d02f908"
  },
  "js/auth.js": {
   "v": "3",

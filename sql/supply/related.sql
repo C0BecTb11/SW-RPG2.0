@@ -310,26 +310,6 @@ begin
     raise exception 'Флот не готов к прыжку: % корабль(ей) вне зоны гиперпространства', v_not_ready;
   end if;
 
-  select coalesce(s.name, t.name) into v_held
-  from ships s join ship_types t on t.id = s.ship_type
-  where s.commander_id = p_commander_id and s.system_id = v_current
-    and not s.in_transit and s.carrier_ship_id is null
-    and ship_active_boarding(s.id) is not null
-  limit 1;
-  if v_held is not null then
-    raise exception 'Флот не может прыгнуть: «%» сцеплен абордажем', v_held;
-  end if;
-
-  select coalesce(s.name, t.name) into v_held
-  from ships s join ship_types t on t.id = s.ship_type
-  where s.commander_id = p_commander_id and s.system_id = v_current
-    and not s.in_transit and s.carrier_ship_id is null
-    and s.tractor_until is not null and s.tractor_until > now()
-  limit 1;
-  if v_held is not null then
-    raise exception 'Флот не может прыгнуть: «%» удерживается притягивающим лучом', v_held;
-  end if;
-
   select coalesce(s.name, t.name) || '» — ещё ' || ceil(extract(epoch from s.jump_lock_until - now()) / 3600.0)::integer || ' ч'
     into v_held
   from ships s join ship_types t on t.id = s.ship_type
@@ -498,8 +478,6 @@ begin
 
   if s.carrier_ship_id is not null then return 'в ангаре носителя'; end if;
   if s.in_transit then return 'в гиперпространстве'; end if;
-  if ship_active_boarding(p_ship_id) is not null then return 'сцеплен абордажем'; end if;
-  if s.tractor_until is not null and s.tractor_until > now() then return 'пойман лучом'; end if;
   if s.commander_id is not null and exists (
        select 1 from commanders where id = s.commander_id and moving_to is not null) then
     return 'командир в пути';
@@ -518,7 +496,7 @@ begin
   if exists (select 1 from transfer_ship_inside(p_ship_id) i
              join unit_positions c on c.id = i.id
              join unit_types ct on ct.id = c.unit_type
-             where ct.is_hero or c.hero_id is not null or c.control_until is not null) then
+             where ct.is_hero or c.hero_id is not null) then
     return 'на борту одарённый — высади его';
   end if;
   return null;

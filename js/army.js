@@ -24,6 +24,12 @@ function openArmyScreen() {
   armyTick();
 }
 
+// Рейс снабжения запущен поверх «Армии» (кнопка «Отвезти рейсом») — флот под окном перечитываем
+document.addEventListener('supply-routes-changed', function() {
+  var scr = document.getElementById('army-screen');
+  if (scr && scr.style.display !== 'none' && scr.style.display !== '') loadArmyData();
+});
+
 function closeArmyScreen() {
   document.getElementById('army-screen').style.display = 'none';
   if (armyTicker) { clearInterval(armyTicker); armyTicker = null; }
@@ -113,7 +119,9 @@ function loadArmyData() {
       supabase.from('unit_types').select('id, name, image, max_hp, is_vehicle, is_hero'),
       // Истребители в ангарах — сколько у какого носителя
       supabase.from('ships').select('carrier_ship_id')
-        .eq('owner_user_id', userId).not('carrier_ship_id', 'is', null)
+        .eq('owner_user_id', userId).not('carrier_ship_id', 'is', null),
+      // Кто из командиров на рейсе снабжения: у них груз в трюме — по делу
+      supabase.rpc('get_supply_commanders')
     ]).then(function(r) {
       if (seq !== armySeq) return;
       armyRender(armyModel(r));
@@ -138,7 +146,7 @@ function armyModel(r) {
     if (!(g.amount > 0)) return;
     var rr = resById[g.resource] || {};
     (M.goods[g.ship_id] = M.goods[g.ship_id] || []).push({
-      name: rr.name || g.resource, color: rr.color, sort: rr.sort_order || 0, amount: g.amount,
+      res: g.resource, name: rr.name || g.resource, color: rr.color, sort: rr.sort_order || 0, amount: g.amount,
       slots: Math.ceil(g.amount / perSlot)                  // тот же счёт, что у сервера
     });
   });
@@ -150,6 +158,9 @@ function armyModel(r) {
     M.holdUnits += c.quantity + (c.passengers || 0);
   });
   (r[9].data || []).forEach(function(f) { M.hangar[f.carrier_ship_id] = (M.hangar[f.carrier_ship_id] || 0) + 1; });
+  // null — не узнали (нет связи): тогда о грузе не предупреждаем, чтобы не пугать зря
+  M.supplyBusy = r[10] && !r[10].error ? {} : null;
+  if (M.supplyBusy) (r[10].data || []).forEach(function(c) { M.supplyBusy[c.commander_id] = c.busy || ''; });
 
   M.ships = (r[2].error ? [] : (r[2].data || [])).map(function(sh) {
     var T = sh.ship_types || {};
@@ -315,6 +326,8 @@ function armyCommanderCard(c, ships, M) {
         (cap ? '<span>трюм <b>' + used + '</b>/' + cap + '</span>' : '') +
         (troops ? '<span>десант <b>' + troops + '</b></span>' : '') +
       '</div>');
+    var warn = armyCargoWarn(c, ships, M);
+    if (warn) card.appendChild(warn);
     var fl = document.createElement('div');
     fl.className = 'ar-fleet';
     ships.slice().sort(armyShipOrder).forEach(function(s) { fl.appendChild(armyShipRow(s, M, false)); });
@@ -323,6 +336,61 @@ function armyCommanderCard(c, ships, M) {
     card.insertAdjacentHTML('beforeend', '<div class="ar-cmd-empty">Кораблей нет. Назначить командира — на орбите, вкладка «Командир» у корабля.</div>');
   }
   return card;
+}
+
+// Груз в трюмах без рейса снабжения (склад назначения был полон и т.п.): напоминание, чтобы
+// не увести флот в бой с занятыми трюмами, и два выхода — отвезти рейсом или выбросить
+function armyCargoWarn(c, ships, M) {
+  if (c.moving_to || !M.supplyBusy || M.supplyBusy[c.id] === 'route') return null;
+  var by = {}, order = [], total = 0;
+  ships.forEach(function(s) {
+    s.goods.forEach(function(g) {
+      if (!by[g.res]) { by[g.res] = { res: g.res, name: g.name, color: g.color, sort: g.sort, amount: 0 }; order.push(by[g.res]); }
+      by[g.res].amount += g.amount;
+      total += g.amount;
+    });
+  });
+  if (total <= 0) return null;
+  order.sort(function(a, b) { return a.sort - b.sort; });
+
+  var box = document.createElement('div');
+  box.className = 'ar-cargo-warn';
+  var canRoute = typeof window.supplyCargoRoute === 'function' && !!c.current_system;
+  var canDrop = typeof window.supplyDropCargo === 'function';
+  box.innerHTML =
+    '<div class="ar-cargo-head"><i></i>В трюмах ' + armyNum(total) + ' ' + armyPlural(total, 'единица', 'единицы', 'единиц') + ' груза</div>' +
+    '<div class="ar-cargo-text">Груз занимает место десанта. Выгрузи его на складе с местом — или выбрось, если везти некуда.</div>' +
+    '<div class="ar-goods">' + order.map(function(g) {
+      return '<span><i style="background:' + armyEsc(g.color || '#8fa8c4') + '"></i>' + armyEsc(g.name) + ' <b>' + armyNum(g.amount) + '</b></span>';
+    }).join('') + '</div>' +
+    (canRoute || canDrop
+      ? '<div class="ar-ship-acts">' +
+          (canRoute ? '<button type="button" class="ar-btn warn" data-a="route">Отвезти рейсом</button>' : '') +
+          (canDrop ? '<button type="button" class="ar-btn danger" data-a="drop">Выбросить</button>' : '') +
+        '</div>'
+      : '');
+
+  box.addEventListener('click', function(e) {
+    var b = e.target.closest('button[data-a]');
+    if (!b || b.disabled) return;
+    var old = box.querySelector('.ar-cargo-err');
+    if (old) old.parentNode.removeChild(old);
+    if (b.getAttribute('data-a') === 'route') {
+      var map = {};
+      order.forEach(function(g) { map[g.res] = g.amount; });
+      window.supplyCargoRoute(c.id, c.current_system, map);
+      return;
+    }
+    var items = order.map(function(g) { return { text: g.name + ' ' + armyNum(g.amount), color: g.color, lost: true }; });
+    window.supplyDropCargo(c.id, c.name, items, b, function(n, err) {
+      if (err) {
+        box.insertAdjacentHTML('beforeend', '<div class="ar-cargo-err">' + armyEsc(err) + '</div>');
+        return;
+      }
+      loadArmyData();
+    });
+  });
+  return box;
 }
 
 // Крупные вперёд, потом побитые выше целых — их чинить

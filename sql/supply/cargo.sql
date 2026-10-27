@@ -1,16 +1,7 @@
 -- Снимок (pg_get_functiondef): груз в трюмах и окончание перелёта. 24.10.2026
--- boarding_drop_cargo, check_cargo_owner, commander_free_cargo, finish_commander_move, finish_due_commander_moves,
--- get_drop_ready_cargo, get_ship_resource_cargo, log_lost_cargo, ship_load_used, supply_hold_total
+-- check_cargo_owner, commander_free_cargo, finish_commander_move, finish_due_commander_moves,
+-- get_drop_ready_cargo, get_ship_resource_cargo, log_lost_cargo, ship_load_used, supply_hold_total, jettison_commander_cargo
 
-CREATE OR REPLACE FUNCTION public.boarding_drop_cargo(p_ship uuid)
- RETURNS void
- LANGUAGE sql
- SET search_path TO 'public', 'pg_temp'
-AS $function$
-  delete from ship_cargo where ship_id = p_ship;
-$function$
-
--- ----------------------------------------
 CREATE OR REPLACE FUNCTION public.check_cargo_owner()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -212,3 +203,35 @@ AS $function$
   from ship_resource_cargo rc join ships s on s.id = rc.ship_id
   where s.commander_id = p_commander_id;
 $function$
+
+-- ----------------------------------------
+CREATE OR REPLACE FUNCTION public.jettison_commander_cargo(p_commander_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v_user uuid := auth.uid(); cm record; v_fac text; g record; v_total int := 0;
+begin
+  if v_user is null then raise exception 'Не авторизован'; end if;
+  select * into cm from commanders where id = p_commander_id for update;
+  if not found or cm.user_id <> v_user then raise exception 'Это не твой командир'; end if;
+  if exists (select 1 from supply_routes x where x.commander_id = cm.id and x.status = 'active') then
+    raise exception 'Командир на рейсе снабжения — сначала поставь рейс на паузу или заверши его';
+  end if;
+  select faction into v_fac from profiles where id = v_user;
+  for g in
+    select rc.resource, sum(rc.amount)::int as amt, min(s.system_id) as sys
+    from ship_resource_cargo rc join ships s on s.id = rc.ship_id
+    where s.commander_id = cm.id and s.owner_user_id = v_user
+    group by rc.resource
+  loop
+    v_total := v_total + g.amt;
+    perform log_event(v_user, v_fac, g.sys, 'cargo_lost',
+      coalesce((select name from resources where id = g.resource), g.resource) || ' — выброшено из трюма', g.amt, 'private',
+      jsonb_build_object('layer', 'space'));
+  end loop;
+  execute 'del' || 'ete from ship_resource_cargo rc using ships s where s.id = rc.ship_id and s.commander_id = $1 and s.owner_user_id = $2'
+    using cm.id, v_user;
+  return v_total;
+end $function$

@@ -668,12 +668,20 @@
     return (st.routes || []).filter(function(r) { return r.status !== 'stopped'; });
   }
 
+  // Завершённые рейсы, после которых груз остался в трюмах (склад был полон — так пишет сервер), — тоже ждут игрока.
+  // Груз, положенный в трюм вручную уже после рейса, значком не считаем: его возят нарочно
+  function cargoLeftCount() {
+    return (st.routes || []).filter(function(r) {
+      return cargoLeftRoute(r) && String(r.last_note || '').indexOf('в трюме осталось') >= 0;
+    }).length;
+  }
+
   function updateTabCounts() {
     var needs = (st.network || []).filter(function(r) { return r.need > 0; }).length;
     setTabCount('network', needs, 'gold');
 
     var live = liveRoutes();
-    var stalled = live.filter(function(r) { return r.status === 'stalled'; }).length;
+    var stalled = live.filter(function(r) { return r.status === 'stalled'; }).length + cargoLeftCount();
     if (stalled) setTabCount('routes', stalled, 'alert');
     else setTabCount('routes', live.length, '');
 
@@ -702,7 +710,7 @@
     var badge = document.getElementById('supply-badge');
     if (!badge) return;
     var n = incomingRequests().length +
-      liveRoutes().filter(function(r) { return r.status === 'stalled'; }).length;
+      liveRoutes().filter(function(r) { return r.status === 'stalled'; }).length + cargoLeftCount();
     badge.textContent = n > 9 ? '9+' : String(n);
     badge.style.display = n > 0 ? 'block' : 'none';
   }
@@ -897,10 +905,41 @@
     return r.status === 'active' && r.phase === 'travel' && !!r.here_system_id && String(r.last_note || '').indexOf(ZONE_NOTE) === 0;
   }
 
+  // Груз меняют у площадки сброса: на остановке флот сперва подходит к ней (sql/supply_pad.sql),
+  // а после последней остановки разового рейса возвращается к гиперлинии (фаза 'returning')
+  var PAD_NOTE = 'Флот идёт к площадке сброса';
+  function toPad(r) {
+    return r.status === 'active' && r.phase === 'at_stop' && String(r.last_note || '').indexOf(PAD_NOTE) === 0;
+  }
+  function returning(r) { return r.status === 'active' && r.phase === 'returning'; }
+
+  // Сколько единиц сырья в трюмах флота рейса
+  function cargoTotal(r) {
+    var c = cargoOf(r), n = 0;
+    Object.keys(c).forEach(function(k) { n += Math.max(0, num(c[k])); });
+    return n;
+  }
+
+  // Завершённый рейс, после которого в трюмах остался груз: показываем только у последнего рейса
+  // этого командира и только пока у него нет другого рейса — иначе груз уже везут
+  function cargoLeftRoute(r) {
+    if (r.status !== 'stopped' || !r.commander_id || cargoTotal(r) <= 0) return false;
+    var list = st.routes || [];
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (x === r || x.commander_id !== r.commander_id) continue;
+      if (x.status !== 'stopped') return false;
+      if (String(x.updated_at || '') > String(r.updated_at || '')) return false;
+    }
+    return true;
+  }
+
   function routeState(r) {
     if (r.status === 'stalled') return { cls: 'stalled', label: 'встал' };
     if (r.status === 'paused') return { cls: 'paused', label: 'пауза' };
-    if (r.status === 'stopped') return { cls: 'stopped', label: 'завершён' };
+    if (r.status === 'stopped') return cargoLeftRoute(r) ? { cls: 'stopped cargo', label: 'груз в трюме' } : { cls: 'stopped', label: 'завершён' };
+    if (returning(r)) return { cls: 'travel', label: 'к гиперлинии' };
+    if (r.phase === 'at_stop' && toPad(r)) return { cls: 'stop', label: 'к площадке' };
     if (r.phase === 'travel' && toZone(r)) return { cls: 'travel', label: 'к гиперлинии' };
     if (r.phase === 'travel') return { cls: 'travel', label: 'в пути' };
     if (r.phase === 'waiting') return { cls: 'waiting', label: 'ждёт груз' };
@@ -941,6 +980,8 @@
 
   function statusLine(r, stt) {
     var here = esc(r.here_name || '—'), next = esc(r.next_name || '—');
+    if (returning(r)) return 'Груз передан — флот возвращается к гиперлинии у <b>' + here + '</b>';
+    if (toPad(r)) return 'Корабли идут к площадке сброса у <b>' + here + '</b> — там погрузка и выгрузка';
     if (stt.cls === 'travel' && toZone(r)) return 'Корабли идут к гиперлинии у ' + here + ' — потом прыжок к <b>' + next + '</b>';
     var left = '<span class="sup-left" data-left="' + esc(r.id) + '">' + leftOf(r) + '</span>';
     if (stt.cls === 'travel') return '<div class="sup-status-line"><span>' + here + ' → <b>' + next + '</b></span>' + left + '</div>';
@@ -948,6 +989,7 @@
     if (stt.cls === 'stop') return '<div class="sup-status-line"><span>Работает на ' + here + '</span>' + left + '</div>';
     if (stt.cls === 'paused') return 'Пауза — флот стоит на ' + here;
     if (stt.cls === 'stopped') return 'Рейс завершён';
+    if (stt.cls === 'stopped cargo') return 'Рейс завершён, но флот у <b>' + here + '</b> с грузом';
     return '<b>' + esc(r.last_note || 'Рейс встал') + '</b>';
   }
 
@@ -987,7 +1029,15 @@
       chain += '<span class="sup-link' + (back ? (stt.cls === 'travel' ? ' moving' : ' toward') : '') + '"></span><span class="sup-loop" title="по кругу">↻</span>';
     }
 
-    var note = (stt.cls !== 'stalled' && r.last_note && !toZone(r)) ? '<div class="sup-status-note">' + esc(r.last_note) + '</div>' : '';
+    var left = cargoLeftRoute(r);
+    var note = (stt.cls !== 'stalled' && r.last_note && !toZone(r) && !toPad(r) && !returning(r) && !left)
+      ? '<div class="sup-status-note">' + esc(r.last_note) + '</div>' : '';
+    // Груз не выгружен: без напоминания легко увести этот флот в бой с полными трюмами
+    if (left) {
+      var lt = cargoTotal(r);
+      note = '<div class="sup-cargo-left"><b>В трюмах ' + lt + ' ' + plural(lt, 'единица', 'единицы', 'единиц') + ' груза</b>' +
+        'Склад назначения был полон — груз не выгружен и занимает место в трюмах. Отвези его туда, где есть место, или выбрось.</div>';
+    }
     if (stt.cls === 'stalled') {
       note = '<div class="sup-status-note">Флот: ' + esc(r.here_name || '—') +
         (r.next_name ? ' · цель: ' + esc(r.next_name) : '') +
@@ -1005,6 +1055,11 @@
       actions = '<div class="sup-actions">' + toggle +
         (isPickupRoute(r) ? '' : '<button type="button" class="sup-btn" data-act="route-edit" data-id="' + esc(r.id) + '">Изменить</button>') +
         '<button type="button" class="sup-btn danger" data-act="route-stop" data-id="' + esc(r.id) + '">Завершить</button>' +
+      '</div>';
+    } else if (left) {
+      actions = '<div class="sup-actions">' +
+        '<button type="button" class="sup-btn primary" data-act="cargo-route" data-id="' + esc(r.id) + '">Отвезти груз</button>' +
+        '<button type="button" class="sup-btn danger" data-act="cargo-drop" data-id="' + esc(r.id) + '">Выбросить</button>' +
       '</div>';
     }
 
@@ -1056,6 +1111,8 @@
     var rank = { stalled: 0, active: 1, paused: 2 };
     function rk(x) { return rank[x.status] !== undefined ? rank[x.status] : 3; }
     live.sort(function(a, b) { return rk(a) - rk(b); });
+    // флот, оставшийся с грузом, — первым среди завершённых (и не прячется за пятью последними)
+    done.sort(function(a, b) { return (cargoLeftRoute(b) ? 1 : 0) - (cargoLeftRoute(a) ? 1 : 0); });
 
     var noHub = st.hasHub === false && !st.hub;
     var h = '<button type="button" class="sup-new" data-act="route-new"' + (noHub ? ' disabled' : '') + '><span>+</span>Новый рейс' +
@@ -2178,6 +2235,16 @@
       return;
     }
     if (act === 'route-status') { setRouteStatus(b.getAttribute('data-id'), b.getAttribute('data-st'), b); return; }
+    if (act === 'cargo-route') {
+      var cr = findRoute(b.getAttribute('data-id'));
+      if (cr) openCargoRoute(cr.commander_id, cr.here_system_id, cargoOf(cr));
+      return;
+    }
+    if (act === 'cargo-drop') {
+      var dr = findRoute(b.getAttribute('data-id'));
+      if (dr) dropCargo(dr.commander_id, dr.commander_name, cargoOf(dr), b);
+      return;
+    }
 
     if (act === 'route-stop') {
       // Двойное нажатие вместо системного окна: второе подтверждает
@@ -2341,6 +2408,64 @@
     });
   }
 
+  // Груз остался в трюмах: разовый рейс отсюда — первая остановка там, где стоит флот, вторая — выгрузка всего
+  function openCargoRoute(cmdId, sysId, cargo) {
+    var n = 0;
+    Object.keys(cargo || {}).forEach(function(k) { n += Math.max(0, num(cargo[k])); });
+    if (!st.open) openSupplyScreen('routes');
+    openEditor(null, [
+      { system_id: sysId || '', actions: [] },
+      { system_id: '', actions: [newAction('unload')] }
+    ], { loop: false, commanderId: cmdId, cargo: n, cargoMap: cargo || null });
+  }
+
+  // Выбросить груз из трюмов командира: насовсем, поэтому — с подтверждением, где видно, что пропадёт
+  // cargo — { ресурс: сколько } или уже готовый список строк для окна ({ text, color })
+  function dropCargo(cmdId, cmdName, cargo, btn, after) {
+    var items = Array.isArray(cargo) ? cargo : Object.keys(cargo || {}).filter(function(k) { return num(cargo[k]) > 0; }).map(function(k) {
+      var ri = resInfo(k);
+      return { text: ri.name + ' ' + num(cargo[k]), color: ri.color, lost: true };
+    });
+    function go() {
+      if (btn) btn.disabled = true;
+      call('jettison_commander_cargo', { p_commander_id: cmdId }).then(function(res) {
+        // окно снабжения закрыто (зовут из «Армии») — отклик показывает тот, кто позвал (after)
+        if (res.error) {
+          if (btn) btn.disabled = false;
+          if (st.open) inlineErr(btn, errText(res.error));
+          if (typeof after === 'function') after(null, errText(res.error));
+          return;
+        }
+        var n = num(res.data);
+        if (st.open) toast(n > 0 ? 'Груз выброшен: ' + n + ' ед. — трюмы свободны' : 'Трюмы уже пусты');
+        if (typeof after === 'function') after(n, null);
+        else { try { document.dispatchEvent(new CustomEvent('supply-routes-changed')); } catch (e) { /* не страшно */ } }
+        if (st.open) load(['routes'], function() { updateTabCounts(); updateNavBadge(); if (st.tab === 'routes') render(); }, true);
+      });
+    }
+    if (typeof window.gameConfirm === 'function') {
+      window.gameConfirm({
+        tone: 'danger', kicker: 'Выбросить груз', title: cmdName || 'Командир',
+        sub: 'груз пропадёт насовсем',
+        rows: items.length ? [{ label: 'Пропадёт', items: items }] : [],
+        note: 'Трюмы освободятся — флот снова сможет брать десант и груз. Если рядом есть склад с местом, лучше отвезти.',
+        ok: 'Выбросить', cancel: 'Оставить'
+      }, go);
+      return;
+    }
+    // без игрового окна — двойное нажатие, как у «Завершить»
+    if (btn && !btn.classList.contains('confirm')) {
+      var was = btn.textContent;
+      btn.classList.add('confirm');
+      btn.textContent = 'Точно?';
+      setTimeout(function() {
+        if (document.body.contains(btn) && btn.classList.contains('confirm')) { btn.classList.remove('confirm'); btn.textContent = was; }
+      }, 3000);
+      return;
+    }
+    go();
+  }
+
   function accessCall(fn, args, okText, btn) {
     if (btn) btn.disabled = true;
     call(fn, args).then(function(res) {
@@ -2372,6 +2497,8 @@
       name: route ? (route.name || '') : '',
       loop: route ? !!route.loop : (opts.loop === undefined ? true : !!opts.loop),
       returnHome: !!opts.returnHome,
+      cargo: route ? 0 : num(opts.cargo),       // рейс «Отвезти груз»: столько уже лежит в трюмах
+      cargoMap: route ? null : (opts.cargoMap || null),
       stops: route
         ? stopsOf(route).map(function(s) {
             return { system_id: s.system_id, actions: (s.actions || []).map(function(a) {
@@ -2579,6 +2706,88 @@
     return null;
   }
 
+  // Свободное место на складе своей планеты; null — не знаем (планета союзника)
+  function roomAt(sys, res) {
+    if (!sys || !res || res === '*' || !isMyPlanet(sys)) return null;
+    var p = findPlanetRow(sys, res);
+    if (!p) {
+      // строки этого сырья нет — склад пуст, предел у планеты один на всё сырьё
+      var any = (st.planets || []).filter(function(x) { return x.system_id === sys; })[0];
+      return any ? { stock: 0, cap: num(any.cap), room: Math.max(0, num(any.cap)) } : null;
+    }
+    return { stock: num(p.stock), cap: num(p.cap), room: Math.max(0, num(p.cap) - num(p.stock)) };
+  }
+
+  // Что везём в этом рейсе: сырьё всех погрузок (и то, что уже лежит в трюмах у рейса «Отвезти груз»)
+  function plannedRes() {
+    var seen = {}, out = [];
+    Object.keys(ed.cargoMap || {}).forEach(function(k) { if (num(ed.cargoMap[k]) > 0) { seen[k] = 1; out.push(k); } });
+    ed.stops.forEach(function(s) {
+      s.actions.forEach(function(a) {
+        if (a.op === 'load' && a.resource && !seen[a.resource]) { seen[a.resource] = 1; out.push(a.resource); }
+      });
+    });
+    return out;
+  }
+
+  // Подсказка у выгрузки: сколько места на складе (на своей планете) и нужда планеты
+  function unloadInfo(sys, a) {
+    if (!sys) return null;
+    if (a.resource === '*') {
+      var full = plannedRes().filter(function(r) { var x = roomAt(sys, r); return x && x.room <= 0; });
+      if (full.length) {
+        return { cls: 'bad', html: 'склад полон: ' + full.map(function(r) { return esc(resInfo(r).name.toLowerCase()); }).join(', ') +
+          ' — это сюда не выгрузить' };
+      }
+      // груз уже в трюмах (рейс «Отвезти груз») — видно, что встанет не всё
+      var cm = ed.cargoMap || {};
+      var part = Object.keys(cm).filter(function(r) { var x = roomAt(sys, r); return x && num(cm[r]) > x.room; });
+      if (!part.length) return null;
+      return { cls: 'warn', html: 'места хватит не на всё: ' + part.map(function(r) {
+        return esc(resInfo(r).name.toLowerCase()) + ' — <b>' + roomAt(sys, r).room + '</b> из ' + num(cm[r]);
+      }).join(', ') + ', остальное останется в трюме' };
+    }
+    var x = roomAt(sys, a.resource), nd = needInfo(sys, a.resource);
+    if (!x) return nd;
+    if (x.room <= 0) return { cls: 'bad', html: 'склад полон: <b>' + x.stock + '</b> / ' + x.cap + ' — сюда не выгрузить' };
+    return { cls: nd ? 'need' : '', html: 'место на складе: <b>' + x.room + '</b>' + (nd ? ' · ' + nd.html : '') };
+  }
+
+  // Сколько этого сырья примут склады дальше по рейсу — тот же счёт, что у сервера (supply_unload_room):
+  // остановки после этой (по кругу — до неё же), склад одной планеты — один раз. null — не знаем или выгрузки нет
+  function downstreamRoom(i, res) {
+    var n = ed.stops.length, seen = {}, any = false, unknown = false, sum = 0;
+    for (var k = 1; k <= n - 1; k++) {
+      var idx = i + k;
+      if (idx >= n) { if (!ed.loop) break; idx -= n; }
+      var s = ed.stops[idx];
+      if (!s.system_id) { unknown = true; continue; }
+      s.actions.forEach(function(a) {
+        if (a.op !== 'unload' || !(a.resource === '*' || a.resource === res) || seen[s.system_id]) return;
+        any = true;
+        seen[s.system_id] = 1;
+        var x = roomAt(s.system_id, res);
+        if (!x) { unknown = true; return; }
+        var room = x.room;
+        if (a.mode === 'amount') room = Math.min(room, num(a.amount));
+        else if (a.mode === 'need') { var nr = netRow(s.system_id, res); room = Math.min(room, nr ? Math.max(0, num(nr.need)) : 0); }
+        sum += room;
+      });
+    }
+    return any && !unknown ? sum : null;
+  }
+
+  // Погрузка больше, чем примут склады назначения: { room } — иначе null
+  function loadFit(i, a, info) {
+    var room = downstreamRoom(i, a.resource);
+    if (room === null) return null;
+    if (room <= 0) return { room: 0 };
+    var c = selectedCommander();
+    var want = a.mode === 'amount' ? num(a.amount)
+      : Math.min(info && info.n > 0 ? info.n : Infinity, c ? Math.max(0, num(c.free_cargo)) : Infinity);
+    return want > room && want !== Infinity ? { room: room } : null;
+  }
+
   function resOptions(sel, withAll, sys) {
     var h = withAll ? '<option value="*"' + (sel === '*' ? ' selected' : '') + '>Всё из трюма</option>' : '';
     st.resources.forEach(function(r) {
@@ -2611,6 +2820,11 @@
     if (!body) return;
     var keep = body.scrollTop;
     var h = '';
+
+    if (ed.cargo > 0) {
+      h += '<div class="sup-cargo-left"><b>В трюмах ' + ed.cargo + ' ' + plural(ed.cargo, 'единица', 'единицы', 'единиц') + ' груза</b>' +
+        'Выбери планету, где на складе есть место, — флот долетит до площадки сброса и выгрузит всё.</div>';
+    }
 
     // Режим: разовая доставка или кольцо — первое, что решает игрок
     h += '<div class="sup-section">Режим</div>' +
@@ -2721,9 +2935,19 @@
           '<input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" data-ed="amount" ' + at + ' value="' + num(a.amount) + '">' +
           '<button type="button" data-ed="amt" data-d="1" ' + at + ' aria-label="больше">+</button></div></div>';
       }
-      var info = load ? availInfo(s.system_id, a.resource) : needInfo(s.system_id, a.resource);
+      var info = load ? availInfo(s.system_id, a.resource) : unloadInfo(s.system_id, a);
       if (info) h += '<div class="sup-avail ' + info.cls + '">' + info.html + '</div>';
       else if (!load && a.mode === 'need') h += '<div class="sup-avail">выгрузит столько, сколько не хватает до желаемого запаса</div>';
+      // Склады дальше по рейсу примут меньше — сервер и так возьмёт не больше, но скажем заранее и предложим везти меньше
+      if (load) {
+        var fit = loadFit(i, a, info);
+        if (fit && fit.room <= 0) {
+          h += '<div class="sup-avail bad">склады назначения полны — ' + esc(resInfo(a.resource).name.toLowerCase()) + ' не повезём</div>';
+        } else if (fit) {
+          h += '<div class="sup-avail warn">склады назначения примут только <b>' + fit.room + '</b>' +
+            '<button type="button" class="sup-fit" data-ed="fit" data-n="' + fit.room + '" ' + at + '>везти ' + fit.room + '</button></div>';
+        }
+      }
       h += '</div>';
     });
 
@@ -2735,7 +2959,7 @@
           return '<button type="button" class="sup-chip take sup-qbtn" data-ed="quick" data-i="' + i + '" data-res="' + esc(q.id) + '">' +
             '<i style="background:' + esc(q.color) + '"></i>+ ' + esc(q.name) + ' <b>' + q.n + '</b></button>';
         }).join('') + '</div></div>';
-    } else if (!s.actions.length && s.system_id) {
+    } else if (!s.actions.length && s.system_id && !(ed.cargo > 0 && i === 0)) {
       h += '<div class="sup-avail warn">Здесь сейчас нечего взять — добавь действие вручную или выбери другую планету</div>';
     }
 
@@ -2769,14 +2993,14 @@
   }
 
   function validate() {
-    var errs = [], warns = [];
+    var errs = [], warns = [], roomWarns = [];
     if (!ed.routeId && !ed.commanderId) errs.push('Выбери командира');
     if (ed.stops.length < 2) errs.push('Нужно хотя бы 2 остановки');
     var anyLoad = false, loadTotal = 0, loadAll = false;
     ed.stops.forEach(function(s, i) {
       var n = i + 1;
       if (!s.system_id) errs.push('Остановка ' + n + ': выбери планету');
-      if (!s.actions.length) {
+      if (!s.actions.length && !(i === 0 && ed.cargo > 0)) {
         warns.push(i === 0 ? 'Остановка 1: выбери, что погрузить — иначе флот полетит пустым'
                            : 'Остановка ' + n + ' без действий — флот просто пролетит через неё');
       }
@@ -2790,10 +3014,24 @@
           anyLoad = true;
           if (a.mode === 'amount') loadTotal += num(a.amount); else loadAll = true;
           var info = availInfo(s.system_id, a.resource);
-          if (info && info.cls === 'bad') warns.push('Остановка ' + n + ': ' + resInfo(a.resource).name.toLowerCase() + ' только для доверенных');
+          var rn = resInfo(a.resource).name.toLowerCase();
+          if (info && info.cls === 'bad') warns.push('Остановка ' + n + ': ' + rn + ' только для доверенных');
+          var fit = loadFit(i, a, info);
+          if (fit && fit.room <= 0) roomWarns.push('Остановка ' + n + ': склады назначения полны — ' + rn + ' не повезём. Освободи место или выбери другую планету');
+          else if (fit) roomWarns.push('Остановка ' + n + ': склады назначения примут только ' + fit.room + ' — столько и возьмём');
+        }
+        if (a.op === 'unload' && s.system_id) {
+          var full = (a.resource === '*' ? plannedRes() : [a.resource]).filter(function(r) {
+            var x = roomAt(s.system_id, r); return x && x.room <= 0;
+          });
+          if (full.length) {
+            roomWarns.push('Остановка ' + n + ': склад полон — ' +
+              full.map(function(r) { return resInfo(r).name.toLowerCase(); }).join(', ') + ' здесь не выгрузить');
+          }
         }
       });
     });
+    warns = roomWarns.concat(warns);
     var total = 0;
     ed.stops.forEach(function(s) { total += s.actions.length; });
     if (ed.stops.length >= 2 && !total) errs.push('Добавь хотя бы одно действие: погрузить или выгрузить');
@@ -2898,6 +3136,12 @@
       return;
     }
     if (act === 'mode') { x.action.mode = b.getAttribute('data-v'); renderEditor(); return; }
+    if (act === 'fit') {
+      // везти ровно столько, сколько примут склады назначения
+      var fitN = num(b.getAttribute('data-n'));
+      if (fitN > 0) { x.action.mode = 'amount'; x.action.amount = fitN; renderEditor(); }
+      return;
+    }
     if (act === 'amt') {
       var cur = num(x.action.amount), dir = num(b.getAttribute('data-d'));
       var next = dir > 0 ? (Math.floor(cur / STEP) + 1) * STEP : (Math.ceil(cur / STEP) - 1) * STEP;
@@ -2975,6 +3219,8 @@
       }
       closeEditor();
       toast(editing ? 'Рейс обновлён — флот начинает с остановки 1' : 'Рейс запущен — флот вылетает на первую остановку');
+      // «Армия» под окном перечитает флот: командир теперь на рейсе
+      try { document.dispatchEvent(new CustomEvent('supply-routes-changed')); } catch (e) { /* старый браузер — не страшно */ }
       if (st.open) {
         st.tab = 'routes';
         markTabs();
@@ -2992,6 +3238,9 @@
 
   window.openSupplyScreen = openSupplyScreen;
   window.closeSupplyScreen = closeSupplyScreen;
+  // для «Армии»: флот с невыгруженным грузом — отвезти рейсом или выбросить
+  window.supplyCargoRoute = openCargoRoute;
+  window.supplyDropCargo = dropCargo;
 
   document.addEventListener('DOMContentLoaded', function() {
     var btn = document.getElementById('panel-item-supply');

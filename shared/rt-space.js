@@ -108,6 +108,10 @@
   // и при поднятых щитах. Дальность — зазор между корпусами; держит hold с, потом перезарядка cd с
   var TRACTOR = { range: 4000, hold: 20, cd: 60, pull: 80, near: 1200 };
   var MUSTER_MAX = 75;      // десант собирается у шлюза не дольше (кто не добежал — остаётся на борту)
+  // Авиакрыло корабля (wmode): 'auto' — взлетают, когда враг ближе WING_R или по кораблю бьют, стихло на WING_CALM с —
+  // садятся в ангар (так же — пока хозяина нет в игре); 'out' — все в воздухе; 'dock' — на борт и не взлетают
+  var WING_R = 9000, WING_CALM = 25, WING_MODES = { auto: 1, out: 1, dock: 1 };
+  var WING_LEASH = 12000;   // дальше от своего корабля машины не уходят (кроме цели, которую дал игрок)
 
   // Дальность датчиков, м: у больших кораблей дальше (4–7 км по длине корпуса) + 1 км на единицу сонара.
   // Станция на орбите видит на SENS_STATION. Решение Артёма (26.10): орбита 30×30 км, при 6–10 км у кораблей
@@ -208,9 +212,12 @@
       vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
       figIds: o.figIds || null, boardCd: 0, inbound: 0, captured: -1, stands: o.stands || null,
       guns: [], eff: {}, hangar: (A.hangar || []).slice(), launchT: 4 + this.ships.length, sysCache: {},
+      // ангар: bay — номера машин на борту (по порядку ангара в игре), bayHp — целость севших; крыло — wmode, wOut (в воздухе ли)
+      bay: null, bayHp: {}, wmode: 'auto', wOut: false, wCalm: WING_CALM, wLost: 0, hurtT: -99, hurtBy: null,
       tractor: !!A.tractor, tb: null, tbReady: 0, heldBy: null
     };
     sh.crew = sh.dormant ? new DormantCrew(plan, sh.crewOpts) : new SWCrew.Crew(plan, sh.crewOpts);
+    sh.bay = sh.hangar.map(function(_, i) { return i; });
     // орудия с секторами обстрела
     var main = 0, raw = 0;
     for (var g = 0; g < plan.mounts.length; g++) {
@@ -495,7 +502,7 @@
       this.systems(sh, dt);
       this.drive(sh, dt);
       this.place(sh);
-      if (!sh.dormant) this.launch(sh, dt);
+      if (!sh.dormant) this.wingStep(sh, dt);
     }
     this.collide(dt);
     this.senseT -= dt;
@@ -916,11 +923,13 @@
         c.dead = true; c.deadAt = this.t; this.ev.booms.push({ x: c.x, y: c.y, r: 30, t0: this.t, craft: 1 });
         this.ev.kills.push({ craft: c.type, side: c.side, party: c.party ? c.party.length : 0 });
         if (c.role === 'shuttle') this.shuttleLost(c);
+        else if (this.ships[c.home]) this.ships[c.home].wLost++;
       }
       return;
     }
     var sh = this.ships[p.ship]; if (!sh || sh.dead) return;
     if (sh.dormant) this.wake(sh);
+    sh.hurtT = this.t; if (p.by != null && p.by >= 0) sh.hurtBy = p.by;      // по кораблю бьют — крыло взлетает (и знает, кто)
     var T = p.T, dmg = T.dmg * p.k * (0.85 + this.R() * 0.3);
     var w = this.toWorld(sh, p.lx, p.ly);
     // щит сектора
@@ -1136,7 +1145,10 @@
     if (sh.launchT > 0 || sh.eff.hangar < 0.3) return;
     // в ангаре — машины поштучно (как в игре: одна строка ships — одна машина); вылет по одной,
     // звеньями по четыре с паузой
-    var type = sh.hangar.shift(), slot = sh.launched = (sh.launched || 0) + 1;   // slot — номер машины в ангаре по порядку
+    // slot — номер машины в ангаре игры (по порядку): по нему сервер пишет, какая машина сбита; севшая взлетает с той целостью, что была
+    var type = sh.hangar.shift(), slot = sh.bay && sh.bay.length ? sh.bay.shift() : (sh.launched || 0);
+    var hpK = sh.bayHp[slot] != null ? sh.bayHp[slot] : 1; delete sh.bayHp[slot];
+    sh.launched = (sh.launched || 0) + 1;
     sh.wing = (sh.wing || 0) + 1;
     if (sh.wing >= 4) { sh.wing = 0; sh.launchT = 6; } else sh.launchT = 1.5;
     // звенья вылетают по очереди из всех ангаров корабля
@@ -1147,8 +1159,75 @@
     var w = h ? this.toWorld(sh, h.cx + (sh.wing - 1.5) * 6, h.y + 4) : [sh.x, sh.y];
     var C = CRAFT[type];
     this.craft.push({ id: this.nextCraft++, type: type, role: C.role, img: C.img, side: sh.side, home: sh.n,
-                      x: w[0], y: w[1], hd: sh.hd, v: C.speed * 0.6, hp: C.hp, max: C.hp, speed: C.speed,
-                      cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t, slot: slot - 1 });
+                      x: w[0], y: w[1], hd: sh.hd, v: C.speed * 0.6, hp: C.hp * Math.max(0.05, hpK), max: C.hp, speed: C.speed,
+                      cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t, slot: slot });
+  };
+  // Авиакрыло: раз в полсекунды — взлетать или садиться (по режиму и обстановке); в воздухе — вылет по одной
+  Battle.prototype.wingStep = function(sh, dt) {
+    sh.wT = (sh.wT || 0) - dt;
+    if (sh.wT <= 0) {
+      sh.wT = 0.5;
+      // хозяина нет в игре (держит позицию) — крыло само: защищается и бьёт тех, кто подошёл
+      var mode = sh.guard ? 'auto' : (WING_MODES[sh.wmode] ? sh.wmode : 'auto');
+      sh.wCalm = this.wingThreat(sh) ? 0 : (sh.wCalm == null ? WING_CALM : sh.wCalm) + 0.5;
+      var was = sh.wOut;
+      sh.wOut = mode === 'out' || (mode === 'auto' && sh.wCalm < WING_CALM);
+      // поднялись по тревоге — первая машина через 1–2,5 с (стартовая пауза боя — только для начала боя)
+      if (sh.wOut && !was && sh.launchT > 3) sh.launchT = 1 + (sh.n % 4) * 0.5;
+      for (var i = 0; i < this.craft.length; i++) {
+        var c = this.craft[i]; if (c.dead || c.home !== sh.n || c.role === 'shuttle') continue;
+        c.ret = !sh.wOut;
+      }
+      // в ангаре чинят: 2% в секунду, если ангар цел
+      if (sh.eff.hangar >= 0.3) for (var k in sh.bayHp) if (sh.bayHp[k] < 1) sh.bayHp[k] = Math.min(1, sh.bayHp[k] + 0.01);
+    }
+    if (sh.wOut) this.launch(sh, dt);
+  };
+  // Враг рядом: корабль под огнём (15 с), его цель видна, бодрствующий враг или чужая машина ближе WING_R
+  Battle.prototype.wingThreat = function(sh) {
+    if (this.t - sh.hurtT < 15) return true;
+    var f = sh.foeT != null ? this.ships[sh.foeT] : null;
+    if (f && !f.dead && f.side !== sh.side && this.sees(sh.side, f)) return true;
+    var R2 = WING_R * WING_R, i, dx, dy;
+    for (i = 0; i < this.ships.length; i++) {
+      var o = this.ships[i]; if (o.dead || o.dormant || o.side === sh.side || !this.sees(sh.side, o)) continue;
+      dx = o.x - sh.x; dy = o.y - sh.y; if (dx * dx + dy * dy < R2) return true;
+    }
+    for (i = 0; i < this.craft.length; i++) {
+      var c = this.craft[i]; if (c.dead || c.idle || c.side === sh.side || (this.fog && !this.visC[sh.side][c.id])) continue;
+      dx = c.x - sh.x; dy = c.y - sh.y; if (dx * dx + dy * dy < R2) return true;
+    }
+    return false;
+  };
+  // Кого крыло бьёт: цель корабля (видна), тот, кто по нему бьёт, иначе ближайший бодрствующий враг в WING_R
+  Battle.prototype.wingFoe = function(sh) {
+    var f = sh.foeT != null ? this.ships[sh.foeT] : null;
+    if (f && !f.dead && f.side !== sh.side && this.sees(sh.side, f)) return f;
+    f = sh.hurtBy != null && this.t - sh.hurtT < 20 ? this.ships[sh.hurtBy] : null;
+    if (f && !f.dead && f.side !== sh.side && this.sees(sh.side, f)) return f;
+    var best = null, bd = WING_R * WING_R;
+    for (var i = 0; i < this.ships.length; i++) {
+      var o = this.ships[i]; if (o.dead || o.dormant || o.side === sh.side || !this.sees(sh.side, o)) continue;
+      var dx = o.x - sh.x, dy = o.y - sh.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = o; }
+    }
+    return best;
+  };
+  // Режим крыла: 'auto' | 'out' | 'dock'
+  Battle.prototype.setWing = function(shipN, mode) {
+    var sh = this.ships[shipN]; if (!sh || sh.dead || !WING_MODES[mode]) return false;
+    sh.wmode = mode; sh.wT = 0;
+    if (mode === 'out' && sh.launchT > 1.5) sh.launchT = 1.5;          // «В бой» — первая машина почти сразу
+    return true;
+  };
+  // Куда садятся: середина ангара (первого), без ангара — к центру корабля
+  Battle.prototype.hangarPt = function(sh) {
+    for (var i = 0; i < sh.plan.rooms.length; i++) { var r = sh.plan.rooms[i]; if (r.t === 'hangar') return this.toWorld(sh, r.cx, r.cy); }
+    return [sh.x, sh.y];
+  };
+  // Села: машина снова в ангаре — в том же месте списка и с той целостью, что была
+  Battle.prototype.dockCraft = function(c, sh) {
+    c.dead = true; c.docked = true; c.why = 'dock'; c.deadAt = this.t;
+    sh.hangar.push(c.type); (sh.bay = sh.bay || []).push(c.slot); sh.bayHp[c.slot] = Math.max(0.05, c.hp / c.max);
   };
   // Малый корабль, который уже в полёте (в игре истребители стоят на орбите сами по себе):
   // приписывается к своему крупному кораблю home, с которого «взлетел»
@@ -1166,9 +1245,19 @@
       c = this.craft[i]; if (c.dead || c.idle) continue;
       var gx, gy, want;
       if (c.role === 'shuttle') { this.flyShuttle(c, dt); continue; }
-      if (c.role === 'fighter') {
-        // истребитель: ближайший вражеский малый корабль, иначе прикрывает свой корабль
-        var foe = this.nearCraft(c, 9000);
+      var hm = c.ret ? this.ships[c.home] : null, landD = null;
+      if (hm && !hm.dead) {
+        // на борт: к ангару своего корабля; машина с орбиты (не из ангара) или ангар разбит — держится рядом
+        if (c.slot == null || hm.eff.hangar < 0.3) { var ob = this.t * 0.35 + c.id; gx = hm.x + Math.cos(ob) * 600; gy = hm.y + Math.sin(ob) * 600; }
+        else {
+          var hpt = this.hangarPt(hm); gx = hpt[0]; gy = hpt[1];
+          landD = Math.sqrt((gx - c.x) * (gx - c.x) + (gy - c.y) * (gy - c.y));
+          if (landD < 160) { this.dockCraft(c, hm); continue; }
+        }
+      } else if (c.role === 'fighter') {
+        // истребитель: ближайший вражеский малый корабль (не дальше поводка от своего корабля), иначе прикрывает свой корабль
+        var hs0 = this.ships[c.home], foe = this.nearCraft(c, 9000);
+        if (foe && hs0 && !hs0.dead && (foe.x - hs0.x) * (foe.x - hs0.x) + (foe.y - hs0.y) * (foe.y - hs0.y) > WING_LEASH * WING_LEASH) foe = null;
         if (foe) {
           gx = foe.x; gy = foe.y;
           var dx = gx - c.x, dy = gy - c.y, d = Math.sqrt(dx * dx + dy * dy);
@@ -1180,31 +1269,35 @@
             if (hitF) this.pending.push({ at: this.t + d / 2500, craft: foe.id, dmg: 14 });
           }
         } else {
+          // прикрытие: между своим кораблём и его целью (только видимой — к старым засечкам не летают)
           var home = this.ships[c.home];
-          var tgtS = home && !home.dead ? this.foeOf(home) : null;
+          var tgtS = home && !home.dead ? this.wingFoe(home) : null;
           var cx = tgtS && home ? (home.x * 0.4 + tgtS.x * 0.6) : (home ? home.x : c.x), cy = tgtS && home ? (home.y * 0.4 + tgtS.y * 0.6) : (home ? home.y : c.y);
           var orb = this.t * 0.25 + c.id;
           gx = cx + Math.cos(orb) * 1400; gy = cy + Math.sin(orb) * 1400;
         }
       } else {
         // бомбардировщик: заход на отсек вражеского корабля, сброс, отход, новый заход
-        var ship = c.tgt != null ? this.ships[c.tgt] : null;
+        var ship = c.tgt != null ? this.ships[c.tgt] : null, h0 = this.ships[c.home];
+        // цель ушла в туман или увела далеко от своего корабля (а игрок её не давал) — бросить и выбрать заново
+        if (ship && !ship.dead && (!this.sees(c.side, ship) ||
+            (h0 && !h0.dead && h0.foeT !== ship.n && (ship.x - h0.x) * (ship.x - h0.x) + (ship.y - h0.y) * (ship.y - h0.y) > WING_LEASH * WING_LEASH))) ship = null;
         if (!ship || ship.dead) {
-          var h = this.ships[c.home] || c, best = null, bd = 1e18;
-          // цель своего корабля — первой (если её видно)
-          var hft = h.foeT != null ? this.ships[h.foeT] : null;
+          var h = h0 || c, best = null, bd = 1e18;
+          // цель своего корабля, иначе тот, кто по нему бьёт, иначе ближайший видимый — не дальше поводка от своего корабля
+          var hft = h.foeT != null ? this.ships[h.foeT] : h.hurtBy != null && this.t - h.hurtT < 20 ? this.ships[h.hurtBy] : null;
           if (hft && !hft.dead && hft.side !== c.side && this.sees(c.side, hft)) { best = hft; bd = -1; }
           for (var s = 0; s < this.ships.length && bd >= 0; s++) {
             var o = this.ships[s]; if (o.dead || o.side === c.side || !this.sees(c.side, o)) continue;
+            if ((o.x - h.x) * (o.x - h.x) + (o.y - h.y) * (o.y - h.y) > WING_LEASH * WING_LEASH) continue;
             var ddx = o.x - c.x, ddy = o.y - c.y, dd = ddx * ddx + ddy * ddy;
             if (dd < bd) { bd = dd; best = o; }
           }
           ship = best; c.tgt = best ? best.n : null; c.mode = 'go';
           c.room = best ? this.sysRoom(best, R() < 0.5 ? 'engine' : 'guns', { x: c.x, y: c.y }) : 0;
           if (!best) {
-            // никого не видно — к последней засечке врага, иначе к своему кораблю
-            var gh = this.ships[c.home] ? this.nearestFoe(this.ships[c.home]) : null;
-            if (gh) { gx = gh.x; gy = gh.y; } else { gx = h.x; gy = h.y; }
+            // никого не видно — кружат у своего корабля (к старым засечкам не летят)
+            var ob2 = this.t * 0.2 + c.id; gx = h.x + Math.cos(ob2) * 1800; gy = h.y + Math.sin(ob2) * 1800;
           }
         }
         if (ship) {
@@ -1229,10 +1322,12 @@
       }
       if (!c.off) { var oa = c.id * 2.399; c.off = [Math.cos(oa) * (60 + (c.id % 4) * 35), Math.sin(oa) * (60 + (c.id % 4) * 35)]; }
       var far = (gx - c.x) * (gx - c.x) + (gy - c.y) * (gy - c.y) > 640000;     // дальше 800 м — держать строй
-      if (far) { gx += c.off[0]; gy += c.off[1]; }
+      if (far && landD == null) { gx += c.off[0]; gy += c.off[1]; }
       want = Math.atan2(gy - c.y, gx - c.x);
       c.hd = turnTo(c.hd, want, 2.2 * dt);
-      c.v += (c.speed - c.v) * Math.min(1, dt * 0.8);
+      // заход на посадку: сбросить ход у ангара (но не медленнее своего корабля)
+      var vT = landD != null && landD < 1200 ? Math.min(c.speed, Math.max((hm.v || 0) + 40, 40 + landD * 0.4)) : c.speed;
+      c.v += (vT - c.v) * Math.min(1, dt * (landD != null ? 1.6 : 0.8));
       c.x += Math.cos(c.hd) * c.v * dt; c.y += Math.sin(c.hd) * c.v * dt;
     }
     // убрать сбитых через 2 с
@@ -1642,5 +1737,5 @@
     return e;
   };
 
-  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR, sensOf: sensOf, SENS_STATION: SENS_STATION };
+  return { Battle: Battle, GUNS: GUNS, SYS: SYS, SYS_BY: SYS_BY, CLASS: CLASS, CRAFT: CRAFT, TICK: TICK, wrap: wrap, boardCap: boardCap, BOARD_GAP: BOARD_GAP, TRACTOR: TRACTOR, sensOf: sensOf, SENS_STATION: SENS_STATION, WING_R: WING_R, WING_CALM: WING_CALM };
 });

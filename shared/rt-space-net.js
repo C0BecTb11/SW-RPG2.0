@@ -101,6 +101,8 @@
   }
 
   function r1(x) { return Math.round(x * 10) / 10; }
+  // режим авиакрыла ↔ число в кадре
+  var WM = { auto: 0, out: 1, dock: 2 }, WM_N = ['auto', 'out', 'dock'];
   function r0(x) { return Math.round(x); }
   function r2(x) { return Math.round(x * 100) / 100; }
 
@@ -148,6 +150,9 @@
       var hbO = B.holder(sh); if (hbO) o.hb = [hbO.n, r1(hbO.tb.until - B.t)];   // нас держат (держащий может быть в тумане)
       o.ow = this.ctl(sh) ? 1 : 2; o.cd = r0(sh.boardCd); o.ai = sh.ai ? 1 : 0; o.gd = sh.guard ? 1 : 0; o.at = sh.foeT != null ? sh.foeT : -1; o.ord = sh.order ? [r0(sh.order.x), r0(sh.order.y), sh.order.face ? 1 : 0] : null;
       o.hold = sh.hold || null; o.alive = sh.crew.alive(); o.sens = r0(B.sensRange(sh)); o.alert = sh.crew.alertOn ? 1 : 0;
+      // авиакрыло: режим, на борту / в воздухе / сбито (только у кого есть машины)
+      var wf = 0; for (i = 0; i < B.craft.length; i++) { var wc = B.craft[i]; if (!wc.dead && wc.home === sh.n && wc.role !== 'shuttle') wf++; }
+      if (wf || sh.hangar.length || sh.wLost) o.wg = [WM[sh.wmode] || 0, sh.hangar.length, wf, sh.wLost || 0, sh.wOut ? 1 : 0];
       // трюм: десант на борту / всего, герои, техника, недобор экипажа
       var tA = 0, tN = 0, tP = 0, hn = [];
       for (i = 0; i < sh.crew.agents.length; i++) { var ta = sh.crew.agents[i]; if (ta.team !== sh.side || !ta.utype) continue; tN++; if (ta.alive) { tA++; if (ta.stand) tP++; if (ta.hero && ta.uname) hn.push(ta.uname); } }
@@ -436,6 +441,7 @@
       case 'hold': if (!mine) return false; B.setHold(m.n, m.to | 0, !!m.on); return true;
       case 'stand': if (!mine || !Array.isArray(m.ids)) return false; return B.standTroops(m.n, m.ids.slice(0, 128).map(Number), m.cell == null ? -1 : m.cell | 0) > 0;
       case 'tractor': this.lastWhy = ''; if (!mine) return false; this.lastWhy = B.tractor(m.n, m.to == null ? -1 : m.to | 0); return !this.lastWhy;
+      case 'wing': if (!mine) return false; return B.setWing(m.n, String(m.mode));
     }
     // абордаж: по кораблю-цели, сторона — игрока
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;
@@ -515,6 +521,8 @@
     B.autoShields = function(n) { send({ t: 'cmd', k: 'focus', n: n, auto: 1 }); var sh = B.ships[n]; if (sh) { sh.focusAuto = true; lock(sh); } };
     // посты десанта: решает сервер, на экране — по кадрам людей (дело «на посту»)
     B.standTroops = function(n, ids, cell) { send({ t: 'cmd', k: 'stand', n: n, ids: ids.slice(0, 128), cell: cell == null ? -1 : cell }); return ids.length; };
+    // авиакрыло: режим — на экране сразу
+    B.setWing = function(n, mode) { send({ t: 'cmd', k: 'wing', n: n, mode: mode }); var sh = B.ships[n]; if (sh) { sh.wmode = mode; lock(sh); } return true; };
     B.setHold = function(n, t, on) { send({ t: 'cmd', k: 'hold', n: n, to: t, on: !!on }); var sh = B.ships[n]; if (sh) { sh.hold = sh.hold || {}; sh.hold[t] = !!on; lock(sh); } };
     B.canBoard = function(n, t) {
       var l = self.can || [];
@@ -636,6 +644,7 @@
     if (sh.side === this.side) {
       sh.boardCd = o.cd;
       sh.ctl = o.ow !== 2;
+      if (o.wg) { if (mine) sh.wmode = WM_N[o.wg[0]] || 'auto'; sh.netWing = { bay: o.wg[1], fly: o.wg[2], lost: o.wg[3], out: !!o.wg[4] }; } else sh.netWing = null;
       if (mine) { sh.ai = !!o.ai; sh.guard = !!o.gd; sh.foeT = o.at >= 0 ? o.at : null; sh.order = o.ord ? { x: o.ord[0], y: o.ord[1], face: !!o.ord[2] } : null; sh.hold = o.hold || null; }
       sh.netAlive = o.alive; sh.netSens = o.sens; sh.crew.alertOn = !!o.alert;
       sh.netTroops = o.tr || null; sh.netPosts = o.ps || 0; sh.netGuards = o.gu || null; sh.netMuster = o.mu || 0; sh.netHeroes = o.hn || []; sh.crew.crewLost = o.cl || 0;

@@ -610,6 +610,8 @@
 
   // ---- ход
   Ground.prototype.nav = function(a, dt, sp) {
+    // точки нет (приказ ждёт конца повадки: goCell при a.og кладёт его в og) — стоять, а не падать
+    if (!a.goal) { a.at = true; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     var c = this.cellOf(a), cx = c[0], cy = c[1], gx = a.goal[0], gy = a.goal[1];
     var off = a.size === 2 ? 1 : 0.5;
     var ddx = gx + off - a.x, ddy = gy + off - a.y, dist = Math.sqrt(ddx * ddx + ddy * ddy);

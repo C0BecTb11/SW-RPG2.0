@@ -372,7 +372,8 @@
       enemy: { basic: 'cis_b1', mix: [[0.15, 'cis_b1_launcher', 0.1], [0.2, 'cis_b1_sniper', 0.08], [0.3, 'cis_b2', 0.25], [0.45, 'cis_wheel', 0.12], [0.5, 'cis_stap', 0.1], [0.65, 'cis_bx', 0.12]],
                boss: ['cis_aat'], bossLite: ['cis_stap', 'cis_stap', 'cis_bx'] },
       base: 'аванпост', baseGen: 'аванпоста', foes: 'дроиды', foesGen: 'дроидов', lost: 'Аванпост пал', held: 'Аванпост устоял: флот на подходе', won: 'Все волны дроидов отбиты' },
-    c_siege: { team: 1, foe: 0, lead: 'cis_bx', basic: 'cis_b1', spec: ['cis_b2', 'cis_b2', 'cis_b1_sniper', 'cis_b1_launcher', 'cis_wheel'], elite: 'cis_bounty', veh: 'cis_stap',
+    // клоны в строю бьют плотнее дроидов (крепче и метче) — их волны ещё ×0,82 (прогон ботов 27.10)
+    c_siege: { team: 1, foe: 0, waveK: 0.82, lead: 'cis_bx', basic: 'cis_b1', spec: ['cis_b2', 'cis_b2', 'cis_b1_sniper', 'cis_b1_launcher', 'cis_wheel'], elite: 'cis_bounty', veh: 'cis_stap',
       enemy: { basic: 'rep_dc15a', mix: [[0.15, 'rep_launcher', 0.1], [0.2, 'rep_sniper', 0.08], [0.3, 'rep_heavy', 0.18], [0.45, 'rep_barc', 0.1], [0.5, 'rep_atrt', 0.1], [0.6, 'rep_arc', 0.1], [0.75, 'rep_commando', 0.08]],
                boss: ['rep_atte'], bossLite: ['rep_barc', 'rep_barc', 'rep_arc'] },
       base: 'завод', baseGen: 'завода', foes: 'клоны', foesGen: 'клонов', lost: 'Завод захвачен', held: 'Завод устоял: подходит эскадра', won: 'Все волны клонов отбиты' }

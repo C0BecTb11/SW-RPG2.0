@@ -376,8 +376,8 @@
   "sha": "c32d70d5ab51"
  },
  "shared/rt-events.js": {
-  "v": "3",
-  "sha": "7aa69a84a69c"
+  "v": "4",
+  "sha": "b823cc40630d"
  },
  "shared/rt-figures.js": {
   "v": "7",
@@ -388,8 +388,8 @@
   "sha": "50358a32461b"
  },
  "shared/rt-ground.js": {
-  "v": "19",
-  "sha": "6c4ae4b5929b"
+  "v": "20",
+  "sha": "42085b549a0f"
  },
  "shared/rt-heroes.js": {
   "v": "2",

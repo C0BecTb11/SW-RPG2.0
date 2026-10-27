@@ -188,7 +188,18 @@ function makeFeedRow(e) {
   // к кораблю на орбите, к зданию или поселению. Что относится к планете
   // целиком (выдача планеты, конвои, рынок) — по-прежнему на галактику.
   var target = e.jumpable && e.system_id ? feedTarget(e) : null;
-  if (target || (e.jumpable && e.system_id && !e.is_deep_space)) {
+  // Находка в Пустоте: на карте галактики — шторка находки (оттуда и на орбиту), на других экранах — орбита узла
+  var voidFind = /^void_find_/.test(e.type || '') && typeof window.openVoidFind === 'function';
+  if (voidFind) {
+    var vf = document.createElement('button');
+    vf.className = 'feed-go';
+    vf.textContent = 'Подробнее';
+    vf.addEventListener('click', function() {
+      closeEventsFeed();
+      window.openVoidFind(e.meta && e.meta.find);
+    });
+    row.appendChild(vf);
+  } else if (target || (e.jumpable && e.system_id && !e.is_deep_space)) {
     var go = document.createElement('button');
     go.className = 'feed-go';
     go.textContent = 'Показать';

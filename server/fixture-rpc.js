@@ -1,4 +1,4 @@
-// Замеры без базы (RT_DEV): ответы функций rt_ground_* из файлов-снимков планет.
+// Замеры без базы (RT_DEV): ответы функций rt_ground_* и rt_space_* (с находкой в Пустоте) из файлов-снимков.
 // RT_GROUND_FIXTURE=/путь/к/папке — там <планета>.json (ответ rt_ground_state + units).
 // Погибшие (hp 0 из rt_ground_sync) из снимка уходят, как ушли бы из базы.
 'use strict';
@@ -33,6 +33,15 @@ function make(dir, log) {
         return Promise.resolve({ ships: (args.p_ships || []).length });
       }
       if (fn === 'rt_space_close') return Promise.resolve(true);
+      if (fn === 'rt_space_orders_take') return Promise.resolve([]);
+      // находка в Пустоте: охрана пишется в снимок; все погибли — охрана разбита
+      if (fn === 'rt_void_sync') {
+        var s6 = load(bySys[args.p_battle]), fd = s6.find;
+        if (!fd || fd.id !== args.p_find) return Promise.resolve({ closed: true });
+        (args.p_guards || []).forEach(function(u) { var g = fd.guards.filter(function(x) { return x.i === u.i; })[0]; if (g) { g.hp = Math.min(g.hp, u.hp); g.x = u.x; g.y = u.y; g.hd = u.hd; } });
+        if (!fd.guards.some(function(g) { return g.hp > 0; })) fd.down = true;
+        return Promise.resolve(JSON.parse(JSON.stringify(fd)));
+      }
       if (fn === 'rt_space_posts') { log('info', 'посты десанта: записано', { ships: (args.p_ships || []).length, posts: JSON.stringify(args.p_ships || []).slice(0, 200) }); return Promise.resolve(true); }
       if (fn === 'rt_ground_open') { var st = load(args.p_system); bySys[st.battle_id] = args.p_system; return Promise.resolve(JSON.parse(JSON.stringify(st))); }
       if (fn === 'rt_ground_pull') { var s2 = load(bySys[args.p_battle] || args.p_system); return Promise.resolve(JSON.parse(JSON.stringify(s2))); }

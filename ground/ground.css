@@ -31,6 +31,16 @@
 .gd-abbar .sp-chip.cd { opacity: 0.45; }
 .gd-abbar .sp-chip.arm { border-color: rgba(159,216,255,0.85); color: #cfeaff; background: rgba(74,144,217,0.16); box-shadow: 0 0 10px rgba(110,180,255,0.25); }
 .gd-abbar .sp-chip.x { color: #ff9a80; border-color: rgba(255,110,90,0.5); margin-left: auto; }
+/* Свернуть верхнюю панель: остаётся одна строка — место, задача, таймер */
+.gd-min { flex: none; width: 26px; height: 22px; margin-left: 2px; padding: 0; display: grid; place-items: center; border: 1px solid #2a3644; border-radius: 7px; background: rgba(8,11,17,0.9); color: #8fa8c4; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.gd-min svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.2s; }
+.gd-min:active { border-color: rgba(217,169,64,0.7); color: #e8d9a8; }
+.gd-min:focus { outline: none; }
+.gd-min:focus-visible { box-shadow: 0 0 0 2px #0a0d14, 0 0 0 4px #8fa8c4; }
+#sp-top.min > .sp-row:not(.gd-task) { display: none !important; }
+#sp-top.min .gd-task { margin-top: 0; }
+#sp-top.min .gd-min svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .gd-min svg { transition: none; } }
 /* Телефон боком: панели боя — колонкой слева, поле — справа (ground.js смещает середину камеры) */
 @media (orientation: landscape) and (max-height: 500px) {
   .sp-panel.sp-top, .sp-panel.sp-bottom { left: 10px; right: auto; width: min(46vw, 420px); margin: 0; }
@@ -42,6 +52,9 @@
   #sp-stat { max-height: 22vh; }
   .gd-abbar { padding: 5px 6px 5px 8px; gap: 3px; }
   .gd-abbar .sp-chip { padding: 5px 7px; font-size: 10px; }
+  /* всплывашка — справа сверху над полем, под кнопками, а не поверх колонки панелей */
+  .sp-toast { top: calc(52px + env(safe-area-inset-top, 0px)); left: auto; right: 10px; max-width: min(380px, 50vw); transform: translateY(-6px); }
+  .sp-toast.show { transform: none; }
 }
 .gd-units { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .gd-units .sp-chip { padding: 4px 8px; overflow: visible; }

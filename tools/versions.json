@@ -108,12 +108,12 @@
   "sha": "55b5c151ff6c"
  },
  "ground/ground.css": {
-  "v": "9",
-  "sha": "54be4e54cb44"
+  "v": "10",
+  "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "30",
-  "sha": "13f56ec95a40"
+  "v": "31",
+  "sha": "a80cc0bc5967"
  },
  "ground/preview.css": {
   "v": "1",
@@ -176,8 +176,8 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "24",
-  "sha": "02e15b8b7dfa"
+  "v": "25",
+  "sha": "a1ae7297fb67"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -232,8 +232,8 @@
   "sha": "e3a904287cce"
  },
  "js/ground-live.js": {
-  "v": "30",
-  "sha": "5edd8385259a"
+  "v": "31",
+  "sha": "f2e4129481c0"
  },
  "js/map-layer.js": {
   "v": "2",
@@ -296,8 +296,8 @@
   "sha": "2371cf90901d"
  },
  "js/space-live.js": {
-  "v": "30",
-  "sha": "2520cb50f6db"
+  "v": "31",
+  "sha": "2455b9b0c93d"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -444,11 +444,11 @@
   "sha": "26a531e80361"
  },
  "space/space.css": {
-  "v": "25",
-  "sha": "79364f68e21e"
+  "v": "26",
+  "sha": "d74d26c780c9"
  },
  "space/space.js": {
-  "v": "47",
-  "sha": "399df7b3af7d"
+  "v": "48",
+  "sha": "0c2572164a0b"
  }
 }

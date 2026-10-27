@@ -3045,6 +3045,13 @@
     if (G.quiet && !$('sp-end').hidden) return;          // поверх итога боя — не мешать
     if (kind !== 'bad' && t - toastAt < 600 && el.classList.contains('bad')) return;   // важное не перебивать
     toastAt = t;
+    // под верхние панели, а не посреди поля боя
+    var y = 0;
+    ['sp-top', 'sp-back', 'sp-tr', 'credits-bar'].forEach(function(id) {
+      var e = document.getElementById(id); if (!e) return;
+      var r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.top < window.innerHeight * 0.45) y = Math.max(y, r.bottom);
+    });
+    if (y > 0) el.style.setProperty('--toast-y', Math.round(y + 8) + 'px'); else el.style.removeProperty('--toast-y');
     el.textContent = msg; el.className = 'sp-toast show' + (kind ? ' ' + kind : '');
     clearTimeout(toastT); toastT = setTimeout(function() { el.className = 'sp-toast'; }, 2400);
   }

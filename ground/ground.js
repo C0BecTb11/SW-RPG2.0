@@ -1038,7 +1038,8 @@
     $('sp-sheet-t').textContent = SHEET_T[G.sheet] || '';
   }
   var toastT = 0;
-  function toast(msg, kind) { var el = $('sp-toast'); el.textContent = msg; el.className = 'sp-toast show' + (kind ? ' ' + kind : ''); clearTimeout(toastT); toastT = setTimeout(function() { el.className = 'sp-toast'; }, 2600); }
+  // Всплывашка — под верхние панели (topEdge), а не посреди поля: в бою центр нужен. Боком — справа сверху (ground.css).
+  function toast(msg, kind) { var el = $('sp-toast'), ty = topEdge(); if (ty > 0) el.style.setProperty('--toast-y', Math.round(ty + 8) + 'px'); else el.style.removeProperty('--toast-y'); el.textContent = msg; el.className = 'sp-toast show' + (kind ? ' ' + kind : ''); clearTimeout(toastT); toastT = setTimeout(function() { el.className = 'sp-toast'; }, 2600); }
   function takeMsgs() { var ms = G.B.ev.msgs; for (var i = 0; i < ms.length; i++) { var m = ms[i]; if (m.seq <= G.msgSeq) continue; G.msgSeq = m.seq; if (m.team === G.side) toast(m.text, m.kind); } }
   function endBattle() {
     G.ended = true; var B = G.B, win = B.over === G.side;
@@ -1193,6 +1194,25 @@
     if (b && b.hasAttribute('data-v')) { var box = b.parentNode.id, v = b.getAttribute('data-v'); if (box === 'gd-poly-side') po.side = +v; else if (box === 'gd-poly-role') po.role = v; else if (box === 'gd-poly-size') po.size = v; else if (box === 'gd-poly-foe') po.foe = v; else if (box === 'gd-poly-cap') po.cap = +v; else if (box === 'gd-poly-lvl') po.lvl = +v; polyOpen(); return; }
     if (e.target.id === 'gd-poly-go' || e.target === $('sp-poly')) { $('sp-poly').hidden = true; if (e.target.id === 'gd-poly-go') start(po.planet); }
   });
+
+  // Верхняя панель боя сворачивается до одной строки (место, задача, таймер) — поля видно больше.
+  // Выбор помнится на устройстве.
+  (function() {
+    var top = $('sp-top'), row = top && top.querySelector('.gd-task'); if (!row) return;
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'gd-min';
+    b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 7.5 6 4l3.5 3.5"/></svg>';
+    function set(min, save) {
+      top.classList.toggle('min', min);
+      b.setAttribute('aria-expanded', min ? 'false' : 'true');
+      b.title = min ? 'Развернуть панель' : 'Свернуть панель'; b.setAttribute('aria-label', b.title);
+      if (save) { try { localStorage.setItem('gd-top-min', min ? '1' : '0'); } catch (e) {} }
+      if (G.sheet) sheetShow();                       // шторке снизу стало больше (меньше) места
+    }
+    b.addEventListener('click', function(e) { e.stopPropagation(); set(!top.classList.contains('min'), true); });
+    row.appendChild(b);
+    var was = false; try { was = localStorage.getItem('gd-top-min') === '1'; } catch (e) {}
+    set(was, false);
+  })();
 
   resize(); bind(); requestAnimationFrame(frame);
   G.CAM = CAM; G.TW = TW;

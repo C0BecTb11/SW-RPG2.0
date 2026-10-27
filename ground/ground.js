@@ -620,6 +620,7 @@
     c.drawImage(cv, p[0] - FPAD * s, p[1] - FPAD * s, (st.w + FPAD * 2) * s, (st.h + FPAD * 2) * s);
     if (st.dead) return;
     var cx = st.x + st.w / 2, cy = st.y + st.h / 2, u = { team: st.team, w: st.w, h: st.h, res: st.res, t: B.t + (st.x * 0.37 + st.y * 0.61) % 7, hp: fortHp(st) };
+    if (st.kind === 'landmine' && st.team === G.side && U.MINE) u.r = U.MINE.r;          // своим — граница взрыва
     if (SWForts.aims(st.kind)) {
       var key = shotKey(cx, cy);
       u.fire = fortAim(st, shots[key], B.t); u.aim = st._a;
@@ -634,6 +635,7 @@
     var B = G.B, shotBy = window.SWForts ? fortShots(B) : null;
     for (var i = 0; i < B.structs.length; i++) {
       var st = B.structs[i]; if (st.x + st.w < vis[0] || st.x > vis[2] || st.y + st.h < vis[1] || st.y > vis[3]) continue;
+      if (st.kind === 'landmine' && st.team !== G.side && !st.dead) continue;      // чужая мина не видна, пока не рванёт
       var seen = B.seen[G.side][st.y * N + st.x]; if (!seen && st.team !== G.side) continue;
       var p = toS(st.x, st.y);
       if (st.kind === 'gate') { drawGate(c, st, s, p); }

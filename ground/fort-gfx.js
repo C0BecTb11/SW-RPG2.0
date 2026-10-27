@@ -528,6 +528,47 @@
     if (on) { glow(c, x + 0.08, y - 0.01, 0.03, '#ff5ab4', 0.95); glow(c, x + 0.19, y - 0.01, 0.03, '#ffd060', 0.95); glow(c, x + 0.3, y - 0.01, 0.03, '#5ad8ff', 0.95); }
   }
 
+  // ---------------------------------------------------------------- мина
+  // Прикопана в землю: виден лишь край корпуса и нажимная крышка. Республика — серый диск с секторами
+  // и синим огоньком, дроиды — шестигранная песочная мина с красным глазом. Хозяину видна и бледная
+  // граница взрыва (u.r), враг мину не видит вовсе (ground.js её не рисует).
+  function landmine(c, u) {
+    var P = pal(u.team), R = 0.27;
+    // взрыхлённая земля вокруг
+    var g = c.createRadialGradient(0, 0, R * 0.6, 0, 0, R * 1.75);
+    g.addColorStop(0, 'rgba(58,44,30,0.85)'); g.addColorStop(0.6, 'rgba(78,60,40,0.55)'); g.addColorStop(1, 'rgba(78,60,40,0)');
+    c.fillStyle = g; dot(c, 0, 0, R * 1.75);
+    for (var i = 0; i < 7; i++) { var a = rnd(i * 2.3) * TAU, d = R * (1.15 + rnd(i * 4.1) * 0.45); c.fillStyle = 'rgba(48,36,24,0.7)'; dot(c, Math.cos(a) * d, Math.sin(a) * d, 0.025 + rnd(i) * 0.02); }
+    if (u.team === 1) {
+      c.fillStyle = 'rgba(0,0,0,0.4)'; ngon(c, 0.03, 0.04, R, 6, 0); c.fill();
+      c.fillStyle = lit(c, 0, 0, R, P.plate, 1.2, 0.55); ngon(c, 0, 0, R, 6, 0); c.fill(); edge(c, k(P.line, 1, 0.85), 0.018);
+      for (i = 0; i < 6; i++) { var b = i / 6 * TAU; seam(c, Math.cos(b) * R * 0.45, Math.sin(b) * R * 0.45, Math.cos(b) * R * 0.92, Math.sin(b) * R * 0.92, 0.012); }
+      c.fillStyle = dome(c, 0, 0, R * 0.45, P.mid, 1.2, 0.55); ngon(c, 0, 0, R * 0.45, 6, Math.PI / 6); c.fill(); edge(c, 'rgba(0,0,0,0.35)', 0.012);
+    } else {
+      c.fillStyle = 'rgba(0,0,0,0.4)'; dot(c, 0.03, 0.04, R);
+      c.fillStyle = dome(c, 0, 0, R, P.mid, 1.25, 0.5); dot(c, 0, 0, R); edge(c, k(P.line, 1, 0.85), 0.018);
+      c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 0.014;
+      for (i = 0; i < 8; i++) { var e = i / 8 * TAU; c.beginPath(); c.moveTo(Math.cos(e) * R * 0.5, Math.sin(e) * R * 0.5); c.lineTo(Math.cos(e) * R * 0.95, Math.sin(e) * R * 0.95); c.stroke(); }
+      c.fillStyle = dome(c, 0, 0, R * 0.48, P.plate, 1.3, 0.6); dot(c, 0, 0, R * 0.48); edge(c, 'rgba(0,0,0,0.35)', 0.012);
+      c.strokeStyle = k(P.mark, 1, 0.9); c.lineWidth = 0.03; c.beginPath(); c.arc(0, 0, R * 0.7, -0.6, 0.6); c.stroke();
+    }
+  }
+  function landmineTop(c, u) {
+    var P = pal(u.team), t = u.t || 0;
+    // хозяину — граница взрыва, бледным пунктиром
+    if (u.r) { c.strokeStyle = k(P.light, 1, 0.16); c.lineWidth = 0.03; c.setLineDash([0.1, 0.12]); c.beginPath(); c.arc(0, 0, u.r, 0, TAU); c.stroke(); c.setLineDash([]); }
+    var on = (t % 1.6) < 0.18;
+    glow(c, 0.0, 0.0, 0.03, P.light, on ? 1 : 0.22);
+  }
+  // воронка на месте сработавшей мины
+  function crater(c, u) {
+    var g = c.createRadialGradient(0, 0, 0, 0, 0, 0.7);
+    g.addColorStop(0, 'rgba(18,12,8,0.85)'); g.addColorStop(0.45, 'rgba(40,28,18,0.7)'); g.addColorStop(0.75, 'rgba(70,52,34,0.35)'); g.addColorStop(1, 'rgba(70,52,34,0)');
+    c.fillStyle = g; dot(c, 0, 0, 0.7);
+    for (var i = 0; i < 10; i++) { var a = rnd(i * 3.1 + 2) * TAU, d = 0.45 + rnd(i * 1.7) * 0.4; c.fillStyle = 'rgba(40,30,20,0.6)'; dot(c, Math.cos(a) * d, Math.sin(a) * d, 0.02 + rnd(i * 5) * 0.03); }
+    c.fillStyle = 'rgba(90,92,96,0.7)'; for (i = 0; i < 4; i++) { var b = rnd(i * 7.7) * TAU, e = 0.2 + rnd(i * 2.9) * 0.3; ngon(c, Math.cos(b) * e, Math.sin(b) * e, 0.035, 3, b); c.fill(); }
+  }
+
   // ---------------------------------------------------------------- башня поселения
   // Бастион рисует местность; здесь — крупная турель (та же голова, что у полевой, в 1,6 раза больше)
   function tower(c, u) { turretBase(c, u, 1.55); }
@@ -552,7 +593,8 @@
     radar:     { base: radar,     top: radarTop },
     extractor: { base: extractor, top: extractorTop },
     cantina:   { base: cantina,   top: cantinaTop },
-    tower:     { base: tower,     top: towerTop, aims: true }
+    tower:     { base: tower,     top: towerTop, aims: true },
+    landmine:  { base: landmine,  top: landmineTop }
   };
 
   // копоть: чем меньше прочности, тем больше пятен
@@ -571,7 +613,7 @@
   function draw(c, kind, u, part) {
     var K = KINDS[kind]; if (!K) return false;
     c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
-    if (u.dead) { if (part !== 'top') ruin(c, u); c.restore(); return true; }
+    if (u.dead) { if (part !== 'top') { if (kind === 'landmine') crater(c, u); else ruin(c, u); } c.restore(); return true; }
     if (part !== 'top') { K.base(c, u); scorch(c, u); }
     if (part !== 'base' && K.top) K.top(c, u);
     c.restore();
@@ -586,7 +628,7 @@
     if (/^mine_/.test(rest)) { kind = 'extractor'; res = rest.slice(5); }
     return { team: m[1] === 'cis' ? 1 : 0, kind: kind, res: res };
   }
-  var SIZE = { trench: 1, bunker: 2, turret: 1, jammer: 2, camo: 1, radar: 2, extractor: 2, cantina: 3, tower: 2 };
+  var SIZE = { trench: 1, bunker: 2, turret: 1, jammer: 2, camo: 1, radar: 2, extractor: 2, cantina: 3, tower: 2, landmine: 1 };
   function icon(id, px) {
     px = px || 128;
     var key = id + '|' + px; if (ICON[key]) return ICON[key];

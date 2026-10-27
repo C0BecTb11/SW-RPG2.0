@@ -179,7 +179,7 @@ GroundRoom.prototype.admit = function(c) {
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'ground', system: this.system, name: this.state.system.name, side: c.side, att: this.att, T: Math.round(B.t * 100) / 100, capNeed: B.capNeed,
     me: c.who.user, own: !this.cfg.dev,                                   // приказы — только своим бойцам (Viewer.ids): клиент не выбирает союзных
-    map: this.mapPacked, structs: B.structs.map(Net.structRow),
+    map: this.mapPacked, structs: B.structs.map(function(s) { return Net.structRow(s, c.side); }),
     districts: B.districts.map(function(d) { return { id: d.id, name: d.name, effect: d.effect, rect: d.rect, by: d.by, cnt: d.cnt }; }),
     faction: this.state.system.faction, controller: this.state.system.controller, zones: this.zones, zoneBox: this.zoneBox,
     buildings: this.state.buildings || [], plots: this.state.plots || []

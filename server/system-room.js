@@ -34,6 +34,11 @@ function hasPlan(id) { return /^[a-z0-9_]{2,32}$/.test(String(id)) && fs.existsS
 var CELL_M = 200;            // клетка орбиты игры в метрах
 var SYNC_EVERY = 5000, PULL_EVERY = 5000, QUIET_MS = 180000, WAKE_M = 9000, WAKE_CRAFT_M = 5000;
 var FIRE_HOLD = 30;          // секунд после попадания корабль считается «под огнём» (прыжок закрыт)
+// Находка в Пустоте (sql/void_finds.sql): пираты-охрана — сторона 2. Чужой корабль ближе AGGRO к находке —
+// охрана просыпается и идёт в атаку; дальше LEASH от находки за врагом не гонится — возвращается на пост
+var VF_AGGRO = 7000, VF_LEASH = 10000;
+// Трудность охраны — «средняя»: корпус и пушки пиратов крепче своего класса (подобрано боями 4 Акламаторов против охраны)
+var VF_HP = +(process.env.VF_HP || 2), VF_DMG = +(process.env.VF_DMG || 1.8);
 
 // отпечаток улучшений корабля: что даёт верфь
 function upgKey(s) { return [s.bonus_hp, s.bonus_shield, s.bonus_damage, s.bonus_move, s.bonus_vision, s.bonus_fore, (s.upgrades || []).join('|')].join(','); }
@@ -89,6 +94,7 @@ SystemRoom.prototype.open = function() {
     self.B = B;
     self.setEyes();
     self.applyShips(st.ships || []);
+    self.applyFind(st.find || null);
     self.cfg.log('info', 'орбита открыта', { room: self.name, battle: self.battleId, ships: B.ships.length, system: st.system.faction });
   });
 };
@@ -235,7 +241,8 @@ SystemRoom.prototype.hello = function(c) {
     t: 'hello', kind: 'sys', caps: ['many'], fog: true, system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
     user: c.who.user,
     sc: { name: st.system.name, ships: B.ships.map(function(sh) { return self.shipRow(sh); }) },
-    grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: st.station || null }
+    grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: st.station || null },
+    find: this.findInfo()
   };
 };
 SystemRoom.prototype.leave = function(c) {
@@ -255,7 +262,7 @@ SystemRoom.prototype.ctlHere = function(sh) {
 SystemRoom.prototype.syncAi = function() {
   var B = this.B, self = this;
   B.ships.forEach(function(sh) {
-    if (sh.dead) return;
+    if (sh.dead || sh.pirate != null) return;                 // охрану находки ведёт pirateStep
     if (self.ctlHere(sh)) { if (sh.guard) { sh.guard = false; sh.ai = false; } return; }
     if (!sh.guard) B.guard(sh.n, true);
   });
@@ -286,7 +293,7 @@ SystemRoom.prototype.step = function() {
     var fr = c.viewer.frames(this.tickN);
     for (j = 0; j < fr.length; j++) this.send(c, fr[j]);
   }
-  if (this.tickN % 10 === 0) this.wakeStep();
+  if (this.tickN % 10 === 0) { this.wakeStep(); this.pirateStep(); }
   var now = Date.now();
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }
   if (now - this.syncAt >= SYNC_EVERY || ev.kills.length) this.sync();
@@ -400,6 +407,7 @@ SystemRoom.prototype.syncNow = function() {
     self.cfg.log('error', 'rt_space_posts', { room: self.name, err: e.message });
     posts.forEach(function(p) { var n = self.byId[p.id]; if (n != null && B.ships[n]) B.ships[n].standsDirty = true; });
   });
+  this.syncFind();
   if (!ships.length && !craft.length && !units.length && !captured.length) return Promise.resolve();
   return this.rpc('rt_space_sync', { p_battle: this.battleId, p_ships: ships, p_craft: craft, p_units: units, p_captured: captured })
     .then(function() { ships.forEach(function(r) { self.okHp[r.id] = r.hp; }); if (captured.length) self.pullAt = 0; })
@@ -433,6 +441,7 @@ SystemRoom.prototype.pullNow = function() {
     self.state = st;
     self.setEyes();
     self.applyShips(st.ships || [], base);
+    self.applyFind(st.find || null);
     return self.takeOrders();
   }).catch(function(e) { self.cfg.log('error', 'rt_space_pull', { room: self.name, err: e.message }); });
 };
@@ -521,6 +530,7 @@ SystemRoom.prototype.command = function(c, m) {
     }
     // заглянуть внутрь: свой — всегда, чужой — только если его видно
     var vs = m.k === 'view' && m.view != null && m.view >= 0 ? this.B.ships[m.view | 0] : null;
+    if (vs && vs.pirate != null) return;                     // внутрь пиратского корабля не заглянуть: экипажа игры у него нет
     if (vs && vs.dormant && (vs.side === c.side || this.B.sees(c.side, vs))) this.B.wake(vs);
     var ok = c.viewer.command(m);
     // притягивающий луч: отказ — игроку словами; взял — сразу в базу (прыжок цели закрыт)
@@ -535,6 +545,141 @@ SystemRoom.prototype.command = function(c, m) {
     if (m.k === 'near' && me && foe) { foe.x = me.x + 2600; foe.y = me.y + 300; B.wake(me); B.wake(foe); foe.sh = [0, 0, 0, 0]; B.sense(); }
     if (m.k === 'fast') for (var i = 0; i < Math.min(3000, m.n | 0); i++) B.tick(SWSpace.TICK);
   }
+};
+
+// ---- находка в Пустоте (sql/void_finds.sql)
+// Что видит клиент: зона, удержание, охрана (без мест — их показывает бой)
+SystemRoom.prototype.findInfo = function() {
+  var f = this.find; if (!f) return null;
+  var alive = 0, all = 0, self = this;
+  Object.keys(this.pirates || {}).forEach(function(i) { all++; var p = self.pirates[i]; if (p && !p.dead) alive++; });
+  if (!all) (f.guards || []).forEach(function(g) { all++; if (+g.hp > 0 && !f.down) alive++; });
+  return { id: f.id, type: f.type, title: f.title, glyph: f.glyph, art: f.art, guard: f.guard_name, cx: f.cx, cy: f.cy, r: f.r,
+           down: !!f.down, guards: [alive, all], hold: f.hold || {}, need: f.need || 10800, holder: f.holder || null,
+           tick: f.tick, ends: f.ends, now: f.now };
+};
+// Находка из базы (открытие, pull, ответ rt_void_sync): новая — охрана встаёт по местам из базы; та же — только числа;
+// закрыта — пираты уходят, зона гаснет
+SystemRoom.prototype.applyFind = function(fd) {
+  var B = this.B, self = this;
+  if (!fd || !fd.id) {
+    if (!this.find) return;
+    this.find = null;
+    Object.keys(this.pirates || {}).forEach(function(i) { var p = self.pirates[i]; if (p && !p.dead) { p.dead = true; p.why = 'left'; p.deadAt = B.t; } });
+    this.pirates = {}; this.vfKey = null; this.findKey = null;
+    this.sendFind();
+    return;
+  }
+  var fresh = !this.find || this.find.id !== fd.id;
+  this.find = fd;
+  if (fresh) {
+    // прежняя находка этого узла (DEV: «потерять» и сразу новая) — её охрана уходит, а не остаётся без присмотра
+    Object.keys(this.pirates || {}).forEach(function(i) { var p = self.pirates[i]; if (p && !p.dead) { p.dead = true; p.why = 'left'; p.deadAt = B.t; } });
+    this.pirates = {}; this.vfKey = null;
+    var added = [];
+    if (!fd.down) (fd.guards || []).forEach(function(g) { if (+g.hp > 0) { var sh = self.addPirate(g); if (sh) added.push(sh); } });
+    if (added.length && this.ready) {
+      var msg = JSON.stringify({ t: 'ships', ships: added.map(function(sh) { return self.shipRow(sh); }) });
+      this.clients.forEach(function(c) { self.send(c, msg); });
+    }
+    if (added.length) this.cfg.log('info', 'охрана находки', { room: this.name, find: fd.id, ships: added.length });
+  } else if (fd.down) {
+    // охрану сняла база (DEV) — пираты уходят с орбиты
+    Object.keys(this.pirates || {}).forEach(function(i) { var p = self.pirates[i]; if (p && !p.dead) { p.dead = true; p.why = 'left'; p.deadAt = B.t; } });
+  }
+  this.sendFind();
+};
+SystemRoom.prototype.addPirate = function(g) {
+  var type = this.types[g.cls];
+  if (!type || !hasPlan(g.cls)) { this.cfg.log('warn', 'нет плана корабля охраны', { type: g.cls }); return null; }
+  var p = plan(g.cls), id = 'vf-' + this.find.id.slice(0, 8) + '-' + g.i;
+  var hpMax = Math.round((type.max_hp || 100) * VF_HP);
+  var row = { id: id, ship_type: g.cls, hp: Math.max(1, Math.round(hpMax * Math.min(1, +g.hp || 1))), faction: 'pirate', name: g.name || null,
+              bonus_hp: hpMax - (type.max_hp || 100), bonus_damage: Math.round((type.damage || 50) * (VF_DMG - 1)),
+              shield_fore: type.max_shield || 0, shield_aft: type.max_shield || 0, shield_port: type.max_shield || 0, shield_starboard: type.max_shield || 0 };
+  var army = Army.fromGame(row, type, [], [], { regenSec: (this.state.settings && this.state.settings.regen) || 30 });
+  var x = isFinite(+g.x) ? +g.x : this.grid * CELL_M / 2, y = isFinite(+g.y) ? +g.y : this.grid * CELL_M / 2, hd = isFinite(+g.hd) ? +g.hd : 0;
+  // пост — из базы (px/py/phd не меняются); место в бою (x/y) уезжает за погоней — по нему пост не ставим
+  var post = isFinite(+g.px) && isFinite(+g.py) ? { x: +g.px, y: +g.py, hd: isFinite(+g.phd) ? +g.phd : hd } : { x: x, y: y, hd: hd };
+  var sh = this.B.addShip({ cls: g.cls, plan: p, side: 2, x: x, y: y, hd: hd, figMap: FIG.crewFigs('cis', ALL), figIds: FIG_IDS, army: army,
+                            name: army.name, id: id, owner: null, faction: 'pirate', dormant: true });
+  // у охраны нет строки в ships: снимок орбиты (rt_space_sync) её пропускает, корпус пишет rt_void_sync
+  sh.gameId = null; sh.craftIds = []; sh.units = [];
+  sh.pirate = g.i | 0; sh.post = post; sh.ai = false; sh.guard = true; sh.focusAuto = true; sh.lead = !!g.lead;
+  this.pirates[sh.pirate] = sh;
+  return sh;
+};
+// Охрана: враг у находки — проснуться и в атаку; врага нет или увела погоня — назад на пост и стеречь
+SystemRoom.prototype.pirateStep = function() {
+  var f = this.find, B = this.B; if (!f || !this.pirates) return;
+  var cx = (f.cx + 0.5) * CELL_M, cy = (f.cy + 0.5) * CELL_M, foe = false, i;
+  for (i = 0; i < B.ships.length && !foe; i++) {
+    var o = B.ships[i]; if (o.dead || o.side === 2 || o.why === 'left') continue;
+    var dx = o.x - cx, dy = o.y - cy; if (dx * dx + dy * dy < VF_AGGRO * VF_AGGRO) foe = true;
+  }
+  var self = this;
+  Object.keys(this.pirates).forEach(function(k) {
+    var p = self.pirates[k]; if (!p || p.dead) return;
+    var px = p.x - cx, py = p.y - cy, far = px * px + py * py > VF_LEASH * VF_LEASH;
+    if (far) { if (!p.order) { B.order(p.n, p.post.x, p.post.y, false); p.back = true; } return; }
+    if (p.back) { if (p.order) return; p.back = false; }
+    // по нему стреляют издалека (дальше 7 км от находки) — тоже просыпается: безнаказанно расстрелять охрану нельзя
+    var shot = self.hitAt[p.n] != null && B.t - self.hitAt[p.n] < FIRE_HOLD;
+    if (foe || shot) {
+      if (p.dormant) B.wake(p);
+      if (!p.ai) { p.guard = false; p.ai = true; }
+      // стреляют из-за датчиков: вспышка выстрела засекла стрелка — идти на него (ИИ сам ищет только в датчиках)
+      if (shot && !foe && p.foeT == null) {
+        var best = -1, bd = 1e18, L = B.last[2] || {};
+        B.ships.forEach(function(o) {
+          var z = L[o.n]; if (o.dead || o.side === 2 || !z || B.t - z.t > FIRE_HOLD) return;
+          var d = (z.x - p.x) * (z.x - p.x) + (z.y - p.y) * (z.y - p.y); if (d < bd) { bd = d; best = o.n; }
+        });
+        if (best >= 0) B.attack(p.n, best);
+      }
+    } else if (p.ai) {
+      p.ai = false; p.foeT = null; B.order(p.n, p.post.x, p.post.y, false); p.back = true;
+    } else if (!p.order) {
+      // не на посту (комнату открыли после погони — место из базы уехало) — вернуться, потом стеречь
+      var ox = p.x - p.post.x, oy = p.y - p.post.y;
+      if (ox * ox + oy * oy > 400 * 400) { if (p.dormant) B.wake(p); B.order(p.n, p.post.x, p.post.y, false); p.back = true; }
+      else if (!p.guard) B.guard(p.n, true);
+    }
+  });
+};
+// Охрана — в базу (корпус, место, разворот), когда что-то поменялось; ответ базы — свежая находка
+SystemRoom.prototype.syncFind = function() {
+  var f = this.find, self = this; if (!f || !this.pirates) return;
+  var list = Object.keys(this.pirates).map(function(k) {
+    var p = self.pirates[k];
+    return { i: +k, hp: p.dead ? 0 : Math.round(Math.max(0.001, p.hull / p.hullMax) * 1000) / 1000, x: Math.round(p.x), y: Math.round(p.y), hd: Math.round(p.hd * 1000) / 1000 };
+  });
+  if (!list.length) return;
+  var key = list.map(function(g) { return g.i + ':' + g.hp + ':' + Math.round(g.x / 50) + ':' + Math.round(g.y / 50); }).join('|');
+  if (key === this.vfKey || this.vfBusy) return;
+  this.vfBusy = true;
+  var fid = f.id;
+  this.rpc('rt_void_sync', { p_battle: this.battleId, p_find: fid, p_guards: list }).then(function(fd) {
+    self.vfBusy = false; self.vfKey = key;
+    if (!self.find || self.find.id !== fid) return;
+    if (fd && fd.closed) { self.applyFind(null); return; }
+    if (fd && fd.id) self.applyFind(fd);
+  }, function(e) {
+    self.vfBusy = false;
+    // база без находок (старый снимок) — больше не пишем до перезапуска комнаты
+    if (/rt_void_sync|does not exist|Could not find|PGRST202/i.test(e.message || '')) self.vfKey = key;
+    self.cfg.log('warn', 'rt_void_sync', { room: self.name, err: e.message });
+  });
+};
+// Клиентам — когда поменялось удержание, охрана или находка закрылась
+SystemRoom.prototype.sendFind = function() {
+  if (!this.ready) return;
+  var info = this.findInfo(), self = this;
+  var key = info ? [info.id, info.down, info.guards.join('/'), info.hold.republic, info.hold.cis, info.holder, info.ends].join(',') : '';
+  if (key === this.findKey) return;
+  this.findKey = key;
+  var msg = JSON.stringify({ t: 'find', find: info });
+  this.clients.forEach(function(c) { self.send(c, msg); });
 };
 
 // ---- закрытие

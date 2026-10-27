@@ -1170,6 +1170,8 @@
     drawShields(c, T);
     drawBooms(c);
     drawFog(c, T);
+    // находка в Пустоте — место известно всем: поверх тумана (охрану туман прячет, как всех)
+    drawFind(c, T);
     // отладка: круги корпусов для столкновений (window.__sp.G.dbgCol = true)
     if (G.dbgCol && B.circles) B.ships.forEach(function(sh) { if (sh.dead) return; B.circles(sh).forEach(function(q) { var p = toS(q[0], q[1]); c.strokeStyle = 'rgba(95,217,104,0.7)'; c.lineWidth = 1; c.beginPath(); c.arc(p[0], p[1], q[2] * CAM.s, 0, TAU); c.stroke(); }); });
     // отметка касания
@@ -1303,6 +1305,241 @@
     }
     c.restore();
   }
+
+  // ---------------------------------------------------------------- находка в Пустоте
+  // sql/void_finds.sql, server/system-room.js: зона удержания вокруг находки, охрана — сторона 2 (пираты).
+  // Полный круг дуги — удержание целиком (3 ч); наша дуга — снаружи кромки, чужая — внутри
+  var VF_COL = { republic: '74,144,217', cis: '217,74,74', contested: '217,169,64' };
+  function vfMine() { return G.side === 1 ? 'cis' : 'republic'; }
+  function vfNow() { var f = G.sys && G.sys.find; return Date.now() + ((f && f._skew) || 0); }
+  // удержание стороны сейчас: база считает раз в минуту — между тактами досчитываем сами
+  function vfHold(f, fac) {
+    var h = +(f.hold && f.hold[fac]) || 0;
+    if (f.down && f.holder === fac && f.tick) h += Math.max(0, Math.min(90, (vfNow() - Date.parse(f.tick)) / 1000));
+    return Math.min(f.need || 10800, h);
+  }
+  function vfClock(sec) { sec = Math.max(0, Math.round(sec)); var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return h + ':' + ('0' + m).slice(-2); }
+  function vfState(f) {
+    if (!f.down) return 'Охрана: ' + f.guards[0] + ' из ' + f.guards[1] + ' — разбей, чтобы открыть удержание';
+    var me = vfMine();
+    if (f.holder === 'contested') return 'Спорная зона — удержание стоит';
+    if (f.holder === me) return 'Держим мы · до победы ' + vfLeft((f.need || 10800) - vfHold(f, me));
+    if (f.holder) return (f.holder === 'cis' ? 'КНС' : 'Республика') + ' держит · ' + vfLeft((f.need || 10800) - vfHold(f, f.holder)) + ' до потери';
+    return 'Зона пуста — встань в неё, чтобы держать';
+  }
+  function vfLeft(sec) {
+    sec = Math.max(0, Math.round(sec)); var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+    if (d) return d + ' д' + (h ? ' ' + h + ' ч' : '');
+    return h ? h + ' ч' + (m ? ' ' + m + ' мин' : '') : Math.max(1, m) + ' мин';
+  }
+  function vfGlow(c, x, y, r, rgb, a) {
+    var g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); g.addColorStop(1, 'rgba(' + rgb + ',0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  }
+  function vfPoly(c, k, pts) { c.beginPath(); c.moveTo(pts[0][0] * k, pts[0][1] * k); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0] * k, pts[i][1] * k); c.closePath(); }
+  // Находки рисуются кодом (картинок нет): остов дредноута, голокрон, спасательная капсула с маяком, контейнер
+  var VF_ART = {
+    wreck: function(c, x, y, S, T) {
+      var k = S / 100, i;
+      vfGlow(c, x, y, S * 0.95, '255,140,70', 0.12);
+      c.save(); c.translate(x, y); c.rotate(-0.55 + Math.sin(T * 0.05) * 0.04);
+      c.lineJoin = 'round';
+      // обломки вокруг — медленно расходятся
+      for (i = 0; i < 7; i++) {
+        var a = i * 2.4 + T * 0.03 * (i % 2 ? 1 : -1), d = (38 + (i * 17) % 30) * k;
+        c.save(); c.translate(Math.cos(a) * d, Math.sin(a) * d); c.rotate(T * 0.2 * (i % 3 - 1) + i);
+        c.fillStyle = i % 2 ? '#4a525c' : '#353b44'; vfPoly(c, k, [[-3, -2], [3, -3], [4, 2], [-2, 3]]); c.fill();
+        c.restore();
+      }
+      // носовая часть: клин с обшивкой, свет сверху слева
+      var gN = c.createLinearGradient(-20 * k, -60 * k, 20 * k, -6 * k);
+      gN.addColorStop(0, '#6c7682'); gN.addColorStop(0.55, '#424a55'); gN.addColorStop(1, '#262b33');
+      c.fillStyle = gN; c.strokeStyle = '#8a95a1'; c.lineWidth = Math.max(0.7, k * 1.1);
+      vfPoly(c, k, [[-6, -62], [6, -62], [20, -18], [12, -10], [5, -18], [-1, -6], [-8, -16], [-19, -12]]); c.fill(); c.stroke();
+      c.strokeStyle = 'rgba(20,24,30,0.55)'; c.lineWidth = Math.max(0.5, k * 0.7); c.beginPath();
+      c.moveTo(0, -60 * k); c.lineTo(0, -12 * k);
+      for (i = 0; i < 4; i++) { var yy = (-50 + i * 10) * k; c.moveTo((-4 - i * 3.4) * k, yy); c.lineTo((4 + i * 3.4) * k, yy); }
+      c.stroke();
+      // рваная кромка: обугленная, с тлеющим краем
+      c.strokeStyle = 'rgba(255,120,50,' + (0.45 + 0.25 * Math.sin(T * 3)) + ')'; c.lineWidth = Math.max(0.8, k * 1.6);
+      c.beginPath(); c.moveTo(20 * k, -18 * k); c.lineTo(12 * k, -10 * k); c.lineTo(5 * k, -18 * k); c.lineTo(-1 * k, -6 * k); c.lineTo(-8 * k, -16 * k); c.lineTo(-19 * k, -12 * k); c.stroke();
+      // кормовая часть с двигателями
+      c.save(); c.translate(7 * k, 12 * k); c.rotate(0.32);
+      var gA = c.createLinearGradient(-28 * k, -6 * k, 28 * k, 44 * k);
+      gA.addColorStop(0, '#5c6570'); gA.addColorStop(0.6, '#363c46'); gA.addColorStop(1, '#22272e');
+      c.fillStyle = gA; c.strokeStyle = '#7d8894'; c.lineWidth = Math.max(0.7, k * 1.1);
+      vfPoly(c, k, [[-24, -2], [-15, -9], [-7, 0], [3, -7], [12, 1], [21, -4], [28, 44], [-28, 44]]); c.fill(); c.stroke();
+      c.strokeStyle = 'rgba(20,24,30,0.5)'; c.lineWidth = Math.max(0.5, k * 0.7); c.beginPath();
+      for (i = 0; i < 4; i++) { c.moveTo((-19 + i * 13) * k, 6 * k); c.lineTo((-22 + i * 15) * k, 40 * k); }
+      c.moveTo(-26 * k, 24 * k); c.lineTo(26 * k, 24 * k); c.stroke();
+      c.strokeStyle = 'rgba(255,120,50,' + (0.4 + 0.25 * Math.sin(T * 2.6 + 1)) + ')'; c.lineWidth = Math.max(0.8, k * 1.6);
+      c.beginPath(); c.moveTo(-24 * k, -2 * k); c.lineTo(-15 * k, -9 * k); c.lineTo(-7 * k, 0); c.lineTo(3 * k, -7 * k); c.lineTo(12 * k, k); c.lineTo(21 * k, -4 * k); c.stroke();
+      // дюзы — едва тлеют
+      for (i = 0; i < 3; i++) {
+        c.fillStyle = '#1b1f25'; c.fillRect((-18 + i * 13) * k, 43 * k, 10 * k, 5 * k);
+        vfGlow(c, (-13 + i * 13) * k, 47 * k, 7 * k, '255,' + (110 + i * 20) + ',60', 0.35 + 0.25 * Math.sin(T * 2 + i));
+      }
+      c.restore();
+      // искры из разлома
+      for (i = 0; i < 6; i++) {
+        var ph = (T * 0.9 + i * 0.37) % 1, al = Math.max(0, 1 - ph * 1.6);
+        if (al <= 0) continue;
+        c.fillStyle = 'rgba(255,200,120,' + al + ')';
+        c.beginPath(); c.arc((-14 + i * 6) * k + ph * 10 * k, (-8 + (i % 3) * 4) * k - ph * 12 * k, Math.max(0.8, k * 1.4), 0, TAU); c.fill();
+      }
+      c.restore();
+    },
+    holocron: function(c, x, y, S, T) {
+      var k = S / 100, rot = T * 0.4, pul = 0.6 + 0.4 * Math.sin(T * 2.2);
+      vfGlow(c, x, y, S * 1.1, '120,200,255', 0.16 + 0.08 * pul);
+      c.save(); c.translate(x, y);
+      // лучи
+      c.globalCompositeOperation = 'lighter';
+      for (var i = 0; i < 8; i++) {
+        var a = rot * 0.5 + i * TAU / 8, L = (52 + 14 * Math.sin(T * 1.7 + i)) * k;
+        c.strokeStyle = 'rgba(150,215,255,' + (0.12 + 0.1 * pul) + ')'; c.lineWidth = Math.max(1, 3 * k);
+        c.beginPath(); c.moveTo(Math.cos(a) * 14 * k, Math.sin(a) * 14 * k); c.lineTo(Math.cos(a) * L, Math.sin(a) * L); c.stroke();
+      }
+      c.globalCompositeOperation = 'source-over';
+      c.rotate(rot);
+      c.fillStyle = '#1c2b3a'; c.strokeStyle = 'rgba(170,225,255,0.95)'; c.lineWidth = Math.max(1, 2 * k);
+      vfPoly(c, k, [[0, -26], [26, 0], [0, 26], [-26, 0]]); c.fill(); c.stroke();
+      c.strokeStyle = 'rgba(170,225,255,0.55)'; c.lineWidth = Math.max(0.7, k);
+      vfPoly(c, k, [[0, -15], [15, 0], [0, 15], [-15, 0]]); c.stroke();
+      vfGlow(c, 0, 0, 12 * k, '200,240,255', 0.75 * pul);
+      c.restore();
+    },
+    beacon: function(c, x, y, S, T) {
+      var k = S / 100;
+      // волны маяка
+      for (var i = 0; i < 3; i++) {
+        var ph = (T * 0.45 + i / 3) % 1;
+        c.strokeStyle = 'rgba(255,110,90,' + (0.5 * (1 - ph)) + ')'; c.lineWidth = Math.max(1, 2 * k);
+        c.beginPath(); c.arc(x, y, (14 + ph * 70) * k, 0, TAU); c.stroke();
+      }
+      c.save(); c.translate(x, y); c.rotate(0.6);
+      c.fillStyle = '#c9ccd2'; c.strokeStyle = '#6e7782'; c.lineWidth = Math.max(0.8, 1.2 * k);
+      c.beginPath(); c.ellipse(0, 0, 11 * k, 20 * k, 0, 0, TAU); c.fill(); c.stroke();
+      c.fillStyle = '#2b3440'; c.beginPath(); c.ellipse(0, -9 * k, 6 * k, 5 * k, 0, 0, TAU); c.fill();
+      c.fillStyle = '#8a929c'; c.fillRect(-12 * k, 2 * k, 24 * k, 3 * k);
+      var on = Math.sin(T * 6) > 0.2;
+      if (on) vfGlow(c, 0, 18 * k, 12 * k, '255,90,70', 0.9);
+      c.fillStyle = on ? '#ff6e5a' : '#5a2a24'; c.beginPath(); c.arc(0, 18 * k, Math.max(1.2, 2.6 * k), 0, TAU); c.fill();
+      c.restore();
+    },
+    cache: function(c, x, y, S, T) {
+      var k = S / 100;
+      vfGlow(c, x, y, S * 0.9, '217,169,64', 0.1);
+      c.save(); c.translate(x, y); c.rotate(-0.3);
+      var box = function(bx, by, w, h, col) {
+        c.fillStyle = col; c.strokeStyle = 'rgba(20,24,30,0.9)'; c.lineWidth = Math.max(0.8, 1.2 * k);
+        c.fillRect(bx * k, by * k, w * k, h * k); c.strokeRect(bx * k, by * k, w * k, h * k);
+        c.strokeStyle = 'rgba(255,255,255,0.12)'; c.beginPath();
+        for (var q = 1; q < 4; q++) { c.moveTo((bx + w * q / 4) * k, by * k); c.lineTo((bx + w * q / 4) * k, (by + h) * k); }
+        c.stroke();
+      };
+      box(-34, -22, 30, 20, '#6b5a3a'); box(-2, -24, 34, 22, '#4f5d4a'); box(-30, 0, 34, 22, '#5a4f63'); box(6, 0, 28, 20, '#6b5a3a');
+      // ремни и маячок на крышке
+      c.strokeStyle = 'rgba(217,169,64,0.7)'; c.lineWidth = Math.max(0.8, 1.5 * k);
+      c.beginPath(); c.moveTo(-36 * k, -1 * k); c.lineTo(36 * k, -1 * k); c.stroke();
+      var on = Math.sin(T * 4) > 0;
+      if (on) vfGlow(c, 15 * k, -24 * k, 10 * k, '255,200,90', 0.8);
+      c.restore();
+    }
+  };
+  function drawFind(c, T) {
+    var f = G.sys && G.sys.find; if (!f || G.mode !== 'space') return;
+    var M = G.sys.cellM, q = toS((f.cx + 0.5) * M, (f.cy + 0.5) * M), R = f.r * M * CAM.s;
+    if (q[0] < -R - 60 || q[0] > CAM.vw + R + 60 || q[1] < -R - 60 || q[1] > CAM.vh + R + 60) return;
+    var col = f.holder ? VF_COL[f.holder] : '217,169,64', pul = f.holder === 'contested' ? 0.55 + 0.45 * Math.sin(T * 5) : 1;
+    c.save();
+    // зона удержания: мягкая заливка к кромке и бегущий пунктир
+    var g = c.createRadialGradient(q[0], q[1], R * 0.25, q[0], q[1], Math.max(1, R));
+    g.addColorStop(0, 'rgba(' + col + ',0)'); g.addColorStop(1, 'rgba(' + col + ',' + (0.08 * pul) + ')');
+    c.fillStyle = g; c.beginPath(); c.arc(q[0], q[1], R, 0, TAU); c.fill();
+    c.strokeStyle = 'rgba(' + col + ',' + (0.2 + 0.4 * pul) + ')'; c.lineWidth = 1.2; c.setLineDash([8, 6]); c.lineDashOffset = -T * 8;
+    c.beginPath(); c.arc(q[0], q[1], R, 0, TAU); c.stroke(); c.setLineDash([]);
+    if (f.down) {
+      var need = f.need || 10800, me = vfMine(), foe = me === 'cis' ? 'republic' : 'cis';
+      [[foe, R - 5], [me, R + 5]].forEach(function(a) {
+        var kk = vfHold(f, a[0]) / need;
+        c.strokeStyle = 'rgba(' + VF_COL[a[0]] + ',0.18)'; c.lineWidth = 3;
+        c.beginPath(); c.arc(q[0], q[1], Math.max(4, a[1]), 0, TAU); c.stroke();
+        if (kk <= 0) return;
+        c.strokeStyle = 'rgba(' + VF_COL[a[0]] + ',0.95)'; c.lineCap = 'round';
+        c.beginPath(); c.arc(q[0], q[1], Math.max(4, a[1]), -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, kk)); c.stroke();
+        c.lineCap = 'butt';
+      });
+    }
+    // сама находка: на дальнем плане — не меньше значка
+    var art = VF_ART[f.art] || VF_ART.wreck;
+    art(c, q[0], q[1], Math.max(18, 900 * CAM.s), T);
+    if (R > 36) {
+      c.font = '10px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.fillStyle = 'rgba(232,217,168,0.85)';
+      c.fillText('◈ НАХОДКА · ' + String(f.title || '').toUpperCase(), q[0], q[1] - R - 9);
+      c.textBaseline = 'top'; c.font = '9px "Courier New", monospace';
+      c.fillStyle = 'rgba(' + col + ',0.85)';
+      c.fillText(f.down ? 'ЗОНА УДЕРЖАНИЯ' : 'ОХРАНА: ' + String(f.guard || '').toUpperCase(), q[0], q[1] + R + 9);
+    }
+    c.restore();
+  }
+  function focusFind() {
+    var f = G.sys && G.sys.find; if (!f) return false;
+    if (G.mode !== 'space') setMode('space');
+    var v = view(), M = G.sys.cellM;
+    G.fpt = { x: (f.cx + 0.5) * M, y: (f.cy + 0.5) * M, s: clampS(Math.min(CAM.vw, v.h) * 0.42 / (f.r * M)) };
+    G.follow = 'pt';
+    return true;
+  }
+  // Полоса находки сверху: что за находка, охрана или удержание сторон
+  function vfEl() {
+    var el = $('sp-find');
+    if (el) return el;
+    el = document.createElement('button'); el.type = 'button'; el.id = 'sp-find'; el.hidden = true;
+    el.addEventListener('click', function() { if (focusFind()) toast(vfState(G.sys.find), 'gold'); });
+    document.body.appendChild(el);
+    return el;
+  }
+  function vfHud() {
+    var f = G.sys && G.sys.find, el = $('sp-find');
+    if (!f) { if (el) el.hidden = true; document.body.classList.remove('vf'); return; }
+    el = vfEl();
+    var me = vfMine(), foe = me === 'cis' ? 'republic' : 'cis', need = f.need || 10800;
+    var hm = vfHold(f, me), hf = vfHold(f, foe), ends = f.ends ? Date.parse(f.ends) - vfNow() : 0;
+    var key = [f.id, f.down, f.holder, f.guards.join('/'), Math.floor(hm / 30), Math.floor(hf / 30), Math.floor(ends / 60000)].join(',');
+    el.hidden = false; document.body.classList.add('vf');
+    if (el._key === key) return;
+    el._key = key;
+    el.className = 'h-' + (f.holder || 'none') + (f.down ? ' down' : '') + (me === 'cis' ? ' me-cis' : '');
+    el.innerHTML = '<span class="vf-ico">' + esc(f.glyph || '◈') + '</span><span class="vf-b">' +
+      '<span class="vf-t"><b>' + esc(f.title) + '</b><em>' + (ends > 0 ? 'ещё ' + vfLeft(ends / 1000) : 'уходит') + '</em></span>' +
+      '<span class="vf-s">' + esc(vfState(f)) + '</span>' +
+      (f.down
+        ? '<span class="vf-bars"><span class="vf-bar me"><i style="width:' + (hm / need * 100).toFixed(1) + '%"></i></span><em>' + vfClock(hm) + '</em>' +
+          '<span class="vf-bar foe"><i style="width:' + (hf / need * 100).toFixed(1) + '%"></i></span><em>' + vfClock(hf) + '</em></span>'
+        : '<span class="vf-guards">' + Array.apply(null, Array(f.guards[1])).map(function(_, i) { return '<i class="' + (i < f.guards[0] ? 'on' : '') + '"></i>'; }).join('') + '</span>') +
+      '</span>';
+  }
+  // Находка пришла с сервера (hello / find): запомнить сдвиг часов, сказать о переменах
+  function vfSet(nf) {
+    var S = G.sys; if (!S) return;
+    var old = S.find || null;
+    if (nf && nf.now) nf._skew = Date.parse(nf.now) - Date.now();
+    S.find = nf || null;
+    if (old && !nf) toast('Находка «' + old.title + '» закрыта', 'gold');
+    else if (old && nf && old.id === nf.id) {
+      var me = vfMine();
+      if (!old.down && nf.down) toast(nf.guard + ' разбиты — удержание открыто: держи зону ' + vfLeft(nf.need || 10800), 'gold');
+      else if (old.holder !== nf.holder && nf.holder) {
+        if (nf.holder === 'contested') toast('Спорная зона: удержание остановлено', 'gold');
+        else if (nf.holder === me) toast('Зона наша — удержание идёт', 'gold');
+        else toast((nf.holder === 'cis' ? 'КНС' : 'Республика') + ' держит находку — войди в зону, чтобы остановить', 'bad');
+      }
+    }
+    vfHud();
+  }
   function drawGrid(c) {
     var step = 1000, s = CAM.s;
     if (step * s < 26) step = 5000;
@@ -1318,6 +1555,21 @@
     c.fillRect(12, v.bot - 10, L, 1); c.fillText(step / 1000 + ' км', 12, v.bot - 12);
   }
 
+  // Пираты (сторона 2) — тот же корпус, но ржавый: перекрашенная копия спрайта, одна на класс
+  var PIR = {};
+  function pirateImg(cls, img) {
+    var t = PIR[cls];
+    if (t && t.src === img) return t.cv;
+    if (!img || !(img.naturalWidth || img.width)) return img;
+    var cv = document.createElement('canvas'); cv.width = img.naturalWidth || img.width; cv.height = img.naturalHeight || img.height;
+    var x = cv.getContext('2d');
+    x.drawImage(img, 0, 0);
+    x.globalCompositeOperation = 'source-atop';
+    x.fillStyle = 'rgba(120,62,24,0.5)'; x.fillRect(0, 0, cv.width, cv.height);
+    x.fillStyle = 'rgba(30,24,20,0.25)'; x.fillRect(0, 0, cv.width, cv.height);
+    PIR[cls] = { src: img, cv: cv };
+    return cv;
+  }
   function drawShip(c, sh, T) {
     var p = sh.plan, img = G.imgs[sh.cls], s = CAM.s, W = p.w * p.cellM, H = p.h * p.cellM, cr = p.crop;
     var q = toS(sh.x, sh.y);
@@ -1333,13 +1585,13 @@
     if (!dead && sh.v > 3) {
       c.globalCompositeOperation = 'lighter';
       var eng = Math.min(1, sh.v / sh.vmax) * (0.4 + 0.6 * sh.eff.engine);
-      var gcol = sh.side === 0 ? '120,190,255' : '255,150,90';
+      var gcol = sh.side === 0 ? '120,190,255' : sh.side === 2 ? '255,190,90' : '255,150,90';
       var g = c.createRadialGradient(0, H / 2, 0, 0, H / 2, W * 0.45);
       g.addColorStop(0, 'rgba(' + gcol + ',' + (0.55 * eng) + ')'); g.addColorStop(1, 'rgba(' + gcol + ',0)');
       c.fillStyle = g; c.fillRect(-W * 0.5, H * 0.3, W, W * 0.6);
       c.globalCompositeOperation = 'source-over';
     }
-    c.drawImage(img, cr[0], cr[1], cr[2] - cr[0], cr[3] - cr[1], -W / 2, -H / 2, W, H);
+    c.drawImage(sh.side === 2 ? pirateImg(sh.cls, img) : img, cr[0], cr[1], cr[2] - cr[0], cr[3] - cr[1], -W / 2, -H / 2, W, H);
     // пожары видно снаружи
     var fires = sh.crew.burning, n = fires.length;
     if (n && !dead) {
@@ -1388,8 +1640,8 @@
       var lab = toS(sh.x, sh.y + sh.len * 0.55);
       if (sh.len * s < 140) {
         c.font = '10px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'top';
-        c.fillStyle = sh.side === G.side ? '#cfe3ff' : '#ffd0cc';
-        c.fillText(sh.name + (sh.crit && intel(sh) ? ' ⚠' : ''), lab[0], lab[1] + 4);
+        c.fillStyle = sh.side === G.side ? '#cfe3ff' : sh.side === 2 ? '#f0c08a' : '#ffd0cc';
+        c.fillText((sh.side === 2 ? '☠ ' : '') + sh.name + (sh.crit && intel(sh) ? ' ⚠' : ''), lab[0], lab[1] + 4);
         bar(c, lab[0] - 22, lab[1] + 17, 44, hullK(sh), '#5fd968');
         bar(c, lab[0] - 22, lab[1] + 21, 44, shAll(sh), '#6fb8ff');
       }
@@ -2061,6 +2313,8 @@
   }
 
   function setMode(m, viewN) {
+    // внутрь пиратского корабля не заглянуть: экипажа игры у него нет, абордажа тоже
+    if (m === 'inside' && G.B && G.B.ships[viewN != null ? viewN : G.sel] && G.B.ships[viewN != null ? viewN : G.sel].side === 2) { toast('Пиратов не берут на абордаж — только огнём', 'bad'); return; }
     G.mode = m; G.vent = false; G.dmode = null; G.bsel = {}; G.ifly = null; G.sheet = '';
     if (m === 'inside') G.view = viewN != null ? viewN : G.sel;
     var bv = m === 'inside' && G.B.ships[G.view] && G.B.ships[G.view].side !== G.side;
@@ -2512,7 +2766,7 @@
     B.ships.forEach(function(s) {
       if (s.why === 'left') return;
       var mine = s.side === G.side;
-      cols[mine ? 0 : 1].push('<button class="sp-unit ' + (s.side === 0 ? 'rep' : 'cis') + '" data-ship="' + s.n + '">' +
+      cols[mine ? 0 : 1].push('<button class="sp-unit ' + (s.side === 0 ? 'rep' : s.side === 2 ? 'pir' : 'cis') + '" data-ship="' + s.n + '">' +
         '<span class="sp-unit-name"><span>' + esc(s.name) + '</span><em id="sp-u-w' + s.n + '"></em></span>' +
         '<div class="sp-bar"><i id="sp-u-h' + s.n + '"></i></div><div class="sp-bar sh"><i id="sp-u-s' + s.n + '"></i></div></button>');
     });
@@ -2665,6 +2919,7 @@
       el.classList.toggle('ally', !s.dead && s.side === G.side && !ctl(s));
     });
     var t = B.t | 0; $('sp-time').textContent = Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2);
+    if (G.sys) vfHud();
     // выбранный корабль
     // бой с союзниками: выбран не мой корабль (раздали после входа) — к своему
     if (G.net && B.ships[G.sel] && B.ships[G.sel].side === G.side && !ctl(B.ships[G.sel])) {
@@ -2803,7 +3058,7 @@
   // Нижняя кромка всего, что висит сверху: на странице орбиты верхней панели нет — мерить и кнопки
   function topEdge() {
     var y = 0;
-    ['sp-top', 'sp-back', 'credits-bar', 'build-toggle', 'sp-tr', 'sp-tl'].forEach(function(id) {
+    ['sp-top', 'sp-back', 'credits-bar', 'build-toggle', 'sp-tr', 'sp-tl', 'sp-find'].forEach(function(id) {
       var e = document.getElementById(id); if (!e) return;
       var r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.top < window.innerHeight * 0.45) y = Math.max(y, r.bottom);
     });
@@ -3047,7 +3302,7 @@
     toastAt = t;
     // под верхние панели, а не посреди поля боя
     var y = 0;
-    ['sp-top', 'sp-back', 'sp-tr', 'credits-bar'].forEach(function(id) {
+    ['sp-top', 'sp-back', 'sp-tr', 'credits-bar', 'sp-find'].forEach(function(id) {
       var e = document.getElementById(id); if (!e) return;
       var r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.top < window.innerHeight * 0.45) y = Math.max(y, r.bottom);
     });
@@ -3384,6 +3639,7 @@
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; return; }
       if (m.t === 'note') { toast(m.msg, m.kind === 'bad' ? 'bad' : 'gold'); return; }
+      if (m.t === 'find') { vfSet(m.find || null); return; }
       if (m.t === 'pong') return;
       if (N.ready) N.M.onText(m); else N.q.push(m);
     };
@@ -3416,7 +3672,8 @@
     var sc = sys ? m.sc : m.cfg ? scObj({ cfg: m.cfg }) : SCEN[m.scen]; if (!sc) { netFail('Сервер прислал неизвестный бой'); return; }
     if (m.cfg) N.cfg = m.cfg;
     N.ready = false; N.q = []; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
-    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, deep: !!m.deep, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station };
+    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, deep: !!m.deep, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station, find: null };
+    if (sys) vfSet(m.find || null);
     var token = ++START;
     // переподключение к тому же бою: вернуть, где игрок был (внутри корабля, выбор, камера)
     var keep = N.M && G.B ? { mode: G.mode, view: G.view, sel: G.sel, cam: { x: CAM.x, y: CAM.y, s: CAM.s }, follow: G.follow } : null;
@@ -3441,7 +3698,13 @@
       netRow();
       var q = N.q; N.q = [];
       for (var i = 0; i < q.length; i++) { if (q[i] instanceof ArrayBuffer) N.M.onBin(q[i]); else N.M.onText(q[i]); }
-      if (sys) { var mine = B.ships.filter(function(x) { return !x.dead && x.owner === N.user; }).length; toast('Орбита ' + m.name + ': твоих кораблей ' + mine + (mine ? '. Коснись своего — команды, врага — атака' : '. Смотришь орбиту'), 'gold'); if (window.SP_ON_HELLO) window.SP_ON_HELLO(m, B); }
+      if (sys) {
+        var mine = B.ships.filter(function(x) { return !x.dead && x.owner === N.user; }).length;
+        var vf = G.sys && G.sys.find;
+        toast(vf ? 'Находка «' + vf.title + '»: ' + (vf.down ? 'держи зону ' + vfLeft(vf.need || 10800) + ' — и она твоя' : 'разбей охрану, потом держи зону ' + vfLeft(vf.need || 10800))
+                 : 'Орбита ' + m.name + ': твоих кораблей ' + mine + (mine ? '. Коснись своего — команды, врага — атака' : '. Смотришь орбиту'), 'gold');
+        if (window.SP_ON_HELLO) window.SP_ON_HELLO(m, B);
+      }
       else toast((m.T > 1 ? 'Ты в бою: ' : 'Бой по сети начался: ') + SIDE_NAME[m.side] + '. Ссылка для соперника — «Ссылка»', 'gold');
     }).catch(function(e) { netFail('Не загрузилось: ' + e.message); });
   }
@@ -3645,5 +3908,5 @@
     if (!m1) { POLY.side = side; polyOpen(true); }
   }
   requestAnimationFrame(frame);
-  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, toW: toW, start: start, itoS: itoS, toast: toast, hud: hud, focusShip: focusShip, focusSlot: focusSlot };
+  window.__sp = { G: G, CAM: CAM, ICAM: ICAM, FR: FR, setMode: setMode, fitAll: fitAll, selectShip: selectShip, CHUNKS: CHUNKS, load: function() { return LOAD; }, boardAction: boardAction, fleet: FLEET, fleetGo: fleetGo, polyDraw: polyDraw, toS: toS, toW: toW, start: start, itoS: itoS, toast: toast, hud: hud, focusShip: focusShip, focusSlot: focusSlot, focusFind: focusFind };
 })();

@@ -135,7 +135,8 @@
     // туман войны: что видит каждая сторона (fog: false — видно всё)
     this.fog = opts.fog !== false;
     this.endless = !!opts.endless;     // орбита системы: бой не «кончается», корабли приходят и уходят
-    this.vis = [{}, {}]; this.visC = [{}, {}]; this.last = [{}, {}]; this.senseT = 0;
+    // стороны: 0 — Республика, 1 — КНС, 2 — NPC (пираты у находки в Пустоте): враги всем, без абордажа
+    this.vis = [{}, {}, {}]; this.visC = [{}, {}, {}]; this.last = [{}, {}, {}]; this.senseT = 0; this.sides = 2;
     var list = opts.ships || [];
     for (var i = 0; i < list.length; i++) this.addShip(list[i]);
   }
@@ -261,8 +262,9 @@
     this.ships.push(sh);
     if (!sh.dormant) this.applyStands(sh);
     this.place(sh);
-    // разведка перед боем: где противник стоял на старте, обе стороны знают
-    this.last[1 - sh.side][sh.n] = { x: sh.x, y: sh.y, hd: sh.hd, t: this.t };
+    // разведка перед боем: где противник стоял на старте, обе стороны знают (NPC в эту разведку не входят)
+    if (sh.side === 2) this.sides = 3;
+    else this.last[1 - sh.side][sh.n] = { x: sh.x, y: sh.y, hd: sh.hd, t: this.t };
     return sh;
   };
 
@@ -726,7 +728,7 @@
   var CRAFT_SENS = 3500, NEAR = 1500, FLASH = 3, FLASH_R = 15000;
   Battle.prototype.sense = function() {
     var S = this.ships, C = this.craft, side, i, j;
-    for (side = 0; side < 2; side++) {
+    for (side = 0; side < this.sides; side++) {
       var vis = {}, visC = {}, eyes = [];
       for (i = 0; i < S.length; i++) if (!S[i].dead && S[i].side === side) eyes.push([S[i].x, S[i].y, this.sensRange(S[i])]);
       for (i = 0; i < C.length; i++) if (!C[i].dead && C[i].side === side) eyes.push([C[i].x, C[i].y, CRAFT_SENS]);
@@ -1115,7 +1117,7 @@
   };
   Battle.prototype.checkEnd = function() {
     if (this.over >= 0) return;
-    var alive = [0, 0];
+    var alive = [0, 0, 0];
     for (var i = 0; i < this.ships.length; i++) if (!this.ships[i].dead) alive[this.ships[i].side]++;
     if (!alive[0] && alive[1]) this.over = 1;
     else if (!alive[1] && alive[0]) this.over = 0;
@@ -1291,6 +1293,7 @@
     var a = this.ships[n], b = this.ships[t];
     if (!a || !b || a.dead || b.dead) return { ok: false, why: 'цели нет', party: 0 };
     if (a.side === b.side) return { ok: false, why: 'это свой корабль', party: 0 };
+    if (a.side === 2 || b.side === 2) return { ok: false, why: 'пиратов на абордаж не берут — только огнём', party: 0 };
     if (!this.sees(a.side, b)) return { ok: false, why: 'нет контакта с целью', party: 0 };
     // что видно игроку в полосе: зазор между корпусами, щит цели со стороны нашего корабля, стоят ли её двигатели
     var gx = b.x - a.x, gy = b.y - a.y, gapM = Math.sqrt(gx * gx + gy * gy) - (a.len + b.len) / 2;

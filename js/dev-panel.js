@@ -153,6 +153,15 @@
         '<p class="dv-note">Тестовое событие не занимает место в расписании (до двух обычных разом). Цель — случайная планета без другого события.</p></section>';
       if (!S.geTypes) look('dev_galaxy_event_types').then(function(t) { S.geTypes = t || []; if (tab === 'ev') render(); }, fail);
       geFill();
+      // находки в Пустоте: появиться сейчас и прогнать по этапам (охрана, удержание, потеря)
+      h += '<section><h4>Находки в Пустоте <em>вне расписания</em></h4>' +
+        '<div class="dv-row"><select class="dv-in" id="dv-vf">' + VF_TYPES.map(function(t) {
+          return '<option value="' + t[0] + '"' + (t[0] === (S.vfType || '') ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="dv-row"><button type="button" class="dv-go wide" data-act="vfstart">Появиться сейчас</button></div>' +
+        '<div class="dv-vfs"></div>' +
+        '<p class="dv-note">Тестовая находка не занимает расписание. Узел — случайный на фронте (между планетами Республики и КНС). ' +
+          '«Минута» — до победы стороны остаётся минута: встань кораблём в зону, и через такт она заберёт находку.</p></section>';
+      vfFill();
     } else if (tab === 'err') {
       // два журнала: у игроков (браузер) и на сервере (база, pg_cron, сервер боёв)
       var srv = S.errSrc === 'server', ec = S.errCnt || {};
@@ -277,7 +286,24 @@
       }).join('') : '<p class="dv-note">Сейчас событий нет.</p>';
     }, fail);
   }
-  var ACT = { galaxy_event: 'галактическое событие', galaxy_event_end: 'конец события', errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
+  var VF_TYPES = [['', 'Любая находка'], ['wreck', '⚙ Обломки дредноута'], ['holocron', '◆ Голокрон Предтеч'], ['beacon', '✚ Сигнал бедствия'], ['cache', '▣ Тайник контрабандистов']];
+  // идущие находки — этапы для проверки
+  function vfFill() {
+    look('void_find_state_json').then(function(d) {
+      var box = $('.dv-vfs'); if (!box) return;
+      var list = (d && d.active) || [];
+      box.innerHTML = list.length ? list.map(function(f) {
+        var id = esc(f.id);
+        return '<div class="dv-row"><span class="dv-in" style="flex:1;border:none;padding-left:0">' + esc(f.glyph) + ' ' + esc(f.title) + ' · ' + esc(f.system_name) +
+            ' · ' + (f.down ? 'удержание' : 'охрана') + '</span></div>' +
+          '<div class="dv-row" style="flex-wrap:wrap">' + (f.down ? '' : '<button type="button" class="dv-go" data-act="vfpoke" data-v="' + id + ':guards">Охрана разбита</button>') +
+            '<button type="button" class="dv-go" data-act="vfpoke" data-v="' + id + ':hold:republic">Респ.: минута</button>' +
+            '<button type="button" class="dv-go" data-act="vfpoke" data-v="' + id + ':hold:cis">КНС: минута</button>' +
+            '<button type="button" class="dv-go bad" data-act="vfpoke" data-v="' + id + ':end">Потерять</button></div>';
+      }).join('') : '<p class="dv-note">Сейчас находок нет.</p>';
+    }, fail);
+  }
+  var ACT = { void_find: 'находка в Пустоте', galaxy_event: 'галактическое событие', galaxy_event_end: 'конец события', errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
   function brief(d) { if (!d) return ''; var o = []; for (var k in d) if (d.hasOwnProperty(k) && d[k] !== 0) o.push(k + ' ' + d[k]); return o.join(', '); }
   function num(id, lo, hi) { var v = parseInt($(id).value, 10); if (!isFinite(v) || v < lo || v > hi) throw new Error('Число от ' + fmt(lo) + ' до ' + fmt(hi)); return v; }
 
@@ -324,6 +350,18 @@
           b.disabled = false; say('Событие запущено: ' + ((r && r.systems) || []).length + ' пл.');
           if (typeof geReload === 'function') geReload(); geFill();
         }, function(err) { b.disabled = false; fail(err); });
+      } else if (a === 'vfstart') {
+        S.vfType = $('#dv-vf').value; b.disabled = true;
+        rpc('dev_void_find_start', { p_type: S.vfType || null, p_system: null }).then(function(r) {
+          b.disabled = false; say('Находка появилась' + (r && r.system ? ' · ' + r.system : ''));
+          if (typeof vfReload === 'function') vfReload(); vfFill();
+        }, function(err) { b.disabled = false; fail(err); });
+      } else if (a === 'vfpoke') {
+        var vp = b.getAttribute('data-v'), cut = vp.indexOf(':'), what = vp.slice(cut + 1);
+        rpc('dev_void_find_poke', { p_find: vp.slice(0, cut), p_what: what }).then(function() {
+          say({ guards: 'Охрана разбита — удержание открыто', 'hold:republic': 'Республике до победы минута', 'hold:cis': 'КНС до победы минута', end: 'Находка потеряна' }[what] || 'Готово');
+          if (typeof vfReload === 'function') vfReload(); vfFill();
+        }, fail);
       } else if (a === 'geend') {
         rpc('dev_galaxy_event_end', { p_id: b.getAttribute('data-v') }).then(function() {
           say('Событие закончено'); if (typeof geReload === 'function') geReload(); geFill();

@@ -442,9 +442,11 @@
     if (!eff.length && !laws.length) h += '<div class="rep-empty"><b>Действующих эффектов нет</b>Они появляются от решений в донесениях: прибавка к добыче, доходу или довольству — или наоборот.</div>';
     // законы фракции (Сенат / Совет) действуют на все её планеты сразу
     if (laws.length) {
-      var withEv = laws.some(function(e) { return e.src === 'event'; }), withLaw = laws.some(function(e) { return e.src !== 'event'; });
+      // события галактики и находки в Пустоте — не законы
+      var isEv = function(e) { return e.src === 'event' || e.src === 'find'; };
+      var withEv = laws.some(isEv), withLaw = laws.some(function(e) { return !isEv(e); });
       h += '<div class="rep-pcard law"><div class="rep-pname">' + (withEv && withLaw ? 'Законы и события' : withEv ? 'Галактические события' : 'Законы фракции') + '</div>';
-      laws.forEach(function(e) { h += effRow(e, e.src === 'event' ? 'событие' : e.decree ? 'указ' : 'закон'); });
+      laws.forEach(function(e) { h += effRow(e, e.src === 'event' ? 'событие' : e.src === 'find' ? 'находка' : e.decree ? 'указ' : 'закон'); });
       h += '</div>';
     }
     planets.slice().sort(function(a, b) { return String(a.planet).localeCompare(String(b.planet)); }).forEach(function(p) {

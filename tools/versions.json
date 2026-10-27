@@ -111,6 +111,10 @@
   "v": "3",
   "sha": "55b5c151ff6c"
  },
+ "css/void-finds.css": {
+  "v": "1",
+  "sha": "3b4608e63c9c"
+ },
  "ground/fort-gfx.js": {
   "v": "3",
   "sha": "af8b2f21706f"
@@ -164,12 +168,12 @@
   "sha": "3cb586aab8c5"
  },
  "js/credits-bar.js": {
-  "v": "10",
-  "sha": "d2ebd39824a8"
+  "v": "11",
+  "sha": "05a08f1d802b"
  },
  "js/dev-panel.js": {
-  "v": "9",
-  "sha": "794c20420a02"
+  "v": "10",
+  "sha": "71a0c9d45e32"
  },
  "js/drag-command.js": {
   "v": "2",
@@ -192,8 +196,8 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "11",
-  "sha": "37d25e425998"
+  "v": "12",
+  "sha": "907cec169117"
  },
  "js/events.js": {
   "v": "6",
@@ -284,8 +288,8 @@
   "sha": "87d61fd00e32"
  },
  "js/reports.js": {
-  "v": "6",
-  "sha": "523a43f623bc"
+  "v": "7",
+  "sha": "1179fd3362c3"
  },
  "js/scene-loader.js": {
   "v": "2",
@@ -304,8 +308,8 @@
   "sha": "2371cf90901d"
  },
  "js/space-live.js": {
-  "v": "31",
-  "sha": "2455b9b0c93d"
+  "v": "32",
+  "sha": "e2babb827cea"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -334,6 +338,10 @@
  "js/unrest.js": {
   "v": "4",
   "sha": "807ab9ced1e0"
+ },
+ "js/void-finds.js": {
+  "v": "1",
+  "sha": "23e4c56b289b"
  },
  "proto/proto.css": {
   "v": "5",
@@ -400,8 +408,8 @@
   "sha": "1dc8adb9f9b0"
  },
  "shared/rt-space.js": {
-  "v": "33",
-  "sha": "a0c0b2c8b04d"
+  "v": "34",
+  "sha": "2a936a2cb2c4"
  },
  "shared/rt-town.js": {
   "v": "2",
@@ -452,11 +460,11 @@
   "sha": "26a531e80361"
  },
  "space/space.css": {
-  "v": "26",
-  "sha": "d74d26c780c9"
+  "v": "27",
+  "sha": "65639c1e068f"
  },
  "space/space.js": {
-  "v": "48",
-  "sha": "0c2572164a0b"
+  "v": "49",
+  "sha": "8df0eab4ac87"
  }
 }

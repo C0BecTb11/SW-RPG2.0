@@ -198,6 +198,7 @@ SystemRoom.prototype.syncUnits = function(sh, s) {
   var army = Army.fromGame(s, this.types[s.ship_type] || null, s.units || [], s.craft || [], { regenSec: (this.state.settings && this.state.settings.regen) || 30 });
   sh.crewOpts.roster = army.roster || []; if (sh.crew.recount) sh.crew.recount(sh.crewOpts);
   sh.hangar = (army.hangar || []).slice(); sh.vehicles = (army.vehicles || []).slice();
+  sh.bay = sh.hangar.map(function(_, i) { return i; }); sh.bayHp = {};          // спит — машин в воздухе нет, все на борту
   sh.units = (s.units || []).map(function(u) { return { id: u.id, hpMax: u.hp }; });
   sh.craftIds = hangarIds(s.craft);
   (s.units || []).forEach(function(u) { self.unitHp[u.id] = u.hp; });
@@ -385,12 +386,12 @@ SystemRoom.prototype.syncNow = function() {
         var hp0 = self.unitHpMax(sh, a.uid), v = a.alive ? Math.max(1, Math.round(hp0 * a.hp / (a.hpMax || 100))) : 0;
         if (self.unitHp[a.uid] !== v) { units.push({ id: a.uid, hp: v }); self.unitHp[a.uid] = v; }
       }
-      // машины ангара: k-я строка — k-я вылетевшая машина (вылет по порядку ангара, slot); ещё в ангаре — жива,
-      // вылетела — жива, пока её машина в бою не сбита (сбитые через 2 с уходят из списка — тоже погибла)
-      var launched = sh.launched || 0;
+      // машины ангара: k-я строка — машина с номером k (slot, по порядку ангара в игре). На борту (bay) — жива;
+      // в воздухе — жива, пока её машина в бою не сбита; ни там, ни там (сбита и убрана из списка) — погибла
+      var bay = {}; (sh.bay || []).forEach(function(k) { bay[k] = 1; });
       sh.craftIds.forEach(function(id, k) {
-        if (k >= launched) return;
-        var c = null; for (var j = 0; j < B.craft.length; j++) { var x = B.craft[j]; if (x.home === sh.n && x.slot === k && x.gameId == null) { c = x; break; } }
+        if (bay[k]) return;
+        var c = null; for (var j = 0; j < B.craft.length; j++) { var x = B.craft[j]; if (x.home === sh.n && x.slot === k && x.gameId == null && !x.docked) { c = x; break; } }
         if ((!c || c.dead) && self.craftHp[id] !== 0) { craft.push({ id: id, hp: 0 }); self.craftHp[id] = 0; }
       });
     }

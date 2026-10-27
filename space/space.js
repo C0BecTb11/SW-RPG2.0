@@ -2831,6 +2831,28 @@
       (c.crewLost ? ' · <span class="foe">недобор экипажа ' + c.crewLost + '</span>' : '') + '</div>';
     return out;
   }
+  // Авиакрыло: сколько машин на борту, в воздухе, сбито; режим — «Сами» / «В бой» / «На борт»
+  var WING_T = {
+    auto: 'Взлетают, когда враг ближе ' + Math.round(SP.WING_R / 1000) + ' км или по кораблю бьют; стихло — садятся. Так же, пока тебя нет в игре',
+    out: 'Все в воздухе: истребители прикрывают корабль, бомбардировщики бьют его цель',
+    dock: 'Садятся в ангар и не взлетают. Уйдёшь из игры — снова сами'
+  };
+  function wingInfo(sh) {
+    if (G.net) return sh.netWing || null;
+    var fly = 0; G.B.craft.forEach(function(c) { if (!c.dead && c.home === sh.n && c.role !== 'shuttle') fly++; });
+    return fly || sh.hangar.length || sh.wLost ? { bay: sh.hangar.length, fly: fly, lost: sh.wLost || 0, out: !!sh.wOut } : null;
+  }
+  function wingLine(sh) {
+    var w = wingInfo(sh); if (!w || sh.dead) return '';
+    var m = sh.wmode || 'auto';
+    var st = w.fly ? (w.out ? 'в бою' : 'садятся') : w.out && w.bay ? 'взлетают' : 'на борту';
+    return '<div class="sp-bd-row sp-wing"><span class="lab">крыло</span>' +
+      [['auto', 'Сами'], ['out', 'В бой'], ['dock', 'На борт']].map(function(x) {
+        return '<button class="sp-chip' + (m === x[0] ? ' on' : '') + '" data-wing="' + x[0] + '" type="button">' + x[1] + '</button>';
+      }).join('') + '</div>' +
+      '<div class="sp-hold sp-wing-s">✈ в ангаре <b>' + w.bay + '</b> · в воздухе <b>' + w.fly + '</b>' + (w.lost ? ' · <span class="foe">сбито ' + w.lost + '</span>' : '') +
+        ' · <em>' + st + '</em><br><span class="sp-dim">' + esc(WING_T[m]) + '</span></div>';
+  }
   // Цель корабля: кого атакует (или «сам выбирает»), снять — крестик
   function atkLine(sh) {
     if (sh.dead) return '';
@@ -3009,7 +3031,7 @@
     // у «Орудий» — точка: красная, если есть выбитые, зелёная — если бьют
     dockTabs([['ship', 'Корабль'], ['guns', 'Орудия', out ? '<i class="bad">●</i>' : fire ? '<i>●</i>' : '']]);
     $('sp-tabs').title = 'Орудия: бьют ' + fire + (out ? ', выбито ' + out : '');
-    box.innerHTML = G.sheet === 'ship' ? sys + shs + holdLine(sh) + bs.rest + (G.mode === 'inside' ? atkLine(sh) : '') + (window.SP_SHEET ? window.SP_SHEET(sh) : '') : '';
+    box.innerHTML = G.sheet === 'ship' ? sys + shs + holdLine(sh) + wingLine(sh) + bs.rest + (G.mode === 'inside' ? atkLine(sh) : '') + (window.SP_SHEET ? window.SP_SHEET(sh) : '') : '';
     sheetShow(G.sheet === 'guns');
     // пушки
     var any = false;
@@ -3194,6 +3216,13 @@
           else { toast('⊙ Луч держит «' + tt.name + '» ' + SP.TRACTOR.hold + ' с: ход скован, тянет к нам, в гиперпространство не уйти', 'gold'); try { if (navigator.vibrate) navigator.vibrate(12); } catch (er) {} }
         } else if (tk === 'off') { G.B.tractor(G.sel, -1); toast('Луч отпущен — перезарядка ' + SP.TRACTOR.cd + ' с', 'gold'); }
         else toast(tbE.getAttribute('title') || 'Луч не готов', 'bad');
+        hud(); return;
+      }
+      var wgE = e.target.closest('[data-wing]');
+      if (wgE) {
+        e.preventDefault(); var wsh = G.B.ships[G.sel], wm = wgE.getAttribute('data-wing'); if (!wsh || wsh.dead) return;
+        G.B.setWing(G.sel, wm);
+        toast(wsh.name + ': крыло — ' + { auto: 'сами, по обстановке', out: 'все в бой', dock: 'на борт' }[wm], 'gold');
         hud(); return;
       }
       if (e.target.closest('[data-atk-off]')) {

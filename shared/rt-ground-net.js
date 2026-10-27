@@ -53,7 +53,7 @@
   Viewer.prototype.lost = function() { this.full = true; this.known = {}; this.shown = {}; this.last = {}; };
   // постройка для клиента (hello и появившиеся позже)
   function structRow(s) {
-    return { i: s.i, kind: s.kind, team: s.team, x: s.x, y: s.y, w: s.w, h: s.h, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: s.uid || null, cover: s.cover || 0, enter: !!s.enter, infOnly: !!s.infOnly };
+    return { i: s.i, kind: s.kind, team: s.team, x: s.x, y: s.y, w: s.w, h: s.h, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: s.uid || null, res: s.res || null, cover: s.cover || 0, enter: !!s.enter, infOnly: !!s.infOnly };
   }
   Viewer.prototype.visible = function(a) {
     if (!a.alive) return false;

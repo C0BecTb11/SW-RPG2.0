@@ -573,13 +573,71 @@
       if (s >= 6 && b.name) label(c, b.name, p[0] + 3 * s, p[1] + 6 * s + 7, 'rgba(232,217,168,0.85)', Math.max(8, Math.min(11, s * 0.8)));
     }
   }
+  // Полевые постройки и башни рисует ground/fort-gfx.js: неподвижное запекается в картинку под размер
+  // клетки (кэш), живое — голова турели, тарелка радара, волны глушилки, бур — поверх каждый кадр.
+  // Голова турели смотрит туда, куда был последний выстрел (выстрел из центра постройки), между
+  // выстрелами держит цель, а без боя медленно осматривается — у каждой свой сектор, от центра карты.
+  var FCACHE = {}, FCN = 0, FPAD = 0.45, FTIP = {};
+  function fortHp(st) { if (st.dead) return 0; var k = st.hp / (st.hpMax || 1); return k < 0.35 ? 0.25 : k < 0.65 ? 0.5 : 1; }
+  function fortBase(st, s) {
+    var ppc = Math.max(8, Math.min(192, Math.round(s * G.dpr / 4) * 4)), hp = fortHp(st);
+    var key = st.kind + '|' + st.team + '|' + (st.res || '') + '|' + st.w + 'x' + st.h + '|' + (st.dead ? 'x' : hp) + '|' + ppc;
+    var cv = FCACHE[key]; if (cv) return cv;
+    if (FCN > 160) { FCACHE = {}; FCN = 0; }
+    cv = document.createElement('canvas');
+    cv.width = Math.ceil((st.w + FPAD * 2) * ppc); cv.height = Math.ceil((st.h + FPAD * 2) * ppc);
+    var c = cv.getContext('2d'); c.scale(ppc, ppc); c.translate(FPAD + st.w / 2, FPAD + st.h / 2);
+    SWForts.draw(c, st.kind, { team: st.team, w: st.w, h: st.h, res: st.res, hp: hp, dead: st.dead }, 'base');
+    FCACHE[key] = cv; FCN++;
+    return cv;
+  }
+  function shotKey(x, y) { return Math.round(x * 2) + ',' + Math.round(y * 2); }
+  function fortShots(B) {
+    var map = {}, sh = B.ev.shots, t = B.t;
+    for (var i = sh.length - 1; i >= 0; i--) { var q = sh[i]; if (t - q.t > 9) break; if (q.w !== 'turret' || q.melee) continue; var k0 = shotKey(q.x0, q.y0); if (!map[k0] && q.t <= t + 0.05) map[k0] = q; }
+    return map;
+  }
+  function fortAim(st, q, t) {
+    var dt = st._t == null ? 0 : Math.max(0, Math.min(0.1, t - st._t)); st._t = t;
+    if (st._a == null) {
+      var dx = st.x + st.w / 2 - N / 2, dy = st.y + st.h / 2 - N / 2;
+      st._a = (dx || dy ? Math.atan2(dy, dx) : -Math.PI / 2) + (((st.x * 7 + st.y * 13) % 11) / 11 - 0.5) * 0.9;
+      st._home = st._a;
+    }
+    var want, fast = false;
+    if (q && t - q.t < 7) {
+      want = Math.atan2(q.y1 - q.y0, q.x1 - q.x0); st._home = want;
+      if (q !== st._lq) { st._lq = q; fast = true; }
+    } else want = st._home + Math.sin(t * 0.33 + st.x * 0.71 + st.y * 0.37) * 0.6;     // осматривается
+    var d = ((want - st._a + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    if (fast && Math.abs(d) < 0.7) st._a = want;          // выстрел ушёл — голова уже на цели
+    else { var step = (q && t - q.t < 0.5 ? 9 : 2.4) * dt; st._a += Math.abs(d) <= step ? d : d > 0 ? step : -step; }
+    st._a = ((st._a % TAU) + TAU) % TAU; st._home = ((st._home % TAU) + TAU) % TAU;
+    return q && t - q.t >= 0 && t - q.t < 0.14 ? 1 - (t - q.t) / 0.14 : 0;
+  }
+  function drawFort(c, st, s, p, B, shots) {
+    var cv = fortBase(st, s);
+    c.drawImage(cv, p[0] - FPAD * s, p[1] - FPAD * s, (st.w + FPAD * 2) * s, (st.h + FPAD * 2) * s);
+    if (st.dead) return;
+    var cx = st.x + st.w / 2, cy = st.y + st.h / 2, u = { team: st.team, w: st.w, h: st.h, res: st.res, t: B.t + (st.x * 0.37 + st.y * 0.61) % 7, hp: fortHp(st) };
+    if (SWForts.aims(st.kind)) {
+      var key = shotKey(cx, cy);
+      u.fire = fortAim(st, shots[key], B.t); u.aim = st._a;
+      FTIP[key] = st.kind === 'tower' ? 1.05 : 0.68;      // откуда вылетает болт: дульный срез, а не середина тумбы
+    }
+    c.save(); c.translate(p[0] + st.w * s / 2, p[1] + st.h * s / 2); c.scale(s, s);
+    SWForts.draw(c, st.kind, u, 'top');
+    c.restore();
+    if (st.hp < st.hpMax) { c.fillStyle = '#141a22'; c.fillRect(p[0], p[1] - 5, st.w * s, 3); c.fillStyle = st.team === G.side ? '#5fd968' : '#ff6a5a'; c.fillRect(p[0], p[1] - 5, st.w * s * st.hp / st.hpMax, 3); }
+  }
   function drawStructs(c, s, vis) {
-    var B = G.B;
+    var B = G.B, shotBy = window.SWForts ? fortShots(B) : null;
     for (var i = 0; i < B.structs.length; i++) {
       var st = B.structs[i]; if (st.x + st.w < vis[0] || st.x > vis[2] || st.y + st.h < vis[1] || st.y > vis[3]) continue;
       var seen = B.seen[G.side][st.y * N + st.x]; if (!seen && st.team !== G.side) continue;
       var p = toS(st.x, st.y);
       if (st.kind === 'gate') { drawGate(c, st, s, p); }
+      else if (window.SWForts && SWForts.KINDS[st.kind]) { drawFort(c, st, s, p, B, shotBy); continue; }
       else if (st.kind === 'tower') { drawTower(c, st, s, p); }
       else {
         var im = simg(st.kind, st.team);
@@ -772,9 +830,13 @@
     for (var i = 0; i < sh.length; i++) {
       var q = sh[i], age = t - q.t; if (age < 0 || age > 0.35) continue;
       if (q.melee) { continue; }
-      var dx = q.x1 - q.x0, dy = q.y1 - q.y0, L = Math.sqrt(dx * dx + dy * dy) || 1;
+      var X0 = q.x0, Y0 = q.y0, dx = q.x1 - X0, dy = q.y1 - Y0, L = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (q.w === 'turret') {                           // болт турели — от дульного среза её головы
+        var tip = FTIP[shotKey(X0, Y0)];
+        if (tip && L > tip * 1.5) { X0 += dx / L * tip; Y0 += dy / L * tip; dx = q.x1 - X0; dy = q.y1 - Y0; L = Math.sqrt(dx * dx + dy * dy) || 1; }
+      }
       var spd = q.w === 'lightning' ? 1 : 0.12, k = Math.min(1, age / spd), tail = Math.min(1, 2.2 / L), k0 = Math.max(0, k - tail);
-      var a = toS(q.x0 + dx * k, q.y0 + dy * k), b = toS(q.x0 + dx * k0, q.y0 + dy * k0);
+      var a = toS(X0 + dx * k, Y0 + dy * k), b = toS(X0 + dx * k0, Y0 + dy * k0);
       var col = q.w === 'turret' ? '255,190,90' : q.w === 'lightning' ? '190,160,255' : TEAMC[q.team];
       if (q.w === 'lightning') { if (age < 1) H.fx.lightning(c, 0, 0, 0, 0, 0, 0); }
       var heavy = q.w === 'vehicle' || q.w === 'aa' || q.w === 'air';
@@ -786,7 +848,7 @@
         c.fillStyle = 'rgba(' + col + ',' + (0.8 * (1 - ek)) + ')'; c.beginPath(); c.arc(e[0], e[1], Math.max(2, s * (0.25 + ek * 0.4)), 0, TAU); c.fill();
         if (GFX.get('nums') && q.d > 0 && age < 0.3) label(c, '−' + q.d, e[0], e[1] - s * 0.6 - ek * 12, q.team === G.side ? '#ffd27a' : '#ff9a88', 11);
       }
-      if (age < 0.06) { var m0 = toS(q.x0, q.y0); c.fillStyle = 'rgba(' + col + ',0.8)'; c.beginPath(); c.arc(m0[0], m0[1], Math.max(1.5, s * 0.2), 0, TAU); c.fill(); }
+      if (age < 0.06) { var m0 = toS(X0, Y0); c.fillStyle = 'rgba(' + col + ',0.8)'; c.beginPath(); c.arc(m0[0], m0[1], Math.max(1.5, s * 0.2), 0, TAU); c.fill(); }
     }
     // удары мечом: цифры
     for (i = 0; i < sh.length; i++) { var m = sh[i]; if (!m.melee || t - m.t > 0.5) continue; if (GFX.get('nums') && m.d > 0) { var mp = toS(m.x1, m.y1); label(c, '−' + m.d, mp[0], mp[1] - s * 0.6 - (t - m.t) * 20, m.team === G.side ? '#ffd27a' : '#ff9a88', 11); } }

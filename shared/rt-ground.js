@@ -271,7 +271,7 @@
   };
   Ground.prototype.addStruct = function(kind, team, x, y, extra) {
     var S = U.ST[kind]; if (!S) return null;
-    var s = { i: this.structs.length, kind: kind, team: team, x: x, y: y, w: (extra && extra.w) || S[1], h: (extra && extra.h) || S[1], hp: (extra && extra.hp) || S[2], hpMax: (extra && extra.hp) || S[2], cover: S[3], inMul: S[4], radius: S[5], dmg: S[6], acc: S[7], enter: S[8], infOnly: S[9], cd: 0, tgt: -1, dead: false, name: S[0], uid: extra && extra.uid };
+    var s = { i: this.structs.length, kind: kind, team: team, x: x, y: y, w: (extra && extra.w) || S[1], h: (extra && extra.h) || S[1], hp: (extra && extra.hp) || S[2], hpMax: (extra && extra.hp) || S[2], cover: S[3], inMul: S[4], radius: S[5], dmg: S[6], acc: S[7], enter: S[8], infOnly: S[9], cd: 0, tgt: -1, dead: false, name: S[0], uid: extra && extra.uid, res: (extra && extra.res) || null };
     for (var j = 0; j < s.h; j++) for (var i = 0; i < s.w; i++) { var c = (y + j) * N + x + i; if (c >= 0 && c < N * N) this.structAt[c] = s.i; }
     this.structs.push(s);
     return s;
@@ -873,7 +873,7 @@
   Ground.prototype.hurtStruct = function(s, d) {
     if (s.dead) return;
     s.hp -= d;
-    if (s.hp <= 0) { s.hp = 0; s.dead = true; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.kind === 'gate' ? 'Ворота выбиты' : s.name + ' уничтожен' + (s.name.slice(-1) === 'а' ? 'а' : s.name.slice(-1) === 'я' ? 'а' : ''), s.team, 'bad'); }
+    if (s.hp <= 0) { s.hp = 0; s.dead = true; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.kind === 'gate' ? 'Ворота выбиты' : s.name + ' уничтожен' + (/[аяь]$/.test(s.name) ? 'а' : ''), s.team, 'bad'); }
   };
   Ground.prototype.shot = function(a, tg, hit, d, ti) {
     var x1 = tg.x, y1 = tg.y, mx = 0, my = 0;

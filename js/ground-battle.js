@@ -1225,12 +1225,22 @@ var redrawTimer = null;    // пока идёт стройка, обновляе
 
 // Картинки зданий грузим один раз и переиспользуем. Пока не загрузилась —
 // рисуем заглушку, а после загрузки перерисовываем сцену.
+// Вид полевой постройки в панелях — тот же, что на поле боя (ground/fort-gfx.js рисует его
+// кодом); без этого скрипта — старая картинка из базы
+function structImgSrc(st) {
+  var u = st && st.id && window.SWForts ? SWForts.iconURL(st.id, 160) : null;
+  return u || (st && st.image ? '../' + st.image : null);
+}
+
 function getBuildingImage(path) {
   if (!path) return null;
   if (buildingImages[path]) return buildingImages[path];
 
   var img = new Image();
-  img.src = '../' + path;
+  // полевые постройки — их нарисованный вид, как на поле боя
+  var fm = /^assets\/structures\/((?:rep|cis)_[a-z_]+)\.png$/.exec(path);
+  var fort = fm && window.SWForts ? SWForts.iconURL(fm[1], 160) : null;
+  img.src = fort || '../' + path;
   img.onerror = function() { img.failed = true; };
   buildingImages[path] = img;
   return img;
@@ -5192,7 +5202,7 @@ function renderStructureCards(unit, list) {
 
     item.innerHTML =
       '<div class="build-panel-thumb struct-thumb">' +
-        (st.image ? '<img src="../' + st.image + '" alt="">' : '■') +
+        (structImgSrc(st) ? '<img src="' + escHtml(structImgSrc(st)) + '" alt="">' : '■') +
         '<span class="struct-size">' + st.width_cells + '×' + st.height_cells + '</span>' +
       '</div>' +
       '<div class="build-panel-info">' +
@@ -5294,7 +5304,7 @@ function confirmStructurePlacement() {
     tone: 'build',
     kicker: 'Подтверди стройку',
     title: st.name,
-    image: st.image ? '../' + st.image : null,
+    image: structImgSrc(st),
     sub: st.width_cells + '×' + st.height_cells + ' · клетка ' + p.preview.x + ':' + p.preview.y +
          (st.build_seconds ? ' · ' + formatBuildTime(st.build_seconds) : ''),
     rows: [{ label: 'Спишется', items: gcCostItems(st.cost, st.cost_resources) }],
@@ -5340,7 +5350,7 @@ function openStructurePanel(s, keepView) {
   bar.innerHTML =
     '<div class="gu-top">' +
       '<div class="gu-portrait struct side-' + side + '">' +
-        (st.image ? '<img src="../' + st.image + '" alt="">' : '') +
+        (structImgSrc(st) ? '<img src="' + escHtml(structImgSrc(st)) + '" alt="">' : '') +
       '</div>' +
       '<div class="gu-stats">' +
         '<div class="gu-name">' + escHtml(st.name || 'Постройка') + '</div>' +
@@ -5401,7 +5411,7 @@ function openStructurePanel(s, keepView) {
           tone: 'danger',
           kicker: 'Подтверди разбор',
           title: st.name || 'Укрепление',
-          image: st.image ? '../' + st.image : null,
+          image: structImgSrc(st),
           sub: s.w + '×' + s.h + ' · клетка ' + s.x + ':' + s.y + ' · прочность ' + s.hp + ' / ' + (st.max_hp || s.hp),
           rows: [{ label: 'Вернётся', dir: 'in', items: r.items.length ? r.items : [{ text: 'ничего', lost: true }] }],
           warn: gcJoin(whole < 1

@@ -77,8 +77,28 @@
     headshot:    { cd: 45, name: 'Выстрел в голову' },
     ap:          { cd: 14, name: 'Бронебойный снаряд' },
     twin:        { cd: 18, name: 'Спаренный выстрел' },
-    lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 }
+    lunge:       { cd: 22, name: 'Рывок с клинком', dmg: 120 },
+    // врождённые — у охотников бара (HUNT)
+    net:         { cd: 18, name: 'Сетемёт' },
+    rocket:      { cd: 22, name: 'Наручная ракета', dmg: 60 }
   };
+  // Охотники бара — охотники на одарённых (флаги rt-units: f, n, j).
+  //  hero — урон по героям ×; внушение, умиротворение, страх и оглушение молнией их не берут.
+  //  net — сетемёт следопыта: летит fly с, держит героя hero с (клинок режет сеть быстрее), остальных other с;
+  //        дальность range (клетки игры); технику, авиацию и того, кто в полёте на ранце, не берёт. Пока на
+  //        враге сеть: не ходит, без сил и выпадов, джедай не отражает выстрелы, стреляет с меткостью ×acc.
+  //  scatter — дробовик следопыта: урон ×near в упор → ×far на предельной дальности; дробь отразить
+  //        клинком труднее (шанс ×deflect); соседа цели в pellet клетках с шансом chance задевает part урона.
+  //  twin — спаренные бластеры мандалорца: два болта, каждый — эта доля урона.
+  //  rocket — наручная ракета: круг r клеток поля, летит со скоростью spd кл/с (одарённый, как от гранаты, — вполсилы).
+  //  jet — реактивный ранец: враг с клинком ближе melee или любой ближе close — отскок на dist клеток
+  //        за t с (в полёте стреляет, сеть и клинок его не достают); откат cd.
+  var HUNT = { hero: 1.3,
+    net: { range: 3, fly: 0.35, hero: 3.5, other: 6, acc: 0.5 },
+    scatter: { near: 1.45, far: 0.55, deflect: 0.5, pellet: 1.2, chance: 0.5, part: 0.35 },
+    twin: 0.5,
+    rocket: { r: 1.6, spd: 24 },
+    jet: { cd: 18, dist: 5.5, t: 0.7, melee: 2.6, close: 1.2, every: 0.25 } };
   var SUPP_T = 6, STUN_T = 5;
   // Медик (клон-медик, дроид-техник): раз в every с лечит самого раненого своего пехотинца или героя
   // в r клетках боя (не себя) на hp; оглушённый, залёгший в страхе или под чужой волей — не лечит
@@ -241,7 +261,7 @@
       goal: null, at: true, post: false, hold: false, sq: 0, tgt: -1, focus: -1, scan: this.R() * SCAN, cd: this.R() * Ty.rof,
       stuck: 0, lastD: 1e9, wig: 0, side: 1, wait: 0, engT: -99, turretA: extra.aim || 0, inside: -1,
       uid: extra.uid || null, name: extra.name || '', owner: extra.owner || null, dmgK: extra.dmgK || 1,
-      stun: 0, fear: 0, choke: -1, mind: null, barrier: 0, revealT: -99,
+      stun: 0, fear: 0, choke: -1, mind: null, barrier: 0, revealT: -99, netT: 0, jet: null, jetCd: 0,
       hero: null, auto: false, dpost: null, sortie: false, lane: -1, ph: 0, jam: 0, ghostT: -1, og: null, mc: null, mT: 0, inCov: false, npc: !!extra.npc, rofK: 1, accB: 0, evaB: 0
     };
     a.rad = VRAD[tid] != null ? VRAD[tid] : (Ty.size === 2 ? 1.0 : R);
@@ -267,6 +287,9 @@
       a.sk = extra.skills.filter(function(q) { return q && SKILL[q[0]]; }).map(function(q) { return { k: q[0], v: +q[1] || 0, dmg: +q[2] || 0, ready: self0.t + 3 + self0.R() * 8 }; });
       if (!a.sk.length) a.sk = null;
     }
+    // охотники бара: сетемёт или наручная ракета — с рождения; ранец мандалорца готов через 3 с
+    if (Ty.netter || Ty.mando) (a.sk = a.sk || []).push({ k: Ty.netter ? 'net' : 'rocket', v: 0, dmg: 0, ready: this.t + 2 + this.R() * 4 });
+    if (Ty.mando) a.jetCd = this.t + 3;
     a.hp = extra.hp != null ? Math.min(a.hpMax, extra.hp) : a.hpMax;
     this.agents.push(a); this.used.push(a.id);
     if (this.nextIn.length < this.agents.length) { var ni = new Int32Array(this.agents.length + 256); ni.set(this.nextIn); this.nextIn = ni; }
@@ -280,7 +303,8 @@
     this.structs.push(s);
     return s;
   };
-  Ground.prototype.cellOf = function(a) { return a.size === 2 ? [Math.round(a.x) - 1, Math.round(a.y) - 1] : [Math.floor(a.x), Math.floor(a.y)]; };
+  // клетка бойца; в полёте на ранце — клетка посадки (над скалой и водой он только пролетает)
+  Ground.prototype.cellOf = function(a) { if (a.jet) return [Math.floor(a.jet.x1), Math.floor(a.jet.y1)]; return a.size === 2 ? [Math.round(a.x) - 1, Math.round(a.y) - 1] : [Math.floor(a.x), Math.floor(a.y)]; };
   Ground.prototype.okAt = function(a, cx, cy) {
     if (cx < 0 || cy < 0 || cx >= N || cy >= N) return false;
     var c = cy * N + cx;
@@ -582,6 +606,7 @@
         if (d > r * r) continue;
         // предпочтения: ПВО — воздух, техника — техника, пехота — пехота; слабые цели ближе — вкуснее
         var w = U.mult(a.T.cls, b.T.cls); w = w > 0 ? 1 / w : 3;
+        if (b.hero && a.T.hunter) w *= 0.35;                     // охотник бара: одарённый — первая цель
         cand.push(d * w, j);
       }
     }
@@ -671,6 +696,14 @@
     a.dvx = 0; a.dvy = 0;
     var tg = null;
     if (a.stun > 0) { a.stun -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
+    if (a.jet) { this.jetStep(a, dt); return; }
+    if (a.netT > this.t) {
+      // в сети: ни шагу, только поворот к цели (стреляет — хуже, см. fire)
+      a.mv += (0 - a.mv) * Math.min(1, dt * 6);
+      var tn = this.tgtPos(a); if (tn && !(a.T.vehicle && a.size === 2)) a.aim = turn(a.aim, Math.atan2(tn.y - a.y, tn.x - a.x), TURN * dt);
+      return;
+    }
+    if (a.T.mando && this.t >= a.jetCd && this.jetCheck(a, dt)) return;
     if (a.choke >= 0) { var ch = this.agents[a.choke]; if (ch && ch.alive && ch.hero && ch.hero.act === 'choke') { a.mv = 0; return; } a.choke = -1; }
     if (a.wait > 0) { a.wait -= dt; a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
     if (a.hero && a.hero.act !== 'idle' && a.hero.act !== 'run' && a.hero.act !== 'dash') { a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }
@@ -720,6 +753,46 @@
       return;
     }
     this.nav(a, dt, a.speed);
+  };
+  // ---- охотники бара: реактивный ранец мандалорца
+  // Угроза вплотную (клинок героя или любой враг совсем рядом) — отскок от неё; в окопе и бункере не взлетает
+  Ground.prototype.jetCheck = function(a, dt) {
+    var J = HUNT.jet;
+    a.jetScan = (a.jetScan || 0) - dt; if (a.jetScan > 0) return false;
+    a.jetScan = J.every;
+    if (a.inside >= 0 || a.choke >= 0 || a.fear > 0) return false;
+    var ag = this.agents, team = this.ctl(a), th = null, best = 1e9;
+    for (var i = 0; i < ag.length; i++) {
+      var b = ag[i]; if (!b.alive || b.air || b.fly || this.ctl(b) === team || b.netT > this.t || b.stun > 0) continue;
+      var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy), lim = b.hero ? J.melee : J.close;
+      if (d < lim && d < best) { best = d; th = b; }
+    }
+    if (!th) return false;
+    var bx = a.x - th.x, by = a.y - th.y, bl = Math.sqrt(bx * bx + by * by) || 1, base = Math.atan2(by / bl, bx / bl), land = null;
+    var tries = [0, 0.5, -0.5, 1, -1, 1.5, -1.5], dists = [J.dist, J.dist - 1.2, J.dist - 2.2];
+    for (var di = 0; di < dists.length && !land; di++) for (var ti = 0; ti < tries.length && !land; ti++) {
+      var an = base + tries[ti], lx = Math.floor(a.x + Math.cos(an) * dists[di]), ly = Math.floor(a.y + Math.sin(an) * dists[di]);
+      if (lx < 1 || ly < 1 || lx >= N - 1 || ly >= N - 1 || !this.okAt(a, lx, ly) || this.cellHead[ly * N + lx] !== -1) continue;
+      land = [lx, ly];
+    }
+    if (!land) return false;
+    a.jetCd = this.t + J.cd;
+    a.jet = { t0: this.t, t1: this.t + J.t, x0: a.x, y0: a.y, x1: land[0] + 0.5, y1: land[1] + 0.5 };
+    if (a.og) this.microEnd(a);
+    if (a.at || !a.goal) { a.goal = [land[0], land[1]]; a.key = null; a.at = true; }
+    a.vx = a.vy = a.dvx = a.dvy = 0; a.stuck = 0; a.lastD = 1e9;
+    this.ev.fx.push({ t: this.t, k: 'jet', x: a.x, y: a.y, tx: a.jet.x1, ty: a.jet.y1, id: a.id, r: J.t });
+    this.ev.fx.push({ t: this.t, k: 'skill', x: a.x, y: a.y, id: a.id, name: 'Реактивный ранец', team: a.team });
+    return true;
+  };
+  // Полёт на ранце: по прямой над всем, лицом к цели; сел — дальше по приказу
+  Ground.prototype.jetStep = function(a, dt) {
+    var j = a.jet, k = Math.min(1, (this.t - j.t0) / (j.t1 - j.t0));
+    a.x = j.x0 + (j.x1 - j.x0) * k; a.y = j.y0 + (j.y1 - j.y0) * k;
+    a.vx = a.vy = a.dvx = a.dvy = 0; a.mv += (0 - a.mv) * Math.min(1, dt * 6);
+    a.legs = turn(a.legs, Math.atan2(j.y1 - j.y0, j.x1 - j.x0), LEGS * dt);
+    var tg = this.tgtPos(a); a.aim = turn(a.aim, tg ? Math.atan2(tg.y - a.y, tg.x - a.x) : a.legs, TURN * dt);
+    if (k >= 1) { a.jet = null; a.x = j.x1; a.y = j.y1; }
   };
   // ---- повадки в бою
   Ground.prototype.styleOf = function(a) { return STYLE[a.tid] || (a.T.cls === 'infantry' ? STYLE.infantry : null); };
@@ -835,7 +908,7 @@
       var k = Math.min(1, dt * 10);
       a.vx += (a.dvx - a.vx) * k; a.vy += (a.dvy - a.vy) * k;
       a.x += a.vx * dt; a.y += a.vy * dt;
-      if (!(a.air || a.fly)) this.wall(a);
+      if (!(a.air || a.fly || a.jet)) this.wall(a);
     }
     this.cellHead.fill(-1);
     for (i = 0; i < ag.length; i++) {
@@ -844,13 +917,13 @@
       this.nextIn[i] = this.cellHead[c]; this.cellHead[c] = i;
     }
     for (i = 0; i < ag.length; i++) {
-      a = ag[i]; if (!a.alive || a.air || a.fly) continue;
+      a = ag[i]; if (!a.alive || a.air || a.fly || a.jet) continue;
       var ax = Math.floor(a.x), ay = Math.floor(a.y), ra = a.rad, rr = Math.ceil(ra + RAD_MAX);
       for (var yy = ay - rr; yy <= ay + rr; yy++) for (var xx = ax - rr; xx <= ax + rr; xx++) {
         if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
         for (var j = this.cellHead[yy * N + xx]; j !== -1; j = this.nextIn[j]) {
           if (j <= i) continue;
-          var b = ag[j]; if (!b.alive || b.air || b.fly) continue;
+          var b = ag[j]; if (!b.alive || b.air || b.fly || b.jet) continue;
           var rb = b.rad, D = ra + rb;
           // техника с техникой — теснее (могут частично наезжать); застрявшая в пробке — на 2 с «призрак»
           if (a.size === 2 && b.size === 2) { D *= a.ghostT > this.t || b.ghostT > this.t ? 0.4 : 0.8; }
@@ -980,13 +1053,16 @@
       }
       var b = tg.a;
       var inMul = a.inside >= 0 ? this.structs[a.inside].inMul : 1;
-      var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1) * (supp ? 0.5 : 1);
+      var p = U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b)) * (moving ? 0.7 : 1) * (a.hero && a.hero.passive.acc ? 1 + a.hero.passive.acc / 100 : 1) * (supp ? 0.5 : 1) * (a.netT > this.t ? HUNT.net.acc : 1);
       if (b.hero && b.hero.passive.evasion) p *= 1 - b.hero.passive.evasion / 100;
-      for (var vv = 0, nv = a.wh ? 2 : 1; vv < nv && b.alive; vv++) {     // Колесо Смерти — спаренные бластеры
+      // охотники бара: по одарённым больнее; дробовик — в упор сильнее, вдали слабее; мандалорец — два болта
+      var hk = (b.hero && a.T.hunter ? HUNT.hero : 1) * (a.T.mando ? HUNT.twin : 1);
+      if (a.T.netter) { var sr = Math.max(1, this.rangeTo(a, b)), sf = clamp((tg.d - 1) / Math.max(1, sr - 1), 0, 1); hk *= HUNT.scatter.near + (HUNT.scatter.far - HUNT.scatter.near) * sf; }
+      for (var vv = 0, nv = a.wh || a.T.mando ? 2 : 1; vv < nv && b.alive; vv++) {     // Колесо Смерти и мандалорец — спаренные бластеры
         hit = this.R() < p;
-        // джедай отражает выстрелы: часть попаданий уходит обратно
-        if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && this.R() < b.hero.passive.deflect / 100) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; }
-        dmg = hit ? U.damage(a.T, b.T, inMul) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
+        // джедай отражает выстрелы: часть попаданий уходит обратно (в сети — не отражает; дробь — вдвое реже)
+        if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && !(b.netT > this.t) && this.R() < b.hero.passive.deflect / 100 * (a.T.netter ? HUNT.scatter.deflect : 1)) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; }
+        dmg = hit ? U.damage(a.T, b.T, inMul) * a.dmgK * hk * (0.8 + this.R() * 0.4) : 0;
         this.shot(a, tg, hit, dmg, b.id);
         if (nv > 1) { var q2 = this.ev.shots[this.ev.shots.length - 1], ox = -Math.sin(a.aim) * (vv ? 0.16 : -0.16), oy = Math.cos(a.aim) * (vv ? 0.16 : -0.16); q2.x0 += ox; q2.y0 += oy; q2.x1 += ox; q2.y1 += oy; }
         a.revealT = this.t;
@@ -998,6 +1074,11 @@
           // гранатомёт и ракеты: задевает рядом
           var splash = /launcher/.test(a.tid) ? 1.6 : a.tid === 'cis_missile' ? 2 : 0;
           if (splash) { this.splash(tg.x, tg.y, splash, dmg * 0.5, a); this.ev.booms.push({ t: this.t, x: tg.x, y: tg.y, r: splash * 0.8 }); }
+          // картечь: сосед цели тоже ловит дробь
+          if (a.T.netter && this.R() < HUNT.scatter.chance) {
+            var pb = this.secondFoe(this.ctl(a), b, HUNT.scatter.pellet);
+            if (pb) { var pd = U.damage(a.T, pb.T, inMul) * a.dmgK * HUNT.scatter.part * (pb.hero ? HUNT.hero : 1); this.shot(a, { x: pb.x, y: pb.y, a: pb }, true, pd, pb.id); this.hurt(pb, pd, a.id); }
+          }
         }
       }
     }
@@ -1050,6 +1131,20 @@
         var ld = (s.dmg || S.dmg) * a.dmgK; if (b.hero) ld = Math.min(ld, b.hpMax * 0.3);
         this.ev.shots.push({ t: t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: true, w: 'saber', d: Math.round(ld), ti: b.id, from: a.id, melee: true });
         this.hurt(b, ld, a.id, true); ok = true;
+      } else if (s.k === 'net') {
+        // сетемёт: одарённый в дальности — первым; нет его рядом — любой пехотинец, что ещё не в сети
+        var nt = this.netTarget(a, b, team); if (!nt) continue;
+        this.ev.shells.push({ k: 'net', t0: t, t1: t + HUNT.net.fly, x0: a.x, y0: a.y, x1: nt.x, y1: nt.y, team: team, r: 0.7, tid: nt.id, by: a.id });
+        a.aim = Math.atan2(nt.y - a.y, nt.x - a.x);
+        ok = true;
+      } else if (s.k === 'rocket') {
+        // наручная ракета: по одарённому, по технике или по скоплению; своих в круге меньше, чем врагов
+        var rr0 = HUNT.rocket.r, nf2 = this.foesAt(team, tg.x, tg.y, rr0, false);
+        if (!b.hero && !b.T.vehicle && nf2 < 2 && !(b.inside >= 0)) continue;
+        if (tg.d < rr0 + 0.5 || b.air) continue;
+        if (this.alliesAt(team, tg.x, tg.y, rr0, false, a) >= Math.max(1, nf2)) continue;
+        this.ev.shells.push({ k: 'rk', t0: t, t1: t + Math.max(0.2, tg.d / HUNT.rocket.spd), x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: rr0, dmg: (s.dmg || S.dmg) * a.dmgK, by: a.id, foe: true });
+        ok = true;
       }
       if (ok) {
         s.ready = t + S.cd * (0.9 + this.R() * 0.2);
@@ -1060,11 +1155,25 @@
     }
     return false;
   };
+  // Кого ловить сетью: одарённого в дальности сетемёта (видно, по прямой); иначе текущую цель-пехотинца.
+  // Не в сети уже, не техника и не авиация, не в полёте на ранце
+  Ground.prototype.netTarget = function(a, b, team) {
+    var R2 = HUNT.net.range * RANGE_K, ag = this.agents, best = null, bd = R2 * R2;
+    var ok = function(e) { return e && e.alive && !e.air && !e.fly && !e.T.vehicle && !e.jet && !(e.netT > 0 && e.netT > this.t - 0.5); }.bind(this);
+    for (var i = 0; i < ag.length; i++) {
+      var e = ag[i]; if (!e.hero || this.ctl(e) === team || !ok(e) || !this.canSee(team, e)) continue;
+      var dx = e.x - a.x, dy = e.y - a.y, d = dx * dx + dy * dy; if (d >= bd || !this.los(a.x, a.y, e.x, e.y)) continue;
+      bd = d; best = e;
+    }
+    if (best) return best;
+    var dx2 = b.x - a.x, dy2 = b.y - a.y;
+    return ok(b) && dx2 * dx2 + dy2 * dy2 <= R2 * R2 && (b.hero || b.T.cls === 'infantry') ? b : null;
+  };
   Ground.prototype.medicStep = function(a, dt) {
     a.healT = (a.healT == null ? this.R() * MEDIC.every : a.healT) - dt;
     if (a.healT > 0) return;
     a.healT = MEDIC.every;
-    if (a.left || a.stun > 0 || a.fear > 0 || a.choke >= 0 || a.mind && a.mind.until > this.t) return;
+    if (a.left || a.stun > 0 || a.fear > 0 || a.choke >= 0 || a.netT > this.t || a.mind && a.mind.until > this.t) return;
     var ag = this.agents, team = this.ctl(a), best = null, bk = 1, r2 = MEDIC.r * MEDIC.r;
     for (var i = 0; i < ag.length; i++) {
       var b = ag[i]; if (b === a || !b.alive || b.left || b.T.vehicle || b.hp >= b.hpMax || this.ctl(b) !== team) continue;
@@ -1137,11 +1246,25 @@
     for (var i = sh.length - 1; i >= 0; i--) {
       var s = sh[i]; if (this.t < s.t1) continue;
       var by = this.agents[s.by];
-      if (s.foe) { this.blast(s.team, s.by, s.x1, s.y1, s.r, s.dmg, false, false); sh.splice(i, 1); continue; }   // граната бойца
+      if (s.k === 'net') { this.netLand(s); sh.splice(i, 1); continue; }
+      if (s.foe) { this.blast(s.team, s.by, s.x1, s.y1, s.r, s.dmg, false, false); sh.splice(i, 1); continue; }   // граната, ракета бойца
       this.splash(s.x1, s.y1, s.r, s.dmg, by && by.alive ? by : null);
       this.ev.booms.push({ t: this.t, x: s.x1, y: s.y1, r: s.r, big: true });
       sh.splice(i, 1);
     }
+  };
+  // Сеть долетела: цель ещё там (не дальше r от точки), не взлетела на ранце — держит; иначе мимо
+  Ground.prototype.netLand = function(s) {
+    var b = this.agents[s.tid];
+    if (!b || !b.alive || b.jet || b.air || b.fly) return;
+    var dx = b.x - s.x1, dy = b.y - s.y1;
+    if (dx * dx + dy * dy > (s.r + 0.5) * (s.r + 0.5)) { this.ev.fx.push({ t: this.t, k: 'netmiss', x: s.x1, y: s.y1 }); return; }
+    var dur = b.hero ? HUNT.net.hero : HUNT.net.other;
+    b.netT = Math.max(b.netT || 0, this.t + dur);
+    b.vx = b.vy = b.dvx = b.dvy = 0;
+    if (b.hero) { b.hero.pend = null; if (b.hero.act === 'dash' || b.hero.act === 'run') { b.hero.act = 'idle'; b.hero.actT = 0; } }
+    this.ev.fx.push({ t: this.t, k: 'net', x: b.x, y: b.y, id: b.id, until: b.netT });
+    if (b.hero) { this.msg((b.name || 'Одарённый') + ' в сети', this.ctl(b), 'bad'); this.msg('Одарённый пойман сетью', s.team, 'gold'); }
   };
   // Мины: враг на мине — взрыв. Урон по классу цели (U.DM.mine), к краю вдвое меньше; задевает всех рядом,
   // и своих тоже. Хозяевам — «сработала», пострадавшим — «подрыв на мине».
@@ -1196,6 +1319,7 @@
   Ground.prototype.heroFight = function(a, dt) {
     var h = a.hero;
     if (h.actT > 0) { h.actT -= dt; h.k = 1 - h.actT / (h.actDur || 1); if (h.actT <= 0) { this.heroActEnd(a); } return; }
+    if (a.netT > this.t) return;                                // в сети: режет её, а не врага
     a.scan -= dt;
     if (a.scan <= 0) { a.scan = SCAN; a.tgt = this.findTarget(a); }
     a.cd -= dt;
@@ -1252,15 +1376,15 @@
         if (fd > 3 * RANGE_K || Math.abs(((Math.atan2(fy, fx) - a.aim + 9.42) % 6.283) - 3.14) > 0.6) continue;
         var ld = (d.power || 120) * dmgK * (f.T.vehicle ? 0.6 : 1) * (1 - fd / (3 * RANGE_K) * 0.5);
         this.hurt(f, ld, a.id); this.ev.shots.push({ t: this.t, x0: a.x, y0: a.y, x1: f.x, y1: f.y, team: a.team, hit: true, w: 'lightning', d: Math.round(ld), ti: f.id, from: a.id });
-        if (this.R() < 0.5) f.stun = Math.max(f.stun, 2);
+        if (this.R() < 0.5 && !f.T.hunter) f.stun = Math.max(f.stun, 2);
       }
     } else if (act === 'choke' && b && b.alive) {
       var cdm = (d.power || 90) * dmgK;
       this.hurt(b, cdm, a.id); b.choke = -1;
       if (d.drain) a.hp = Math.min(a.hpMax, a.hp + cdm * 0.6);
     } else if (act === 'mind') {
-      if (d.fear) { var ag4 = this.agents; for (var r = 0; r < ag4.length; r++) { var g = ag4[r]; if (!g.alive || g.hero || g.T.vehicle || this.ctl(g) === a.team) continue; var gx = g.x - a.x, gy = g.y - a.y; if (gx * gx + gy * gy <= 9 * RANGE_K * RANGE_K) { g.fear = 6; g.tgt = -1; } } }
-      else if (b && b.alive && !b.hero) {
+      if (d.fear) { var ag4 = this.agents; for (var r = 0; r < ag4.length; r++) { var g = ag4[r]; if (!g.alive || g.hero || g.T.vehicle || g.T.hunter || this.ctl(g) === a.team) continue; var gx = g.x - a.x, gy = g.y - a.y; if (gx * gx + gy * gy <= 9 * RANGE_K * RANGE_K) { g.fear = 6; g.tgt = -1; } } }
+      else if (b && b.alive && !b.hero && !b.T.hunter) {
         if (d.pacify) { b.stun = Math.max(b.stun, 8); }
         else { b.mind = { until: this.t + (d.power || 300), by: a.team, orig: b.team }; b.tgt = -1; b.focus = -1; b.goal = null; b.at = true; b.post = false; b.sq = 0; }
       }
@@ -1281,12 +1405,14 @@
     if (h.abil.indexOf(abilId) < 0) return 'не изучено';
     if ((h.cds[abilId] || 0) > this.t) return 'откат ' + Math.ceil(h.cds[abilId] - this.t) + ' с';
     if (h.actT > 0) return 'занят';
+    if (a.netT > this.t) return 'в сети';
     h.pend = null;                                              // новая способность заменяет ожидающую
     var rng = A[2] * RANGE_K, b = tgt && tgt.tid != null ? this.agents[tgt.tid] : null, data = { power: A[4] };
     if (A[1] === 'enemy' || A[1] === 'ally') {
       if (!b || !b.alive) return 'нет цели';
       if (A[1] === 'enemy' && this.ctl(b) === team) return 'это свой';
       if (A[1] === 'ally' && b.team !== team) return 'это враг';
+      if (A[0] === 'mind' && b.T.hunter) return 'охотника внушение не берёт';
       var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy);
       // далеко — герой сам подходит на дальность и применяет (pendStep); новый приказ игрока отменяет
       if (d > rng + 0.5) return approach ? this.pendStart(team, a, abilId, b) : 'далеко';
@@ -1332,7 +1458,7 @@
     if (A[1] === 'enemy' && (this.ctl(b) === p.team || !this.canSee(p.team, b))) return drop(this, 'цель потеряна');
     if (A[1] === 'ally' && b.team !== p.team) return drop(this, 'цель потеряна');
     if (this.t > p.until) return drop(this, 'не дошёл до цели');
-    if (h.actT > 0 || a.stun > 0) return;                      // ударом или оглушением занят — дождаться
+    if (h.actT > 0 || a.stun > 0 || a.netT > this.t) return;   // ударом, оглушением или сетью занят — дождаться
     var dx = b.x - a.x, dy = b.y - a.y, rng = A[2] * RANGE_K;
     if (dx * dx + dy * dy <= (rng + 0.5) * (rng + 0.5)) {
       h.pend = null;
@@ -1712,5 +1838,5 @@
     return s;
   };
 
-  return { SKILL: SKILL, WHEEL: WHEEL, MEDIC: MEDIC, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
+  return { SKILL: SKILL, WHEEL: WHEEL, MEDIC: MEDIC, HUNT: HUNT, Ground: Ground, Flows: Flows, STEP: STEP, RANGE_K: RANGE_K, SABER: SABER, SQUARE: SQUARE, ABIL: ABIL, ABIL_NAME: ABIL_NAME, ACTIVE_LIGHT: ACTIVE_LIGHT, ACTIVE_DARK: ACTIVE_DARK, turn: turn, rng: rng };
 });

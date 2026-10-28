@@ -29,6 +29,8 @@
     rep_medic:      ['Клон-медик', 0, 100, 15, 400, 'rep_medic', 'rifle', 'medic'],
     rep_officer:    ['Клон-офицер', 0, 150, 40, 600, 'rep_officer', 'rifle'],
     rep_militia:    ['Ополченец', 0, 70, 14, 0, 'rep_dc15a', 'rifle'],
+    rep_mando:      ['Мандалорец-наставник', 0, 180, 55, 700, 'rep_mando', 'pistols'],
+    rep_hunter:     ['Барабельский ловчий', 0, 220, 50, 700, 'rep_hunter', 'scatter'],
     rep_jedi:       ['Джедай', 0, 280, 120, 2500, 'rep_officer', 'saber', 'hero'],
     cis_b1:         ['Дроид B1', 1, 70, 15, 60, 'cis_b1', 'b1'],
     cis_b2:         ['Дроид B2', 1, 160, 35, 220, 'cis_b2', 'b2'],
@@ -37,14 +39,14 @@
     cis_b1_launcher:['B1-гранатомётчик', 1, 70, 45, 200, 'cis_b1', 'launcher'],
     cis_engineer:   ['Инженерный дроид', 1, 80, 10, 800, 'cis_engineer', 'tool', 'eng'],
     cis_medic:      ['Дроид-техник', 1, 100, 15, 400, 'cis_medic', 'b1', 'medic'],
-    cis_bounty:     ['Охотник за головами', 1, 180, 55, 700, 'cis_bx', 'bx'],
-    cis_hunter:     ['Трандошанский следопыт', 1, 220, 45, 700, 'cis_bx', 'bx'],
+    cis_bounty:     ['Охотник за головами', 1, 180, 55, 700, 'cis_bounty', 'pistols'],
+    cis_hunter:     ['Трандошанский следопыт', 1, 220, 50, 700, 'cis_hunter', 'scatter'],
     cis_militia:    ['Ополченец', 1, 70, 14, 0, 'cis_b1', 'b1'],
     cis_sith:       ['Ситх', 1, 340, 155, 4000, 'cis_b1_cmd', 'saber', 'hero']
   };
   // Урон оружия в бою внутри рассчитан на «базового» бойца; сильнее по урону в
   // игре — во столько же раз сильнее и здесь
-  var WPN_BASE = { rifle: 20, heavy: 35, b1: 15, b2: 35, bx: 45, tool: 12, saber: 120, sniper: 40, launcher: 45 };
+  var WPN_BASE = { rifle: 20, heavy: 35, b1: 15, b2: 35, bx: 45, tool: 12, saber: 120, sniper: 40, launcher: 45, pistols: 55, scatter: 50 };
 
   // Корабли: [имя в игре, сторона, трюм (слоты), ангар (машин)] — из ship_types
   var SHIP = {

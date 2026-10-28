@@ -124,8 +124,8 @@
   "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "34",
-  "sha": "0e39b0266920"
+  "v": "35",
+  "sha": "a9ea11efacbf"
  },
  "ground/preview.css": {
   "v": "1",
@@ -160,8 +160,8 @@
   "sha": "cfc0827a6960"
  },
  "js/battle-stats.js": {
-  "v": "5",
-  "sha": "76152fe01dd7"
+  "v": "6",
+  "sha": "88cec4c86a85"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -188,8 +188,8 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "28",
-  "sha": "569ab312bbde"
+  "v": "29",
+  "sha": "00dd3386fa46"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -244,8 +244,8 @@
   "sha": "c15acb43ec4e"
  },
  "js/ground-live.js": {
-  "v": "34",
-  "sha": "88bd7b2192f0"
+  "v": "35",
+  "sha": "309226dbf5bc"
  },
  "js/map-layer.js": {
   "v": "2",
@@ -356,12 +356,12 @@
   "sha": "ddf8c69a7db1"
  },
  "shared/rt-army.js": {
-  "v": "8",
-  "sha": "24260d36b2bf"
+  "v": "9",
+  "sha": "e1ed73ef122e"
  },
  "shared/rt-board.js": {
-  "v": "9",
-  "sha": "6135e3517c9a"
+  "v": "10",
+  "sha": "24606f9928e5"
  },
  "shared/rt-core.js": {
   "v": "5",
@@ -376,20 +376,20 @@
   "sha": "c32d70d5ab51"
  },
  "shared/rt-events.js": {
-  "v": "5",
-  "sha": "19e4d158a0b1"
+  "v": "6",
+  "sha": "41ac6e17986c"
  },
  "shared/rt-figures.js": {
-  "v": "7",
-  "sha": "29de229d9ace"
+  "v": "8",
+  "sha": "f15f7ac0a73e"
  },
  "shared/rt-ground-net.js": {
-  "v": "12",
-  "sha": "50358a32461b"
+  "v": "13",
+  "sha": "eb07d363cfd5"
  },
  "shared/rt-ground.js": {
-  "v": "20",
-  "sha": "42085b549a0f"
+  "v": "21",
+  "sha": "a8a51be0d446"
  },
  "shared/rt-heroes.js": {
   "v": "2",
@@ -404,8 +404,8 @@
   "sha": "973b756c3c83"
  },
  "shared/rt-space-net.js": {
-  "v": "21",
-  "sha": "1ce35a069809"
+  "v": "22",
+  "sha": "30de0cd555f5"
  },
  "shared/rt-space.js": {
   "v": "35",
@@ -416,8 +416,8 @@
   "sha": "1cc156a45532"
  },
  "shared/rt-units.js": {
-  "v": "5",
-  "sha": "ad4ed9b700af"
+  "v": "6",
+  "sha": "ecc48ab92b7c"
  },
  "shared/rt-vehicles.js": {
   "v": "6",

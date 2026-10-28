@@ -284,7 +284,150 @@
     c.restore();
   }
 
-  var DRAW = { clone: clone, b1: b1, b2: b2, bx: bx, officer: officer, droideng: droidEng, droidmed: droidMed };
+  // ---------------------------------------------------------------- охотники бара
+  // Мандалорец (как Джанго и Боба Фетт): реактивный ранец с ракетой, Т-образный визор, наплечники,
+  // по бластеру в каждой руке; у охотника КНС — плащ. Окраска — по u.mark (ключ MANDO)
+  var MANDO = {
+    jango: { suit: ['#2d3642', '#4e5b6c'], armor: ['#6f8296', '#d3dbe3'], helm: ['#8796a6', '#eef2f6'], visor: '#0d1116', pack: ['#7c8792', '#d8dee4'],
+             trim: '#3366a8', cape: null, boot: '#1f252c', glove: '#3a4552', tip: '#c43d2e' },
+    boba:  { suit: ['#3f433b', '#62685a'], armor: ['#7d6c34', '#dcc277'], helm: ['#8c7638', '#ecd593'], visor: '#0f110d', pack: ['#4f5a3c', '#8c9a6c'],
+             trim: '#8c2f20', cape: '#4a3323', boot: '#3b3026', glove: '#5a4430', tip: '#d9a940' }
+  };
+  function mando(c, u) {
+    var P = MANDO[u.mark] || MANDO.jango;
+    legs(c, u, { w: 0.07, hip: 0.065, foot: 0.08, st: 0.18, col: P.suit[1], bootCol: P.boot, bootEdge: 'rgba(0,0,0,0.5)', boot: [0.06, 0.036] });
+    var bob = 1 + 0.03 * u.mv * Math.abs(Math.sin(u.phase));
+    c.save(); c.rotate(u.aim); c.scale(bob, bob);
+    c.lineJoin = 'round';
+    // плащ: от плеч назад, складки
+    if (P.cape) {
+      var sw = Math.sin(u.phase) * 0.025 * u.mv;
+      c.fillStyle = P.cape;
+      c.beginPath(); c.moveTo(-0.02, -0.17); c.quadraticCurveTo(-0.2, -0.24 + sw, -0.34, -0.17 + sw); c.lineTo(-0.36, 0.17 + sw); c.quadraticCurveTo(-0.2, 0.24 + sw, -0.02, 0.17); c.closePath(); c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 0.012;
+      for (var f = -1; f <= 1; f++) line(c, -0.12, f * 0.09, -0.33, f * 0.11 + sw);
+    }
+    // ранец: корпус, два сопла, ракета посередине
+    c.fillStyle = grad(c, 'mdP' + u.mark, function(x) { var g = x.createLinearGradient(0, -0.1, 0, 0.1); g.addColorStop(0, P.pack[0]); g.addColorStop(0.5, P.pack[1]); g.addColorStop(1, P.pack[0]); return g; });
+    rr(c, -0.245, -0.105, 0.12, 0.21, 0.03); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 0.01; c.stroke();
+    for (var k = -1; k <= 1; k += 2) {
+      c.fillStyle = P.pack[1]; rr(c, -0.275, k * 0.075 - 0.03, 0.13, 0.06, 0.03); c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 0.01; c.stroke();
+      c.fillStyle = '#15181c'; c.beginPath(); c.ellipse(-0.268, k * 0.075, 0.012, 0.022, 0, 0, TAU); c.fill();
+    }
+    c.fillStyle = '#c9ced4'; dot(c, -0.19, 0, 0.026);
+    c.fillStyle = P.tip; dot(c, -0.19, 0, 0.013);
+    // торс в комбинезоне, нагрудник и пояс
+    c.fillStyle = grad(c, 'mdS' + u.mark, function(x) { var g = x.createLinearGradient(0, -0.2, 0, 0.2); g.addColorStop(0, P.suit[0]); g.addColorStop(0.5, P.suit[1]); g.addColorStop(1, P.suit[0]); return g; });
+    c.beginPath(); c.ellipse(-0.03, 0, 0.12, 0.195, 0, 0, TAU); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 0.011; c.stroke();
+    c.fillStyle = grad(c, 'mdA' + u.mark, function(x) { var g = x.createLinearGradient(0, -0.14, 0, 0.14); g.addColorStop(0, P.armor[0]); g.addColorStop(0.45, P.armor[1]); g.addColorStop(1, P.armor[0]); return g; });
+    c.beginPath(); c.moveTo(-0.04, -0.12); c.lineTo(0.06, -0.1); c.quadraticCurveTo(0.1, 0, 0.06, 0.1); c.lineTo(-0.04, 0.12); c.quadraticCurveTo(-0.01, 0, -0.04, -0.12); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = 0.009; c.stroke();
+    c.strokeStyle = P.trim; c.lineWidth = 0.014; line(c, 0.0, -0.075, 0.0, 0.075);
+    // наплечники
+    for (var k2 = -1; k2 <= 1; k2 += 2) {
+      c.fillStyle = grad(c, 'mdH' + u.mark + k2, function(x) { var g = x.createRadialGradient(-0.03, k2 * 0.15, 0.005, -0.01, k2 * 0.168, 0.075); g.addColorStop(0, P.armor[1]); g.addColorStop(1, P.armor[0]); return g; });
+      dot(c, -0.012, k2 * 0.168, 0.066);
+      c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 0.01; c.stroke();
+      c.strokeStyle = P.trim; c.lineWidth = 0.012; c.beginPath(); c.arc(-0.012, k2 * 0.168, 0.045, k2 > 0 ? -2.2 : 0.6, k2 > 0 ? -0.6 : 2.2); c.stroke();
+    }
+    // руки вперёд: по бластеру в каждой, наручи цвета брони
+    c.lineCap = 'round';
+    var hx = 0.215, hy = 0.105;
+    c.strokeStyle = P.suit[1]; c.lineWidth = 0.052;
+    c.beginPath(); c.moveTo(0.0, 0.16); c.lineTo(0.1, 0.16); c.lineTo(hx, hy); c.stroke();
+    c.beginPath(); c.moveTo(0.0, -0.16); c.lineTo(0.1, -0.16); c.lineTo(hx, -hy); c.stroke();
+    c.strokeStyle = P.armor[0]; c.lineWidth = 0.056;
+    line(c, 0.12, 0.148, 0.18, 0.123); line(c, 0.12, -0.148, 0.18, -0.123);
+    c.lineCap = 'butt';
+    for (var k3 = -1; k3 <= 1; k3 += 2) {
+      c.strokeStyle = '#24282e'; c.lineWidth = 0.036; line(c, hx - 0.02, k3 * hy, hx + 0.16, k3 * (hy - 0.006));
+      c.strokeStyle = '#59616b'; c.lineWidth = 0.01; line(c, hx + 0.01, k3 * (hy - 0.01), hx + 0.15, k3 * (hy - 0.014));
+      c.fillStyle = '#121418'; c.fillRect(hx + 0.13, k3 * (hy - 0.006) - 0.012, 0.035, 0.024);
+      c.fillStyle = P.glove; dot(c, hx, k3 * hy, 0.03);
+    }
+    // шлем: Т-визор впереди, дальномер слева, гребень цвета отделки
+    c.fillStyle = grad(c, 'mdK' + u.mark, function(x) { var g = x.createRadialGradient(0.0, -0.035, 0.008, 0.03, 0, 0.12); g.addColorStop(0, P.helm[1]); g.addColorStop(1, P.helm[0]); return g; });
+    dot(c, 0.03, 0, 0.105);
+    c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 0.011; c.stroke();
+    c.strokeStyle = P.trim; c.lineWidth = 0.014; line(c, -0.055, 0, 0.03, 0);
+    c.strokeStyle = P.visor; c.lineWidth = 0.026;
+    c.beginPath(); c.arc(0.03, 0, 0.082, -0.58, 0.58); c.stroke();
+    c.lineWidth = 0.02; line(c, 0.075, 0, 0.11, 0);
+    c.strokeStyle = '#2c3138'; c.lineWidth = 0.012; line(c, 0.0, -0.1, 0.05, -0.155);
+    c.fillStyle = '#c33a2b'; dot(c, 0.052, -0.158, 0.012);
+    c.restore();
+  }
+
+  // Ящер-следопыт (трандошанин, барабел): чешуя, морда вперёд, жёлтые глаза; дробовик в обеих руках,
+  // на спине барабан сетемёта, через грудь патронташ. Окраска — по u.mark (ключ LIZARD)
+  var LIZARD = {
+    trando:  { skin: ['#4b6128', '#8ea552'], scale: 'rgba(30,45,15,0.45)', suit: ['#9a6c24', '#dcae54'], strap: '#4a3220', eye: '#ffb02e', ridge: '#34461c', spikes: false },
+    barabel: { skin: ['#6a5634', '#b39a62'], scale: 'rgba(60,42,20,0.45)', suit: ['#35485c', '#6e86a0'], strap: '#3a2a1c', eye: '#ffd84a', ridge: '#4a3a22', spikes: true }
+  };
+  function lizard(c, u) {
+    var P = LIZARD[u.mark] || LIZARD.trando;
+    legs(c, u, { w: 0.08, hip: 0.07, foot: 0.088, st: 0.16, col: P.skin[0], bootCol: P.ridge, bootEdge: 'rgba(0,0,0,0.45)', boot: [0.068, 0.04] });
+    var bob = 1 + 0.03 * u.mv * Math.abs(Math.sin(u.phase));
+    c.save(); c.rotate(u.aim); c.scale(bob, bob);
+    c.lineJoin = 'round';
+    // барабан сетемёта за спиной: сетка на крышке
+    c.fillStyle = '#3a3f46'; dot(c, -0.2, -0.05, 0.072);
+    c.strokeStyle = 'rgba(0,0,0,0.55)'; c.lineWidth = 0.01; c.stroke();
+    c.save(); c.beginPath(); c.arc(-0.2, -0.05, 0.056, 0, TAU); c.clip();
+    c.fillStyle = '#5a6068'; c.fillRect(-0.26, -0.11, 0.12, 0.12);
+    c.strokeStyle = 'rgba(220,210,170,0.65)'; c.lineWidth = 0.007;
+    for (var nx = -0.27; nx < -0.13; nx += 0.022) { line(c, nx, -0.11, nx + 0.06, 0.01); line(c, nx + 0.06, -0.11, nx, 0.01); }
+    c.restore();
+    c.fillStyle = '#2a2e33'; rr(c, -0.17, 0.03, 0.06, 0.09, 0.015); c.fill();
+    // торс в лётном комбинезоне, плечи широкие
+    c.fillStyle = grad(c, 'lzS' + u.mark, function(x) { var g = x.createLinearGradient(0, -0.22, 0, 0.22); g.addColorStop(0, P.suit[0]); g.addColorStop(0.5, P.suit[1]); g.addColorStop(1, P.suit[0]); return g; });
+    c.beginPath(); c.ellipse(-0.035, 0, 0.13, 0.215, 0, 0, TAU); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 0.012; c.stroke();
+    // патронташ через грудь
+    c.strokeStyle = P.strap; c.lineWidth = 0.034; line(c, -0.11, -0.16, 0.06, 0.15);
+    c.fillStyle = '#c9a24a';
+    for (var b = 0; b < 5; b++) { var q = 0.15 + b * 0.16; c.fillRect(-0.11 + 0.17 * q - 0.008, -0.16 + 0.31 * q - 0.008, 0.016, 0.016); }
+    // дробовик: толстый ствол, широкий раструб, барабан
+    c.lineCap = 'butt';
+    c.strokeStyle = '#2a2d31'; c.lineWidth = 0.062; line(c, -0.04, 0.066, 0.44, 0.05);
+    c.strokeStyle = '#555c64'; c.lineWidth = 0.014; line(c, 0.06, 0.038, 0.42, 0.03);
+    c.fillStyle = '#1b1e22'; rr(c, 0.42, 0.0, 0.07, 0.1, 0.018); c.fill();
+    c.fillStyle = '#0b0c0e'; c.fillRect(0.47, 0.022, 0.022, 0.056);
+    c.fillStyle = '#3c4148'; dot(c, 0.14, 0.11, 0.04); c.fillStyle = '#7d858e'; dot(c, 0.14, 0.11, 0.016);
+    // руки — чешуя, когти
+    c.lineCap = 'round';
+    c.strokeStyle = P.skin[0]; c.lineWidth = 0.052;
+    c.beginPath(); c.moveTo(0.0, 0.17); c.lineTo(0.085, 0.165); c.lineTo(0.17, 0.08); c.stroke();
+    c.beginPath(); c.moveTo(0.0, -0.17); c.lineTo(0.13, -0.12); c.lineTo(0.29, 0.05); c.stroke();
+    c.fillStyle = P.ridge; dot(c, 0.17, 0.08, 0.03); dot(c, 0.29, 0.05, 0.03);
+    c.strokeStyle = '#e8e2cf'; c.lineWidth = 0.007;
+    line(c, 0.185, 0.068, 0.208, 0.06); line(c, 0.305, 0.036, 0.33, 0.032);
+    // голова: вытянутая морда вперёд, гребень, надбровья, глаза по бокам, ноздри; у барабела — рожки на затылке
+    if (P.spikes) {
+      c.fillStyle = P.ridge;
+      for (var sp = -1; sp <= 1; sp++) { var sy = sp * 0.04; c.beginPath(); c.moveTo(-0.02, sy - 0.016); c.lineTo(-0.075 - (sp ? 0 : 0.012), sy * 1.6); c.lineTo(-0.02, sy + 0.016); c.closePath(); c.fill(); }
+    }
+    c.fillStyle = grad(c, 'lzH' + u.mark, function(x) { var g = x.createRadialGradient(0.04, -0.025, 0.01, 0.06, 0, 0.14); g.addColorStop(0, P.skin[1]); g.addColorStop(1, P.skin[0]); return g; });
+    c.beginPath(); c.moveTo(-0.03, -0.062); c.quadraticCurveTo(0.06, -0.085, 0.14, -0.045); c.quadraticCurveTo(0.195, -0.018, 0.195, 0);
+    c.quadraticCurveTo(0.195, 0.018, 0.14, 0.045); c.quadraticCurveTo(0.06, 0.085, -0.03, 0.062); c.quadraticCurveTo(-0.058, 0, -0.03, -0.062); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 0.01; c.stroke();
+    // чешуя: мелкие пятна вдоль морды, гуще к затылку
+    c.fillStyle = P.scale;
+    for (var sx = -0.015; sx < 0.12; sx += 0.026) for (var sr = -1; sr <= 1; sr += 2) dot(c, sx, sr * (0.03 - sx * 0.08), 0.009 - sx * 0.03);
+    c.strokeStyle = P.ridge; c.lineWidth = 0.014; line(c, -0.035, 0, 0.09, 0);
+    c.lineWidth = 0.012; c.beginPath(); c.arc(0.075, -0.035, 0.026, -2.4, -0.4); c.stroke(); c.beginPath(); c.arc(0.075, 0.035, 0.026, 0.4, 2.4); c.stroke();
+    for (var e = -1; e <= 1; e += 2) {
+      c.fillStyle = P.eye; c.beginPath(); c.ellipse(0.085, e * 0.057, 0.019, 0.01, e * 0.3, 0, TAU); c.fill();
+      c.fillStyle = '#120c04'; c.fillRect(0.083, e * 0.057 - 0.0035, 0.007, 0.007);
+    }
+    c.fillStyle = '#1a1208'; dot(c, 0.178, -0.012, 0.006); dot(c, 0.178, 0.012, 0.006);
+    c.restore();
+  }
+
+  var DRAW = { clone: clone, b1: b1, b2: b2, bx: bx, officer: officer, droideng: droidEng, droidmed: droidMed, mando: mando, lizard: lizard };
 
   // Экипаж кораблей — не строевые бойцы (имена — как у юнитов игры)
   var CREW = [
@@ -453,8 +596,17 @@
     } catch (e) { return false; }
   }
 
-  // Все виды для отрисовки кораблей: бойцы боя + экипаж; и кто где служит
-  function withCrew(types) { return types.concat(CREW); }
+  // Наёмники бара — строевые бойцы игры, но не из демо-палубы (их фигурки — только здесь)
+  var BAR = [
+    { id: 'cis_bounty', name: 'Охотник за головами',     draw: 'mando',  gun: 'pistols', mark: 'boba',    rad: 0.35 },
+    { id: 'rep_mando',  name: 'Мандалорец-наставник',    draw: 'mando',  gun: 'pistols', mark: 'jango',   rad: 0.35 },
+    { id: 'cis_hunter', name: 'Трандошанский следопыт',  draw: 'lizard', gun: 'scatter', mark: 'trando',  rad: 0.37 },
+    { id: 'rep_hunter', name: 'Барабельский ловчий',     draw: 'lizard', gun: 'scatter', mark: 'barabel', rad: 0.37 }
+  ];
+
+  // Все виды для отрисовки кораблей: бойцы боя + экипаж + наёмники бара (порядок — номера фигурок
+  // на сервере и у игроков: добавлять только в конец); и кто где служит
+  function withCrew(types) { return types.concat(CREW, BAR); }
   function crewFigs(faction, all) {
     var at = function(ids) { return ids.map(function(id) { for (var i = 0; i < all.length; i++) if (all[i].id === id) return i; return 0; }); };
     return faction === 'cis'

@@ -4,7 +4,8 @@
  *
  * Кадр f: { t:'f', T, n:[[id,x,y,aim,mv,hp,flags,aux]...], new:[{...}], gone:[id], ev:{s,b,x,m,d,sh},
  *           cnt:[живых 0, 1], cap, dist, fog (RLE), sq, st:[[i,hp,dead]] }
- * flags: 1 в укрытии, 2 оглушён, 4 страх, 8 держит, 16 на месте, 32 купол, 64 внушение, 128 идёт к точке игрока, 256/512 — внушение у КНС/Республики
+ * flags: 1 в укрытии, 2 оглушён, 4 страх, 8 держит, 16 на месте, 32 купол, 64 внушение, 128 идёт к точке игрока, 256/512 — внушение у КНС/Республики,
+ *        1024 в сети (сетемёт следопыта), 2048 в полёте на реактивном ранце
  * aux: техника — угол башни; герой — [поза, k]; Колесо Смерти — [раскрыт 0..1, щит 0..1 или −1]; остальные — 0.
  * Приказы cmd: move {ids,x,y}, attack {ids,tid}, hold, stop, auto {ids,on}, assign {ids,sq},
  *              ability {id,ab,tgt}, load {ids,ship}.
@@ -67,7 +68,7 @@
   };
   Viewer.prototype.flags = function(a) {
     var t = this.B.t;
-    return (a.inside >= 0 ? 1 : 0) | (a.stun > 0 ? 2 : 0) | (a.fear > 0 ? 4 : 0) | (a.hold ? 8 : 0) | (a.at || !a.goal ? 16 : 0) | (a.barrier > t ? 32 : 0) | (a.mind && a.mind.until > t ? 64 | (a.mind.by === 1 ? 256 : 512) : 0) | (a.post && !a.at ? 128 : 0);
+    return (a.inside >= 0 ? 1 : 0) | (a.stun > 0 ? 2 : 0) | (a.fear > 0 ? 4 : 0) | (a.hold ? 8 : 0) | (a.at || !a.goal ? 16 : 0) | (a.barrier > t ? 32 : 0) | (a.mind && a.mind.until > t ? 64 | (a.mind.by === 1 ? 256 : 512) : 0) | (a.post && !a.at ? 128 : 0) | (a.netT > t ? 1024 : 0) | (a.jet ? 2048 : 0);
   };
   Viewer.prototype.intro = function(a) {
     return { id: a.id, tid: a.tid, team: a.team, uid: a.uid || null, name: a.name || '', hpMax: a.hpMax, owner: a.owner || null, npc: !!a.npc, size: a.size,
@@ -108,8 +109,9 @@
       .map(function(q) { return [r2(q.t), r1(q.x0), r1(q.y0), r1(q.x1), r1(q.y1), q.team, q.hit ? 1 : 0, q.w || '', q.d || 0, q.melee ? 1 : 0]; });
     f.ev.b = B.ev.booms.filter(function(q) { return q.t > since && vis(q.x, q.y); }).map(function(q) { return [r2(q.t), r1(q.x), r1(q.y), r1(q.r)]; });
     f.ev.x = B.ev.fx.filter(function(q) { return q.t > since && (q.x == null || vis(q.x, q.y) || (q.id != null && ag[q.id] && self.visible(ag[q.id]))); })
-      .map(function(q) { return { k: q.k, t: r2(q.t), x: q.x, y: q.y, id: q.id, tx: q.tx, ty: q.ty, tid: q.tid, r: q.r, until: q.until }; });
-    f.ev.sh = B.ev.shells.filter(function(q) { return q.t0 > since; }).map(function(q) { return [r2(q.t0), r2(q.t1), r1(q.x0), r1(q.y0), r1(q.x1), r1(q.y1), r1(q.r)]; });
+      .map(function(q) { return { k: q.k, t: r2(q.t), x: q.x, y: q.y, id: q.id, tx: q.tx, ty: q.ty, tid: q.tid, r: q.r, until: q.until, name: q.name, team: q.team }; });
+    // снаряд: граната и залп — дугой; k — род особого снаряда (net — сеть, rk — ракета)
+    f.ev.sh = B.ev.shells.filter(function(q) { return q.t0 > since; }).map(function(q) { return [r2(q.t0), r2(q.t1), r1(q.x0), r1(q.y0), r1(q.x1), r1(q.y1), r1(q.r), q.k || '']; });
     var ms = []; for (i = 0; i < B.ev.msgs.length; i++) { var m = B.ev.msgs[i]; if (m.seq > this.msgSeq && m.team === side) ms.push([m.seq, m.text, m.kind || '']); if (m.seq > this.msgSeq) this.msgSeq = m.seq; }
     if (ms.length) f.ev.m = ms;
     f.ev.d = B.ev.deaths.filter(function(q) { return q.t > since; }).map(function(q) { return q.id; });
@@ -287,6 +289,7 @@
       // кто управляет внушённым: 256 — КНС, 512 — Республика (старый сервер — без бита)
       b.mind = fl & 64 ? { until: now + 1, by: fl & 256 ? 1 : fl & 512 ? 0 : (b.team === 0 ? 1 : 0) } : null;
       if (!locked) b.post = !!(fl & 128);
+      b.netT = fl & 1024 ? now + 3 : 0; b.jet = fl & 2048 ? { k: 1 } : null;     // сеть снимет кадр со сброшенным флагом
       if (b.T.vehicle && b.size === 2) b.turretA = +u[7] || 0;
       else if (b.hero && Array.isArray(u[7])) { b.hero.act = ACTS[u[7][0]] || 'idle'; b.hero.k = u[7][1]; b.hero.actT = b.hero.act === 'idle' ? 0 : 1; }
       else if (b.wh && Array.isArray(u[7])) { b.wh.k = +u[7][0] || 0; b.wh.sf = u[7][1] == null ? -1 : +u[7][1]; }
@@ -305,7 +308,7 @@
       if (e.s) e.s.forEach(function(q) { self.ev.shots.push({ t: q[0], x0: q[1], y0: q[2], x1: q[3], y1: q[4], team: q[5], hit: !!q[6], w: q[7], d: q[8], melee: !!q[9] }); });
       if (e.b) e.b.forEach(function(q) { self.ev.booms.push({ t: q[0], x: q[1], y: q[2], r: q[3] }); });
       if (e.x) e.x.forEach(function(q) { self.ev.fx.push(q); });
-      if (e.sh) e.sh.forEach(function(q) { self.ev.shells.push({ t0: q[0], t1: q[1], x0: q[2], y0: q[3], x1: q[4], y1: q[5], r: q[6] }); });
+      if (e.sh) e.sh.forEach(function(q) { self.ev.shells.push({ t0: q[0], t1: q[1], x0: q[2], y0: q[3], x1: q[4], y1: q[5], r: q[6], k: q[7] || '' }); });
       if (e.m) e.m.forEach(function(q) { self.ev.msgs.push({ seq: ++self.seq, t: now, text: q[1], kind: q[2], team: self.side }); });
       if (e.d) e.d.forEach(function(id) { var d = self.agents[id]; if (d && d.alive && d.dieT == null) d.dieT = now; self.ev.deaths.push({ t: now, id: id }); });
     }

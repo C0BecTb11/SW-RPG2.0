@@ -187,6 +187,7 @@
 .pi-stat.lo-cellrow b { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .pi-stat.lo-cellrow.bad b { color: #d94a4a; }
 .pi-stat.lo-cellrow.good b { color: #d9a940; }
+.pi-stat.lo-intel b { color: #d9a940; }
 
 /* ── Окно фракции ────────────────────────────────────────────────── */
 .lo-pl {

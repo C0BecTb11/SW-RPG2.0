@@ -183,8 +183,14 @@
     var html = '<div class="lo-sweep">' +
       '<div class="lo-sweep-h"><b>Облава</b><em>шанс ' + (w.chance | 0) + ' %</em></div>';
     if (w.active) {
-      var endIso = w.active.resolves_at, startIso = w.active.started_at;
-      var end = Date.now() + leftMs(endIso), span = Math.max(1, Math.round((Date.parse(endIso) - Date.parse(startIso)) / 1000));
+      var endIso = w.active.resolves_at, startIso = w.active.started_at, left = leftMs(endIso);
+      var span = Math.max(1, Math.round((Date.parse(endIso) - Date.parse(startIso)) / 1000));
+      if (left <= 0) {                       // срок вышел — база подведёт итог в ближайшие пару минут
+        return html + '<div class="lo-sweep-run"><span>Гарнизон прочёсывает кварталы</span><em>подводим итог…</em></div>' +
+          '<div class="lo-bar"><i style="width:100%"></i></div></div>';
+      }
+      // конец — в часах телефона, округлён до секунды: одинаковый при каждой перерисовке (stlTick помнит истёкшие концы)
+      var end = Math.round((Date.now() + left) / 1000) * 1000;
       html += '<div class="lo-sweep-run"><span>Гарнизон прочёсывает кварталы</span><em>итог через <b data-stl-end="' + end + '">' + shortTo(endIso) + '</b></em></div>' +
         '<div class="lo-bar"><i data-stl-end="' + end + '" data-stl-total="' + span + '"></i></div>';
       return html + '</div>';
@@ -259,10 +265,22 @@
         ? '<span>⚠ Подполье врага</span><b>ур. ' + (p.cell | 0) + pips(p.cell, 3, 'bad') + '</b>'
         : '<span>✦ Наша сеть</span><b>ур. ' + (p.cell | 0) + pips(p.cell, 3, 'good') + '</b>';
     }
+    // Чужая планета, где подполье доносит нам (как loyalty_battle): кто стоит в поселении
+    if (!mine && m.faction && m.effects && !p.capital && !p.grace && ((p.s | 0) <= -50 || (p.cell | 0) >= 3)) {
+      var r4 = next('lo-intel'), s = sb();
+      r4.innerHTML = '<span>☍ Донесения подполья</span><b>…</b>';
+      if (s) Promise.resolve(s.rpc('loyalty_state', { p_system: systemId })).then(function(r) {
+        var it = r && !r.error && r.data && r.data.intel;
+        if (!it) { r4.style.display = 'none'; return; }
+        var bits = [(it.infantry | 0) + ' пех.', (it.vehicles | 0) + ' техн.'];
+        if (it.heroes | 0) bits.push((it.heroes | 0) + ' гер.');
+        bits.push('ополч. ' + (it.militia | 0));
+        r4.querySelector('b').textContent = bits.join(' · ');
+      }, function() { r4.style.display = 'none'; });
+    }
   }
   function planetRows(systemId) {
-    if (!byId(systemId) && !cache.map) return [];
-    var rows = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
+    var rows = [document.createElement('div'), document.createElement('div'), document.createElement('div'), document.createElement('div')];
     fillRows(systemId, rows);
     if (Date.now() - cache.at > 60000) fetchMap().then(function() { fillRows(systemId, rows); });
     return rows;

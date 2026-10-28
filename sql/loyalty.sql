@@ -8,9 +8,10 @@
 --   20…49  спокойна   — ×1
 --  −19…19  колеблется — ×0,8, ополчение вполовину
 --  −49…−20 ропщет     — ×0,6, ополчение не встаёт, напряжение +3
---  −79…−50 подполье   — ×0,35, наступающим видно поселение (8 клеток), с сетью — подполье встаёт за врага
--- −100…−80 ждёт врага — ×0,2 (≈ 70 мин), встаёт подполье
--- Столицы (unrest_capitals) — не быстрее 6 ч и без подполья. 72 ч после захвата («перемена власти») —
+--  −79…−50 подполье   — ×0,35, наступающим видно поселение (8 клеток), с сетью — подполье встаёт за врага, напряжение +5
+-- −100…−80 ждёт врага — ×0,2 (≈ 70 мин), встаёт подполье, напряжение +5
+-- Столицы (unrest_capitals) — не быстрее 6 ч, без подполья и без разведки подполья.
+-- Подполье держится, только пока в кольце поселения стоит живой боец его стороны (игрока): само планету не берёт. 72 ч после захвата («перемена власти») —
 -- ступень не ускоряет захват, подполье и разведка не работают.
 --
 -- Раз в сутки в час выдачи (settlement_tick → loyalty_day, в своей обёртке исключений), итог за сутки не больше ±8:
@@ -352,6 +353,7 @@ returns integer language plpgsql security definer set search_path to 'public', '
 declare sy record; pl planet_loyalty; v_side integer; v_old_s integer; v_new_s integer; s_old jsonb; s_new jsonb;
   v_ctl uuid; v_lead uuid; v_to uuid; v_enemy text; v_meta jsonb; v_new integer := greatest(-100, least(100, p_new));
 begin
+  if p_new is null then raise exception 'loyalty_set: пустое значение шкалы (%)', p_system; end if;
   select id, name, faction into sy from systems where id = p_system;
   select * into pl from planet_loyalty where system_id = p_system for update;
   if not found then
@@ -536,7 +538,7 @@ begin
   v_g := loyalty_grace_until(p_system);
   select level into v_cell from loyalty_cells where system_id = p_system and faction = v_enemy;
   return jsonb_build_object('stage', loyalty_stage_of(v_s) ->> 'k',
-    'reveal', case when (v_g is null or v_g <= now()) and (v_s <= -50 or coalesce(v_cell, 0) >= 3) then v_enemy end);
+    'reveal', case when (v_g is null or v_g <= now()) and not loyalty_capital(p_system) and (v_s <= -50 or coalesce(v_cell, 0) >= 3) then v_enemy end);
 end;
 $$;
 
@@ -581,6 +583,8 @@ begin
   if not found or coalesce(sy.faction, '') not in ('republic', 'cis') or sy.faction = g.faction then raise exception 'Агитация — только на планете врага'; end if;
   v_j := spy_jumps(g.base_system, p_system);
   if v_j is null or v_j < 1 then raise exception 'Цель дальше % гиперпутей от штаба группы', game_setting_int('spy_max_jumps', 3); end if;
+  -- две группы стороны одновременно на одну планету: вторая ждёт первую и упирается в откат
+  perform pg_advisory_xact_lock(hashtext('agit:' || p_system || ':' || g.faction));
   v_until := loyalty_agit_cd(p_system, g.faction);
   if v_until is not null and v_until > now() then
     raise exception 'На этой планете наши агитаторы уже работали — следующая агитация не раньше чем через % ч', ceil(extract(epoch from v_until - now()) / 3600);
@@ -1137,10 +1141,14 @@ $a$);
 $a$;
     if position(n in d) = 0 then raise exception 'npc_tick: тревога ополчения не найдена'; end if;
     d := replace(d, n, n || $a$
-  -- Подполье держится, пока идёт полоса захвата
+  -- Подполье держится, пока идёт полоса захвата и в кольце стоит живой боец его стороны (игрока)
   update npc_brains b set aggro_until = now()
-  where b.kind = 'partisan'
-    and exists (select 1 from system_capture c where c.system_id = b.system_id and c.status <> 'distribution');
+  from unit_positions pu
+  where b.kind = 'partisan' and pu.id = b.unit_id
+    and exists (select 1 from system_capture c where c.system_id = b.system_id and c.status <> 'distribution')
+    and exists (select 1 from unit_positions x
+                 where x.system_id = b.system_id and x.layer = 'ground' and x.hp > 0 and x.x is not null
+                   and x.faction = pu.faction and x.owner_user_id is not null and is_in_settlement_zone(x.x, x.y));
 $a$);
     n := $a$  where b.unit_id = u.id and b.kind = 'militia'
     and coalesce(b.aggro_until, b.created_at) < now() - interval '3 minutes';$a$;
@@ -1181,6 +1189,55 @@ $a$);
     execute d;
   end if;
 end $do$;
+
+-- Правка 29.10 (проверка): подполье без живых бойцов своей стороны расходится — переписать уже вставленный текст npc_tick
+do $do$
+declare d text; o text; n text;
+begin
+  d := pg_get_functiondef('public.npc_tick()'::regprocedure);
+  o := $a$  -- Подполье держится, пока идёт полоса захвата
+  update npc_brains b set aggro_until = now()
+  where b.kind = 'partisan'
+    and exists (select 1 from system_capture c where c.system_id = b.system_id and c.status <> 'distribution');
+$a$;
+  n := $a$  -- Подполье держится, пока идёт полоса захвата и в кольце стоит живой боец его стороны (игрока)
+  update npc_brains b set aggro_until = now()
+  from unit_positions pu
+  where b.kind = 'partisan' and pu.id = b.unit_id
+    and exists (select 1 from system_capture c where c.system_id = b.system_id and c.status <> 'distribution')
+    and exists (select 1 from unit_positions x
+                 where x.system_id = b.system_id and x.layer = 'ground' and x.hp > 0 and x.x is not null
+                   and x.faction = pu.faction and x.owner_user_id is not null and is_in_settlement_zone(x.x, x.y));
+$a$;
+  if position(o in d) > 0 then execute replace(d, o, n); end if;
+end $do$;
+
+-- Донесения: эффект «Народ предан» подписан как настроения, а не казна
+do $do$
+declare d text; o text := $a$when source in ('unrest', 'riot', 'riot_end') then 'Напряжение · '$a$;
+begin
+  d := pg_get_functiondef('public.report_list()'::regprocedure);
+  if position('Настроения · ' in d) = 0 and position(o in d) > 0 then
+    execute replace(d, o, o || $a$ when source = 'loyalty' then 'Настроения · '$a$);
+  end if;
+end $do$;
+
+-- Полосы, начатые до настроений, дотягивают со старым сроком (не обрываются мгновенно)
+update public.system_capture set goal = greatest(game_setting_int('capture_seconds', 60), ceil(progress)::integer)
+ where goal is null and status <> 'distribution';
+
+-- Помощники с security definer — только для функций базы (иначе гарнизон чужой планеты виден из консоли)
+revoke execute on function public.loyalty_garrison(text) from public, anon, authenticated;
+revoke execute on function public.loyalty_sweep_chance(text) from public, anon, authenticated;
+revoke execute on function public.loyalty_agit_chance(text, integer, timestamptz) from public, anon, authenticated;
+revoke execute on function public.loyalty_agit_pen(text) from public, anon, authenticated;
+revoke execute on function public.loyalty_agit_cd(text, text) from public, anon, authenticated;
+revoke execute on function public.loyalty_support(text) from public, anon, authenticated;
+revoke execute on function public.loyalty_grace_until(text) from public, anon, authenticated;
+revoke execute on function public.loyalty_militia_k(text) from public, anon, authenticated;
+revoke execute on function public.capture_goal(text) from public, anon, authenticated;
+revoke execute on function public.settlement_militia_count(text) from public, anon, authenticated;
+revoke execute on function public.settlement_militia_why(text) from public, anon, authenticated;
 
 -- Облавы — раз в 2 минуты
 do $do$

@@ -55,6 +55,10 @@
   "v": "1",
   "sha": "0bfaf150f71f"
  },
+ "css/loyalty.css": {
+  "v": "2",
+  "sha": "a8a5cfc0f3d6"
+ },
  "css/mine-site.css": {
   "v": "8",
   "sha": "6595fbba7fc9"
@@ -88,8 +92,8 @@
   "sha": "e1f04e78981e"
  },
  "css/spy-ops.css": {
-  "v": "2",
-  "sha": "0c825d569c9b"
+  "v": "3",
+  "sha": "cb32900a3cf1"
  },
  "css/staff.css": {
   "v": "1",
@@ -124,8 +128,8 @@
   "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "35",
-  "sha": "a9ea11efacbf"
+  "v": "36",
+  "sha": "39d8252c74a6"
  },
  "ground/preview.css": {
   "v": "1",
@@ -168,12 +172,12 @@
   "sha": "3cb586aab8c5"
  },
  "js/credits-bar.js": {
-  "v": "11",
-  "sha": "05a08f1d802b"
+  "v": "12",
+  "sha": "083f78d69bd0"
  },
  "js/dev-panel.js": {
-  "v": "10",
-  "sha": "71a0c9d45e32"
+  "v": "11",
+  "sha": "75a4ad1fe88a"
  },
  "js/drag-command.js": {
   "v": "2",
@@ -188,16 +192,16 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "29",
-  "sha": "00dd3386fa46"
+  "v": "30",
+  "sha": "d68dcce291c0"
  },
  "js/events-entry.js": {
   "v": "2",
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "12",
-  "sha": "907cec169117"
+  "v": "13",
+  "sha": "f76e1a691707"
  },
  "js/events.js": {
   "v": "6",
@@ -208,20 +212,20 @@
   "sha": "14679090f16f"
  },
  "js/faction-panel.js": {
-  "v": "5",
-  "sha": "1f29cd364514"
+  "v": "6",
+  "sha": "457bb5fb30fc"
  },
  "js/faction-senate.js": {
-  "v": "3",
-  "sha": "640618fe6a6e"
+  "v": "4",
+  "sha": "d9269f9d7c40"
  },
  "js/faction-staff.js": {
   "v": "5",
   "sha": "0c903a110cb5"
  },
  "js/faction-treasury.js": {
-  "v": "2",
-  "sha": "f68c164c70ce"
+  "v": "3",
+  "sha": "9683bce63fe9"
  },
  "js/galaxy-events.js": {
   "v": "2",
@@ -240,12 +244,16 @@
   "sha": "33d81f0a181b"
  },
  "js/ground-battle.js": {
-  "v": "21",
-  "sha": "c15acb43ec4e"
+  "v": "22",
+  "sha": "fb26300e4eb3"
  },
  "js/ground-live.js": {
-  "v": "35",
-  "sha": "309226dbf5bc"
+  "v": "36",
+  "sha": "7f69797adc5b"
+ },
+ "js/loyalty.js": {
+  "v": "2",
+  "sha": "9b0ac9b642c5"
  },
  "js/map-layer.js": {
   "v": "2",
@@ -260,8 +268,8 @@
   "sha": "08f9f2c36f5f"
  },
  "js/planet-info.js": {
-  "v": "3",
-  "sha": "c8b32766cbdb"
+  "v": "4",
+  "sha": "b2ce9da87efd"
  },
  "js/planet-request.js": {
   "v": "2",
@@ -316,8 +324,8 @@
   "sha": "ffeded052e99"
  },
  "js/spy-ops.js": {
-  "v": "3",
-  "sha": "d84b5eb741f7"
+  "v": "4",
+  "sha": "079fdccdcf74"
  },
  "js/supabase-client.js": {
   "v": "2",
@@ -388,8 +396,8 @@
   "sha": "eb07d363cfd5"
  },
  "shared/rt-ground.js": {
-  "v": "21",
-  "sha": "a8a51be0d446"
+  "v": "22",
+  "sha": "de62b9a916e3"
  },
  "shared/rt-heroes.js": {
   "v": "2",
@@ -412,8 +420,8 @@
   "sha": "97ef27e8fff6"
  },
  "shared/rt-town.js": {
-  "v": "2",
-  "sha": "1cc156a45532"
+  "v": "3",
+  "sha": "5c323f94eb7b"
  },
  "shared/rt-units.js": {
   "v": "6",

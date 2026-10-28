@@ -1,0 +1,242 @@
+/* ===== Настроения планет (js/loyalty.js) =====
+   Шкала −100…+100: слева КНС (красное), справа Республика (синее), середина — ноль.
+   Ступень — по поддержке хозяина: предана и верна — зелёное, спокойна — серо-голубое,
+   колеблется — золото, ропщет — оранжевое, подполье и «ждёт врага» — красное.
+   Язык — как у напряжения (css/unrest.css): тёмное стекло, рамки #1c2530, моноширинный шрифт. */
+
+.lo-box, .lo-pl, .lo-pi, .lo-ring { --lo: #8fa8c4; --lo-rgb: 143,168,196; }
+.lo-s-devoted { --lo: #5fd968; --lo-rgb: 95,217,104; }
+.lo-s-loyal   { --lo: #9fd36a; --lo-rgb: 159,211,106; }
+.lo-s-calm    { --lo: #8fa8c4; --lo-rgb: 143,168,196; }
+.lo-s-waver   { --lo: #d9a940; --lo-rgb: 217,169,64; }
+.lo-s-murmur  { --lo: #e0873a; --lo-rgb: 224,135,58; }
+.lo-s-under   { --lo: #d94a4a; --lo-rgb: 217,74,74; }
+.lo-s-wait    { --lo: #ff5c5c; --lo-rgb: 255,92,92; }
+
+.lo-st { font-style: normal; color: var(--lo) !important; }
+.lo-trend { font-style: normal; white-space: nowrap; }
+.lo-trend.up { color: #5fd968; }
+.lo-trend.down { color: #d94a4a; }
+.lo-trend.flat { color: #55606c; }
+
+/* ── Шкала ───────────────────────────────────────────────────────── */
+.lo-scale {
+  position: relative;
+  display: flex;
+  height: 8px;
+  margin-top: 8px;
+  border-radius: 4px;
+}
+.lo-scale.mini { height: 4px; margin-top: 6px; }
+.lo-half { display: block; width: 50%; height: 100%; }
+.lo-half.cis { background: linear-gradient(90deg, rgba(217,74,74,0.22), rgba(217,74,74,0.06)); border-radius: 4px 0 0 4px; }
+.lo-half.rep { background: linear-gradient(90deg, rgba(74,144,217,0.06), rgba(74,144,217,0.22)); border-radius: 0 4px 4px 0; box-shadow: inset 1px 0 0 #2a3644; }
+.lo-scale s {
+  position: absolute;
+  top: 1px; bottom: 1px;
+  width: 0;
+  border-left: 1px solid rgba(13,17,25,0.9);
+}
+.lo-fill {
+  position: absolute;
+  top: 0; bottom: 0;
+  border-radius: 4px;
+  transition: left 0.5s ease-out, width 0.5s ease-out;
+}
+.lo-fill.rep { background: linear-gradient(90deg, rgba(74,144,217,0.35), #4a90d9); box-shadow: 0 0 8px rgba(74,144,217,0.35); }
+.lo-fill.cis { background: linear-gradient(90deg, #d94a4a, rgba(217,74,74,0.35)); box-shadow: 0 0 8px rgba(217,74,74,0.35); }
+.lo-home {
+  position: absolute;
+  top: 50%;
+  width: 6px; height: 6px;
+  margin: -3px 0 0 -3px;
+  background: #0d1119;
+  border: 1px solid #8fa8c4;
+  transform: rotate(45deg);
+  opacity: 0.8;
+}
+.lo-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  box-sizing: border-box;
+  border: 2px solid var(--lo);
+  border-radius: 50%;
+  background: #0d1119;
+  box-shadow: 0 0 0 3px rgba(var(--lo-rgb), 0.15);
+}
+.lo-s-wait .lo-dot, .lo-s-under .lo-dot { animation: lo-pulse 1.8s ease-out infinite; }
+@keyframes lo-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--lo-rgb), 0.5); } 100% { box-shadow: 0 0 0 9px rgba(var(--lo-rgb), 0); } }
+
+.lo-ends { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; }
+.lo-ends .cis { color: rgba(217,74,74,0.8); }
+.lo-ends .rep { color: rgba(74,144,217,0.9); }
+.lo-ends .mid { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-size: 9.5px; color: #55606c; }
+
+.lo-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.lo-pips i {
+  width: 7px; height: 7px;
+  box-sizing: border-box;
+  border: 1px solid rgba(var(--lo-rgb, 217,74,74), 0.5);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+.lo-pips i.on { background: var(--lo, #d94a4a); border-color: var(--lo, #d94a4a); }
+.lo-pips.bad { --lo: #d94a4a; --lo-rgb: 217,74,74; }
+.lo-pips.good { --lo: #d9a940; --lo-rgb: 217,169,64; }
+
+/* ── Окно поселения ──────────────────────────────────────────────── */
+.lo-box { margin-top: 14px; font-family: 'Courier New', monospace; }
+.lo-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.lo-val { font-size: 26px; font-weight: normal; line-height: 1; color: var(--lo); text-shadow: 0 0 12px rgba(var(--lo-rgb), 0.25); }
+.lo-top-r { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 10px; }
+.lo-top-r i { font-style: normal; color: #55606c; }
+
+.lo-fx { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+.lo-fx > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 8px 7px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-radius: 8px;
+}
+.lo-fx b { font-size: 13px; font-weight: normal; color: #cfd8dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lo-fx span { font-size: 8.5px; line-height: 1.3; letter-spacing: 0.5px; color: #55606c; }
+.lo-fx .good b { color: #5fd968; }
+.lo-fx .bad b { color: #d94a4a; }
+.lo-means { margin-top: 8px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+
+/* Сеть подполья врага */
+.lo-cell {
+  --lo: #d94a4a; --lo-rgb: 217,74,74;
+  margin-top: 10px;
+  padding: 10px 12px 11px;
+  background: linear-gradient(180deg, rgba(217,74,74,0.07), rgba(217,74,74,0.015));
+  border: 1px solid rgba(217,74,74,0.4);
+  border-radius: 9px;
+}
+.lo-cell-top { display: flex; align-items: center; gap: 8px; }
+.lo-cell-top b { font-weight: normal; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #d94a4a; }
+.lo-cell-top em { margin-left: auto; font-style: normal; font-size: 10px; color: #cfd8dc; }
+.lo-cell-txt { margin-top: 7px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+
+/* Облава */
+.lo-sweep { margin-top: 10px; padding: 10px 12px 11px; background: #10151e; border: 1px solid #1c2530; border-radius: 9px; }
+.lo-sweep-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.lo-sweep-h b { font-weight: normal; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #d9a940; }
+.lo-sweep-h em { font-style: normal; font-size: 10px; color: #cfd8dc; white-space: nowrap; }
+.lo-sweep-txt { margin-top: 7px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+.lo-sweep-last { margin-top: 6px; font-size: 9.5px; color: #55606c; }
+.lo-sweep-last.good { color: #5fd968; }
+.lo-sweep-last.bad { color: #d94a4a; }
+.lo-sweep-run { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 10px; color: #8fa8c4; }
+.lo-sweep-run em { font-style: normal; white-space: nowrap; }
+.lo-sweep-run b { font-weight: normal; color: #d9a940; font-variant-numeric: tabular-nums; }
+.lo-bar { height: 3px; margin-top: 8px; border-radius: 2px; background: rgba(217,169,64,0.12); overflow: hidden; }
+.lo-bar i { display: block; height: 100%; width: 0; background: #d9a940; opacity: 0.8; transition: width 1s linear; }
+.lo-sweep-go { margin-top: 10px; }
+.lo-why { margin-top: 7px; font-size: 10px; line-height: 1.5; color: #55606c; }
+
+.lo-rows { margin-top: 10px; border-top: 1px solid #161b24; }
+.lo-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid #161b24; font-size: 10.5px; color: #8fa8c4; }
+.lo-row:last-child { border-bottom: none; }
+.lo-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lo-row b { flex: none; font-weight: normal; }
+.lo-row b.up { color: #5fd968; }
+.lo-row b.down { color: #d94a4a; }
+.lo-cap { margin-top: 4px; font-size: 9px; color: #55606c; text-align: right; }
+
+/* История: столбики от средней линии — вверх к хозяину, вниз к врагу */
+.lo-hist {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 46px;
+  margin-top: 10px;
+}
+.lo-hist::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed #1c2530; }
+.lo-hist i {
+  position: relative;
+  flex: 1;
+  align-self: flex-end;
+  margin-bottom: 23px;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: rgba(var(--lo-rgb), 0.6);
+}
+.lo-hist i.neg { align-self: flex-start; margin: 23px 0 0; border-radius: 0 0 2px 2px; }
+.lo-hist-cap { margin-top: 4px; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: #55606c; }
+
+.lo-notes { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; font-size: 10px; line-height: 1.5; color: #8fa8c4; }
+.lo-notes span.obs { padding: 8px 10px; border: 1px dashed #1c2530; border-radius: 8px; color: #55606c; }
+.lo-note { margin-top: 10px; font-size: 10px; color: #8fa8c4; }
+.lo-note.good { color: #5fd968; }
+
+/* ── Карточка планеты ────────────────────────────────────────────── */
+.pi-stat.lo-pi { gap: 12px; }
+.pi-stat.lo-pi > span { flex: none; white-space: nowrap; }
+.pi-stat.lo-pi > b { min-width: 0; text-align: right; line-height: 1.45; color: #cfd8dc; }
+.pi-stat.lo-pi .lo-scale.mini { width: 120px; margin: 5px 0 0 auto; }
+.pi-stat.lo-goal.good b { color: #5fd968; }
+.pi-stat.lo-goal.bad b { color: #d94a4a; }
+.pi-stat.lo-cellrow b { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.pi-stat.lo-cellrow.bad b { color: #d94a4a; }
+.pi-stat.lo-cellrow.good b { color: #d9a940; }
+
+/* ── Окно фракции ────────────────────────────────────────────────── */
+.lo-pl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 9px 12px 10px;
+  background: #10151e;
+  border: 1px solid #1c2530;
+  border-left: 3px solid var(--lo);
+  border-radius: 9px;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lo-pl:active { background: #16202e; }
+.lo-pl-body { flex: 1; min-width: 0; }
+.lo-pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.lo-pl-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: normal; letter-spacing: 0.5px; color: #cfd8dc; }
+.lo-pl-top .lo-st { flex: none; font-size: 9.5px; letter-spacing: 0.5px; }
+.lo-pl-line { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #8fa8c4; }
+.lo-pl-line i { font-style: normal; }
+.lo-pl-line i.bad { color: #d94a4a; }
+.lo-pl-line i.good { color: #d9a940; }
+.lo-pl-v { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 34px; }
+.lo-pl-v b { font-size: 16px; font-weight: normal; line-height: 1; color: var(--lo); }
+.lo-pl-v .lo-trend { font-size: 9.5px; }
+.lo-sub { margin: 12px 0 6px; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #55606c; }
+.lo-more { margin-top: 2px; font-size: 10px; color: #55606c; text-align: center; }
+
+/* ── Галактика: дуга у шатких планет ─────────────────────────────── */
+.lo-ring {
+  position: absolute;
+  inset: -17%;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.lo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.lo-ring circle { fill: none; stroke-width: 1.6; stroke-linecap: round; }
+.lo-r-rep { stroke: #4a90d9; filter: drop-shadow(0 0 2px rgba(74,144,217,0.6)); }
+.lo-r-cis { stroke: #d94a4a; filter: drop-shadow(0 0 2px rgba(217,74,74,0.6)); }
+.lo-ring.lo-s-under, .lo-ring.lo-s-wait { animation: lo-ring 2.6s ease-in-out infinite; }
+@keyframes lo-ring { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+.gx-intro .lo-ring { animation: gx-fade 1s ease 1.6s both; }
+.gx-covered .lo-ring { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .lo-ring, .lo-dot { animation: none !important; }
+}

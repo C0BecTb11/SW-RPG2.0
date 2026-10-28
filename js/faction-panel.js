@@ -481,6 +481,15 @@ function fsFeedLine(e) {
       return [fsEsc(sys), 'управляющий снят' + (m.level ? ' · уровень ' + m.level : '')];
     case 'unrest_calm':
       return [fsEsc(sys) + ' · напряжение ' + fsNum(e.amount), ''];
+    // настроения планет (sql/loyalty.sql): подпись уже с именем планеты
+    case 'loyalty_stage':
+      return [fsEsc(sys) + ' · народ ' + fsEsc(m.state_t || ''), (m.value > 0 ? '+' : '') + fsNum(m.value)];
+    case 'loyalty_chance':
+      return [fsEsc(sys) + ' · народ ' + fsEsc(m.state_t || ''), 'окно для наступления'];
+    case 'partisans_raised':
+      return [fsEsc(sys) + ' · подполье за нас', fsNum(e.amount) + ' бойц.'];
+    case 'loyalty_cell_lost':
+      return [fsEsc(sys) + ' · сеть подполья', e.amount > 0 ? 'ур. ' + fsNum(e.amount) : 'разгромлена'];
     case 'settlement_conditions':
     case 'settlement_remind':
       return [fsEsc(e.subject || ''), ''];
@@ -536,6 +545,7 @@ function fsRender(animate) {
     (typeof fsRenderSenate === 'function' ? fsRenderSenate() : '') +
     (typeof fsRenderTreasury === 'function' ? fsRenderTreasury() : '') +
     (typeof fsRenderUnrest === 'function' ? fsRenderUnrest() : '') +
+    (typeof fsRenderLoyalty === 'function' ? fsRenderLoyalty() : '') +
     fsRenderBalance(d) +
     fsRenderFront(d) +
     fsRenderMembers(d) +
@@ -625,7 +635,9 @@ function fsLoad(first) {
     // Казна фракции (js/faction-treasury.js)
     typeof tsFetch === 'function' ? tsFetch() : Promise.resolve(null),
     // Напряжение на планетах (js/unrest.js)
-    typeof unFetch === 'function' ? unFetch() : Promise.resolve(null)
+    typeof unFetch === 'function' ? unFetch() : Promise.resolve(null),
+    // Настроения планет (js/loyalty.js)
+    typeof loFetch === 'function' ? loFetch() : Promise.resolve(null)
   ]).then(function(res) {
     if (my !== fsState.req) return;
     fsState.busy = false;

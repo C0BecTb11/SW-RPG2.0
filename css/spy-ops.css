@@ -302,6 +302,18 @@
 .so-site em { font-style: normal; font-size: 9px; color: #55606c; }
 .so-site small { flex: none; font-size: 10px; color: #8fa8c4; }
 
+/* агитация: строка в карточке планеты и цель (js/loyalty.js даёт шкалу и цвет ступени --lo) */
+.so-site.so-agit { border-left: 3px solid var(--lo, #8fa8c4); }
+.so-site .so-agit-ico, .so-target .so-agit-ico { flex: none; display: flex; width: 18px; height: 18px; }
+.so-agit-ico svg { width: 100%; height: 100%; fill: none; stroke: var(--lo, #8fa8c4); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.so-agit em .lo-st, .so-agit-t .lo-st { font-style: normal; }
+.so-agit .lo-scale, .so-agit-t .lo-scale { flex: none; flex-direction: row; gap: 0; width: 100%; max-width: 180px; margin-top: 5px; }
+.so-agit .lo-half, .so-agit-t .lo-half { flex: none; width: 50%; height: 100%; transform: none; }
+.so-agit .lo-half.cis, .so-agit-t .lo-half.cis { border-radius: 4px 0 0 4px; }
+.so-agit .lo-half.rep, .so-agit-t .lo-half.rep { border-radius: 0 4px 4px 0; }
+.so-target.so-agit-t { border-left-color: var(--lo, #d94a4a); }
+.so-target.so-agit-t > div { flex: 1; }
+
 /* --- выбор операции */
 .so-target { display: flex; align-items: center; gap: 10px; padding: 9px 10px; background: #0a0d14; border: 1px solid #1c2530; border-left: 3px solid #d94a4a; border-radius: 8px; }
 .so-target i { flex: none; width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg); }

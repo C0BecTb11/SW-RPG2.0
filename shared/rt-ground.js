@@ -247,6 +247,7 @@
     st.towers.forEach(function(tw) { tw.s = self.addStruct('tower', def, tw.x, tw.y); });
     this.districts = st.districts.map(function(d) { return { id: d.id, name: d.name, effect: d.effect, rect: d.rect, spawn: d.spawn, by: def, cnt: [0, 0] }; });
     this.militiaT = -1;
+    this.spy = -1;      // настроения планеты (sql/loyalty.sql): подполье открывает поселение этой стороне
   }
 
   // ---- бойцы
@@ -508,6 +509,8 @@
     }
     // узел связи: кто держит — видит всё в 24 клетках от центра города
     for (i = 0; i < this.districts.length; i++) { var dd = this.districts[i]; if (dd.id === 'comms' && dd.by >= 0 && dd.by <= 1) this.reveal(dd.by, this.sx + SQUARE / 2, this.sy + SQUARE / 2, 8 * RANGE_K); }
+    // подполье доносит наступающим: поселение видно, как с узла связи
+    if (this.spy === 0 || this.spy === 1) this.reveal(this.spy, this.sx + SQUARE / 2, this.sy + SQUARE / 2, 8 * RANGE_K);
     for (i = 0; i < this.structs.length; i++) { var st = this.structs[i]; if (st.dead || st.team > 1) continue; if (st.kind === 'radar' || st.kind === 'turret') this.reveal(st.team, st.x + st.w / 2, st.y + st.h / 2, (st.radius || 3) * RANGE_K); }
     // полоса вторжения всегда видна хозяину планеты
     if (this.noTown) return;
@@ -1578,6 +1581,7 @@
     for (i = 0; i < ids.length; i++) {
       a = ag[ids[i]];
       if (a.lane < 0) a.lane = a.T.vehicle || a.air || a.fly ? 1 : a.id % 3;
+      if (a.part) { a.ph = 1; continue; }        // подполье встаёт у самой площади: к рубежу не ходит и сбор колонн не торопит
       tot[a.lane]++;
       if (a.ph === 1) gone[a.lane]++;
       else { var lp = L[a.lane]; if (Math.abs(a.x - lp[0]) < 8 && Math.abs(a.y - lp[1]) < 8) { a.ph = 0.5; here[a.lane]++; } }
@@ -1586,7 +1590,7 @@
     for (i = 0; i < ids.length; i++) {
       a = ag[ids[i]];
       if (onlyArt) { a.ph = 1; }
-      if (a.ph === 0.5 && !a.T.artillery && (here[0] + here[1] + here[2] + gone[0] + gone[1] + gone[2] >= (tot[0] + tot[1] + tot[2]) * 0.6 || gone[0] + gone[1] + gone[2] > 0)) { a.ph = 1; a.at = true; }
+      if (a.ph === 0.5 && !a.part && !a.T.artillery && (here[0] + here[1] + here[2] + gone[0] + gone[1] + gone[2] >= (tot[0] + tot[1] + tot[2]) * 0.6 || gone[0] + gone[1] + gone[2] > 0)) { a.ph = 1; a.at = true; }
       if (a.tgt >= 0 || (a.goal && !a.at) || (a.T.artillery && a.ph > 0 && !onlyArt)) continue;
       if (a.ph < 1) groups[a.lane].push(a.id); else toSq.push(a.id);
     }
@@ -1777,7 +1781,7 @@
     if (this.militiaAuto && this.militiaT < 0) {
       var tw = this.town, near = false, ag0 = this.agents;
       for (var q = 0; q < ag0.length && !near; q++) { var e0 = ag0[q]; if (e0.alive && this.ctl(e0) === this.att && e0.x >= tw[0] - 6 && e0.x < tw[0] + tw[2] + 6 && e0.y >= tw[1] - 6 && e0.y < tw[1] + tw[3] + 6) near = true; }
-      if (near) { this.militiaT = this.t; var gar = this.districts.some(function(d) { return d.id === 'garrison'; }); this.raiseMilitia(TOWN.MILITIA_BASE[this.settle.level] + (gar ? 2 : 0)); }
+      if (near) { this.militiaT = this.t; var gar = this.districts.some(function(d) { return d.id === 'garrison'; }); this.raiseMilitia(TOWN.MILITIA_BASE[this.settle.level] + (gar ? 3 : 0)); }
     }
     var cnt = [0, 0], ag = this.agents;
     for (var i = 0; i < ag.length; i++) {

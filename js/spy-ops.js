@@ -29,6 +29,10 @@ var SO_KINDS = [
     what: 'Группа выносит ресурс участка со склада планеты — 30 %, до 120. Унесённое ляжет на склад твоего штаба.',
     pain: 'единственная операция с добычей' }
 ];
+// Агитация — против народа планеты врага, а не участка (sql/loyalty.sql: spy_agitate)
+var SO_AGIT = { id: 'agitate', name: 'Агитация',
+  what: 'Агитаторы среди жителей: поддержка врага падает, наша сеть подполья растёт (до ур. 3). Сеть каждые сутки отнимает у врага поддержку по своему уровню, при нашем захвате поднимает бойцов за нас, с ур. 3 открывает поселение в бою.',
+  pain: 'провал — группу выдадут жители и народ потеплеет к власти; сеть может раскрыться сама или под облавой' };
 
 // Значки операций — простые линии в стиле значков окон построек
 var SO_ICON = {
@@ -36,7 +40,8 @@ var SO_ICON = {
   strike: '<svg viewBox="0 0 24 24"><path d="M4 10v4h3l7 4V6L7 10z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5M19.5 7.5a6.5 6.5 0 0 1 0 9"/></svg>',
   virus: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/><path d="M10 10l4 4M14 10l-4 4"/></svg>',
   poison: '<svg viewBox="0 0 24 24"><path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/><path d="M15 14.5l3 1.5M18 14.5l-3 1.5"/></svg>',
-  theft: '<svg viewBox="0 0 24 24"><path d="M4 9l8-4 8 4v9l-8 4-8-4z"/><path d="M4 9l8 4 8-4M12 13v9"/><path d="M15.5 3.5h3v3M18.5 3.5l-4 4"/></svg>'
+  theft: '<svg viewBox="0 0 24 24"><path d="M4 9l8-4 8 4v9l-8 4-8-4z"/><path d="M4 9l8 4 8-4M12 13v9"/><path d="M15.5 3.5h3v3M18.5 3.5l-4 4"/></svg>',
+  agitate: '<svg viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4"/><path d="M8 12h8M8 15h8M8 18h5"/><path d="M8 8.5h4"/></svg>'
 };
 // Портрет группы: Республика — шлем с узким визором и антенной; КНС — угловатая голова дроида с полосой сенсора
 var SO_FACE = {
@@ -93,7 +98,7 @@ function soBoxFill(building, box, st) {
   var ready = st.groups.filter(function(g) { return g.status === 'home' && soT(g.ready_at) <= now; }).length;
   var line = st.groups.length
     ? 'Групп ' + st.groups.length + ' из ' + st.max + (busy ? ' · в деле ' + busy : '') + (ready ? ' · готовы ' + ready : '')
-    : 'Групп пока нет: штаб готовит диверсантов для операций против чужих участков и цехов';
+    : 'Групп пока нет: штаб готовит диверсантов для операций против чужих участков и цехов и агитаторов для работы с народом врага';
   box.innerHTML = '<div class="so-box-head">Тайные операции</div>' +
     '<div class="so-box-row">' +
       '<div class="so-box-face">' + SO_FACE[st.faction === 'cis' ? 'cis' : 'republic'] + '</div>' +
@@ -206,7 +211,7 @@ function soGroupPhase(g, now) {
   if (g.status === 'mission' && o) {
     var t0 = soT(o.launched_at), ta = soT(o.approach_at), tc = soT(o.act_at), tb = soT(o.back_at), td = o.acted_at ? soT(o.acted_at) : 0;
     if (now < ta) return { cls: 'go', text: 'перелёт к цели · ' + soEsc(o.target_name), a: t0, b: ta, step: 0 };
-    if (!td && now < tc) return { cls: 'go', text: 'подход: ' + soEsc(o.building_name || 'цель') + ' · ' + soEsc(o.target_name), a: ta, b: tc, step: 1 };
+    if (!td && now < tc) return { cls: 'go', text: 'подход: ' + soEsc(o.kind === 'agitate' ? 'поселение' : o.building_name || 'цель') + ' · ' + soEsc(o.target_name), a: ta, b: tc, step: 1 };
     if (!td) return { cls: 'go', text: 'действует…', a: 0, b: 0, step: 2 };
     return { cls: o.result === 'ok' ? 'ok' : 'dim', text: (o.result === 'ok' ? 'успех · ' : 'цели больше нет · ') + 'возвращается', a: td, b: tb, step: 3 };
   }
@@ -233,7 +238,7 @@ function soGroupCard(g) {
     html += '<div class="so-steps">' + ['перелёт', 'подход', 'действие', 'возвращение'].map(function(s, i) {
       return '<span class="' + (i < ph.step ? 'done' : i === ph.step ? 'now' : '') + '">' + s + '</span>';
     }).join('') + '</div>' +
-      '<div class="so-g-op">' + SO_ICON[o.kind] + '<span>' + soEsc(o.name) + ' · ' + soEsc(o.building_name || '') + '</span></div>';
+      '<div class="so-g-op">' + (SO_ICON[o.kind] || '') + '<span>' + soEsc(o.name) + ' · ' + soEsc(o.building_name || o.target_name || '') + '</span></div>';
   }
   if (ph.b > ph.a && ph.b > now) html += '<div class="so-bar"><i data-a="' + ph.a + '" data-b="' + ph.b + '"></i></div>';
   if (g.wins) html += '<div class="so-g-vet">опыт: +' + Math.min(3, g.wins) * st.cfg.vet + ' % к шансу · операций ' + g.wins + '</div>';
@@ -278,7 +283,7 @@ function soHomeHtml() {
       var when = soWhen(x.at);
       var res = x.result === 'ok' ? '<b class="ok">успех</b>' : x.result === 'caught' ? '<b class="bad">схвачены</b>' : '<b class="dim">сорвалась</b>';
       html += '<div class="so-log-row"><span class="so-ico">' + (SO_ICON[x.kind] || '') + '</span>' +
-        '<div class="so-log-info"><span>' + soEsc(x.name) + ' · ' + soEsc(x.building_name || '') + ', ' + soEsc(x.target_name) + '</span>' +
+        '<div class="so-log-info"><span>' + soEsc(x.name) + ' · ' + (x.building_name ? soEsc(x.building_name) + ', ' : '') + soEsc(x.target_name) + '</span>' +
         '<em>' + when + ' · ' + soEsc(x.group || '') + (x.chance ? ' · шанс ' + Math.round(x.chance) + ' %' : '') + (x.stolen ? ' · унесли ' + x.stolen : '') + '</em></div>' + res + '</div>';
     });
     html += '</div>';
@@ -290,6 +295,7 @@ function soHomeHtml() {
       '<div><b>Шанс</b> — ' + c.base + ' %, считается в момент действия: охранник −' + c.guard + ' %, караул −' + c.watch + ' %, узел связи −' + c.comms + ' %; ночью (22–06) +' + c.night + ' %, опыт группы до +' + 3 * c.vet + ' %.</div>' +
       '<div><b>Провал</b> — группа схвачена, хозяин сразу знает, чья она. <b>Успех</b> — хозяин видит последствия, а кто это был, узнаёт по итогам следствия через несколько часов.</div>' +
       '<div><b>Потолки</b> — по одной цели не чаще раза в сутки, одному хозяину не больше двух операций за сутки; после операции группа отдыхает ' + c.rest_h + ' ч.</div>' +
+      '<div><b>Агитация</b> — против народа любой планеты врага в досягаемости: поддержка врага падает, наша сеть подполья растёт. На одной планете — раз в 12 ч от всей фракции; гарнизон в поселении мешает (−4 % за бойца).</div>' +
     '</div>' +
     '<div class="so-err" id="so-err"></div>';
   return html;
@@ -304,8 +310,8 @@ function soTargetHtml() {
   // не дошло — так и пишем, а не «целей нет»
   if (soPick.tErr) return html + '<div class="so-empty bad">' + soEsc(soPick.tErr) + '</div>' +
     '<button type="button" class="so-back" data-so="op-start" data-g="' + soEsc(soPick.group) + '">Спросить ещё раз</button>';
-  if (!soPick.targets.length) return html + '<div class="so-note">В ' + soReach(true) + ' от планеты ' + soEsc(g ? g.base_name : '') + ' нет чужих планет с участками и цехами.</div>';
-  html += '<div class="so-hint">Тапни планету на карте или выбери участок в списке.</div>';
+  if (!soPick.targets.length) return html + '<div class="so-note">В ' + soReach(true) + ' от планеты ' + soEsc(g ? g.base_name : '') + ' нет планет врага.</div>';
+  html += '<div class="so-hint">Тапни планету на карте, выбери участок или агитацию среди жителей.</div>';
   soPick.targets.forEach(function(p) {
     var ms = window.SOMap ? SOMap.sys(p.system_id) : null;
     html += '<div class="so-planet' + (soPick.sys === p.system_id ? ' on' : '') + '" id="so-p-' + p.system_id + '">' +
@@ -315,6 +321,7 @@ function soTargetHtml() {
         '<em title="без учёта охраны цели">≈ ' + p.chance + ' %</em>' +
       '</div>';
     if (p.victim_full) html += '<div class="so-note warn">Хозяин уже пережил две операции за сутки — его пока не трогают.</div>';
+    if (p.agit) html += soAgitRow(p, now);
     p.sites.forEach(function(s) {
       var cd = s.cooldown_until ? soT(s.cooldown_until) : 0, off = p.victim_full || cd > now;
       html += '<button type="button" class="so-site" data-so="site" data-sys="' + p.system_id + '" data-v="' + s.building_id + '"' + (off ? ' disabled' : '') + '>' +
@@ -328,15 +335,64 @@ function soTargetHtml() {
   return html + '<div class="so-err" id="so-err"></div>';
 }
 
+// Строка агитации в карточке планеты: настроения народа, наша сеть, когда снова можно
+function soAgitRow(p, now) {
+  var a = p.agit, L = window.LO, s = a.s | 0, k = L ? L.stage(s) : 'calm';
+  var cd = a.cd_until ? soT(a.cd_until) : 0, off = p.victim_full || cd > now;
+  return '<button type="button" class="so-site so-agit lo-s-' + k + '" data-so="agit" data-sys="' + p.system_id + '"' + (off ? ' disabled' : '') + '>' +
+    '<span class="so-agit-ico">' + SO_ICON.agitate + '</span>' +
+    '<span><b>Агитация среди жителей</b><em>народ ' + (L ? L.ST[k].t : '') + ' · ' + (L ? L.signed(s) : s) +
+      (a.cell ? ' · наша сеть ур. ' + a.cell : ' · сети нет') + (a.capital ? ' · столица' : '') + '</em>' + (L ? L.scale(soState.faction === 'cis' ? s : -s, null, true) : '') + '</span>' +
+    (cd > now ? '<small>ещё ' + soLeft(cd - now) + '</small>' : '<small>›</small>') +
+  '</button>';
+}
+
 function soTargetOf() {
   var res = null;
-  (soPick.targets || []).forEach(function(p) { p.sites.forEach(function(s) { if (s.building_id === soPick.site) res = { p: p, s: s }; }); });
+  (soPick.targets || []).forEach(function(p) {
+    if (soPick.site === 'agit' && p.system_id === soPick.sys && p.agit) res = { p: p, s: null, agit: true };
+    p.sites.forEach(function(s) { if (s.building_id === soPick.site) res = { p: p, s: s }; });
+  });
   return res;
+}
+
+// Выбор агитации: цель — народ планеты, операция одна
+function soAgitHtml(g, t, c) {
+  var a = t.p.agit, L = window.LO, s = a.s | 0, k = L ? L.stage(s) : 'calm', ch = a.chance | 0, fly = t.p.jumps * c.jump_min;
+  var v = soState.faction === 'cis' ? s : -s;              // шкала планеты: + Республика (хозяин — враг)
+  var html = '<button type="button" class="so-back" data-so="back-target">← К целям</button>';
+  html += '<div class="so-target so-agit-t lo-s-' + k + '">' +
+    '<span class="so-agit-ico">' + SO_ICON.agitate + '</span>' +
+    '<div><b>Народ планеты ' + soEsc(t.p.system_name) + '</b><span>' + soEsc(t.p.owner || 'без управляющего') + ' · народ ' + (L ? L.ST[k].t : '') + ' · поддержка хозяина ' + (L ? L.signed(s) : s) +
+      (a.cell ? ' · наша сеть ур. ' + a.cell : '') + '</span>' + (L ? L.scale(v, null, true) : '') + '</div>' +
+  '</div>';
+  html += '<div class="so-chance">' +
+    '<div class="so-ring" style="--p:' + ch + '"><b>' + ch + '%</b></div>' +
+    '<div class="so-chance-info"><b>Шанс без учёта гарнизона</b>' +
+      '<span>каждый боец врага в поселении −4 % (до −40), узел связи −10 %. Верность народа уже учтена: верная планета −8 %, преданная −15 %.</span></div>' +
+  '</div>';
+  html += '<div class="so-time">' +
+    '<span><b>' + soMin(fly) + '</b>перелёт</span><i></i>' +
+    '<span><b>' + c.approach_min + ' мин</b>подход</span><i></i>' +
+    '<span><b>!</b>агитация</span><i></i>' +
+    '<span><b>' + soMin(c.exit_min + fly) + '</b>назад</span>' +
+  '</div>';
+  html += '<div class="so-sec">Операция</div><div class="so-kinds">' +
+    '<div class="so-kind on"><span class="so-ico">' + SO_ICON.agitate + '</span>' +
+      '<span class="so-kind-info"><b>' + SO_AGIT.name + ' · поддержка врага −' + (a.gain | 0) + ', сеть +1</b><em>' + SO_AGIT.what + '</em><small>' + SO_AGIT.pain + '</small></span></div>' +
+  '</div>';
+  if (a.cell >= 3) html += '<div class="so-note">Сеть уже на высшем уровне: агитация только качнёт народ к нам.</div>';
+  var okC = soState.credits >= (a.cost | 0);
+  html += '<button type="button" class="so-go" data-so="launch"' + (okC ? '' : ' disabled') + '>Начать агитацию · ' + (a.cost | 0) + ' кр</button>' +
+    (okC ? '' : '<div class="so-note warn">Не хватает кредитов: агитация — ' + (a.cost | 0) + ' кр.</div>') +
+    '<div class="so-err" id="so-err"></div>';
+  return html;
 }
 
 // ---------------------------------------------------------------- выбор операции
 function soOpHtml() {
   var g = soGroupById(soPick.group), t = soTargetOf(), c = soState.cfg;
+  if (g && t && t.agit) return soAgitHtml(g, t, c);
   var html = '<button type="button" class="so-back" data-so="back-target">← К целям</button>';
   if (!g || !t) return html + '<div class="so-empty">Цель не найдена</div>';
   var ch = t.p.chance, fly = t.p.jumps * c.jump_min;
@@ -418,9 +474,21 @@ function soClick(e) {
   else if (act === 'back-target') { soView = 'target'; soPick.kind = null; soRender(); soMapSync(); }
   else if (act === 'site') { soPick.site = v; soPick.sys = b.getAttribute('data-sys'); soPick.kind = null; soView = 'op'; soRender(); soMapSync();
     var body = document.getElementById('so-body'); if (body) body.scrollTop = 0; }
+  else if (act === 'agit') { soPick.site = 'agit'; soPick.sys = b.getAttribute('data-sys'); soPick.kind = 'agitate'; soView = 'op'; soRender(); soMapSync();
+    var body2 = document.getElementById('so-body'); if (body2) body2.scrollTop = 0; }
   else if (act === 'kind') { soPick.kind = v; soRender(); }
   else if (act === 'launch') {
     var t = soTargetOf(), k = soKind(soPick.kind), g = soGroupById(soPick.group);
+    if (t && g && t.agit) {
+      var done = function() { soView = 'home'; soPick.targets = null; soPick.sys = null; soPick.site = null; soPick.kind = null;
+        var bd = document.getElementById('so-body'); if (bd) bd.scrollTop = 0; };
+      var agit = function() { soCall('spy_agitate', { p_group: g.id, p_system: t.p.system_id }, done); };
+      if (typeof gameConfirm === 'function') gameConfirm({ tone: 'danger', kicker: g.name, title: 'Агитация', sub: 'Народ планеты ' + t.p.system_name,
+        rows: [{ label: 'Спишется', items: [{ text: (t.p.agit.cost | 0) + ' кр.', kind: 'credits' }] }],
+        note: 'Перелёт ' + soMin(t.p.jumps * soState.cfg.jump_min) + ', подход ' + soState.cfg.approach_min + ' мин. Отменить после старта нельзя. Выдадут жители — группа пропадёт.', ok: 'Начать' }, agit);
+      else agit();
+      return;
+    }
     if (!t || !k || !g) return;
     var launch = function() { soCall('spy_launch', { p_group: g.id, p_building: t.s.building_id, p_kind: k.id }, function() {
       soView = 'home'; soPick.targets = null; soPick.sys = null; soPick.site = null; soPick.kind = null;

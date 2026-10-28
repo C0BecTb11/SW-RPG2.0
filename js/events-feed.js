@@ -425,6 +425,7 @@ var FEED_STATION = feedSet(['station_built', 'station_started']);
 
 // Поселение: открываем его панель
 var FEED_SETTLEMENT = feedSet(['settlement_conditions', 'settlement_remind', 'unrest_level', 'unrest_calm',
+  'loyalty_stage', 'loyalty_agit', 'loyalty_agit_caught', 'loyalty_cell_found', 'loyalty_sweep',
   'unrest_near', 'unrest_riot', 'unrest_riot_end', 'unrest_riot_lost',
   'district_built', 'district_started', 'settlement_upgrade',
   'settlement_level_up', 'settlement_hungry', 'settlement_gift',
@@ -440,6 +441,7 @@ var FEED_GROUND = feedSet(['unit_deployed', 'unit_loaded', 'unit_killed', 'unit_
   'structure_built', 'structure_started', 'structure_lost', 'structure_destroyed',
   'scout_arrived', 'scout_jammed', 'building_built', 'building_started', 'building_demolished',
   'research_done', 'production_idle', 'troops_pushed_out', 'militia_raised', 'enemy_spotted',
+  'partisans_raised', 'partisans_enemy', 'loyalty_chance', 'loyalty_cell_lost',
   'repair_done']);
 
 // Поселение: события налёта и условий — сразу на вкладку «Условия»

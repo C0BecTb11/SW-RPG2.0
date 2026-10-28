@@ -56,8 +56,8 @@
   "sha": "0bfaf150f71f"
  },
  "css/loyalty.css": {
-  "v": "3",
-  "sha": "235098a3c2aa"
+  "v": "4",
+  "sha": "e1fae57a0656"
  },
  "css/mine-site.css": {
   "v": "8",
@@ -252,8 +252,8 @@
   "sha": "7f69797adc5b"
  },
  "js/loyalty.js": {
-  "v": "3",
-  "sha": "51995b77bd42"
+  "v": "4",
+  "sha": "b64038f3bbf6"
  },
  "js/map-layer.js": {
   "v": "2",

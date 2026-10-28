@@ -219,6 +219,37 @@
       }
     });
     this.BM = BM;
+    // круглые платформы (Камино): кромка — точная окружность, а не ступеньки клеток; KPI — какие платформы рядом с клеткой
+    var KP = map.objs.filter(function(o) { return o.k === 'kplat'; });
+    if (KP.length) {
+      var KPI = new Array(n);
+      KP.forEach(function(o, i) {
+        var R2 = o.r + 2.5;
+        for (var yy = Math.max(0, Math.floor(o.y - R2)); yy <= Math.min(N - 1, Math.floor(o.y + R2)); yy++)
+          for (var xx = Math.max(0, Math.floor(o.x - R2)); xx <= Math.min(N - 1, Math.floor(o.x + R2)); xx++) {
+            var kk = yy * N + xx; (KPI[kk] || (KPI[kk] = [])).push(i);
+          }
+      });
+      this.KP = KP; this.KPI = KPI;
+    }
+    // причал вдоль полосы вторжения: верхний край — прямая
+    this.KD = map.objs.filter(function(o) { return o.k === 'kdock'; })[0] || null;
+    // у круглых платформ клетки суши по краю срезаны окружностью — переход продлевается на клетку палубы,
+    // чтобы между ним и кромкой не было щели
+    if (KP.length || this.KD) {
+      var BX = [], seenX = {};
+      for (k = 0; k < n; k++) {
+        if (t[k] !== TT.BRIDGE) continue;
+        var bx = k % N, by = (k / N) | 0;
+        for (var dd = 0; dd < 4; dd++) {
+          var ddx = [1, -1, 0, 0][dd], ddy = [0, 0, 1, -1][dd], ex2 = bx + ddx, ey2 = by + ddy, px2 = bx - ddx, py2 = by - ddy;
+          if (ex2 < 0 || ey2 < 0 || ex2 >= N || ey2 >= N || px2 < 0 || py2 < 0 || px2 >= N || py2 >= N) continue;
+          var ec = t[ey2 * N + ex2];
+          if ((ec === TT.OPEN || ec === TT.ROAD || ec === TT.ROUGH) && t[py2 * N + px2] === TT.BRIDGE && !seenX[ey2 * N + ex2]) { seenX[ey2 * N + ex2] = 1; BX.push(ex2, ey2); }
+        }
+      }
+      this.BX = BX;
+    }
     this.cache = {};
   }
   function up2(F, N) {
@@ -281,6 +312,18 @@
     var a = C.g[0], b = C.g[1], c = C.g[2], t = smooth((n0 - 0.32) / 0.36);
     var r = mixc(a, b, t);
     return mixc(r, c, smooth((n1 - 0.45) / 0.3) * 0.7);
+  }
+  // Палуба круглой платформы: кольца панелей шириной 3 клетки, радиальные швы, светлая кромка
+  function deckCol(C, o, u, v, s, n0, f) {
+    var dx = u - o.x, dy = v - o.y, rr = o.r - s, ri = Math.floor(rr / 3), fr = rr / 3 - ri;
+    var ns = ri ? Math.max(6, Math.round(TAU * (ri + 0.5))) : 1, a = (Math.atan2(dy, dx) / TAU + 1) * ns, si = Math.floor(a) % ns, fa = a - Math.floor(a);
+    var arc = TAU * Math.max(0.5, rr) / ns, hs = hash(ri * 37 + si, (o.x * 7 + o.y) | 0, 3);
+    var c = mixc(C.g[0], hs < 0.5 ? C.g[1] : C.g[2], hash(si, ri + 11, 5) * 0.7);
+    var seam = Math.min(fr, 1 - fr) * 3 < 0.035 || (ns > 1 && Math.min(fa, 1 - fa) * arc < 0.035) ? 0.72 : 1;
+    if (seam === 1 && ((fr > 0.06 && fr < 0.1) || fr > 0.9 && fr < 0.94) && ns > 1 && ((fa * arc > 0.14 && fa * arc < 0.24) || ((1 - fa) * arc > 0.14 && (1 - fa) * arc < 0.24))) seam = 0.8;   // заклёпки
+    var lip = s < 0.06 ? 0.62 : s < 0.5 ? 1.13 : s < 0.62 ? 0.84 : 1;                      // кромка: тёмный край, светлый бортик, шов
+    var b = seam * lip * (1 - Math.max(0, n0 - 0.6) * 0.5) * (0.97 + f * 0.06);
+    return [c[0] * b, c[1] * b, c[2] * b];
   }
   var GROUND = {
     soil: function(C, u, v, n0, n1, n2, f, hf) { var c = g3(C, n0, n1); var p = (n2 > 0.62 ? 0.88 : n2 < 0.3 ? 1.06 : 1) * (0.92 + (hf - 0.5) * 0.3 + f * 0.1); return [c[0] * p, c[1] * p, c[2] * p]; },
@@ -372,6 +415,7 @@
     var glow = L.glow ? (typeof L.glow === 'string' ? [rgb(L.glow)] : L.glow.map(rgb)) : null;
     var rockA = C.rock[0], rockB = C.rock[1], EL = this.EL, ER = this.ER, base = this.base, highTint = L.highTint || 0;
     var TH = 0.4, TW = 1 / 0.12;
+    var KP = this.KP, KPI = this.KPI, KD = this.KD, kpo, kps, kpl;
     var oa = [0, 0, 0, 0], ob = [0, 0, 0, 0];
     var M = N * 2, Mm1 = M - 1.001;
     function bl(Fd, u, v) {
@@ -407,6 +451,17 @@
         var dx = (nz(N1, u * 38, v * 38) - 0.5) * 0.55 + (n1 - 0.5) * 0.5, dy = (nz(N0, u * 38 + 77, v * 38 + 13) - 0.5) * 0.55 + (nz(N0, u * 4.5 + 91, v * 4.5 + 37) - 0.5) * 0.5;
         var su = u + dx, sv = v + dy;
         var col = gfn(C, u, v, n0, n1, n2, f, hf);
+        // круглая платформа: насколько точка внутри (kps > 0 — на палубе); палуба — кольца панелей от центра
+        kpo = null; kps = -9; kpl = null;
+        if (KPI) {
+          kpl = KPI[Math.min(N - 1, Math.max(0, Math.floor(v))) * N + Math.min(N - 1, Math.max(0, Math.floor(u)))];
+          if (kpl) for (var qi = 0; qi < kpl.length; qi++) { var ko = KP[kpl[qi]], ks = ko.r - Math.sqrt((u - ko.x) * (u - ko.x) + (v - ko.y) * (v - ko.y)); if (ks > kps) { kps = ks; kpo = ko; } }
+        }
+        if (KD && v > KD.y - 2.4 && v - KD.y > kps) { kps = v - KD.y; kpo = KD; }
+        if (kpo && kps > 0) {
+          if (kpo === KD) { var dl = kps < 0.06 ? 0.62 : kps < 0.5 ? 1.13 : kps < 0.62 ? 0.84 : 1; col = [col[0] * dl, col[1] * dl, col[2] * dl]; }
+          else col = deckCol(C, kpo, u, v, kps, n0, f);
+        }
         var r = col[0], g = col[1], b = col[2], t, w, k2;
         // трудная земля
         w = bl(R, su, sv);
@@ -455,12 +510,18 @@
         else if (el < -0.05) { var lk2 = 1 + el * 0.07; r *= lk2; g *= lk2 * 0.99; b *= lk2 * 0.97; }
         // освещение рельефа
         var ex = hgt(su + eps, sv) - hgt(su - eps, sv), ey = hgt(su, sv + eps) - hgt(su, sv - eps);
+        if (kpo && kps > -0.2) { ex = 0; ey = 0; }                          // палуба ровная, без бугров
         var nx = -ex * kz, ny = -ey * kz, nl = (nx * LX + ny * LY + LZ) / Math.sqrt(nx * nx + ny * ny + 1);
         var sh = Math.max(0.5, Math.min(1.32, 0.4 + 0.6 * nl / LZ));
         var lit = sh * (1 - 0.32 * bl(S, su, sv) - bl(AO, su, sv) * 0.45) * (0.94 + gr * 0.12);
         r *= lit; g *= lit; b *= lit;
         // вода
         var wv = bl(W, su, sv);
+        if (kpo && kps > -2.4) {
+          // у платформы вода и суша — по окружности, без рваного края; дальше — как было
+          var kw = kps > -1.4 ? 1 : (kps + 2.4);
+          wv += (smooth(0.5 - kps / 0.12) - wv) * kw;
+        }
         if (wv > TH - 0.12) {
           t = smooth((wv - TH) * TW + 0.5);
           var dep = bl(WD, u, v), fd = bl(F, su, sv), dt = Math.max(0, Math.min(1, (dep - 0.6) / (ocean ? 5 : 2.2))) * (1 - fd * 0.8);
@@ -469,6 +530,13 @@
           var foam = !ocean && wv < TH + 0.1 ? Math.max(0, 1 - (wv - TH + 0.02) * 10) * (0.5 + hf * 0.6) : 0;
           var spec = Math.max(0, nz(N0, u * 12 + 5, v * 12) - 0.66) * 1.4;
           var wl = 0.72 + 0.28 * (1 - 0.32 * bl(S, u, v));
+          if ((kpl || KD) && kps < 0) {
+            // тень платформы на воде (свет с северо-запада) и светлая кайма у свай
+            var shd = KD ? v + LY * 1.1 - KD.y : -9;
+            if (kpl) for (var qj = 0; qj < kpl.length; qj++) { var so = KP[kpl[qj]], sx2 = u + LX * 1.1 - so.x, sy2 = v + LY * 1.1 - so.y, s2 = so.r - Math.sqrt(sx2 * sx2 + sy2 * sy2); if (s2 > shd) shd = s2; }
+            if (shd > -0.4) wl *= 1 - 0.36 * smooth((shd + 0.4) / 0.8);
+            if (kps > -0.35) wl *= 1 + 0.18 * smooth(1 + kps / 0.35);
+          }
           var wr = (wc2[0] * wave + 255 * spec * 0.22) * wl, wg = (wc2[1] * wave + 255 * spec * 0.26) * wl, wb = (wc2[2] * wave + 255 * spec * 0.3) * wl;
           wr += (235 - wr) * foam * 0.6; wg += (245 - wg) * foam * 0.6; wb += (250 - wb) * foam * 0.6;
           r += (wr - r) * t; g += (wg - g) * t; b += (wb - b) * t;
@@ -874,6 +942,21 @@
     }
   }
 
+  // Переход у круглой платформы или причала: настил обрезан по кромке — упирается в неё ровной дугой
+  function bridgeAtRim(ctx, T, x, y) {
+    var N = T.N, best = null, bs = -9, li = T.KPI && T.KPI[y * N + x], KD = T.KD;
+    if (li) for (var i = 0; i < li.length; i++) { var o = T.KP[li[i]], s = o.r - Math.hypot(x + 0.5 - o.x, y + 0.5 - o.y); if (s > bs) { bs = s; best = o; } }
+    var nearDock = KD && y + 1.5 >= KD.y;
+    if ((!best || bs < -1.6) && !nearDock) { bridge(ctx, T, x, y); return; }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x - 0.3, y - 0.3, 1.6, nearDock ? Math.max(0, KD.y + 0.3 - (y - 0.3)) : 1.6);
+    if (best && bs >= -1.6) { ctx.moveTo(best.x + best.r - 0.3, best.y); ctx.arc(best.x, best.y, best.r - 0.3, 0, TAU); }
+    ctx.clip('evenodd');
+    bridge(ctx, T, x, y);
+    ctx.restore();
+  }
+
   // Прямой мост: настил от берега до берега, доски поперёк, перила со столбиками, тень вниз
   function deck(ctx, T, o) {
     var st = T.look.bridge || 'plank';
@@ -981,6 +1064,8 @@
     var kind = lk.wall;
     return kind === 'metal' ? [104, 108, 114] : kind === 'wood' ? [104, 76, 48] : kind === 'hive' ? [138, 92, 62] : kind === 'crystal' ? [96, 156, 206] : kind === 'ice' ? [150, 178, 206] : mixc(lk.trim, lk.c, 0.2);
   }
+  // плоские предметы — под мостами и укрытиями
+  var UNDER = { crater: 1, kplat: 1, kpad: 1, kdock: 1 };
   var OBJ = {
     bldg: function(ctx, T, o) { bldgRoof(ctx, T, o, T.tlook); },
     // башня на углу стены: круглый бастион 2×2 (орудие рисует экран боя)
@@ -1075,6 +1160,73 @@
       for (var j = 1; j < 3; j++) { ctx.beginPath(); ctx.arc(o.x, o.y, o.r * j / 3, 0, TAU); ctx.stroke(); }
       ctx.fillStyle = 'rgba(120,220,255,0.9)';
       for (var k = 0; k < 6; k++) { var b = k / 6 * TAU + 0.3; ctx.beginPath(); ctx.arc(o.x + Math.cos(b) * o.r * 0.82, o.y + Math.sin(b) * o.r * 0.82, 0.1, 0, TAU); ctx.fill(); }
+    },
+    // Круглая платформа Камино: сваи и тень у кромки, бортик с огнями — только по внешнему краю
+    // (где круги сливаются в одну палубу, кромки нет)
+    kplat: function(ctx, T, o) {
+      var KP = T.KP || [], arcs = [], step = Math.min(0.08, 0.5 / o.r), on = false, a0 = 0;
+      function outer(a) {
+        var px = o.x + Math.cos(a) * (o.r + 0.02), py = o.y + Math.sin(a) * (o.r + 0.02);
+        for (var i = 0; i < KP.length; i++) { var q = KP[i]; if (q !== o && Math.hypot(px - q.x, py - q.y) < q.r - 0.02) return false; }
+        return true;
+      }
+      for (var a = 0; a <= TAU + step * 0.5; a += step) {
+        var ok = outer(a);
+        if (ok && !on) { on = true; a0 = a; } else if (!ok && on) { on = false; arcs.push([a0, a]); }
+      }
+      if (on) arcs.push([a0, TAU]);
+      if (arcs.length === 1 && arcs[0][0] === 0 && arcs[0][1] >= TAU) arcs = [[0, TAU]];
+      if (!arcs.length) return;
+      function stroke(r, w, c) { ctx.strokeStyle = c; ctx.lineWidth = w; arcs.forEach(function(s) { ctx.beginPath(); ctx.arc(o.x, o.y, r, s[0], s[1]); ctx.stroke(); }); }
+      // сваи: тёмные опоры под кромкой с юго-востока (в тени)
+      var n = Math.max(8, Math.round(TAU * o.r / 3.2));
+      ctx.fillStyle = 'rgba(8,14,18,0.55)';
+      for (var i = 0; i < n; i++) {
+        var b = (i + 0.5) / n * TAU;
+        if (!arcs.some(function(s) { return b >= s[0] && b <= s[1]; })) continue;
+        var cx = o.x + Math.cos(b) * (o.r + 0.32) + 0.22, cy = o.y + Math.sin(b) * (o.r + 0.32) + 0.3;
+        ctx.beginPath(); ctx.arc(cx, cy, 0.2, 0, TAU); ctx.fill();
+      }
+      stroke(o.r + 0.05, 0.1, 'rgba(10,18,22,0.6)');
+      stroke(o.r - 0.25, 0.08, 'rgba(240,246,250,0.55)');
+      // огни по бортику
+      ctx.fillStyle = 'rgba(127,216,255,0.9)';
+      var m = Math.max(6, Math.round(TAU * o.r / 2.4));
+      for (var j = 0; j < m; j++) {
+        var c = j / m * TAU;
+        if (!arcs.some(function(s) { return c >= s[0] && c <= s[1]; })) continue;
+        ctx.beginPath(); ctx.arc(o.x + Math.cos(c) * (o.r - 0.25), o.y + Math.sin(c) * (o.r - 0.25), 0.075, 0, TAU); ctx.fill();
+      }
+    },
+    // Причал: прямая кромка с бортиком, сваями и огнями (рисуется только видимый кусок)
+    kdock: function(ctx, T, o, x0, wc) {
+      var xa = Math.max(o.x, Math.floor((x0 || 0) / 3) * 3), xb = Math.min(o.x + o.w, (x0 || 0) + (wc || o.w) + 3);
+      ctx.fillStyle = 'rgba(8,14,18,0.45)';
+      for (var x = xa + 1.5; x < xb; x += 3) { ctx.beginPath(); ctx.arc(x + 0.22, o.y - 0.3, 0.2, 0, TAU); ctx.fill(); }
+      ctx.strokeStyle = 'rgba(10,18,22,0.6)'; ctx.lineWidth = 0.1; ctx.beginPath(); ctx.moveTo(xa, o.y - 0.05); ctx.lineTo(xb, o.y - 0.05); ctx.stroke();
+      ctx.strokeStyle = 'rgba(240,246,250,0.55)'; ctx.lineWidth = 0.08; ctx.beginPath(); ctx.moveTo(xa, o.y + 0.25); ctx.lineTo(xb, o.y + 0.25); ctx.stroke();
+      ctx.fillStyle = 'rgba(127,216,255,0.9)';
+      for (var lx = Math.floor(xa / 2.4) * 2.4 + 1.2; lx < xb; lx += 2.4) { ctx.beginPath(); ctx.arc(lx, o.y + 0.25, 0.075, 0, TAU); ctx.fill(); }
+    },
+    // Посадочная площадка: кольца разметки, риски, круг с крестом и огни посадки
+    kpad: function(ctx, T, o) {
+      var r = o.r;
+      ctx.strokeStyle = 'rgba(236,242,246,0.75)'; ctx.lineWidth = 0.16;
+      ctx.beginPath(); ctx.arc(o.x, o.y, r, 0, TAU); ctx.stroke();
+      ctx.setLineDash([0.7, 0.45]); ctx.lineWidth = 0.08;
+      ctx.beginPath(); ctx.arc(o.x, o.y, r - 0.55, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      ctx.lineWidth = 0.12;
+      for (var i = 0; i < 12; i++) {
+        var a = i / 12 * TAU, l = i % 3 ? 0.45 : 0.9;
+        ctx.beginPath(); ctx.moveTo(o.x + Math.cos(a) * (r - 0.9 - l), o.y + Math.sin(a) * (r - 0.9 - l)); ctx.lineTo(o.x + Math.cos(a) * (r - 0.9), o.y + Math.sin(a) * (r - 0.9)); ctx.stroke();
+      }
+      var ri = Math.max(1.2, r * 0.36);
+      ctx.fillStyle = 'rgba(40,52,58,0.28)'; ctx.beginPath(); ctx.arc(o.x, o.y, ri, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(236,242,246,0.8)'; ctx.lineWidth = 0.14; ctx.stroke();
+      ctx.strokeStyle = 'rgba(127,216,255,0.75)'; ctx.lineWidth = 0.22;
+      ctx.beginPath(); ctx.moveTo(o.x - ri * 0.55, o.y); ctx.lineTo(o.x + ri * 0.55, o.y); ctx.moveTo(o.x, o.y - ri * 0.55); ctx.lineTo(o.x, o.y + ri * 0.55); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,214,120,0.95)';
+      for (var j = 0; j < 8; j++) { var b = (j + 0.5) / 8 * TAU; ctx.beginPath(); ctx.arc(o.x + Math.cos(b) * (r - 0.55), o.y + Math.sin(b) * (r - 0.55), 0.09, 0, TAU); ctx.fill(); }
     },
     platform: function(ctx, T, o) {
       // кромка платформы и сваи
@@ -1558,9 +1710,12 @@
     ctx.beginPath(); ctx.rect(x0, y0, wc, hc); ctx.clip();
     var pad = 3, xa = Math.max(0, x0 - pad), ya = Math.max(0, y0 - pad), xb = Math.min(N, x0 + wc + pad), yb = Math.min(N, y0 + hc + pad);
     // воронки — под всем
-    this.map.objs.forEach(function(o) { if (o.k === 'crater' && o.x + o.r + 2 > x0 && o.x - o.r - 2 < x0 + wc && o.y + o.r + 2 > y0 && o.y - o.r - 2 < y0 + hc) OBJ.crater(ctx, self, o); });
+    this.map.objs.forEach(function(o) { if (o.k === 'kdock' && o.y - 2 < y0 + hc && o.y + o.h + 1 > y0) OBJ.kdock(ctx, self, o, x0, wc); });
+    this.map.objs.forEach(function(o) { if (UNDER[o.k] && o.r && o.x + o.r + 2 > x0 && o.x - o.r - 2 < x0 + wc && o.y + o.r + 2 > y0 && o.y - o.r - 2 < y0 + hc) OBJ[o.k](ctx, self, o); });
     // мосты
-    for (var y = ya; y < yb; y++) for (var x = xa; x < xb; x++) if (t[y * N + x] === TT.BRIDGE && !this.BM[y * N + x]) bridge(ctx, this, x, y);
+    var bdraw = this.BX ? bridgeAtRim : bridge;
+    for (var y = ya; y < yb; y++) for (var x = xa; x < xb; x++) if (t[y * N + x] === TT.BRIDGE && !this.BM[y * N + x]) bdraw(ctx, this, x, y);
+    if (this.BX) for (var bi = 0; bi < this.BX.length; bi += 2) { var qx = this.BX[bi], qy = this.BX[bi + 1]; if (qx >= xa && qx < xb && qy >= ya && qy < yb) bdraw(ctx, this, qx, qy); }
     this.map.objs.forEach(function(o) {
       if (o.k !== 'bridge') return;
       var bx0 = Math.min(o.a[0], o.b[0]) - 3, bx1 = Math.max(o.a[0], o.b[0]) + 3, by0 = Math.min(o.a[1], o.b[1]) - 3, by1 = Math.max(o.a[1], o.b[1]) + 3;
@@ -1576,7 +1731,7 @@
     }
     // крупные предметы — по возрастанию y, чтобы южные перекрывали тени северных
     var big = this.map.objs.filter(function(o) {
-      if (!OBJ[o.k] || o.k === 'crater') return false;
+      if (!OBJ[o.k] || UNDER[o.k]) return false;
       var bx0, by0, bx1, by1;
       if (o.pts) { bx0 = 1e9; by0 = 1e9; bx1 = -1e9; by1 = -1e9; o.pts.forEach(function(p) { bx0 = Math.min(bx0, p[0]); by0 = Math.min(by0, p[1]); bx1 = Math.max(bx1, p[0]); by1 = Math.max(by1, p[1]); }); }
       else if (o.w != null) { bx0 = o.x; by0 = o.y; bx1 = o.x + o.w; by1 = o.y + o.h; }

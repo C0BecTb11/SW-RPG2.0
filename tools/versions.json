@@ -124,8 +124,8 @@
   "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "33",
-  "sha": "3dad211748fa"
+  "v": "34",
+  "sha": "0e39b0266920"
  },
  "ground/preview.css": {
   "v": "1",
@@ -136,12 +136,12 @@
   "sha": "24d58a86cb68"
  },
  "ground/terrain-worker.js": {
-  "v": "4",
-  "sha": "7c879552fdc6"
+  "v": "6",
+  "sha": "e39417d1675a"
  },
  "ground/terrain.js": {
-  "v": "5",
-  "sha": "906a3b485d01"
+  "v": "7",
+  "sha": "1a815496ebd7"
  },
  "js/army.js": {
   "v": "3",
@@ -188,8 +188,8 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "27",
-  "sha": "c668953021cf"
+  "v": "28",
+  "sha": "569ab312bbde"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -244,8 +244,8 @@
   "sha": "c15acb43ec4e"
  },
  "js/ground-live.js": {
-  "v": "33",
-  "sha": "b9f9e09498b3"
+  "v": "34",
+  "sha": "88bd7b2192f0"
  },
  "js/map-layer.js": {
   "v": "2",

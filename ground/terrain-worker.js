@@ -1,7 +1,7 @@
 /* Куски местности в фоне: главный поток просит кусок (cx, cy, ppc, CH), здесь он рисуется
  * на OffscreenCanvas и уходит назад картинкой (ImageBitmap). Подложку всей карты (k: 'base') —
  * точками. Своя копия карты и Terrain. ES5. */
-importScripts('../shared/rt-planets.js?v=3', 'terrain.js?v=5');
+importScripts('../shared/rt-planets.js?v=3', 'terrain.js?v=7');
 var T = null, gen = 0;
 onmessage = function(e) {
   var m = e.data;

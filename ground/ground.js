@@ -379,7 +379,7 @@
     try {
       var cnt = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
       for (var i = 0; i < cnt; i++) {
-        var w = new Worker('../ground/terrain-worker.js?v=4');
+        var w = new Worker('../ground/terrain-worker.js?v=6');
         w.onmessage = function(e) {
           var m = e.data;
           if (m.k === 'base') { if (m.gen === TW.gen && G.ter) baseFrom(m); return; }

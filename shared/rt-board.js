@@ -38,9 +38,13 @@
     // бойцы из игры: снайпер, гранатомёт (по площади), световой меч (вплотную, герои)
     sniper: { name: 'Снайперская винтовка', hp: 70, range: 20, acc: 0.8, dmg: 22, rof: 0.4, spd: 0.9 },
     launcher: { name: 'Гранатомёт', hp: 90, range: 10, acc: 0.45, dmg: 18, rof: 0.35, spd: 0.9, splash: 1.6 },
-    saber:  { name: 'Световой меч', hp: 280, range: 2.6, acc: 0.9, dmg: 26, rof: 1.6, spd: 1.35 }
+    saber:  { name: 'Световой меч', hp: 280, range: 2.6, acc: 0.9, dmg: 26, rof: 1.6, spd: 1.35 },
+    // охотники бара: мандалорец — два бластера (два болта за выстрел), следопыт — дробовик (в упор больнее)
+    pistols: { name: 'Спаренные бластеры', hp: 180, range: 11, acc: 0.6, dmg: 7, rof: 1.1, spd: 1.2, twin: true },
+    scatter: { name: 'Дробовик', hp: 220, range: 8, acc: 0.62, dmg: 15, rof: 0.6, spd: 0.95, scatter: true }
   };
   var FIG_WPN = { rep_dc15a: 'rifle', rep_heavy: 'heavy', rep_sniper: 'rifle', cis_b1: 'b1', cis_b2: 'b2', cis_bx: 'bx',
+                  cis_bounty: 'pistols', rep_mando: 'pistols', cis_hunter: 'scatter', rep_hunter: 'scatter',
                   rep_engineer: 'tool', cis_engineer: 'tool' };
   var TURRET = { hp: 150, range: 11, acc: 0.7, dmg: 25, rof: 0.4 };
   // Повадки в бою (как на пробной палубе) — только пока бойца ведёт ИИ или в рамках приказа игрока:
@@ -53,6 +57,8 @@
     b2:    { k: 'push', near: 4.5, every: 1.3 },
     bx:    { k: 'cover', r: 4, every: 3.5 },
     rifle: { k: 'cover', r: 3, every: 5 },
+    pistols: { k: 'cover', r: 4, every: 3.5 },
+    scatter: { k: 'push', near: 3, every: 1.5 },
     sniper: { k: 'cover', r: 3, every: 6 }
   };
   var MICRO_END = 2;          // столько секунд без боя — бойцы возвращаются к приказу
@@ -901,20 +907,24 @@
       var moving = Math.abs(a.vx) + Math.abs(a.vy) > 0.4;
       // абордажная команда — штурмовики: стреляют точнее в тесноте коридоров
       var p = w.acc * (a.team === this.att ? ASSAULT : 1) * Math.max(0.3, 1.1 - tg.d / w.range * 0.5) * this.cover(a.x, a.y, tg.x, tg.y) * (moving ? 0.7 : 1);
-      var hit = this.R() < p;
-      var dmg = hit ? w.dmg * dmgK[a.team] * (a.dmgK || 1) * (0.8 + this.R() * 0.4) : 0;
-      this.shot(a.x, a.y, tg.x, tg.y, a.team, hit, a.wpn, dmg, a.tgt >= 100000 ? -1 : a.tgt);
-      if (hit) {
-        if (a.tgt >= 100000) this.hitTurret(this.turrets[a.tgt - 100000], dmg);
-        else { var b = ag[a.tgt]; c.hurt(b, dmg); if (!b.alive) a.tgt = -1; }
-        // граната: задевает и тех, кто рядом с целью (своих — тоже)
-        if (w.splash) {
-          for (var sj = 0; sj < ag.length; sj++) {
-            var sb = ag[sj]; if (!sb.alive || sj === a.tgt) continue;
-            var sdx = sb.x - tg.x, sdy = sb.y - tg.y;
-            if (sdx * sdx + sdy * sdy < w.splash * w.splash) c.hurt(sb, dmg * 0.5);
+      // дробовик: в упор ×1,5, на предельной дальности ×0,6
+      var wk = w.scatter ? 1.5 - 0.9 * Math.min(1, tg.d / w.range) : 1;
+      for (var bolt = 0, nb = w.twin ? 2 : 1; bolt < nb && a.tgt >= 0; bolt++) {
+        var hit = this.R() < p;
+        var dmg = hit ? w.dmg * wk * dmgK[a.team] * (a.dmgK || 1) * (0.8 + this.R() * 0.4) : 0;
+        this.shot(a.x, a.y, tg.x, tg.y, a.team, hit, a.wpn, dmg, a.tgt >= 100000 ? -1 : a.tgt);
+        if (hit) {
+          if (a.tgt >= 100000) this.hitTurret(this.turrets[a.tgt - 100000], dmg);
+          else { var b = ag[a.tgt]; c.hurt(b, dmg); if (!b.alive) a.tgt = -1; }
+          // граната: задевает и тех, кто рядом с целью (своих — тоже)
+          if (w.splash) {
+            for (var sj = 0; sj < ag.length; sj++) {
+              var sb = ag[sj]; if (!sb.alive || sj === a.tgt) continue;
+              var sdx = sb.x - tg.x, sdy = sb.y - tg.y;
+              if (sdx * sdx + sdy * sdy < w.splash * w.splash) c.hurt(sb, dmg * 0.5);
+            }
+            this.ev.booms.push({ t: c.t, x: tg.x, y: tg.y, r: w.splash * 0.8 });
           }
-          this.ev.booms.push({ t: c.t, x: tg.x, y: tg.y, r: w.splash * 0.8 });
         }
       }
     }

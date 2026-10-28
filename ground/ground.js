@@ -208,10 +208,10 @@
   // ---------------------------------------------------------------- бой
   var ARMY = {
     0: { small: [['rep_dc15a', 10], ['rep_heavy', 2], ['rep_sniper', 1], ['rep_medic', 1], ['rep_jedi', 1], ['rep_atrt', 1], ['rep_atte', 1]],
-         mid: [['rep_dc15a', 24], ['rep_heavy', 6], ['rep_sniper', 3], ['rep_launcher', 4], ['rep_arc', 4], ['rep_medic', 2], ['rep_engineer', 1], ['rep_jedi', 1], ['rep_atte', 2], ['rep_atrt', 3], ['rep_barc', 2], ['rep_aa', 1], ['rep_laat', 1], ['rep_artillery', 1], ['rep_turbo', 1]],
-         big: [['rep_dc15a', 60], ['rep_heavy', 14], ['rep_sniper', 6], ['rep_launcher', 8], ['rep_arc', 8], ['rep_commando', 4], ['rep_medic', 4], ['rep_engineer', 2], ['rep_jedi', 2], ['rep_atte', 4], ['rep_atrt', 6], ['rep_barc', 4], ['rep_aa', 2], ['rep_laat', 2], ['rep_artillery', 2], ['rep_turbo', 2]] },
+         mid: [['rep_dc15a', 24], ['rep_heavy', 6], ['rep_sniper', 3], ['rep_launcher', 4], ['rep_arc', 4], ['rep_mando', 1], ['rep_hunter', 1], ['rep_medic', 2], ['rep_engineer', 1], ['rep_jedi', 1], ['rep_atte', 2], ['rep_atrt', 3], ['rep_barc', 2], ['rep_aa', 1], ['rep_laat', 1], ['rep_artillery', 1], ['rep_turbo', 1]],
+         big: [['rep_dc15a', 60], ['rep_heavy', 14], ['rep_sniper', 6], ['rep_launcher', 8], ['rep_arc', 8], ['rep_commando', 4], ['rep_mando', 2], ['rep_hunter', 2], ['rep_medic', 4], ['rep_engineer', 2], ['rep_jedi', 2], ['rep_atte', 4], ['rep_atrt', 6], ['rep_barc', 4], ['rep_aa', 2], ['rep_laat', 2], ['rep_artillery', 2], ['rep_turbo', 2]] },
     1: { small: [['cis_b1', 16], ['cis_b2', 3], ['cis_bx', 1], ['cis_wheel', 1], ['cis_medic', 1], ['cis_sith', 1], ['cis_stap', 1], ['cis_aat', 1]],
-         mid: [['cis_b1', 36], ['cis_b2', 8], ['cis_bx', 4], ['cis_wheel', 3], ['cis_b1_sniper', 3], ['cis_b1_launcher', 4], ['cis_medic', 2], ['cis_engineer', 1], ['cis_sith', 1], ['cis_aat', 2], ['cis_stap', 3], ['cis_spider', 1], ['cis_hmp', 1], ['cis_missile', 1], ['cis_artillery', 1], ['cis_mtt', 1]],
+         mid: [['cis_b1', 36], ['cis_b2', 8], ['cis_bx', 4], ['cis_wheel', 3], ['cis_b1_sniper', 3], ['cis_b1_launcher', 4], ['cis_bounty', 1], ['cis_hunter', 1], ['cis_medic', 2], ['cis_engineer', 1], ['cis_sith', 1], ['cis_aat', 2], ['cis_stap', 3], ['cis_spider', 1], ['cis_hmp', 1], ['cis_missile', 1], ['cis_artillery', 1], ['cis_mtt', 1]],
          big: [['cis_b1', 90], ['cis_b2', 18], ['cis_bx', 8], ['cis_wheel', 6], ['cis_b1_sniper', 6], ['cis_b1_launcher', 8], ['cis_bounty', 2], ['cis_hunter', 2], ['cis_medic', 4], ['cis_engineer', 2], ['cis_sith', 2], ['cis_aat', 4], ['cis_stap', 6], ['cis_spider', 2], ['cis_hmp', 2], ['cis_missile', 2], ['cis_artillery', 2], ['cis_mtt', 2]] }
   };
   var PORTRAITS = { 0: ['jedi_01', 'jedi_02', 'jedi_03', 'jedi_04', 'jedi_05', 'jedi_06', 'jedi_07', 'jedi_08', 'jedi_09', 'jedi_10', 'jedi_11'], 1: ['sith_01', 'sith_02', 'sith_03', 'sith_04', 'sith_05', 'sith_06'] };
@@ -794,6 +794,8 @@
       if (sel[m.id]) { c.strokeStyle = 'rgba(240,200,106,0.95)'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], rr + 3, 0, TAU); c.stroke(); }
       else { var dr = rr * 0.8; c.globalAlpha = m.T.vehicle ? 0.18 : 0.3; c.drawImage(disc(B.ctl(m)), p[0] - dr, p[1] + rr * 0.55 - dr, dr * 2, dr * 2); c.globalAlpha = 1; }
       if (m.air || m.fly) { var sp = vrad(m) * 2.5, sh = toS(m.x + sp * 0.35, m.y + sp * 0.45); c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(sh[0], sh[1], s * sp * 0.45, s * sp * 0.3, m.aim, 0, TAU); c.fill(); }
+      // мандалорец на ранце: тень на земле, пламя сопел, сам — выше (у зрителя сети высоты нет — средняя)
+      if (m.jet) { var jk = m.jet.t1 ? Math.sin(Math.PI * Math.max(0, Math.min(1, (t - m.jet.t0) / (m.jet.t1 - m.jet.t0)))) : 0.8; p = jetFx(c, m, s, p, jk, t); }
       if (m.T.vehicle) drawVehicle(c, m, s, p, null, false);
       else if (m.wh) drawWheel(c, m, s, p, t);
       else if (m.hero) {
@@ -808,6 +810,7 @@
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
       } else { c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK); F.draw(c, ALL[figOf(m)], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase }); c.restore(); }
       // состояния
+      if (m.netT > t) drawNet(c, p[0], p[1], rr * 1.15, t, m.id);
       if (m.stun > 0) { c.fillStyle = 'rgba(200,170,255,0.9)'; for (var q = 0; q < 3; q++) { var qa = t * 5 + q * 2.1; c.beginPath(); c.arc(p[0] + Math.cos(qa) * s * 0.5, p[1] - s * 0.6 + Math.sin(qa) * s * 0.15, 2, 0, TAU); c.fill(); } }
       if (m.barrier > t) { c.strokeStyle = 'rgba(120,200,255,0.5)'; c.lineWidth = 1.5; c.beginPath(); c.arc(p[0], p[1], rr + 1, 0, TAU); c.stroke(); }
       if (m.mind && m.mind.until > t) { c.fillStyle = 'rgba(255,230,160,0.9)'; label(c, '◈', p[0], p[1] - rr - 8, 'rgba(255,230,160,0.9)', 11); }
@@ -819,6 +822,34 @@
       }
       if (m.hero && s > 7) label(c, m.name || (m.team === 0 ? 'Джедай' : 'Ситх'), p[0], p[1] + rr + 9, mine ? '#9fd8ff' : '#ff9a88', 10);
     }
+  }
+  // Ранец мандалорца: тень сдвинута вниз-вправо (выше — дальше), два языка пламени назад от сопел;
+  // возвращает точку, где рисовать самого бойца (поднят на jk)
+  function jetFx(c, m, s, p, jk, t) {
+    var lift = 0.42 * jk, ux = Math.cos(m.aim), uy = Math.sin(m.aim);
+    c.fillStyle = 'rgba(0,0,0,' + (0.32 - 0.12 * jk) + ')';
+    c.beginPath(); c.ellipse(p[0] + s * lift * 0.9, p[1] + s * lift * 1.1, s * 0.32, s * 0.22, 0, 0, TAU); c.fill();
+    var q = toS(m.x, m.y - lift);
+    for (var k = -1; k <= 1; k += 2) {
+      var bx = q[0] + (-ux * 0.27 - uy * k * 0.1) * s * FIGK * F.FIG, by = q[1] + (-uy * 0.27 + ux * k * 0.1) * s * FIGK * F.FIG;
+      var L = s * (0.35 + 0.25 * jk) * (0.85 + 0.3 * Math.sin(t * 40 + k)), ex = bx - ux * L, ey = by - uy * L;
+      var g = c.createLinearGradient(bx, by, ex, ey); g.addColorStop(0, 'rgba(255,245,210,0.95)'); g.addColorStop(0.35, 'rgba(255,170,60,0.8)'); g.addColorStop(1, 'rgba(255,90,20,0)');
+      c.strokeStyle = g; c.lineCap = 'round'; c.lineWidth = Math.max(2, s * 0.12); c.beginPath(); c.moveTo(bx, by); c.lineTo(ex, ey); c.stroke();
+    }
+    return q;
+  }
+  // Сеть следопыта на бойце: верёвки крест-накрест в круге, грузики по краю, чуть колышется
+  function drawNet(c, x, y, r, t, seed) {
+    var w = Math.sin(t * 6 + seed) * 0.08;
+    c.save(); c.translate(x, y); c.rotate(0.5 + seed * 0.7 + w);
+    c.beginPath(); c.arc(0, 0, r, 0, TAU); c.save(); c.clip();
+    c.strokeStyle = 'rgba(232,222,180,0.85)'; c.lineWidth = Math.max(1, r * 0.07);
+    var st = r / 2.6;
+    for (var k = -r; k <= r + 0.01; k += st) { c.beginPath(); c.moveTo(k, -r); c.lineTo(k, r); c.stroke(); c.beginPath(); c.moveTo(-r, k); c.lineTo(r, k); c.stroke(); }
+    c.restore();
+    c.strokeStyle = 'rgba(160,145,100,0.95)'; c.lineWidth = Math.max(1.2, r * 0.1); c.beginPath(); c.arc(0, 0, r, 0, TAU); c.stroke();
+    c.fillStyle = '#3a3f46'; for (var i = 0; i < 6; i++) { var a = i / 6 * TAU; c.beginPath(); c.arc(Math.cos(a) * r, Math.sin(a) * r, Math.max(1.5, r * 0.11), 0, TAU); c.fill(); }
+    c.restore();
   }
   // у бойца из сети сведения о герое могут ещё не прийти — тогда обычный вид, без запоминания
   function heroLook(m) {
@@ -867,6 +898,7 @@
     var sh = G.B.ev.shells;
     for (var i = 0; i < sh.length; i++) {
       var q = sh[i], k = (t - q.t0) / (q.t1 - q.t0); if (k < 0 || k > 1) continue;
+      if (q.k === 'net' || q.k === 'rk') { drawShot2(c, s, q, k, t); continue; }
       var x = q.x0 + (q.x1 - q.x0) * k, y = q.y0 + (q.y1 - q.y0) * k, h = Math.sin(k * Math.PI) * 6;
       var p = toS(x, y - h), g = toS(x, y);
       c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.arc(g[0], g[1], Math.max(2, s * 0.2), 0, TAU); c.fill();
@@ -874,6 +906,25 @@
       // метка падения
       var tp = toS(q.x1, q.y1); c.strokeStyle = 'rgba(255,110,90,' + (0.3 + k * 0.5) + ')'; c.lineWidth = 1.5; c.beginPath(); c.arc(tp[0], tp[1], q.r * s, 0, TAU); c.stroke();
     }
+  }
+  // Сеть в полёте (раскрывается, вертится) и наручная ракета (дымный след, огонь сопла)
+  function drawShot2(c, s, q, k, t) {
+    var dx = q.x1 - q.x0, dy = q.y1 - q.y0, x = q.x0 + dx * k, y = q.y0 + dy * k, p = toS(x, y), L = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (q.k === 'net') {
+      var r = s * (0.25 + 0.4 * k);
+      c.save(); c.translate(p[0], p[1]); c.rotate(t * 12);
+      c.strokeStyle = 'rgba(232,222,180,0.9)'; c.lineWidth = Math.max(1, s * 0.04);
+      for (var j = 0; j < 4; j++) { var a = j / 4 * Math.PI; c.beginPath(); c.moveTo(Math.cos(a) * r, Math.sin(a) * r); c.lineTo(-Math.cos(a) * r, -Math.sin(a) * r); c.stroke(); }
+      c.beginPath(); c.arc(0, 0, r * 0.6, 0, TAU); c.stroke();
+      c.fillStyle = '#3a3f46'; for (var i = 0; i < 6; i++) { var b = i / 6 * TAU; c.beginPath(); c.arc(Math.cos(b) * r, Math.sin(b) * r, Math.max(1.5, s * 0.06), 0, TAU); c.fill(); }
+      c.restore();
+      return;
+    }
+    var tl = Math.min(L * k, 2.2), tx = x - dx / L * tl, ty = y - dy / L * tl, tp = toS(tx, ty);
+    var g = c.createLinearGradient(tp[0], tp[1], p[0], p[1]); g.addColorStop(0, 'rgba(170,170,170,0)'); g.addColorStop(1, 'rgba(200,200,200,0.6)');
+    c.strokeStyle = g; c.lineCap = 'round'; c.lineWidth = Math.max(2, s * 0.14); c.beginPath(); c.moveTo(tp[0], tp[1]); c.lineTo(p[0], p[1]); c.stroke();
+    c.fillStyle = 'rgba(255,170,60,0.9)'; c.beginPath(); c.arc(p[0] - dx / L * s * 0.12, p[1] - dy / L * s * 0.12, Math.max(2, s * 0.1), 0, TAU); c.fill();
+    c.fillStyle = '#e8ecf0'; c.beginPath(); c.arc(p[0], p[1], Math.max(1.5, s * 0.07), 0, TAU); c.fill();
   }
   function drawFx(c, s, t) {
     var fx = G.B.ev.fx, B = G.B;
@@ -890,6 +941,14 @@
       else if (f.k === 'healed' && age < 1) { c.save(); c.globalAlpha = 1 - age; c.strokeStyle = 'rgba(180,255,210,0.9)'; c.lineWidth = 0.06; c.beginPath(); c.arc(f.x, f.y, 0.5 + age * 0.8, 0, TAU); c.stroke(); c.restore(); }
       else if (f.k === 'deflect' && age < 0.3 && a) { c.save(); c.globalAlpha = 1 - age / 0.3; c.strokeStyle = heroLook(a).blade; c.lineWidth = 0.08; c.beginPath(); c.arc(a.x, a.y, 0.6, 0, TAU); c.stroke(); c.restore(); }
       else if (f.k === 'shieldoff' && age < 0.6) { c.save(); c.globalAlpha = 1 - age / 0.6; c.strokeStyle = 'rgba(' + SHIELD_C + ',0.9)'; c.lineWidth = 0.08; c.setLineDash([0.18, 0.14]); c.beginPath(); c.arc(f.x, f.y, 0.95 + age * 1.6, 0, TAU); c.stroke(); c.restore(); }
+      else if (f.k === 'net' && age < 0.5) { c.save(); c.globalAlpha = 1 - age / 0.5; c.strokeStyle = 'rgba(232,222,180,0.9)'; c.lineWidth = 0.06; c.beginPath(); c.arc(f.x, f.y, 0.4 + age * 1.6, 0, TAU); c.stroke(); c.restore(); }
+      else if (f.k === 'netmiss' && age < 0.6) { c.save(); c.globalAlpha = 1 - age / 0.6; c.strokeStyle = 'rgba(200,190,150,0.7)'; c.lineWidth = 0.05; c.setLineDash([0.12, 0.1]); c.beginPath(); c.arc(f.x, f.y, 0.5 + age, 0, TAU); c.stroke(); c.restore(); }
+      else if (f.k === 'jet' && age < (f.r || 0.7) + 0.6) {
+        // дым на взлёте и при посадке
+        var jr = f.r || 0.7;
+        if (age < 0.6) puff(c, f.x, f.y, age / 0.6);
+        if (age > jr && f.tx != null) puff(c, f.tx, f.ty, (age - jr) / 0.6);
+      }
       else if (f.k === 'artfire' && age < 0.3) { c.save(); c.globalAlpha = 1 - age / 0.3; c.fillStyle = '#ffd27a'; c.beginPath(); c.arc(f.x, f.y, 0.6 + age * 2, 0, TAU); c.fill(); c.restore(); }
       // способность бойца из исследований: название над ним (свои — золотом, враг — красным)
       else if (f.k === 'skill' && age < 1.6) {
@@ -901,6 +960,11 @@
       }
     }
     c.restore();
+  }
+  function puff(c, x, y, k) {
+    c.save(); c.globalAlpha = 0.55 * (1 - k);
+    var g = c.createRadialGradient(x, y, 0, x, y, 0.5 + k * 0.9); g.addColorStop(0, 'rgba(210,205,195,0.9)'); g.addColorStop(1, 'rgba(160,155,150,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, 0.5 + k * 0.9, 0, TAU); c.fill(); c.restore();
   }
   // Туман: картинка 144×144 по seen стороны игрока, пересобирается раз в полсекунды
   function drawFog(c, s) {
@@ -1060,7 +1124,7 @@
     var Ty = a.T, st = a.hold ? 'держит позицию' : a.post && !a.at ? 'идёт к точке' : a.focus >= 0 ? 'атакует: ' + unitName(B, a.focus) : a.tgt >= 0 && a.tgt < 100000 ? 'стреляет по: ' + unitName(B, a.tgt) : a.goal && !a.at ? 'идёт' : 'стоит';
     var cv = B.coverInfo ? B.coverInfo(a) : null;
     var html = '<div class="sp-ucard"><div class="nm"><b' + (a.hero ? ' class="hero"' : '') + '>' + (a.name || Ty.name) + '</b><em>' + Ty.name + ' · урон ' + Ty.dmg + ' · дальность ' + Ty.range + (CLS_RU[Ty.cls] ? ' · ' + CLS_RU[Ty.cls] : '') + '</em></div>' +
-      '<div class="hp' + (a.hp / a.hpMax < 0.35 ? ' low' : '') + '"><span>' + Math.round(a.hp) + ' / ' + a.hpMax + '</span><i><b style="width:' + Math.round(a.hp / a.hpMax * 100) + '%"></b></i></div><div class="st' + (a.tgt >= 0 ? ' fire' : '') + '">' + st + (a.stun > 0 ? ' · оглушён' : '') + (a.fear > 0 ? ' · бежит в страхе' : '') + '</div>' +
+      '<div class="hp' + (a.hp / a.hpMax < 0.35 ? ' low' : '') + '"><span>' + Math.round(a.hp) + ' / ' + a.hpMax + '</span><i><b style="width:' + Math.round(a.hp / a.hpMax * 100) + '%"></b></i></div><div class="st' + (a.tgt >= 0 ? ' fire' : '') + '">' + st + (a.stun > 0 ? ' · оглушён' : '') + (a.netT > B.t ? ' · в сети' : '') + (a.jet ? ' · на ранце' : '') + (a.fear > 0 ? ' · бежит в страхе' : '') + '</div>' +
       (cv ? '<div class="st cv ' + cv.k + '">' + (cv.k === 'struct' ? '🛡 ' : cv.k === 'cover' ? '◧ ' : '') + cv.text + '</div>' : '') +
       (a.wh ? '<div class="st cv wheel' + (wheelSh(a) >= 0 ? ' on' : '') + '">⬡ ' + wheelInfo(a) + '</div>' : '');
     if (a.hero) {

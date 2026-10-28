@@ -13,6 +13,11 @@ function bsG() { return typeof SWGround !== 'undefined' ? SWGround : null; }
 // 1,4 · 0,35 — до двух цифр после запятой, целые — без неё
 function bsNum(v) { var r = Math.round(v * 100) / 100; return String(r).replace('.', ','); }
 function bsType(id) { var U = bsU(); return U && id ? U.type(id) : null; }
+// Охотники бара — числа боя (SWGround.HUNT); нет движка на странице — те же по умолчанию
+function bsHunt() {
+  var G = bsG();
+  return G && G.HUNT ? G.HUNT : { hero: 1.3, net: { range: 3, hero: 3.5, other: 6 }, scatter: { near: 1.45, far: 0.55 }, twin: 0.55, rocket: { r: 1.6 }, jet: { cd: 15, dist: 5.5 } };
+}
 function bsCd(k, def) { var G = bsG(); return G && G.SKILL && G.SKILL[k] ? G.SKILL[k].cd : def; }
 
 // Карточка найма: [значок, подпись, значение, подсказка] — как бой 2.0 видит бойца
@@ -20,7 +25,8 @@ function bsUnitStats(id) {
   var T = bsType(id); if (!T) return null;
   var out = [['❤', 'Прочность', T.hp]];
   if (T.hero) out.push(['⚔', 'Клинок', T.dmg], ['◷', 'Удар', '~1,5 с', 'удар клинком раз в ~1,5 с']);
-  else if (T.dmg > 0) out.push(['⚔', 'Урон', T.wheel ? T.dmg + '×2' : T.dmg], ['◷', 'Выстрел', bsNum(T.rof) + ' с', 'выстрел раз в ' + bsNum(T.rof) + ' с']);
+  else if (T.dmg > 0) out.push(['⚔', 'Урон', T.wheel ? T.dmg + '×2' : T.mando ? Math.round(T.dmg * bsHunt().twin) + '×2' : T.dmg, T.mando ? 'два бластера: два болта за выстрел' : T.netter ? 'дробь: в упор больше, вдали меньше' : ''],
+                           ['◷', 'Выстрел', bsNum(T.rof) + ' с', 'выстрел раз в ' + bsNum(T.rof) + ' с']);
   if (T.artillery) out.push(['➶', 'Дальн.', '∞', 'на всю карту — куда видят свои']);
   else if (T.hero) out.push(['➶', 'Дальн.', 'вплотную']);
   else if (T.dmg > 0) out.push(['➶', 'Дальн.', T.range * BS_RK + ' кл.', 'дальность стрельбы в клетках поля боя']);
@@ -66,6 +72,19 @@ function bsUnitNotes(id) {
   if (T.scout) out.push(['', 'Не стреляет · враг замечает его только ближе ' + T.stealth * BS_RK + ' кл. или радаром · может улететь на соседнюю планету']);
   if (T.builder) out.push(['', '⚒ Строит окоп, а после изучения — укрепления и добычу']);
   if (T.medic) out.push(['', '✚ Лечит своих в ' + med.r + ' кл.: +' + med.hp + ' раз в ' + med.every + ' с самому раненому']);
+  if (T.hunter) {
+    var H = bsHunt(), pct = Math.round((H.hero - 1) * 100);
+    out.push(['arty', '⚔ Охотник на одарённых: по героям урон +' + pct + ' %, их первыми и выбирает · внушение, умиротворение, страх и оглушение молнией не берут']);
+    if (T.netter) {
+      out.push(['arty', '⌗ Сетемёт: раз в ~' + bsNum(bsCd('net', 18)) + ' с ловит врага в ' + H.net.range * BS_RK + ' кл. — одарённого первым · одарённый в сети ' + bsNum(H.net.hero) + ' с, остальные ' + bsNum(H.net.other) +
+        ' с: не ходит, без сил и выпадов, джедай не отражает выстрелы · технику и авиацию не берёт']);
+      out.push(['', '✹ Дробовик: в упор урон ×' + bsNum(H.scatter.near) + ', на краю дальности ×' + bsNum(H.scatter.far) + ' · дробь задевает соседа цели · клинком её отражают вдвое реже']);
+    }
+    if (T.mando) {
+      out.push(['arty', '✹ Наручная ракета: раз в ~' + bsNum(bsCd('rocket', 22)) + ' с — по одарённому, технике или скоплению · круг ' + bsNum(H.rocket.r) + ' кл., задевает и своих']);
+      out.push(['', '➚ Реактивный ранец: враг с клинком или вплотную — отскок на ' + bsNum(H.jet.dist) + ' кл., раз в ' + H.jet.cd + ' с · в полёте стреляет']);
+    }
+  }
   if (T.move === 'air' && T.cls !== 'air') out.push(['', 'Летит над местностью: ни стены, ни вода не мешают']);
   return out;
 }

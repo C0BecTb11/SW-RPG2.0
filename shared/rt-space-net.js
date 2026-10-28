@@ -49,7 +49,7 @@
   var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
   var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper', 'guard'];
   var ROLE_N = {}; for (var ri = 0; ri < ROLES.length; ri++) ROLE_N[ROLES[ri]] = ri;
-  var WPNS = ['', 'rifle', 'heavy', 'b1', 'b2', 'bx', 'tool', 'sniper', 'launcher', 'saber'];
+  var WPNS = ['', 'rifle', 'heavy', 'b1', 'b2', 'bx', 'tool', 'sniper', 'launcher', 'saber', 'pistols', 'scatter'];   // 4 бита — не больше 16
   var WPN_N = {}; for (var wi = 0; wi < WPNS.length; wi++) WPN_N[WPNS[wi]] = wi;
   var DOOR_ST = ['open', 'locked', 'broken'], DOOR_N = { open: 0, locked: 1, broken: 2 };
 

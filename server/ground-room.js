@@ -104,13 +104,14 @@ GroundRoom.prototype.applyUnits = function(units, asked) {
     if (!B.pass[Ty.move + size][y * N + x]) { var alt = B.nearestOk(Ty.move, size, x, y); if (alt) { x = alt[0]; y = alt[1]; } }
     var hpMax = Ty.hp + (u.bonus && u.bonus.hp || 0), abil = u.abil || [];
     var a = B.add(u.type, team, x + size / 2, y + size / 2, {
-      uid: u.id, name: u.name || '', portrait: u.portrait || undefined, hpMax: hpMax, hp: Math.min(hpMax, u.hp), owner: u.owner || null,
+      uid: u.id, name: u.name || (u.npc === 'partisan' ? 'Подпольщик' : ''), portrait: u.portrait || undefined, hpMax: hpMax, hp: Math.min(hpMax, u.hp), owner: u.owner || null,
       bonus: u.bonus || null, npc: !!u.npc, aim: team === self.def ? Math.PI / 2 : -Math.PI / 2, skills: u.skills || null,
       abil: Ty.hero ? abil.filter(function(id) { var A = GR.ABIL[id]; return A && A[0]; }) : undefined, passive: Ty.hero ? passiveOf(abil) : undefined
     });
     if (!a) return;
     a.hid = u.hero || null;                      // героя знают панели игры (древо, имя)
     if (a.npc) a.auto = true;
+    if (u.npc === 'partisan') a.part = true;    // подполье (sql/loyalty.sql): идёт прямо на площадь
     if (u.brain && team === 2) {                 // логово и поводок мародёра (npc_brains)
       a.home = [u.brain.hx, u.brain.hy]; a.leave = u.brain.st === 'leave';
       if (self.ready && !a.leave) raid++;
@@ -156,6 +157,11 @@ GroundRoom.prototype.applyStructs = function(list, base) {
 GroundRoom.prototype.applyCapture = function(cap, goal) {
   var B = this.B;
   if (goal) B.capNeed = goal;
+  // подполье открывает поселение наступающим (rt_ground_state.loyalty, sql/loyalty.sql)
+  var lo = this.state && this.state.loyalty, spy = lo && lo.reveal ? teamOf(lo.reveal) : -1;
+  if (spy > 1) spy = -1;
+  if (spy >= 0 && spy !== B.spy) B.msg('Подполье доносит: поселение у нас на виду', spy, 'gold');
+  B.spy = spy;
   if (cap) { B.cap.prog = +cap.progress || 0; B.cap.status = cap.status || 'stalled'; B.capFaction = cap.faction; }
   else { B.cap.prog = 0; B.cap.status = 'stalled'; }
 };

@@ -159,6 +159,11 @@ function openPlanetInfo(systemId) {
         gePlanetRows(systemId).forEach(function(row) { stats.appendChild(row); });
       }
 
+      // Настроения — за кого народ (js/loyalty.js): общедоступно, как и залежи; своя сеть подполья — только своим
+      if (sys.faction && typeof loPlanetRows === 'function') {
+        loPlanetRows(systemId).forEach(function(row) { stats.appendChild(row); });
+      }
+
       // Напряжение на своей планете (js/unrest.js) — когда оно есть или вырастет к утру
       if (sameFaction && typeof unPlanetRows === 'function') {
         unPlanetRows(systemId).forEach(function(row) { stats.appendChild(row); });

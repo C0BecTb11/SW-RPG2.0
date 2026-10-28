@@ -340,6 +340,8 @@ function loadSettlementPanel() {
     stlDistrictTypes ? null : stlSafe(supabase.from('district_types').select('*').order('sort_order')),
     // Напряжение на планете (js/unrest.js): нет функции на сервере — блок просто не рисуется
     typeof unSettlementHtml === 'function' ? stlSafe(supabase.rpc('unrest_state', { p_system: systemId })) : null,
+    // Настроения планеты (js/loyalty.js) — отдельный вызов: сбой не трогает остальное окно
+    typeof loSettlementHtml === 'function' ? stlSafe(supabase.rpc('loyalty_state', { p_system: systemId })) : null,
     // Названия сырья для требований и цен: справочник грузится один раз
     new Promise(function(done) {
       if (typeof loadResourceNames === 'function') loadResourceNames(done); else done();
@@ -381,7 +383,8 @@ function loadSettlementPanel() {
     // Время получения храним вместе с данными: от него считаются концы
     // отсчётов, и опрос карты его не сдвигает
     var unrest = (r[5] && !r[5].error) ? r[5].data : null;
-    stlLast = { st: st, tasks: tasks, dev: dev, devErr: devErr, unrest: unrest, at: Date.now() };
+    var loyalty = (r[6] && !r[6].error) ? r[6].data : null;
+    stlLast = { st: st, tasks: tasks, dev: dev, devErr: devErr, unrest: unrest, loyalty: loyalty, at: Date.now() };
     renderSettlementPanel();
   });
 }
@@ -547,6 +550,8 @@ function stlDevHtml(L) {
 
   // Напряжение: шкала, прогноз на утро, история (js/unrest.js)
   if (typeof unSettlementHtml === 'function') html += unSettlementHtml(L.unrest);
+  // Настроения: за кого народ, срок захвата, подполье врага и облава (js/loyalty.js)
+  if (typeof loSettlementHtml === 'function') html += loSettlementHtml(L.loyalty);
 
   // Доход: итоговый множитель — чтобы было понятно, откуда цифра. income_mult из базы уже
   // включает рынок (уровень × рынок), поэтому рынок не дописывается сверху второй раз
@@ -714,6 +719,12 @@ function stlFoodHtml(d) {
   return html + '</div>';
 }
 
+// Почему ополчение не встанет — словами сервера (settlement_militia_why), с большой буквы
+function stlMilitiaWhy(why) {
+  var t = why || 'не соберётся';
+  return t.charAt(0).toUpperCase() + t.slice(1) + '.';
+}
+
 // Ополчение: сколько встанет на защиту и когда соберётся
 function stlMilitiaHtml(d, at) {
   var m = d.militia || {};
@@ -736,7 +747,9 @@ function stlMilitiaHtml(d, at) {
       '<div><b>' + (m.alive || 0) + '</b><span>в строю</span></div>' +
       third +
     '</div>' +
-    (none ? '<div class="stl-card-text warn">Не соберётся — довольство ниже 25.</div>' : '') +
+    (none || m.why ? '<div class="stl-card-text warn">' + escHtml(stlMilitiaWhy(m.why)) + '</div>'
+          : m.k > 1 ? '<div class="stl-card-text">Народ верен власти: ополченцев больше (×' + String(m.k).replace('.', ',') + ').</div>'
+          : m.k > 0 && m.k < 1 ? '<div class="stl-card-text warn">Народ колеблется: встанет только половина.</div>' : '') +
   '</div>';
 }
 

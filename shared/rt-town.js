@@ -37,7 +37,7 @@
     workshops:  { name: 'Мастерские',         effect: 'Кто держит — техника внутри чинится, 1 % в секунду' }
   };
   var LEVEL_NAME = { 1: 'Посёлок', 2: 'Городок', 3: 'Город', 4: 'Столица округа' };
-  var MILITIA_BASE = { 1: 1, 2: 2, 3: 3, 4: 4 };     // settlement_levels.militia_base; казармы +2
+  var MILITIA_BASE = { 1: 3, 2: 5, 3: 7, 4: 9 };     // settlement_levels.militia_base; казармы +3 (sql/loyalty.sql)
   // Облик по планете: стена и крыши
   var LOOK = {
     alderaan:      { wall: 'stone',   roof: 'gable',   c: [232, 226, 212], roofC: [168, 92, 66],  trim: [120, 110, 96] },

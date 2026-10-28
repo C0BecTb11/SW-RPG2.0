@@ -13,7 +13,8 @@ var TS_KIND = {
   income:     { up: 'доход',      unit: '%' },
   mood:       { up: 'довольство', unit: '' },
   hire_time:  { time: 'найм' },
-  build_time: { time: 'стройка' }
+  build_time: { time: 'стройка' },
+  loyalty:    { up: 'поддержка народа', unit: ' в сутки' }
 };
 
 var TS_LOG = {

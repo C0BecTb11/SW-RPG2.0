@@ -125,7 +125,12 @@
       h += '<section><h4>Планета <em>' + esc(s.name || '') + '</em></h4>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="finish">Достроить и выдать всё, что в очередях</button></div>' +
         '<p class="dv-note">Здания, станция, укрепления, наём, верфь, ремонт, исследования, рост поселения.</p>' +
-        '<div class="dv-lbl">Уровень поселения</div><div class="dv-chips">' + [1, 2, 3, 4].map(function(n) { return '<button type="button" class="dv-chip" data-act="level" data-v="' + n + '">' + n + '</button>'; }).join('') + '</div></section>';
+        '<div class="dv-lbl">Уровень поселения</div><div class="dv-chips">' + [1, 2, 3, 4].map(function(n) { return '<button type="button" class="dv-chip" data-act="level" data-v="' + n + '">' + n + '</button>'; }).join('') + '</div>' +
+        // настроения планеты (sql/loyalty.sql): шкала +Республика / −КНС и сети подполья
+        '<div class="dv-lbl">Настроения: −100 за КНС … +100 за Республику</div><div class="dv-chips">' + [-90, -60, -30, 0, 30, 60, 90].map(function(n) { return '<button type="button" class="dv-chip" data-act="loyal" data-v="' + n + '">' + (n > 0 ? '+' : '') + n + '</button>'; }).join('') + '</div>' +
+        '<div class="dv-lbl">Сеть подполья</div><div class="dv-chips">' +
+          '<button type="button" class="dv-chip" data-act="lcell" data-v="republic:3">Респ. ур. 3</button><button type="button" class="dv-chip" data-act="lcell" data-v="cis:3">КНС ур. 3</button>' +
+          '<button type="button" class="dv-chip" data-act="lcell" data-v="republic:0">Снять респ.</button><button type="button" class="dv-chip" data-act="lcell" data-v="cis:0">Снять КНС</button></div></section>';
       h += '<section><h4>Игрок <em>' + esc(p.nick || '') + '</em></h4>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="research">Открыть все исследования фракции</button></div>' +
         '<div class="dv-row"><button type="button" class="dv-go wide" data-act="tutorial">Засчитать текущий шаг обучения</button></div>' +
@@ -303,7 +308,7 @@
       }).join('') : '<p class="dv-note">Сейчас находок нет.</p>';
     }, fail);
   }
-  var ACT = { void_find: 'находка в Пустоте', galaxy_event: 'галактическое событие', galaxy_event_end: 'конец события', errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
+  var ACT = { void_find: 'находка в Пустоте', galaxy_event: 'галактическое событие', galaxy_event_end: 'конец события', errors_resolved: 'ошибки отмечены', event_start: 'тест ивента', credits: 'кредиты', stock: 'сырьё', units: 'бойцы', ships: 'корабли', research_all: 'исследования', finish: 'достроить всё', settlement_level: 'уровень поселения', loyalty: 'настроения', tutorial_done: 'шаг обучения', report_send: 'донесение' };
   function brief(d) { if (!d) return ''; var o = []; for (var k in d) if (d.hasOwnProperty(k) && d[k] !== 0) o.push(k + ' ' + d[k]); return o.join(', '); }
   function num(id, lo, hi) { var v = parseInt($(id).value, 10); if (!isFinite(v) || v < lo || v > hi) throw new Error('Число от ' + fmt(lo) + ' до ' + fmt(hi)); return v; }
 
@@ -330,6 +335,13 @@
       } else if (a === 'level') {
         var lv = +b.getAttribute('data-v');
         rpc('dev_settlement_level', { p_system: S.system, p_level: lv }).then(function() { say(s.name + ': поселение — уровень ' + lv); }, fail);
+      } else if (a === 'loyal' || a === 'lcell') {
+        var lv2 = b.getAttribute('data-v'), cell = a === 'lcell' ? lv2.split(':') : null;
+        rpc('dev_loyalty', { p_system: S.system, p_value: cell ? null : +lv2, p_cell_faction: cell ? cell[0] : null, p_cell_level: cell ? +cell[1] : null }).then(function(r) {
+          var cs = ((r && r.cells) || []).map(function(c) { return (c.faction === 'cis' ? 'КНС' : 'Респ.') + ' ' + c.level; }).join(', ');
+          say(s.name + ': настроения ' + (r && r.v > 0 ? '+' : '') + (r ? r.v : '?') + (cs ? ' · сети: ' + cs : ''));
+          if (typeof loFetch === 'function') loFetch();
+        }, fail);
       } else if (a === 'research') {
         rpc('dev_research_all', { p_user: S.user }).then(function(n) { say(p.nick + ': открыто исследований — ' + n); }, fail);
       } else if (a === 'tutorial') {

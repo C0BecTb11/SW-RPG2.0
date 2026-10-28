@@ -17,7 +17,9 @@
   var S = { ship: -1, crew: null, lastT: 0, parts: [], nums: [], doors: {}, prev: null, objs: [], dead: {}, hit: {}, near: [], bdoor: null, bdFor: null, box: null, mini: null };
   var PORT = { rep_dc15a: 1, rep_heavy: 1, rep_sniper: 1, cis_b1: 1, cis_b2: 1, cis_bx: 1, rep_officer: 1, rep_engineer: 1, rep_medic: 1,
                cis_engineer: 1, cis_medic: 1, rep_arc: 1, rep_commando: 1, rep_launcher: 1, rep_aa: 1, rep_militia: 1, cis_b1_launcher: 1,
-               cis_b1_sniper: 1, cis_militia: 1, cis_bounty: 1, cis_hunter: 1, marauder: 1 };
+               cis_b1_sniper: 1, cis_militia: 1, cis_bounty: 1, cis_hunter: 1, marauder: 1,
+               // 2 — портрета нет: картинка карточки найма (моделька боя, assets/units/models), середина кадра
+               rep_mando: 2, rep_hunter: 2 };
   var PORT_ALIAS = { cis_b1_cmd: 'cis_b1', cis_b1_crew: 'cis_b1', rep_gunner: 'rep_dc15a' };
   var DEAD_T = 0.45;            // сколько длится гибель (потом — картинка из набора тел)
 
@@ -292,14 +294,16 @@
     var key = id + ':' + team;
     if (TOK[key]) return TOK[key];
     var im = PICS[id];
-    if (!im) { im = PICS[id] = new Image(); im.src = '../assets/units/' + id + '.jpg'; }
+    var model = PORT[id] === 2;
+    if (!im) { im = PICS[id] = new Image(); im.src = '../assets/units/' + (model ? 'models/' : '') + id + '.jpg'; }
     if (!im.complete || !im.naturalWidth) return null;
     var N = 72, cv = document.createElement('canvas'); cv.width = cv.height = N;
     var c = cv.getContext('2d'), r = N / 2 - 1, ir = r * 0.84;
     c.fillStyle = '#0a0d14'; c.beginPath(); c.arc(N / 2, N / 2, r, 0, TAU); c.fill();
     c.save(); c.beginPath(); c.arc(N / 2, N / 2, ir, 0, TAU); c.clip();
     var iw = im.naturalWidth, ih = im.naturalHeight, sc = ir * 2 / Math.min(iw, ih);
-    c.drawImage(im, N / 2 - iw * sc / 2, N / 2 - ir, iw * sc, ih * sc);
+    if (model) { var cw = Math.min(iw, ih) * 0.56; c.drawImage(im, (iw - cw) / 2, (ih - cw) / 2, cw, cw, N / 2 - ir, N / 2 - ir, ir * 2, ir * 2); }   // моделька — по центру кадра
+    else c.drawImage(im, N / 2 - iw * sc / 2, N / 2 - ir, iw * sc, ih * sc);
     c.restore();
     TOK[key] = cv;
     return cv;

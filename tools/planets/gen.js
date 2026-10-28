@@ -820,6 +820,7 @@ class Gen {
   }
   build() {
     this.reserveAll();
+    if (this.prof.reserve) this.prof.reserve(this, T);
     this.prof.build(this, T);
     this.enforce();
     this.cliffs();

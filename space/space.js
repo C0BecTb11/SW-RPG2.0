@@ -3159,9 +3159,9 @@
       var b = e.target.closest('[data-gun]'); if (!b || !G.B) return;
       var i = +b.getAttribute('data-gun'); G.gsel[i] = !G.gsel[i]; G.aim = false; hud();
     });
-    // панель корабля перерисовывается 4 раза в секунду — ловим нажатие сразу
-    // полоса и шторка перерисовываются 4 раза в секунду — ловим нажатие сразу
-    $('sp-bottom').addEventListener('pointerdown', function(e) {
+    // полоса и шторка перерисовываются 4 раза в секунду: нажатие — по отпусканию пальца на месте, цель — под
+    // точкой отпускания (space-gfx.js SPTap); прокрутка шторки больше не жмёт кнопки
+    window.SPTap($('sp-bottom'), function(e) {
       if (!G.B) return;
       var tb = e.target.closest('[data-tab]');
       if (tb) { e.preventDefault(); openSheet(tb.getAttribute('data-tab')); return; }

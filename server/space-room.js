@@ -196,7 +196,7 @@ SpaceRoom.prototype.leave = function(c) {
 SpaceRoom.prototype.hello = function(c) {
   var B = this.B;
   this.send(c, JSON.stringify({
-    t: 'hello', caps: ['many'], code: this.code, scen: this.scen, cfg: this.cfg, side: c.side, spd: this.speed, round: this.round, T: B.t, over: B.over,
+    t: 'hello', pv: Net.PV, caps: ['many'], code: this.code, scen: this.scen, cfg: this.cfg, side: c.side, spd: this.speed, round: this.round, T: B.t, over: B.over,
     ships: B.ships.map(function(s) { return [s.cls, s.side]; })
   }));
 };
@@ -234,6 +234,7 @@ SpaceRoom.prototype.step = function() {
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
     c.viewer.push(ev); c.viewer.spd = this.speed;
+    if (c.ws.bufferedAmount > BUF_MAX) { c.viewer.lost(); continue; }   // очередь полна — кадр не строим, события ждут (SPACE-BUG-008)
     var fr = c.viewer.frames(this.tickN);
     for (j = 0; j < fr.length; j++) this.send(c, fr[j]);
   }

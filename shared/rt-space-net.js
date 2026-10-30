@@ -43,8 +43,12 @@
     if (ks.length > KEYS) ks.splice(0, ks.length - KEYS);
   }
   var AG = 16;
+  var AH = 10;              // заголовок кадра людей: тип, —, N (2), время (4), номер корабля (2) — номер больше не байт (SPACE-BUG-010)
   var LOCK = 900;                                           // мс: свой приказ важнее кадров, что уже летят                                              // байт на человека в кадре экипажа
-  var BIN = { AGENTS: 11, FIRE: 12, AGENTS_D: 13 };
+  // новые номера — с новым заголовком (AH): экран старой версии такие кадры пропускает, а не читает вкривь
+  var BIN = { AGENTS: 21, FIRE: 22, AGENTS_D: 23 };
+  // версия протокола орбиты: сервер новее экрана — экран перезагружается (hello.pv)
+  var PV = 2;
   var JOBS = ['', 'fire', 'fix', 'heal', 'carry', 'back', 'defend', 'board', 'weld', 'muster', 'stand'];
   var JOB_N = {}; for (var ji = 0; ji < JOBS.length; ji++) JOB_N[JOBS[ji]] = ji;
   var ROLES = ['post', 'fixer', 'medic', 'reserve', 'boarder', 'sapper', 'guard'];
@@ -106,6 +110,7 @@
   function r0(x) { return Math.round(x); }
   function r2(x) { return Math.round(x * 100) / 100; }
 
+  var FOG_SHOT = 1500;       // болт стрелка из тумана — от точки не дальше этого от цели (м)
   // ================================================================ сервер
   // user — кто смотрит (бой с союзниками: приказы — только своим кораблям; «dev» и без user — всей стороне)
   function Viewer(B, side, user) {
@@ -118,12 +123,35 @@
   }
   // События одного такта (одни на всех) — оставить то, что этой стороне видно
   Viewer.prototype.push = function(e) {
-    var B = this.B, side = this.side, i, ev = this.ev;
+    var B = this.B, side = this.side, i, ev = this.ev, self = this;
     var vis = function(n) { var s = B.ships[n]; return !s || s.side === side || s.dead || B.sees(side, s); };
-    for (i = 0; i < e.shots.length; i++) ev.shots.push(e.shots[i]);         // болты видно издалека
-    for (i = 0; i < e.booms.length; i++) { var b = e.booms[i]; if (b.ship == null || vis(b.ship) || b.big) ev.booms.push(b); }
+    // туман (SPACE-BUG-007): стрелок или цель не видны — что видно стороне. Корабль: своя сторона, в датчиках
+    // или наш абордаж на борту; малый корабль: свой или в датчиках (visC)
+    var shipV = function(n) { var s = B.ships[n]; if (!s) return false; if (!B.fog || s.side === side) return true; var bd = s.crew && s.crew.board; return !!(B.vis[side] && B.vis[side][n]) || !!(bd && bd.started && bd.over < 0 && bd.att === side); };
+    var craftV = function(id) { var c = B.craftById ? B.craftById(id) : null; return !B.fog || !c || c.side === side || !!(B.visC && B.visC[side] && B.visC[side][id]); };
+    var who = function(src, cr) { return src == null ? null : cr ? craftV(src) : shipV(src); };
+    for (i = 0; i < e.shots.length; i++) {
+      var sx = e.shots[i], fromV = who(sx.from, sx.fromC), toV = who(sx.to, sx.toC);
+      if (fromV === null || fromV) { ev.shots.push(sx); continue; }               // стрелок виден (или не помечен)
+      if (!toV) continue;                                                         // ни стрелка, ни цели не видно — нет и болта
+      // стрелок в тумане, цель видна: болт приходит «из-за края» — не дальше FOG_SHOT от цели, без точки стрелка
+      var fdx = sx.x0 - sx.x1, fdy = sx.y0 - sx.y1, fd = Math.sqrt(fdx * fdx + fdy * fdy) || 1, fk = Math.min(1, FOG_SHOT / fd);
+      ev.shots.push({ x0: sx.x1 + fdx * fk, y0: sx.y1 + fdy * fk, x1: sx.x1, y1: sx.y1, t0: sx.t0, dur: sx.dur * fk, side: sx.side, t: sx.t, miss: sx.miss });
+    }
+    for (i = 0; i < e.booms.length; i++) {
+      var b = e.booms[i];
+      if (b.ship != null) { if (shipV(b.ship)) ev.booms.push(b); continue; }                        // попадание, гибель корабля — только виденного
+      if (b.ram && !shipV(b.ram[0]) && !shipV(b.ram[1])) continue;                                   // таран в тумане
+      if (b.craft && b.cid != null && !craftV(b.cid)) continue;                                      // сбитая машина в тумане — не видна
+      ev.booms.push(b);
+    }
     for (i = 0; i < e.shields.length; i++) if (vis(e.shields[i].ship)) ev.shields.push(e.shields[i]);
-    for (i = 0; i < e.kills.length; i++) ev.kills.push(e.kills[i]);
+    for (i = 0; i < e.kills.length; i++) {
+      var kl = e.kills[i];
+      if (kl.ship != null) { var ks = B.ships[kl.ship]; if (ks && ks.side !== side && !shipV(kl.ship)) continue; (this.deadSeen = this.deadSeen || {})[kl.ship] = 1; }
+      else if (kl.craft != null && kl.cid != null && !craftV(kl.cid)) continue;
+      ev.kills.push(kl);
+    }
     for (i = 0; i < (e.rams || []).length; i++) { var rm = e.rams[i], r1s = B.ships[rm.a], r2s = B.ships[rm.b]; if ((r1s && r1s.side === side) || (r2s && r2s.side === side)) (ev.rams = ev.rams || []).push(rm); }
     // сборы десанта у своего шлюза и отбой — только своим; цели — когда шаттлы стартовали
     for (i = 0; i < e.boards.length; i++) { var bb = e.boards[i], s1 = B.ships[bb.n], s2 = B.ships[bb.t]; if ((s1 && s1.side === side) || (s2 && s2.side === side && !bb.muster && !bb.cancel)) ev.boards.push(bb); }
@@ -134,6 +162,8 @@
   Viewer.prototype.shipLight = function(sh) {
     var B = this.B, own = sh.side === this.side, i, g;
     if (!own && !sh.dead && !B.sees(this.side, sh)) { var hb = this.boardLight(sh); return hb ? { n: sh.n, hid: 1, bd: hb } : { n: sh.n, hid: 1 }; }
+    // погиб или ушёл, не будучи на виду (гибели не видели, ушёл из тумана в гиперпространство) — без места (SPACE-BUG-007)
+    if (!own && sh.dead && B.fog && !(this.deadSeen && this.deadSeen[sh.n])) return { n: sh.n, hid: 1, dead: 1 };
     // туман: про чужой корабль (без нашего десанта на борту) — только то, что видно снаружи:
     // корпус с шагом 5%, щиты по сектору четвертями, без систем, реактора и экипажа
     var bdI = sh.crew.board, intel = own || (bdI && bdI.started && bdI.over < 0 && bdI.att === this.side);
@@ -145,6 +175,8 @@
               crit: intel ? r1(sh.crit) : 0, dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
               burn: sh.crew.burning.length, ct: r2(sh.crew.t) };
     if (sh.tb) o.tb = [sh.tb.to, r1(sh.tb.until - B.t)];               // притягивающий луч: кого держит, сколько осталось
+    // чужой на виду с улучшенным корпусом или щитами: пределы (строка из тумана их не несёт — без них доля выше 100 %)
+    if (!own && ((sh.bon && (sh.bon.hp !== 1 || sh.bon.sh !== 1)) || sh.foreK > 1)) { o.hm = r0(sh.hullMax); o.sm = r2(sh.shMax); o.fk = sh.foreK || 1; }
     if (own) {
       if (sh.tractor) { o.tx = 1; if (sh.tbReady > B.t) o.tc = r1(sh.tbReady - B.t); }
       var hbO = B.holder(sh); if (hbO) o.hb = [hbO.n, r1(hbO.tb.until - B.t)];   // нас держат (держащий может быть в тумане)
@@ -375,22 +407,22 @@
     }
     var prev = this.agPrev && this.agPrev.n === n && tick % 50 !== 0 ? this.agPrev.b : null;
     this.agPrev = { n: n, b: cur };
-    var head = function(type, len) { var out = new Uint8Array(len), hv = new DataView(out.buffer); hv.setUint8(0, type); hv.setUint8(1, n); hv.setUint16(2, N, true); hv.setFloat32(4, c.t, true); return out; };
-    if (!prev) { var full = head(BIN.AGENTS, 8 + cur.length); full.set(cur, 8); return full.buffer; }
+    var head = function(type, len) { var out = new Uint8Array(len), hv = new DataView(out.buffer); hv.setUint8(0, type); hv.setUint8(1, n & 255); hv.setUint16(2, N, true); hv.setFloat32(4, c.t, true); hv.setUint16(8, n, true); return out; };
+    if (!prev) { var full = head(BIN.AGENTS, AH + cur.length); full.set(cur, AH); return full.buffer; }
     var bits = new Uint8Array(Math.ceil(N / 8)), ch = [];
     for (i = 0; i < N; i++) {
       var same = i * AG + AG <= prev.length;
       for (var j = 0; same && j < AG; j++) if (cur[i * AG + j] !== prev[i * AG + j]) same = false;
       if (!same) { bits[i >> 3] |= 1 << (i & 7); ch.push(i); }
     }
-    var d = head(BIN.AGENTS_D, 8 + bits.length + ch.length * AG);
-    d.set(bits, 8);
-    for (i = 0, o = 8 + bits.length; i < ch.length; i++, o += AG) d.set(cur.subarray(ch[i] * AG, ch[i] * AG + AG), o);
+    var d = head(BIN.AGENTS_D, AH + bits.length + ch.length * AG);
+    d.set(bits, AH);
+    for (i = 0, o = AH + bits.length; i < ch.length; i++, o += AG) d.set(cur.subarray(ch[i] * AG, ch[i] * AG + AG), o);
     return d.buffer;
   };
   Viewer.prototype.fireBin = function(n) {
     var c = this.B.ships[n].crew, bl = c.burning, buf = new ArrayBuffer(8 + bl.length * 5), v = new DataView(buf);
-    v.setUint8(0, BIN.FIRE); v.setUint8(1, n); v.setUint32(4, bl.length, true);
+    v.setUint8(0, BIN.FIRE); v.setUint8(1, n & 255); v.setUint16(2, n, true); v.setUint32(4, bl.length, true);
     for (var i = 0, o = 8; i < bl.length; i++, o += 5) { v.setUint32(o, bl[i], true); v.setUint8(o + 4, Math.round(c.fire[bl[i]])); }
     return buf;
   };
@@ -615,6 +647,7 @@
       // ушёл из датчиков: его прицелы больше не знаем; абордаж на нём — по сводке
       sh.netHid = true; for (var hg = 0; hg < sh.guns.length; hg++) sh.guns[hg].aimAt = null;
       sh.tb = null;                                                   // его луч не видно (держит нас — узнаем по своему кораблю)
+      if (o.dead && !sh.dead) { sh.dead = true; sh.deadAt = B.t; sh.why = 'gone'; }   // пропал в тумане — без остова и места
       this.boardState(sh, o.bd); return;
     }
     var wasHid = sh.netHid; sh.netHid = false;
@@ -625,6 +658,7 @@
     if (!sh.net.ks || wasHid || o.dead) sh.net.ks = [{ x: o.x, y: o.y, hd: o.hd, T: T }];
     else keyPush(sh.net.ks, o.x, o.y, o.hd, T, spdS);
     var mine = !(sh.netLock > Date.now());
+    if (o.hm) { sh.hullMax = o.hm; sh.shMax = o.sm; sh.foreK = o.fk || 1; }
     sh.v = o.v; sh.hull = o.hull; sh.sh = o.sh;
     if (mine) { sh.focus = o.f; sh.focusAuto = !!o.fa; }
     if (o.e) { sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5]; }
@@ -810,9 +844,9 @@
   };
   // Люди: новое положение — цель сглаживания; служебные поля — сразу
   Mirror.prototype.agents = function(v, delta) {
-    var n = v.getUint8(1), N = v.getUint16(2, true), ct = v.getFloat32(4, true), sh = this.B.ships[n]; if (!sh) return;
+    var n = v.getUint16(8, true), N = v.getUint16(2, true), ct = v.getFloat32(4, true), sh = this.B.ships[n]; if (!sh) return;
     if (sh.dormant) this.B.wake(sh);                                   // смотрим внутрь: нужен настоящий экипаж (карты, отсеки)
-    var c = sh.crew, ag = c.agents, now = Date.now(), o = 8, W = sh.plan.w, i;
+    var c = sh.crew, ag = c.agents, now = Date.now(), o = AH, W = sh.plan.w, i;
     // разностный кадр к кораблю, полного кадра которого ещё не было, — ждём полный
     if (delta && this.agFull !== n) return;
     if (!delta) this.agFull = n;
@@ -820,9 +854,9 @@
     if (ag.length > N) ag.length = N;
     var bd = c.board, list = [];
     if (delta) {
-      var nb = Math.ceil(N / 8), base = 8 + nb, k = 0;
-      for (i = 0; i < N; i++) if (v.getUint8(8 + (i >> 3)) & (1 << (i & 7))) list.push([i, base + (k++) * AG]);
-    } else for (i = 0; i < N; i++) list.push([i, 8 + i * AG]);
+      var nb = Math.ceil(N / 8), base = AH + nb, k = 0;
+      for (i = 0; i < N; i++) if (v.getUint8(AH + (i >> 3)) & (1 << (i & 7))) list.push([i, base + (k++) * AG]);
+    } else for (i = 0; i < N; i++) list.push([i, AH + i * AG]);
     var vis = this.agVis && this.agVis.length === N && delta ? this.agVis : new Uint8Array(N);
     if (this.agVis && delta && this.agVis.length !== N) { vis.set(this.agVis.subarray(0, Math.min(N, this.agVis.length))); }
     this.agVis = vis;
@@ -894,7 +928,7 @@
     return best;
   };
   Mirror.prototype.fire = function(v) {
-    var n = v.getUint8(1), N = v.getUint32(4, true), sh = this.B.ships[n]; if (!sh) return;
+    var n = v.getUint16(2, true), N = v.getUint32(4, true), sh = this.B.ships[n]; if (!sh) return;
     var c = sh.crew, i;
     for (i = 0; i < c.burning.length; i++) c.fire[c.burning[i]] = 0;
     c.burning = [];
@@ -963,5 +997,5 @@
     return true;
   };
 
-  return { Viewer: Viewer, Mirror: Mirror, eachMany: eachMany, BIN: BIN, DELAY: DELAY, SCEN: SCEN, SHIPS: SHIPS, SHIP_BY: SHIP_BY, cfgClean: cfgClean, layout: layout, cfgName: cfgName };
+  return { Viewer: Viewer, Mirror: Mirror, eachMany: eachMany, BIN: BIN, PV: PV, DELAY: DELAY, SCEN: SCEN, SHIPS: SHIPS, SHIP_BY: SHIP_BY, cfgClean: cfgClean, layout: layout, cfgName: cfgName };
 });

@@ -128,8 +128,8 @@
   "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "36",
-  "sha": "39d8252c74a6"
+  "v": "37",
+  "sha": "2f9ff0f014b2"
  },
  "ground/preview.css": {
   "v": "1",
@@ -192,8 +192,8 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "30",
-  "sha": "d68dcce291c0"
+  "v": "31",
+  "sha": "46ba3049ba12"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -248,8 +248,8 @@
   "sha": "fb26300e4eb3"
  },
  "js/ground-live.js": {
-  "v": "36",
-  "sha": "7f69797adc5b"
+  "v": "37",
+  "sha": "e32e25cc0759"
  },
  "js/loyalty.js": {
   "v": "4",
@@ -392,12 +392,12 @@
   "sha": "f15f7ac0a73e"
  },
  "shared/rt-ground-net.js": {
-  "v": "13",
-  "sha": "eb07d363cfd5"
+  "v": "14",
+  "sha": "a790824a8762"
  },
  "shared/rt-ground.js": {
-  "v": "22",
-  "sha": "de62b9a916e3"
+  "v": "23",
+  "sha": "f19304977a5e"
  },
  "shared/rt-heroes.js": {
   "v": "2",

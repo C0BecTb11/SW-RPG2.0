@@ -146,7 +146,7 @@
   // soft (ход бойца): не больше BUDGET новых полей за шаг движка — остальные бойцы ждут шаг, а не тормозят всех.
   function Flows(g) { this.g = g; this.cache = {}; this.keys = []; this.MAX = 96; this.HARD = 512; this.BUDGET = 4; this.stepT = -1; this.stepN = 0; this.built = 0; this.ms = 0; }
   Flows.prototype.get = function(mv, size, tx, ty, soft) {
-    var key = mv + size + ':' + tx + ',' + ty, f = this.cache[key];
+    var key = mv + size + ':' + tx + ',' + ty + '@' + (this.g.stVer || 0), f = this.cache[key];
     if (f) { f.used = this.g.t; return f; }
     if (soft) {
       if (this.stepT !== this.g.t) { this.stepT = this.g.t; this.stepN = 0; }
@@ -162,8 +162,24 @@
     }
     return f;
   };
+  // Клетки глухих построек (башни, турели, радары, кантины…): путь их обходит, иначе бойцы упирались и стояли.
+  // Ворота и входимые укрепления остаются в пути: у ворот враг их ломает (nav), в свои окопы заходят
+  Flows.prototype.blockMask = function() {
+    var g = this.g, v = g.stVer || 0;
+    if (this.bm && this.bmVer === v) return this.bm;
+    var m = this.bm || new Uint8Array(N * N); m.fill(0);
+    for (var i = 0; i < g.structs.length; i++) {
+      var s = g.structs[i]; if (s.dead || s.enter || s.kind === 'landmine') continue;
+      for (var y = s.y; y < s.y + s.h; y++) for (var x = s.x; x < s.x + s.w; x++) if (x >= 0 && y >= 0 && x < N && y < N) m[y * N + x] = 1;
+    }
+    this.bm = m; this.bmVer = v;
+    return m;
+  };
   Flows.prototype.build = function(mv, size, tx, ty) {
-    var g = this.g, ok = g.pass[mv + size], cost = g.costOf[mv], n = N * N;
+    var g = this.g, ok0 = g.pass[mv + size], cost = g.costOf[mv], n = N * N, bm = mv === 'air' ? null : this.blockMask();
+    // проходимость с постройками: коробка бойца (size×size от клетки) не задевает глухую постройку
+    var ok = !bm ? ok0 : (g._fok || (g._fok = new Uint8Array(n)));
+    if (bm) for (var c9 = 0; c9 < n; c9++) ok[c9] = ok0[c9] && !bm[c9] && (size < 2 || (!bm[c9 + 1] && !bm[c9 + N] && !bm[c9 + N + 1]));
     var dist = g._fd || (g._fd = new Int32Array(n)), dir = new Uint8Array(n);
     dist.fill(0x7fffffff); dir.fill(255);
     var buckets = g._fb || (g._fb = []), head = 0, cnt = 0;
@@ -306,10 +322,20 @@
   };
   Ground.prototype.addStruct = function(kind, team, x, y, extra) {
     var S = U.ST[kind]; if (!S) return null;
+    // поверх живых ворот и башен города не ставится: иначе новая постройка затирала их клетки, а после её
+    // гибели клетка ворот становилась проходом при целых воротах (BUG-008)
+    if (kind !== 'landmine') {
+      var w0 = (extra && extra.w) || S[1], h0 = (extra && extra.h) || S[1];
+      for (var j0 = 0; j0 < h0; j0++) for (var i0 = 0; i0 < w0; i0++) {
+        var c0 = (y + j0) * N + x + i0; if (c0 < 0 || c0 >= N * N) continue;
+        var o = this.structAt[c0]; if (o >= 0 && !this.structs[o].dead && (this.structs[o].kind === 'gate' || this.structs[o].kind === 'tower')) return null;
+      }
+    }
     var s = { i: this.structs.length, kind: kind, team: team, x: x, y: y, w: (extra && extra.w) || S[1], h: (extra && extra.h) || S[1], hp: (extra && extra.hp) || S[2], hpMax: (extra && extra.hp) || S[2], cover: S[3], inMul: S[4], radius: S[5], dmg: S[6], acc: S[7], enter: S[8], infOnly: S[9], cd: 0, tgt: -1, dead: false, name: S[0], uid: extra && extra.uid, res: (extra && extra.res) || null };
     // мина клетку не занимает: по ней ходят все — свои спокойно, враг до первого шага
     if (kind !== 'landmine') for (var j = 0; j < s.h; j++) for (var i = 0; i < s.w; i++) { var c = (y + j) * N + x + i; if (c >= 0 && c < N * N) this.structAt[c] = s.i; }
     this.structs.push(s);
+    this.stVer = (this.stVer || 0) + 1;                       // поля направлений знают о постройках — перестроить
     return s;
   };
   // клетка бойца; в полёте на ранце — клетка посадки (над скалой и водой он только пролетает)
@@ -318,8 +344,7 @@
     if (cx < 0 || cy < 0 || cx >= N || cy >= N) return false;
     var c = cy * N + cx;
     if (!this.pass[a.move + a.size][c]) return false;
-    var s = this.structAt[c];
-    if (s >= 0 && !(a.air || a.fly)) { var st = this.structs[s]; if (st.dead) return true; if (!st.enter || st.team !== a.team || (st.infOnly && a.T.cls !== 'infantry' && a.T.cls !== 'hero')) return false; }
+    if (!(a.air || a.fly) && !this.structLets(a, c)) return false;
     return true;
   };
   Ground.prototype.nearestOk = function(mv, size, x, y) {
@@ -330,6 +355,96 @@
       if (nx >= 0 && ny >= 0 && nx < N && ny < N && ok[ny * N + nx]) return [nx, ny];
     }
     return null;
+  };
+  // ---- одна проверка «можно ли стоять» и «можно ли шагнуть» для всех, кто двигает бойца (ход, стены, толчки,
+  // рывки героев, пробки техники). Раньше каждая смотрела своё: местность (pass), постройки (structAt) или
+  // высоты — и через то, что не проверялось, проходили сквозь ворота, стены и обрывы (аудит 30.10, BUG-001…004).
+  // Постройка в клетке пускает бойца? Свои входимые (окоп, бункер) — да; «только для пехоты» — только пехоту и героев.
+  Ground.prototype.structLets = function(a, c) {
+    var s = this.structAt[c]; if (s < 0) return true;
+    var st = this.structs[s];
+    if (st.dead) return true;
+    return !!st.enter && st.team === a.team && !(st.infOnly && a.T.cls !== 'infantry' && a.T.cls !== 'hero');
+  };
+  // Место (левый верхний угол коробки бойца): местность годна и ни одна клетка коробки не занята чужой постройкой
+  Ground.prototype.standOk = function(a, cx, cy) {
+    if (cx < 0 || cy < 0 || cx >= N || cy >= N) return false;
+    if (!this.pass[a.move + a.size][cy * N + cx]) return false;
+    if (a.air || a.fly) return true;
+    for (var j = 0; j < a.size; j++) for (var i = 0; i < a.size; i++) {
+      var x = cx + i, y = cy + j; if (x >= N || y >= N) return false;
+      if (!this.structLets(a, y * N + x)) return false;
+    }
+    return true;
+  };
+  // Высоты при переходе между соседними клетками (как в поле направлений): разница не больше 1, нижняя — склон,
+  // по прямой. По диагонали — если можно обойти через одну из боковых клеток
+  Ground.prototype.elevStep = function(a, x0, y0, x1, y1) {
+    if (a.air || a.fly) return true;
+    var e = this.map.e, t = this.map.t, ea = e[y0 * N + x0], eb = e[y1 * N + x1];
+    if (ea === eb) return true;
+    if (Math.abs(ea - eb) > 1) return false;
+    if (x0 !== x1 && y0 !== y1) {
+      var ok = this.pass[a.move + a.size];
+      return (ok[y0 * N + x1] && this.elevStep(a, x0, y0, x1, y0) && this.elevStep(a, x1, y0, x1, y1)) ||
+             (ok[y1 * N + x0] && this.elevStep(a, x0, y0, x0, y1) && this.elevStep(a, x0, y1, x1, y1));
+    }
+    var lo = ea < eb ? y0 * N + x0 : y1 * N + x1;
+    return t[lo] === T.RAMP;
+  };
+  // Пробка техники: перенос на клетку пути, если между ними нет чужой постройки (ворот, башни) и обрыва.
+  // Сами клетки между могут быть заняты техникой и тесны — их проходимость не проверяем (для этого перенос и есть)
+  Ground.prototype.jamOk = function(a, x0, y0, x1, y1) {
+    var dx = x1 - x0, dy = y1 - y0, n = Math.max(Math.abs(dx), Math.abs(dy)), px = x0, py = y0;
+    for (var i = 1; i <= n; i++) {
+      var x = Math.round(x0 + dx * i / n), y = Math.round(y0 + dy * i / n);
+      if (x === px && y === py) continue;
+      for (var j = 0; j < 2; j++) for (var k = 0; k < 2; k++) if (!this.structLets(a, (y + j) * N + x + k)) return false;
+      var de = Math.abs(this.map.e[y * N + x] - this.map.e[py * N + px]);
+      if (de > 1 || (de === 1 && this.map.t[y * N + x] !== T.RAMP && this.map.t[py * N + px] !== T.RAMP)) return false;     // на уступ — только у склона
+      px = x; py = y;
+    }
+    return true;
+  };
+  // Годна ли точка (x, y) для бойца: клетка годна и до неё можно дойти с последней годной клетки (a.okC)
+  Ground.prototype.posOk = function(a, x, y) {
+    var cx = a.size === 2 ? Math.round(x) - 1 : Math.floor(x), cy = a.size === 2 ? Math.round(y) - 1 : Math.floor(y);
+    if (!this.standOk(a, cx, cy)) return false;
+    if (a.okC == null || a.okC === cy * N + cx) return true;
+    return this.pathOk(a, a.okC % N, (a.okC - a.okC % N) / N, cx, cy);
+  };
+  // Переход из клетки в клетку (любое расстояние): по прямой, клетка за клеткой, каждая годна и каждый шаг по высотам
+  Ground.prototype.pathOk = function(a, x0, y0, x1, y1) {
+    var dx = x1 - x0, dy = y1 - y0, n = Math.max(Math.abs(dx), Math.abs(dy)), px = x0, py = y0;
+    for (var i = 1; i <= n; i++) {
+      var x = Math.round(x0 + dx * i / n), y = Math.round(y0 + dy * i / n);
+      if (x === px && y === py) continue;
+      if (!this.standOk(a, x, y) || !this.elevStep(a, px, py, x, y)) return false;
+      px = x; py = y;
+    }
+    return true;
+  };
+  // Куда встать рядом с точкой (tx, ty), дойдя от своей клетки пешком: поиск в ширину не дальше maxR клеток,
+  // ближайшая к точке клетка из достижимых. Для рывков, толчков и выпадов — не сквозь стены и не на обрыв
+  Ground.prototype.reachNear = function(a, tx, ty, maxR) {
+    var c0 = this.cellOf(a), x0 = c0[0], y0 = c0[1], seen = {}, q = [[x0, y0]], best = null, bd = 1e9, R2 = maxR || 8;
+    seen[y0 * N + x0] = 1;
+    if (this.standOk(a, x0, y0)) { bd = (x0 - tx) * (x0 - tx) + (y0 - ty) * (y0 - ty); best = [x0, y0]; }
+    for (var h = 0; h < q.length && h < 1600; h++) {
+      var x = q[h][0], y = q[h][1];
+      for (var k = 0; k < 8; k++) {
+        var nx = x + DX[k], ny = y + DY[k], nk = ny * N + nx;
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N || seen[nk]) continue;
+        if (Math.max(Math.abs(nx - x0), Math.abs(ny - y0)) > R2) continue;
+        seen[nk] = 1;
+        if (!this.standOk(a, nx, ny) || !this.elevStep(a, x, y, nx, ny)) continue;
+        if (k & 1 && (!this.standOk(a, nx, y) || !this.standOk(a, x, ny))) continue;      // углы не срезать
+        var d = (nx - tx) * (nx - tx) + (ny - ty) * (ny - ty);
+        if (d < bd) { bd = d; best = [nx, ny]; }
+        q.push([nx, ny]);
+      }
+    }
+    return best;
   };
   Ground.prototype.msg = function(text, team, kind) { this.ev.msgs.push({ seq: ++this.seq, t: this.t, text: text, team: team, kind: kind || '' }); if (this.ev.msgs.length > 60) this.ev.msgs.shift(); };
 
@@ -438,8 +553,16 @@
   };
   // Прямой ход до клетки: все клетки на отрезке проходимы
   Ground.prototype.straight = function(a, tx, ty) {
-    var ok = this.pass[a.move + a.size], dx = tx - a.x, dy = ty - a.y, L = Math.sqrt(dx * dx + dy * dy), n = Math.ceil(L * 2) + 1, off = a.size === 2 ? 1 : 0.5;
-    for (var i = 0; i <= n; i++) { var f = i / n, x = Math.floor(a.x + dx * f - (off - 0.5)), y = Math.floor(a.y + dy * f - (off - 0.5)); if (x < 0 || y < 0 || x >= N || y >= N || !ok[y * N + x]) return false; }
+    // по прямой — только если каждая клетка отрезка годна (с постройками: ворота, башни, чужие бункеры) и каждый
+    // шаг проходит по высотам (на плато — только по склону)
+    var dx = tx - a.x, dy = ty - a.y, L = Math.sqrt(dx * dx + dy * dy), n = Math.ceil(L * 2) + 1, off = a.size === 2 ? 1 : 0.5, px = -1, py = -1;
+    for (var i = 0; i <= n; i++) {
+      var f = i / n, x = Math.floor(a.x + dx * f - (off - 0.5)), y = Math.floor(a.y + dy * f - (off - 0.5));
+      if (x === px && y === py) continue;
+      if (!this.standOk(a, x, y)) return false;
+      if (px >= 0 && !this.elevStep(a, px, py, x, y)) return false;
+      px = x; py = y;
+    }
     return true;
   };
   Ground.prototype.orderAttack = function(team, ids, tid) {
@@ -519,7 +642,7 @@
     for (i = 0; i < this.districts.length; i++) { var dd = this.districts[i]; if (dd.id === 'comms' && dd.by >= 0 && dd.by <= 1) this.reveal(dd.by, this.sx + SQUARE / 2, this.sy + SQUARE / 2, 8 * RANGE_K); }
     // подполье доносит наступающим: поселение видно, как с узла связи
     if (this.spy === 0 || this.spy === 1) this.reveal(this.spy, this.sx + SQUARE / 2, this.sy + SQUARE / 2, 8 * RANGE_K);
-    for (i = 0; i < this.structs.length; i++) { var st = this.structs[i]; if (st.dead || st.team > 1) continue; if (st.kind === 'radar' || st.kind === 'turret') this.reveal(st.team, st.x + st.w / 2, st.y + st.h / 2, (st.radius || 3) * RANGE_K); }
+    for (i = 0; i < this.structs.length; i++) { var st = this.structs[i]; if (st.dead || st.team > 1) continue; if (st.kind === 'radar' || st.kind === 'turret' || st.kind === 'tower') this.reveal(st.team, st.x + st.w / 2, st.y + st.h / 2, (st.radius || 3) * RANGE_K, i); }   // башня города видит сама
     // полоса вторжения всегда видна хозяину планеты
     if (this.noTown) return;
     var sd = this.seen[this.def];
@@ -527,7 +650,7 @@
   };
   // Открыть обзор: лучи от бойца до радиуса; скала или третья клетка зарослей — конец луча.
   // С высоты видно через скалы ниже себя.
-  Ground.prototype.reveal = function(team, x, y, r) {
+  Ground.prototype.reveal = function(team, x, y, r, own) {      // own — постройка-наблюдатель: свои клетки не закрывают ей обзор
     var s = this.seen[team], cx = Math.floor(x), cy = Math.floor(y), e = this.map.e, e0 = P.heightAt(this.map, cx, cy);
     var rays = Math.ceil(TAU * r * 0.9), last = -1;
     s[cy * N + cx] = 2;
@@ -540,7 +663,7 @@
         s[c] = 2;
         if (this.blockLos[c] && e[c] >= e0) break;
         if (this.light[c] && ++lightN > 3) break;
-        var si = this.structAt[c]; if (si >= 0 && !this.structs[si].dead && !this.structs[si].enter) break;
+        var si = this.structAt[c]; if (si >= 0 && si !== own && !this.structs[si].dead && !this.structs[si].enter) break;
       }
     }
   };
@@ -550,13 +673,16 @@
     if (L < 0.01) return true;
     var steps = Math.ceil(L * 2), lightN = 0, e = this.map.e, ex = e0 == null ? P.heightAt(this.map, Math.floor(x0), Math.floor(y0)) : e0;
     var c1 = Math.floor(y1) * N + Math.floor(x1), c0 = Math.floor(y0) * N + Math.floor(x0), last = -1;
+    // постройка, из которой стреляют, и постройка-цель свою линию огня не закрывают (башня 2×2, кантина 3×3:
+    // раньше их собственные клетки закрывали 2/3 направлений)
+    var s0 = c0 >= 0 && c0 < N * N ? this.structAt[c0] : -1, s1 = c1 >= 0 && c1 < N * N ? this.structAt[c1] : -1;
     for (var i = 1; i < steps; i++) {
       var f = i / steps, cx = Math.floor(x0 + dx * f), cy = Math.floor(y0 + dy * f);
       if (cx < 0 || cy < 0 || cx >= N || cy >= N) return false;
       var c = cy * N + cx; if (c === last || c === c1 || c === c0) continue; last = c;
       if (this.blockLos[c] && e[c] >= ex) return false;
       if (this.light[c] && ++lightN > (soft ? 3 : 2)) return false;
-      var s = this.structAt[c]; if (s >= 0 && !this.structs[s].dead && !this.structs[s].enter && this.structs[s].kind !== 'camo') return false;
+      var s = this.structAt[c]; if (s >= 0 && s !== s0 && s !== s1 && !this.structs[s].dead && !this.structs[s].enter && this.structs[s].kind !== 'camo') return false;
     }
     return true;
   };
@@ -686,8 +812,9 @@
       if (a.jam >= 2 && a.size === 2) {
         // техника в пробке: на 2 с не толкается с другой техникой, а застрявшую у скалы — ставим на следующую клетку пути
         a.ghostT = this.t + 2; a.jam = 0;
-        var sc = [Math.round(tx) - 1, Math.round(ty) - 1];
-        if (sc[0] >= 0 && sc[1] >= 0 && sc[0] < N - 1 && sc[1] < N - 1 && this.pass[a.move + 2][sc[1] * N + sc[0]]) { a.x = sc[0] + 1; a.y = sc[1] + 1; }
+        // только на клетку, куда можно шагнуть: без чужих ворот, башен и построек под машиной и не через обрыв
+        var sc = [Math.round(tx) - 1, Math.round(ty) - 1], c1 = this.cellOf(a);
+        if (Math.max(Math.abs(sc[0] - c1[0]), Math.abs(sc[1] - c1[1])) <= 2 && this.standOk(a, sc[0], sc[1]) && this.jamOk(a, c1[0], c1[1], sc[0], sc[1])) { a.x = sc[0] + 1; a.y = sc[1] + 1; a.okC = null; }
       }
     }
     if (a.wig > 0) { a.wig -= dt; var px = -dy / L * a.side, py = dx / L * a.side; dx = dx / L + px * 0.9; dy = dy / L + py * 0.9; L = Math.sqrt(dx * dx + dy * dy); }
@@ -961,7 +1088,7 @@
       var cx = a.size === 2 ? Math.round(a.x) - 1 : Math.floor(a.x), cy = a.size === 2 ? Math.round(a.y) - 1 : Math.floor(a.y);
       for (var yy = cy - 1; yy <= cy + 1; yy++) for (var xx = cx - 1; xx <= cx + 1; xx++) {
         var blocked = xx < 0 || yy < 0 || xx >= N || yy >= N || !ok[yy * N + xx];
-        if (!blocked) { var s = this.structAt[yy * N + xx]; if (s >= 0) { var st = this.structs[s]; blocked = !st.dead && (!st.enter || st.team !== a.team || (st.infOnly && a.size === 2)); } }
+        if (!blocked) blocked = !this.structLets(a, yy * N + xx);
         if (!blocked) continue;
         // клетка — квадрат; машина 2×2 — её «центр» соответствует квадрату 2×2
         var bx0 = xx, by0 = yy, bx1 = xx + 1, by1 = yy + 1;
@@ -972,11 +1099,25 @@
       }
     }
     a.x = clamp(a.x, off, N - off); a.y = clamp(a.y, off, N - off);
-    var c = this.cellOf(a), cc = c[1] * N + c[0];
-    if (!ok[cc]) { var alt = this.nearestOk(a.move, a.size, c[0], c[1]); if (alt) { a.x = alt[0] + off; a.y = alt[1] + off; } }
+    // Вытолкнуло (расталкивание, толчок техникой) в негодную клетку или через обрыв — назад, на последнее годное
+    // место рядом. Раньше брали ближайшую годную клетку в радиусе 20, начиная с угла, — и бойца перекидывало за стену
+    var c = this.cellOf(a), cc = c[1] * N + c[0], good = this.posOk(a, a.x, a.y);
+    if (!good && a.okX != null && Math.abs(a.okX - a.x) + Math.abs(a.okY - a.y) < 4) {
+      // скользить вдоль преграды: оставить сдвиг по одной оси, если так годно; иначе — на прежнее место
+      if (this.posOk(a, a.x, a.okY)) a.y = a.okY;
+      else if (this.posOk(a, a.okX, a.y)) a.x = a.okX;
+      else { a.x = a.okX; a.y = a.okY; }
+      c = this.cellOf(a); cc = c[1] * N + c[0]; good = true;
+    }
+    if (good) { a.okC = cc; a.okX = a.x; a.okY = a.y; }
+    else {
+      // годного места рядом нет (боец появился в скале, на него встала постройка): ближайшая годная клетка
+      var alt = this.nearestOk(a.move, a.size, c[0], c[1]);
+      if (alt) { a.x = alt[0] + off; a.y = alt[1] + off; a.okC = alt[1] * N + alt[0]; a.okX = a.x; a.okY = a.y; }
+    }
     a.inside = -1;
     var si = this.structAt[Math.floor(a.y) * N + Math.floor(a.x)];
-    if (si >= 0 && this.structs[si].enter && !this.structs[si].dead && this.structs[si].team === a.team && !a.wh) a.inside = si;
+    if (si >= 0 && !this.structs[si].dead && this.structLets(a, Math.floor(a.y) * N + Math.floor(a.x)) && this.structs[si].enter && !a.wh) a.inside = si;
   };
 
   // ---- стрельба
@@ -1030,7 +1171,7 @@
   Ground.prototype.hurtStruct = function(s, d) {
     if (s.dead) return;
     s.hp -= d;
-    if (s.hp <= 0) { s.hp = 0; s.dead = true; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.kind === 'gate' ? 'Ворота выбиты' : s.name + ' уничтожен' + (/[аяь]$/.test(s.name) ? 'а' : ''), s.team, 'bad'); }
+    if (s.hp <= 0) { s.hp = 0; s.dead = true; this.stVer = (this.stVer || 0) + 1; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.kind === 'gate' ? 'Ворота выбиты' : s.name + ' уничтожен' + (/[аяь]$/.test(s.name) ? 'а' : ''), s.team, 'bad'); }
   };
   Ground.prototype.shot = function(a, tg, hit, d, ti) {
     var x1 = tg.x, y1 = tg.y, mx = 0, my = 0;
@@ -1138,9 +1279,10 @@
         ok = true;
       } else if (s.k === 'lunge') {
         if (b.air || tg.d > (s.v || 3) * RANGE_K || tg.d < 1.5) continue;
-        var lx = b.x - a.x, ly = b.y - a.y, ll = Math.sqrt(lx * lx + ly * ly) || 1, land = this.nearestOk(a.move, a.size, Math.floor(b.x - lx / ll * 0.9), Math.floor(b.y - ly / ll * 0.9));
-        if (!land) continue;
-        a.x = land[0] + 0.5; a.y = land[1] + 0.5; a.vx = a.vy = 0;
+        var lx = b.x - a.x, ly = b.y - a.y, ll = Math.sqrt(lx * lx + ly * ly) || 1, land = this.reachNear(a, Math.floor(b.x - lx / ll * 0.9), Math.floor(b.y - ly / ll * 0.9), Math.ceil(ll) + 2);
+        // выпад — только если дотянулся: после шага до достижимой клетки цель рядом
+        if (!land || Math.hypot(land[0] + 0.5 - b.x, land[1] + 0.5 - b.y) > 2) continue;
+        a.x = land[0] + 0.5; a.y = land[1] + 0.5; a.vx = a.vy = 0; a.okC = null;
         var ld = (s.dmg || S.dmg) * a.dmgK; if (b.hero) ld = Math.min(ld, b.hpMax * 0.3);
         this.ev.shots.push({ t: t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: true, w: 'saber', d: Math.round(ld), ti: b.id, from: a.id, melee: true });
         this.hurt(b, ld, a.id, true); ok = true;
@@ -1337,7 +1479,16 @@
     if (a.scan <= 0) { a.scan = SCAN; a.tgt = this.findTarget(a); }
     a.cd -= dt;
     if (a.tgt < 0 || a.cd > 0) return;
-    var tg = this.tgtPos(a); if (!tg || !tg.a || tg.d > SABER) return;
+    var tg = this.tgtPos(a); if (!tg) return;
+    // цель — постройка (ворота, турель): рубить клинком, стоя вплотную к ней. Раньше герой подходил и замирал
+    if (tg.s) {
+      var st = tg.s, ex = clamp(a.x, st.x, st.x + st.w) - a.x, ey = clamp(a.y, st.y, st.y + st.h) - a.y;
+      if (ex * ex + ey * ey > (SABER + 0.5) * (SABER + 0.5)) return;
+      a.cd = a.T.rof;
+      this.heroAct(a, 'slash', SLASH, { sid: st.i, x: st.x + st.w / 2, y: st.y + st.h / 2 });
+      return;
+    }
+    if (!tg.a || tg.d > SABER) return;
     a.cd = a.T.rof;
     this.heroAct(a, 'slash', SLASH, { tid: tg.a.id });
   };
@@ -1355,10 +1506,21 @@
         this.ev.shots.push({ t: this.t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: hit, w: 'saber', d: Math.round(dmg), ti: b.id, from: a.id, melee: true });
         if (hit) this.hurt(b, dmg, a.id);
       }
+    } else if (act === 'slash' && d.sid != null) {
+      var hs = this.structs[d.sid];
+      if (hs && !hs.dead) {
+        var sdm = a.T.dmg * U.mult(a.T.cls, 'structure') * dmgK * (0.85 + this.R() * 0.3);
+        this.ev.shots.push({ t: this.t, x0: a.x, y0: a.y, x1: d.x, y1: d.y, team: a.team, hit: true, w: 'saber', d: Math.round(sdm), from: a.id, melee: true });
+        this.hurtStruct(hs, sdm);
+      }
     } else if (act === 'dash' && b && b.alive) {
-      var ddx = b.x - a.x, ddy = b.y - a.y, dl = Math.sqrt(ddx * ddx + ddy * ddy) || 1, land = this.nearestOk(a.move, 1, Math.floor(b.x - ddx / dl * 0.9), Math.floor(b.y - ddy / dl * 0.9));
-      if (land) { a.x = land[0] + 0.5; a.y = land[1] + 0.5; }
-      this.hurt(b, U.damage(a.T, b.T) * dmgK * 1.2, a.id); this.ev.shots.push({ t: this.t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: true, w: 'saber', d: Math.round(U.damage(a.T, b.T) * dmgK * 1.2), ti: b.id, from: a.id, melee: true });
+      // приземление — рядом с целью, но только там, куда герой дошёл бы пешком (не сквозь стену и ворота)
+      var ddx = b.x - a.x, ddy = b.y - a.y, dl = Math.sqrt(ddx * ddx + ddy * ddy) || 1, land = this.reachNear(a, Math.floor(b.x - ddx / dl * 0.9), Math.floor(b.y - ddy / dl * 0.9), Math.ceil(dl) + 2);
+      if (land) { a.x = land[0] + 0.5; a.y = land[1] + 0.5; a.okC = null; }
+      // не добрался до цели (за стеной, за обрывом) — удара нет
+      if (land && Math.hypot(land[0] + 0.5 - b.x, land[1] + 0.5 - b.y) <= SABER + 1) {
+        this.hurt(b, U.damage(a.T, b.T) * dmgK * 1.2, a.id); this.ev.shots.push({ t: this.t, x0: a.x, y0: a.y, x1: b.x, y1: b.y, team: a.team, hit: true, w: 'saber', d: Math.round(U.damage(a.T, b.T) * dmgK * 1.2), ti: b.id, from: a.id, melee: true });
+      }
     } else if (act === 'push') {
       var pw = d.power || 3, ag = this.agents;
       for (var i = 0; i < ag.length; i++) {
@@ -1366,8 +1528,9 @@
         var cx = c.x - a.x, cy = c.y - a.y, cd = Math.sqrt(cx * cx + cy * cy);
         if (cd > pw * RANGE_K * 0.5 + 1 || Math.abs(((Math.atan2(cy, cx) - a.aim + 9.42) % 6.283) - 3.14) > 0.9) continue;
         var kk = (pw + 1) * (c.size === 2 ? 0.3 : 1);
-        var nx = clamp(c.x + cx / cd * kk, 1, N - 2), ny = clamp(c.y + cy / cd * kk, 1, N - 2), ok = this.nearestOk(c.move, c.size, Math.floor(nx), Math.floor(ny));
-        if (ok) { c.x = ok[0] + (c.size === 2 ? 1 : 0.5); c.y = ok[1] + (c.size === 2 ? 1 : 0.5); }
+        // отлетает туда, куда долетел бы по земле: стена, ворота и обрыв останавливают
+        var nx = clamp(c.x + cx / cd * kk, 1, N - 2), ny = clamp(c.y + cy / cd * kk, 1, N - 2), ok = this.reachNear(c, Math.floor(nx), Math.floor(ny), Math.ceil(kk) + 1);
+        if (ok) { c.x = ok[0] + (c.size === 2 ? 1 : 0.5); c.y = ok[1] + (c.size === 2 ? 1 : 0.5); c.okC = null; }
         c.stun = Math.max(c.stun, 1.2); c.at = false;
         if (d.damage) this.hurt(c, 40 * dmgK, a.id);
       }

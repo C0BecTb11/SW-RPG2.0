@@ -133,7 +133,12 @@ function verify(token) {
 // (sp:код:бой — space-room.js).
 var ROOMS = new Map();
 var PROTO = { p500: 1, p2000: 1 };
-var SPACE_MAX = 8;          // космический бой с экипажами тяжёлый: до 8 комнат на сервер
+var SPACE_MAX = 8;          // космический бой с экипажами тяжёлый: до 8 комнат на сервер (и пустых: они в памяти)
+var SPACE_PER_USER = 2;     // комнат sp: одного игрока в памяти
+var SPACE_RATE = 6;         // и созданных им за SPACE_RATE_MS — вошёл, вышел, новый код не помогает
+var SPACE_RATE_MS = 10 * 60e3;
+var SPACE_EMPTY_MS = 90e3;  // пустая комната sp: живёт полторы минуты (вернуться после обрыва), потом уходит
+var SP_MADE = new Map();    // user → [время создания комнаты sp:]
 
 var GROUND_MAX = 12;        // живых планет на сервер
 var SYSTEM_MAX = 10;        // живых орбит на сервер
@@ -194,9 +199,17 @@ function getRoom(name, cfg, who) {
   var r = ROOMS.get(name);
   if (r) return r;
   if (sp) {
-    // в счёт — комнаты, где кто-то есть (пустые не считаются и не тикают); один игрок — не больше 2 своих
-    var n = 0, mine = 0; ROOMS.forEach(function(x) { if (x.kind === 'space' && x.clients.length) { n++; if (who && x.by === who.user) mine++; } });
-    if (n >= SPACE_MAX || mine >= 2) return null;
+    // в счёт — все комнаты в памяти, и пустые: создание комнаты само по себе тяжёлое (бой с полными экипажами,
+    // ~10 МБ), и «вошёл — вышел — новый код» иначе копил сотни комнат (аудит космоса, SPACE-BUG-001)
+    var n = 0, mine = 0; ROOMS.forEach(function(x) { if (x.kind === 'space') { n++; if (who && x.by === who.user) mine++; } });
+    var now0 = Date.now(), made = who && who.user ? (SP_MADE.get(who.user) || []).filter(function(t) { return now0 - t < SPACE_RATE_MS; }) : [];
+    if (n >= SPACE_MAX) return null;
+    if (!CFG.dev && (mine >= SPACE_PER_USER || made.length >= SPACE_RATE)) {
+      if (who) who.why = mine >= SPACE_PER_USER ? 'Своих боёв открыто уже ' + mine + ' — зайди в один из них или подожди пару минут, пока пустой закроется'
+        : 'Новых боёв — не больше ' + SPACE_RATE + ' за 10 минут: подожди немного';
+      return null;
+    }
+    if (who && who.user) { made.push(now0); SP_MADE.set(who.user, made); if (SP_MADE.size > 2000) SP_MADE.delete(SP_MADE.keys().next().value); }
     r = new Space.SpaceRoom(name, sp.code, sp.scen, cfg ? Space.cfgClean(cfg) : null);
     r.dev = CFG.dev; r.by = who ? who.user : null;
     r.ms = []; r.emptySince = Date.now(); r.created = Date.now();
@@ -204,7 +217,8 @@ function getRoom(name, cfg, who) {
     log('info', 'комната создана', { room: name });
     return r;
   }
-  if (!Object.prototype.hasOwnProperty.call(PROTO, name)) return null;
+  // нагрузочные бои прототипа (500 и 2000 бойцов) — только для замеров (RT_DEV): игрок их открыть не может
+  if (!CFG.dev || !Object.prototype.hasOwnProperty.call(PROTO, name)) return null;
   var sc = SWRT.makeScenario(name, 1977 + Math.floor(Math.random() * 1000));
   r = new SWRT.Room({ battle: sc.battle, ai: sc.ai, name: name });
   r.ms = []; r.emptySince = Date.now(); r.created = Date.now();
@@ -257,7 +271,7 @@ function tickRoom(r, name) {
       if (r.closed) { if (!r.closeP || r.closeDone) ROOMS.delete(name); return; }      // уйдёт из списка, когда закрытие записано
       if (r.shouldClose()) { r.close('quiet'); return; }
     } else if (!r.clients.length) {
-      if (Date.now() - r.emptySince > 5 * 60e3) { ROOMS.delete(name); log('info', 'комната закрыта: никого нет', { room: name }); }
+      if (Date.now() - r.emptySince > (r.kind === 'space' ? SPACE_EMPTY_MS : 5 * 60e3)) { ROOMS.delete(name); log('info', 'комната закрыта: никого нет', { room: name }); }
       return;
     }
     var a = SWRT.now();
@@ -343,7 +357,13 @@ server.on('upgrade', function(req, sock, head) {
     var t = Date.now();
     c.rx++;
     if (t - c.msgWin > 1000) { c.msgWin = t; c.msgs = 0; }
-    if (++c.msgs > 30) return;                  // не больше 30 сообщений в секунду
+    if (++c.msgs > 30) {                        // не больше 30 сообщений в секунду; лишнее — мимо, игроку слово раз в 2 с
+      var rk = c.room && c.room.kind;
+      if ((rk === 'system' || rk === 'space' || rk === 'ground' || rk === 'event') && (!c.dropAt || t - c.dropAt > 2000)) {
+        c.dropAt = t; try { ws.send(JSON.stringify({ t: 'note', msg: 'Слишком много приказов подряд — часть не дошла, повтори через секунду', kind: 'bad' })); } catch (e) {}
+      }
+      return;
+    }
     if (binary) return;
     var m; try { m = JSON.parse(data); } catch (e) { return; }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return;
@@ -358,15 +378,19 @@ server.on('upgrade', function(req, sock, head) {
         // свои бойцы на земле или корабль в системе (sql/ground_fix_1.sql, rt_can_open). Иначе любой вошедший
         // открывал бы чужие планеты: открытие запирает всех бойцов планеты и занимает места на сервере.
         // В уже открытую комнату можно войти — туман войны всё равно покажет только своё.
-        var gp0 = !CFG.dev && m.room ? Ground.parse(String(m.room).slice(0, 40)) : null, ex0 = gp0 && ROOMS.get(gp0.key);
-        var gate = gp0 && !(ex0 && !ex0.closed)
-          ? groundRpc('rt_can_open', { p_key: CFG.key, p_system: gp0.system, p_user: who.user, p_layer: 'ground' })
+        // Орбита — так же (слой 'space': система своей стороны, своё управление или свой корабль в системе):
+        // открытие запирает все корабли системы и останавливает её автоходы (аудит космоса, SPACE-BUG-002)
+        var rm0 = !CFG.dev && m.room ? String(m.room).slice(0, 40) : '';
+        var gp0 = rm0 ? Ground.parse(rm0) : null, so0 = rm0 && !gp0 ? Sys.parse(rm0) : null, gk0 = gp0 || so0, ex0 = gk0 && ROOMS.get(gk0.key);
+        var gate = gk0 && !(ex0 && !ex0.closed)
+          ? groundRpc('rt_can_open', { p_key: CFG.key, p_system: gk0.system, p_user: who.user, p_layer: gp0 ? 'ground' : 'space' })
           : Promise.resolve(true);
         return gate.then(function(ok) {
         if (!ws.open) return;
-        if (ok !== true) { ws.send(JSON.stringify({ t: 'error', deny: 1, msg: 'Чужая планета: бой здесь откроется, когда у тебя будут войска на земле или корабль в системе' })); ws.close(4004); return; }
+        if (ok !== true) { ws.send(JSON.stringify({ t: 'error', deny: 1, msg: gp0 ? 'Чужая планета: бой здесь откроется, когда у тебя будут войска на земле или корабль в системе' : 'Чужая орбита: бой здесь откроется, когда у тебя будет корабль в системе' })); ws.close(4004); return; }
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side; c.exp = m.tk ? who.exp || 0 : 0;      // tk — экран умеет обновлять токен; старый экран не трогаем
+        who.why = '';
         var r = m.room ? getRoom(String(m.room).slice(0, 40), m.cfg, who) : null;   // без комнаты — не в нагрузочный бой по умолчанию
         // бой ивента окончен (комната закрыта по итогу): не ошибка — экран покажет «Бой окончен» и не будет переподключаться
         var epR = !r && Ev.parse(String(m.room || '')), wR = epR && ROOMS.get(epR.key);
@@ -374,7 +398,7 @@ server.on('upgrade', function(req, sock, head) {
         // прошлый бой планеты (орбиты) ещё записывается — не «сервер занят», а повтор через секунду (BUG-046)
         var gpC = !r && (Ground.parse(String(m.room || '')) || Sys.parse(String(m.room || ''))), rC = gpC && ROOMS.get(gpC.key);
         if (!r && rC && rC.closed && rC.closeP && !rC.closeDone) { ws.send(JSON.stringify({ t: 'error', retry: 1500, msg: 'Прошлый бой здесь ещё записывается — вход через секунду' })); ws.close(4012); return; }
-        if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : Ev.parse(String(m.room || '')) ? 'Бой ивента уже окончен или сервер занят' : 'нет такого боя' })); ws.close(4004); return; }
+        if (!r) { ws.send(JSON.stringify({ t: 'error', msg: who.why ? who.why : Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : Ev.parse(String(m.room || '')) ? 'Бой ивента уже окончен или сервер занят' : 'нет такого боя' })); ws.close(4004); return; }
         if (r.kind === 'space') {
           c.side = -1;
           if (!r.join(c, m.side)) return;

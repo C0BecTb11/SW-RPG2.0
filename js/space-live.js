@@ -28,12 +28,14 @@
   function boot() {
     if (!systemId) return;
     window.SP_TOKEN = function() {
+      // с пределом ожидания (как на земле): зависшая сессия не держит переподключение
+      if (typeof sbAccessToken === 'function') return sbAccessToken(5000).then(function(t) { return t || 'dev'; }, function() { return 'dev'; });
       return sb().auth.getSession().then(function(r) { var s = r && r.data && r.data.session; return s ? s.access_token : 'dev'; });
     };
     var go = function(srv, online) {
       window.SP_LIVE = { system: systemId, srv: srv };
       if (online === false) toastSoon('Сервер боёв не на связи — орбита может не открыться', 'bad');
-      var s = document.createElement('script'); s.src = '../space/space.js?v=52'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../space/space.js?v=53'; document.body.appendChild(s);
     };
     sb().rpc('rt_space_status', { p_system: systemId }).then(function(r) {
       var d = r && r.data, srv = (d && d.server && d.server.url) || SP_SERVER_FALLBACK;

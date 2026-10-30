@@ -128,8 +128,8 @@
   "sha": "0c53e046db14"
  },
  "ground/ground.js": {
-  "v": "40",
-  "sha": "b3d7ae455e95"
+  "v": "41",
+  "sha": "9b35ecd32a8d"
  },
  "ground/preview.css": {
   "v": "1",
@@ -192,8 +192,8 @@
   "sha": "132cab4d3ca8"
  },
  "js/event-live.js": {
-  "v": "34",
-  "sha": "153a88bcad65"
+  "v": "35",
+  "sha": "aef0d9036ce7"
  },
  "js/events-entry.js": {
   "v": "2",
@@ -248,8 +248,8 @@
   "sha": "fb26300e4eb3"
  },
  "js/ground-live.js": {
-  "v": "40",
-  "sha": "51f6eacaf6e9"
+  "v": "41",
+  "sha": "1ad74408fa60"
  },
  "js/loyalty.js": {
   "v": "4",
@@ -316,8 +316,8 @@
   "sha": "5a35e58672f3"
  },
  "js/space-live.js": {
-  "v": "35",
-  "sha": "883f6f35c031"
+  "v": "36",
+  "sha": "feb5be092a3b"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -392,12 +392,12 @@
   "sha": "f15f7ac0a73e"
  },
  "shared/rt-ground-net.js": {
-  "v": "17",
-  "sha": "4e4132750009"
+  "v": "18",
+  "sha": "4bbc4e2c83f7"
  },
  "shared/rt-ground.js": {
-  "v": "26",
-  "sha": "7248caa80430"
+  "v": "27",
+  "sha": "70a6128822fd"
  },
  "shared/rt-heroes.js": {
   "v": "2",
@@ -468,11 +468,11 @@
   "sha": "26a531e80361"
  },
  "space/space.css": {
-  "v": "27",
-  "sha": "65639c1e068f"
+  "v": "28",
+  "sha": "8bc9f1c0e2b0"
  },
  "space/space.js": {
-  "v": "52",
-  "sha": "20cce515bd85"
+  "v": "53",
+  "sha": "3af4d7db3c09"
  }
 }

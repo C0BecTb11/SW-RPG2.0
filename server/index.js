@@ -78,18 +78,32 @@ function flushLog() {
 }
 
 // ---------- вход игрока: токен Supabase ----------
-var TOKENS = new Map();   // токен → { user, side, nick, until }
+var TOKENS = new Map();   // токен → { user, side, nick, until, exp }
+// срок токена (JWT exp, мс) — без проверки подписи: её делает Supabase Auth в verify, здесь — только когда истекает
+function tokenExp(token) {
+  try { var p = JSON.parse(Buffer.from(String(token).split('.')[1] || '', 'base64url').toString('utf8')); return p && p.exp > 0 ? p.exp * 1000 : 0; } catch (e) { return 0; }
+}
+// Входы с одного адреса: не больше 30 проверок токена в минуту и 20 соединений без входа разом — каждый
+// мусорный токен иначе был запросом к Supabase Auth (аудит 30.10, BUG-048)
+var AUTH_IP = new Map();
+function ipOf(c) { return String(c.ip || '').split(',')[0].trim(); }
+function authBudget(c) {
+  var ip = ipOf(c), now = Date.now(), r = AUTH_IP.get(ip);
+  if (!r || now - r.t > 60e3) { r = { t: now, n: 0 }; AUTH_IP.set(ip, r); }
+  if (AUTH_IP.size > 5000) AUTH_IP.delete(AUTH_IP.keys().next().value);
+  return ++r.n <= 30;
+}
 function verify(token) {
   if (CFG.dev && token === 'dev') return Promise.resolve({ user: 'dev', side: 0, nick: 'dev' });
   // замеры с союзниками: «dev:имя» — отдельный игрок (места, свои корабли)
   if (CFG.dev && /^dev:[a-z0-9]{1,12}$/.test(String(token))) return Promise.resolve({ user: token, side: 0, nick: token.slice(4) });
-  if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return Promise.reject(new Error('нет токена'));
+  if (typeof token !== 'string' || token.length < 20 || token.length > 4096) { var eT = new Error('нет токена'); eT.reject = true; return Promise.reject(eT); }
   var hit = TOKENS.get(token);
   if (hit && hit.until > Date.now()) return Promise.resolve(hit);
   return fetch(CFG.sbUrl + '/auth/v1/user', {
     headers: { apikey: CFG.sbKey, Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(8000)
   }).then(function(r) {
-    if (!r.ok) throw new Error('вход не подтверждён (' + r.status + ')');
+    if (!r.ok) { var eA = new Error('вход не подтверждён (' + r.status + ')'); eA.reject = r.status === 401 || r.status === 403; throw eA; }
     return r.json();
   }).then(function(u) {
     // фракция — из профиля (RLS отдаёт игроку его собственную строку)
@@ -105,7 +119,8 @@ function verify(token) {
       // сторона только у одобренного игрока: без неё (новый аккаунт, ещё не распределён) бой не открывается вовсе,
       // иначе такой игрок входил бы стороной Республики и видел всё, что видит она
       if (p.faction !== 'republic' && p.faction !== 'cis') { var eNo = new Error('Сторона ещё не назначена — бои откроются, когда тебя распределят'); eNo.deny = true; throw eNo; }
-      var who = { user: u.id, side: p.faction === 'cis' ? 1 : 0, nick: String(p.nickname || '').slice(0, 40), until: Date.now() + 5 * 60e3 };
+      // в кэше — не дольше срока самого токена (BUG-048)
+      var exp = tokenExp(token), who = { user: u.id, side: p.faction === 'cis' ? 1 : 0, nick: String(p.nickname || '').slice(0, 40), until: Math.min(Date.now() + 5 * 60e3, exp || Infinity), exp: exp };
       TOKENS.set(token, who);
       if (TOKENS.size > 500) TOKENS.delete(TOKENS.keys().next().value);
       return who;
@@ -321,6 +336,7 @@ server.on('upgrade', function(req, sock, head) {
               if (c.resync && c.room && c.room.kind !== 'space' && c.room.kind !== 'ground' && c.room.kind !== 'system' && c.room.kind !== 'event') { c.resync = false; ws.send(SWRT.encodeInit(c.room.battle, c.side, c.room.extra)); return; }
               ws.send(buf);
             } };
+  if (!CFG.dev) { var pend = 0, ip0 = ipOf(c); CLIENTS.forEach(function(o) { if (!o.who && ipOf(o) === ip0) pend++; }); if (pend >= 20) { ws.close(4029); return; } }
   CLIENTS.add(c);
   var authTimer = setTimeout(function() { if (!c.who) ws.close(4001); }, 10000);
   ws.on('message', function(data, binary) {
@@ -334,6 +350,7 @@ server.on('upgrade', function(req, sock, head) {
     if (!c.who) {
       if (m.t !== 'auth' || c.authing) return;      // один вход на соединение
       c.authing = true;
+      if (!CFG.dev && !TOKENS.has(m.token) && !authBudget(c)) { ws.send(JSON.stringify({ t: 'error', msg: 'Слишком много входов подряд — подожди минуту' })); ws.close(4029); return; }
       verify(m.token).then(function(who) {
         clearTimeout(authTimer);
         if (!ws.open) return;
@@ -349,11 +366,14 @@ server.on('upgrade', function(req, sock, head) {
         if (!ws.open) return;
         if (ok !== true) { ws.send(JSON.stringify({ t: 'error', deny: 1, msg: 'Чужая планета: бой здесь откроется, когда у тебя будут войска на земле или корабль в системе' })); ws.close(4004); return; }
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
-        c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
+        c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side; c.exp = m.tk ? who.exp || 0 : 0;      // tk — экран умеет обновлять токен; старый экран не трогаем
         var r = m.room ? getRoom(String(m.room).slice(0, 40), m.cfg, who) : null;   // без комнаты — не в нагрузочный бой по умолчанию
         // бой ивента окончен (комната закрыта по итогу): не ошибка — экран покажет «Бой окончен» и не будет переподключаться
         var epR = !r && Ev.parse(String(m.room || '')), wR = epR && ROOMS.get(epR.key);
         if (wR && wR.closed && (!wR.failed || /матч уже (done|aborted)/.test(wR.failed))) { ws.send(JSON.stringify({ t: 'error', end: 1, msg: 'Этот бой ивента уже окончен. Итог и награда — в «Истории» ивентов.' })); ws.close(4004); return; }
+        // прошлый бой планеты (орбиты) ещё записывается — не «сервер занят», а повтор через секунду (BUG-046)
+        var gpC = !r && (Ground.parse(String(m.room || '')) || Sys.parse(String(m.room || ''))), rC = gpC && ROOMS.get(gpC.key);
+        if (!r && rC && rC.closed && rC.closeP && !rC.closeDone) { ws.send(JSON.stringify({ t: 'error', retry: 1500, msg: 'Прошлый бой здесь ещё записывается — вход через секунду' })); ws.close(4012); return; }
         if (!r) { ws.send(JSON.stringify({ t: 'error', msg: Space.parse(String(m.room || '')) ? 'Сервер занят: все комнаты боя заняты, попробуй позже' : Ground.parse(String(m.room || '')) ? 'Сервер занят или планета без карты' : Sys.parse(String(m.room || '')) ? 'Сервер занят: все орбиты заняты' : Ev.parse(String(m.room || '')) ? 'Бой ивента уже окончен или сервер занят' : 'нет такого боя' })); ws.close(4004); return; }
         if (r.kind === 'space') {
           c.side = -1;
@@ -375,6 +395,23 @@ server.on('upgrade', function(req, sock, head) {
       return;
     }
     if (m.t === 'ping') { ws.send(JSON.stringify({ t: 'pong', at: m.at, tick: c.room ? c.room.battle.tick : 0 })); return; }
+    // свежий токен взамен истекающего: тот же игрок и та же сторона — живём дальше, иначе — переподключение
+    if (m.t === 'token') {
+      if (c.tokBusy || typeof m.token !== 'string') return;
+      c.tokBusy = true;
+      verify(m.token).then(function(w2) {
+        c.tokBusy = false;
+        if (w2.user !== c.who.user || w2.side !== c.who.side) { ws.close(4001); return; }
+        // тот же старый токен (клиент ещё не обновил сессию) — спросим снова через 30 с, срок прежний
+        if ((w2.exp || 0) > c.exp) { c.exp = w2.exp; c.tokAsk = 0; }
+      }, function(e) {
+        c.tokBusy = false;
+        // закрыть — только если токен точно отвергнут (чужой, отозван, сторона снята); сбой связи с базой — не повод
+        // выкидывать из боя: через 30 с спросим ещё раз
+        if (e && (e.reject || e.deny)) ws.close(4001);
+      });
+      return;
+    }
     if (c.room) {
       try { c.room.command(c, m); }
       catch (e) { log('error', 'ошибка приказа', { err: String(e).slice(0, 300) }); }
@@ -402,6 +439,16 @@ setInterval(function() {
     c.ws.alive = false; c.ws.ping();
   });
 }, 20000).unref();
+// Токен истекает — за 2 минуты попросить свежий ({t:'token'}); не прислал за минуту после срока — закрыть
+// (экран переподключится со свежим токеном и пройдёт проверку заново: снятая сторона, бан). BUG-048
+setInterval(function() {
+  var now = Date.now();
+  CLIENTS.forEach(function(c) {
+    if (!c.who || !c.exp) return;
+    if (now > c.exp + 60e3) { c.ws.close(4001); return; }
+    if (now > c.exp - 120e3 && (!c.tokAsk || now - c.tokAsk > 30e3)) { c.tokAsk = now; try { c.ws.send(JSON.stringify({ t: 'token' })); } catch (e) {} }
+  });
+}, 15000).unref();
 
 // ---------- сводка раз в минуту + сердцебиение ----------
 setInterval(function() {

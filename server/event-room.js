@@ -118,7 +118,7 @@ EventRoom.prototype.admit = function(c) {
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'event', system: this.mapInfo.id, name: this.mapInfo.name, side: c.side, att: B.att, T: Math.round(B.t * 100) / 100, capNeed: 1,
     me: c.who.user === 'dev' && this.cfg.dev ? 'dev' : c.who.user, own: true,
-    map: this.mapPacked, structs: B.structs.map(function(s) { return Net.structRow(s, c.side); }), districts: [], faction: null, controller: null, zones: [], zoneBox: null, buildings: [], plots: [],
+    map: this.mapPacked, structs: c.viewer.helloStructs(), districts: [], faction: null, controller: null, zones: [], zoneBox: null, buildings: [], plots: [],
     ev: { match: this.match.id, event: E.id, title: E.title, tier: this.match.tier, role: p.role, roleName: role ? role.name : p.role, test: !!this.match.test,
           place: this.mapInfo.name, about: this.mapInfo.about, goal: E.goal ? E.goal[role ? role.side : 'republic'] : '', minutes: E.minutes[this.match.tier - 1],
           players: this.match.players.map(function(q) { return { role: q.role, nick: q.bot ? 'бот' : q.nick || '', bot: !!q.bot, me: q.user === c.who.user }; }) }

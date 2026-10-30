@@ -45,21 +45,90 @@
     for (var i = 0; i < parts.length; i++) { var p = parts[i].split(':'), v = +p[0], k = +p[1]; for (var j = 0; j < k && o < arr.length; j++) arr[o++] = v; }
   }
 
+  // Точка, где трасса от цели к стрелку уходит в туман: [x, y, доля пути от цели]
+  function fogEdge(vis, x0, y0, x1, y1) {
+    var dx = x0 - x1, dy = y0 - y1, L = Math.sqrt(dx * dx + dy * dy), n = Math.max(1, Math.ceil(L * 2)), px = x1, py = y1, k = 0;
+    for (var j = 1; j <= n; j++) { var x = x1 + dx * j / n, y = y1 + dy * j / n; if (!vis(x, y)) break; px = x; py = y; k = j / n; }
+    return [px, py, k];
+  }
+
   // ---------------------------------------------------------------- Viewer
   // ownerCheck: приказы только своим бойцам (a.owner === user); на полигоне — всей стороне
+  // Туман для построек (аудит 30.10, BUG-041/042): чужая полевая постройка известна стороне, только когда её
+  // увидели (дальше — последнее увиденное, как станция на орбите); до того — заглушка за картой, чтобы номера
+  // построек совпадали. opts.buildings — здания на участках (rt_ground_state.buildings), opts.planetSide —
+  // сторона хозяина планеты (ей видно всё своё)
   function Viewer(B, side, user, opts) {
     this.B = B; this.side = side; this.user = user; this.opts = opts || {};
-    this.known = {}; this.seenAt = {}; this.lastT = -1; this.msgSeq = 0; this.full = true; this.stHp = {}; this.stKnown = {}; for (var si = 0; si < B.structs.length; si++) this.stKnown[si] = 1; this.sqKey = ''; this.last = {}; this.shown = {};
+    this.known = {}; this.seenAt = {}; this.lastT = -1; this.msgSeq = 0; this.full = true; this.stHp = {}; this.stKnown = {}; this.sqKey = ''; this.last = {}; this.shown = {};
+    this.bKnown = {};
+    this.helloStructs();
   }
+  function teamOfFaction(f) { return f === 'republic' ? 0 : f === 'cis' ? 1 : 2; }
   Viewer.prototype.lost = function() { this.full = true; this.known = {}; this.shown = {}; this.last = {}; };
+  // постройка известна без разведки: своя, ничья (ивенты), ворота и башни города (они — часть карты)
+  Viewer.prototype.stOpen = function(s) {
+    return s.team === this.side || s.team < 0 || s.team > 1 || s.kind === 'gate' || s.kind === 'tower';
+  };
+  // видна ли чужая постройка сейчас: клетка под туманом открыта; маскировочная сеть — только вблизи
+  // (3 клетки игры, как camo_detect_cells); чужую мину не видно никогда — взрыв враг увидит по вспышке
+  Viewer.prototype.stSees = function(s) {
+    var B = this.B, sn = B.seen[this.side], x, y;
+    if (!sn) return true;
+    if (s.kind === 'landmine') return false;
+    if (s.kind === 'camo') {
+      var R = 3 * GR.RANGE_K, ag = B.agents;
+      for (var i = 0; i < ag.length; i++) {
+        var a = ag[i]; if (!a.alive || B.ctl(a) !== this.side) continue;
+        var gx = Math.max(s.x - a.x, a.x - (s.x + s.w), 0), gy = Math.max(s.y - a.y, a.y - (s.y + s.h), 0);
+        if (gx * gx + gy * gy <= R * R) return true;
+      }
+      return false;
+    }
+    for (y = s.y; y < s.y + s.h; y++) for (x = s.x; x < s.x + s.w; x++) if (x >= 0 && y >= 0 && x < N && y < N && sn[y * N + x] === 2) return true;
+    return false;
+  };
+  // постройки для hello: известные — целиком, остальные — заглушкой
+  Viewer.prototype.helloStructs = function() {
+    var B = this.B, out = [];
+    for (var i = 0; i < B.structs.length; i++) {
+      var s = B.structs[i], see = this.stOpen(s) || this.stSees(s);
+      this.stKnown[i] = see ? 2 : 1;
+      if (see) this.stHp[i] = Math.round(s.hp) + ':' + (s.dead ? 1 : 0);
+      out.push(see ? structRow(s, this.side) : stubRow(s));
+    }
+    return out;
+  };
+  // здания на участках: свои и на своей планете — сразу, чужие — когда участок увидели; хозяина чужого не отдаём
+  Viewer.prototype.bldRow = function(b) {
+    var own = teamOfFaction(b.faction) === this.side;
+    var o = {}; for (var k in b) o[k] = b[k];
+    if (!own) o.owner = null;
+    return o;
+  };
+  Viewer.prototype.bldSees = function(b) {
+    if (teamOfFaction(b.faction) === this.side || this.opts.planetSide === this.side) return true;
+    var sn = this.B.seen[this.side], x, y; if (!sn) return true;
+    for (y = b.y; y < b.y + 6; y++) for (x = b.x; x < b.x + 6; x++) if (x >= 0 && y >= 0 && x < N && y < N && sn[y * N + x] === 2) return true;
+    return false;
+  };
+  Viewer.prototype.helloBuildings = function() {
+    var list = this.opts.buildings || [], out = [];
+    for (var i = 0; i < list.length; i++) { var b = list[i], k = b.x + ',' + b.y; if (this.bldSees(b)) { this.bKnown[k] = 1; out.push(this.bldRow(b)); } }
+    return out;
+  };
   // постройка для клиента (hello и появившиеся позже)
   // side — кому: чужую мину не показываем даже в данных (иначе её место прочтут из сети) — только
   // заглушка за картой, чтобы номера построек совпадали; взрыв враг увидит по вспышке
   function structRow(s, side) {
     if (s.kind === 'landmine' && side != null && s.team !== side && typeof side === 'number' && side >= 0 && side <= 1) {
-      return { i: s.i, kind: 'landmine', team: s.team, x: -99, y: -99, w: 1, h: 1, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: null, res: null, cover: 0, enter: false, infOnly: false, hid: true };
+      return stubRow(s);
     }
     return { i: s.i, kind: s.kind, team: s.team, x: s.x, y: s.y, w: s.w, h: s.h, hp: Math.round(s.hp), hpMax: s.hpMax, dead: s.dead, name: s.name, uid: s.uid || null, res: s.res || null, cover: s.cover || 0, enter: !!s.enter, infOnly: !!s.infOnly };
+  }
+  // заглушка неразведанной постройки: ни рода, ни места, ни прочности
+  function stubRow(s) {
+    return { i: s.i, kind: 'landmine', team: s.team, x: -99, y: -99, w: 1, h: 1, hp: 1, hpMax: 1, dead: false, name: '', uid: null, res: null, cover: 0, enter: false, infOnly: false, hid: true };
   }
   Viewer.prototype.visible = function(a) {
     if (!a.alive) return false;
@@ -71,18 +140,24 @@
     return (a.inside >= 0 ? 1 : 0) | (a.stun > 0 ? 2 : 0) | (a.fear > 0 ? 4 : 0) | (a.hold ? 8 : 0) | (a.at || !a.goal ? 16 : 0) | (a.barrier > t ? 32 : 0) | (a.mind && a.mind.until > t ? 64 | (a.mind.by === 1 ? 256 : 512) : 0) | (a.post && !a.at ? 128 : 0) | (a.netT > t ? 1024 : 0) | (a.jet ? 2048 : 0);
   };
   Viewer.prototype.intro = function(a) {
-    return { id: a.id, tid: a.tid, team: a.team, uid: a.uid || null, name: a.name || '', hpMax: a.hpMax, owner: a.owner || null, npc: !!a.npc, size: a.size,
+    // хозяин (uuid игрока) — только своей стороне: врагу он ни к чему (BUG-041)
+    return { id: a.id, tid: a.tid, team: a.team, uid: a.uid || null, name: a.name || '', hpMax: a.hpMax, owner: a.team === this.side ? a.owner || null : null, npc: !!a.npc, size: a.size,
              hero: a.hero ? { abil: a.hero.abil, portrait: a.hero.portrait, hid: a.hid || null } : null };
   };
   Viewer.prototype.frame = function(tickN) {
     var B = this.B, side = this.side, t = B.t, ag = B.agents, i, a;
     var slow = this.full || tickN % SLOW_EVERY === 0, full = this.full || tickN % FULL_EVERY === 0, snap = this.full || tickN % 20 === 0;
     var f = { t: 'f', T: r2(t), n: [], ev: {} }, nw = [], gone = [], hide = [];
+    var sn = B.seen[side], vis = function(x, y) { var c = Math.floor(y) * N + Math.floor(x); return !sn || (c >= 0 && c < N * N && sn[c] === 2); };
+    // гибель бойца сторона узнаёт, только если видела его (свой, был на виду или место гибели открыто):
+    // иначе id погибших выдавали число и гибель врагов в тумане (BUG-041)
+    var shown0 = this.shown, deadSeen = {};
     for (i = 0; i < ag.length; i++) {
       a = ag[i];
       if (!this.visible(a)) {
-        if (this.known[a.id] && !a.alive && !this.seenAt['d' + a.id]) { gone.push(a.id); this.seenAt['d' + a.id] = 1; }
-        else if (this.shown[a.id] && a.alive) hide.push(a.id);     // жив, но вышел из виду
+        if (!a.alive && (a.team === side || shown0[a.id] || vis(a.x, a.y))) deadSeen[a.id] = 1;
+        if (this.known[a.id] && !a.alive && !this.seenAt['d' + a.id]) { if (deadSeen[a.id]) gone.push(a.id); this.seenAt['d' + a.id] = 1; }
+        else if (shown0[a.id] && a.alive) hide.push(a.id);     // жив, но вышел из виду
         this.shown[a.id] = 0;
         continue;
       }
@@ -104,31 +179,46 @@
     if (hide.length) f.hide = hide;
     // события с прошлого кадра, видимые стороне
     var self = this, since = this.lastT;
-    var vis = function(x, y) { var c = Math.floor(y) * N + Math.floor(x); return c >= 0 && c < N * N && B.seen[side][c] === 2; };
+    // выстрел из тумана: трасса — от края тумана, точку стрелка не отдаём (BUG-041)
+    var from = function(q, x0, y0) { return q.team === side || vis(x0, y0) ? null : fogEdge(vis, x0, y0, q.x1, q.y1); };
     f.ev.s = B.ev.shots.filter(function(q) { return q.t > since && (q.team === side || vis(q.x0, q.y0) || vis(q.x1, q.y1)); })
-      .map(function(q) { return [r2(q.t), r1(q.x0), r1(q.y0), r1(q.x1), r1(q.y1), q.team, q.hit ? 1 : 0, q.w || '', q.d || 0, q.melee ? 1 : 0]; });
+      .map(function(q) { var e = from(q, q.x0, q.y0), x0 = e ? e[0] : q.x0, y0 = e ? e[1] : q.y0; return [r2(q.t), r1(x0), r1(y0), r1(q.x1), r1(q.y1), q.team, q.hit ? 1 : 0, q.w || '', q.d || 0, q.melee ? 1 : 0]; });
     f.ev.b = B.ev.booms.filter(function(q) { return q.t > since && vis(q.x, q.y); }).map(function(q) { return [r2(q.t), r1(q.x), r1(q.y), r1(q.r)]; });
     f.ev.x = B.ev.fx.filter(function(q) { return q.t > since && (q.x == null || vis(q.x, q.y) || (q.id != null && ag[q.id] && self.visible(ag[q.id]))); })
       .map(function(q) { return { k: q.k, t: r2(q.t), x: q.x, y: q.y, id: q.id, tx: q.tx, ty: q.ty, tid: q.tid, r: q.r, until: q.until, name: q.name, team: q.team }; });
-    // снаряд: граната и залп — дугой; k — род особого снаряда (net — сеть, rk — ракета)
-    f.ev.sh = B.ev.shells.filter(function(q) { return q.t0 > since; }).map(function(q) { return [r2(q.t0), r2(q.t1), r1(q.x0), r1(q.y0), r1(q.x1), r1(q.y1), r1(q.r), q.k || '']; });
+    // снаряд: граната и залп — дугой; k — род особого снаряда (net — сеть, rk — ракета).
+    // Чужой из тумана (BUG-032): сеть и ракета летят от края тумана (и позже вылетают — та же скорость),
+    // дуга падает сверху в точку падения (h = 1); точку вылета не отдаём — по ней читалась артиллерия
+    f.ev.sh = B.ev.shells.filter(function(q) { return q.t0 > since && (q.team === side || vis(q.x0, q.y0) || vis(q.x1, q.y1)); }).map(function(q) {
+      var e = from(q, q.x0, q.y0);
+      if (!e) return [r2(q.t0), r2(q.t1), r1(q.x0), r1(q.y0), r1(q.x1), r1(q.y1), r1(q.r), q.k || ''];
+      if (q.k) return [r2(q.t1 - (q.t1 - q.t0) * e[2]), r2(q.t1), r1(e[0]), r1(e[1]), r1(q.x1), r1(q.y1), r1(q.r), q.k];
+      return [r2(q.t0), r2(q.t1), r1(q.x1), r1(q.y1), r1(q.x1), r1(q.y1), r1(q.r), '', 1];
+    });
     var ms = []; for (i = 0; i < B.ev.msgs.length; i++) { var m = B.ev.msgs[i]; if (m.seq > this.msgSeq && m.team === side) ms.push([m.seq, m.text, m.kind || '']); if (m.seq > this.msgSeq) this.msgSeq = m.seq; }
     if (ms.length) f.ev.m = ms;
-    f.ev.d = B.ev.deaths.filter(function(q) { return q.t > since; }).map(function(q) { return q.id; });
+    f.ev.d = B.ev.deaths.filter(function(q) { return q.t > since && deadSeen[q.id]; }).map(function(q) { return q.id; });
     this.lastT = t;
-    // здоровье построек — только изменившиеся
+    // здоровье построек — только изменившиеся и только тех, что сторона видит; чужая — когда её увидели
+    // (заглушка заменяется постройкой целиком), дальше — последнее увиденное
     var st = [], stNew = [];
     for (i = 0; i < B.structs.length; i++) {
-      var s = B.structs[i], key = Math.round(s.hp) + ':' + (s.dead ? 1 : 0);
-      if (!this.stKnown[i]) { this.stKnown[i] = 1; stNew.push(structRow(s, side)); }           // появилось после входа (инженер, база)
-      if (this.stHp[i] !== key || full) { this.stHp[i] = key; st.push([i, Math.round(s.hp), s.dead ? 1 : 0]); }
+      var s = B.structs[i], key = Math.round(s.hp) + ':' + (s.dead ? 1 : 0), see = this.stOpen(s) || this.stSees(s);
+      if (see && this.stKnown[i] !== 2) { this.stKnown[i] = 2; stNew.push(structRow(s, side)); }      // увидели (или своя появилась после входа)
+      else if (!this.stKnown[i]) { this.stKnown[i] = 1; stNew.push(stubRow(s)); }                    // чужая появилась в тумане
+      if (see && (this.stHp[i] !== key || full)) { this.stHp[i] = key; st.push([i, Math.round(s.hp), s.dead ? 1 : 0]); }
     }
     if (st.length) f.st = st;
     if (stNew.length) f.stNew = stNew;
     if (slow) {
       f.cnt = [B.alive(0), B.alive(1)];
       f.cap = { prog: r1(B.cap.prog), status: B.cap.status, cnt: B.cap.cnt, need: B.capNeed };
-      f.dist = B.districts.map(function(d) { return [d.by, d.cnt[0], d.cnt[1]]; });
+      // районы: кто держит; сколько там бойцов — только своих (BUG-041)
+      f.dist = B.districts.map(function(d) { return [d.by, side === 0 ? d.cnt[0] : null, side === 1 ? d.cnt[1] : null]; });
+      // здания на участках, которые сторона только что увидела
+      var bl = this.opts.buildings || [], bn = [];
+      for (var bi = 0; bi < bl.length; bi++) { var bb = bl[bi], bk = bb.x + ',' + bb.y; if (!this.bKnown[bk] && this.bldSees(bb)) { this.bKnown[bk] = 1; bn.push(this.bldRow(bb)); } }
+      if (bn.length) f.bld = bn;
       f.fog = rle(B.seen[side]);
       var sq = B.teams[side].squads.map(function(q) { return { id: q.id, members: q.members.slice() }; }), sk = JSON.stringify(sq);
       if (sk !== this.sqKey || full) { this.sqKey = sk; f.sq = sq; }
@@ -180,7 +270,9 @@
       case 'ability': {
         var hid = this.ids([m.id])[0]; if (hid == null) return;
         var tgt = null;
-        if (m.tgt && m.tgt.tid != null) { var ta = B.agents[m.tgt.tid | 0]; if (!ta || !ta.alive) return; tgt = { tid: ta.id }; }
+        // цель — только та, что сторона видит; неживая, несуществующая и скрытая отвечают одинаково:
+        // иначе перебором номеров читался список живых врагов (BUG-037)
+        if (m.tgt && m.tgt.tid != null) { var ta = B.agents[m.tgt.tid | 0]; if (!ta || !ta.alive || !this.visible(ta)) { B.msg('нет цели', side, 'bad'); return; } tgt = { tid: ta.id }; }
         else if (m.tgt && m.tgt.x != null) { var ax = +m.tgt.x, ay = +m.tgt.y; if (!isFinite(ax) || !isFinite(ay)) return; tgt = { x: Math.max(0, Math.min(N, ax)), y: Math.max(0, Math.min(N, ay)) }; }
         var err = B.useAbility(side, hid, String(m.ab || ''), tgt, true);   // приказ игрока: далеко — подойдёт сам
         if (err) B.msg(err, side, 'bad');
@@ -315,11 +407,12 @@
       if (e.s) e.s.forEach(function(q) { self.ev.shots.push({ t: q[0], x0: q[1], y0: q[2], x1: q[3], y1: q[4], team: q[5], hit: !!q[6], w: q[7], d: q[8], melee: !!q[9] }); });
       if (e.b) e.b.forEach(function(q) { self.ev.booms.push({ t: q[0], x: q[1], y: q[2], r: q[3] }); });
       if (e.x) e.x.forEach(function(q) { self.ev.fx.push(q); });
-      if (e.sh) e.sh.forEach(function(q) { self.ev.shells.push({ t0: q[0], t1: q[1], x0: q[2], y0: q[3], x1: q[4], y1: q[5], r: q[6], k: q[7] || '' }); });
+      if (e.sh) e.sh.forEach(function(q) { self.ev.shells.push({ t0: q[0], t1: q[1], x0: q[2], y0: q[3], x1: q[4], y1: q[5], r: q[6], k: q[7] || '', h: !!q[8] }); });
       if (e.m) e.m.forEach(function(q) { self.ev.msgs.push({ seq: ++self.seq, t: now, text: q[1], kind: q[2], team: self.side }); });
       if (e.d) e.d.forEach(function(id) { var d = self.agents[id]; if (d && d.alive && d.dieT == null) d.dieT = now; self.ev.deaths.push({ t: now, id: id }); });
     }
     if (f.stNew) for (i = 0; i < f.stNew.length; i++) { var ns = f.stNew[i]; this.structs[ns.i] = ns; }
+    if (f.bld) this.buildings = (this.buildings || []).concat(f.bld);      // здание на участке открылось (разведка)
     if (f.st) for (i = 0; i < f.st.length; i++) { var s = this.structs[f.st[i][0]]; if (s) { s.hp = f.st[i][1]; s.dead = !!f.st[i][2]; } }
     if (f.cnt) this.cnt = f.cnt;
     if (f.cap) { this.cap = { prog: f.cap.prog, status: f.cap.status, cnt: f.cap.cnt }; if (f.cap.need) this.capNeed = f.cap.need; }

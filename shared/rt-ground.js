@@ -1585,7 +1585,8 @@
     h.pend = null;                                              // новая способность заменяет ожидающую
     var rng = A[2] * RANGE_K, b = tgt && tgt.tid != null ? this.agents[tgt.tid] : null, data = { power: A[4] };
     if (A[1] === 'enemy' || A[1] === 'ally') {
-      if (!b || !b.alive) return 'нет цели';
+      // скрытый туманом враг — как нет цели: способность не бьёт вслепую и не выдаёт, кто где (аудит 30.10, BUG-037)
+      if (!b || !b.alive || (b.team !== team && this.ctl(b) !== team && !this.canSee(team, b))) return 'нет цели';
       if (A[1] === 'enemy' && this.ctl(b) === team) return 'это свой';
       if (A[1] === 'ally' && b.team !== team) return 'это враг';
       if (A[0] === 'mind' && b.T.hunter) return 'охотника внушение не берёт';
@@ -1610,7 +1611,7 @@
   // цель в дальности, применяет. Отменяют: новый приказ игрока, гибель или уход цели из вида, PEND_T секунд.
   Ground.prototype.pendStart = function(team, a, abilId, b) {
     var h = a.hero, A = ABIL[abilId];
-    if (A[1] === 'enemy' && !this.canSee(team, b)) return 'цель не видна';
+    if (A[1] === 'enemy' && !this.canSee(team, b)) return 'нет цели';
     this.microEnd(a, true);
     a.hold = false; a.auto = false; a.dpost = null; a.sortie = false;
     if (A[1] === 'enemy') { a.focus = b.id; a.post = false; a.goal = null; a.at = true; }

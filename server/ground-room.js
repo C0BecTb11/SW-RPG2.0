@@ -189,15 +189,18 @@ GroundRoom.prototype.join = function(c) {
 GroundRoom.prototype.admit = function(c) {
   var self = this, B = this.B;
   c.side = c.side === 1 || (c.side !== 0 && c.who.side === 1) ? 1 : 0;
-  c.viewer = new Net.Viewer(B, c.side, c.who.user, { ownerCheck: !this.cfg.dev, onLoad: function(ids, ship, user) { self.onLoad(ids, ship, user, c); }, onBuild: function(id, job, user) { self.onBuild(id, job, user, c); }, onScout: function(id, to, user) { self.onScout(id, to, user, c); } });
+  // хозяин планеты (своя сторона) — ему зоны высадки, управляющий и все здания; врагу — по туману (BUG-042)
+  var home = teamOf(this.state.system.faction) === c.side;
+  c.viewer = new Net.Viewer(B, c.side, c.who.user, { ownerCheck: !this.cfg.dev, buildings: this.state.buildings || [], planetSide: teamOf(this.state.system.faction),
+    onLoad: function(ids, ship, user) { self.onLoad(ids, ship, user, c); }, onBuild: function(id, job, user) { self.onBuild(id, job, user, c); }, onScout: function(id, to, user) { self.onScout(id, to, user, c); } });
   this.clients.push(c);
   this.send(c, JSON.stringify({
     t: 'hello', kind: 'ground', system: this.system, name: this.state.system.name, side: c.side, att: this.att, T: Math.round(B.t * 100) / 100, capNeed: B.capNeed,
     me: c.who.user, own: !this.cfg.dev,                                   // приказы — только своим бойцам (Viewer.ids): клиент не выбирает союзных
-    map: this.mapPacked, structs: B.structs.map(function(s) { return Net.structRow(s, c.side); }),
-    districts: B.districts.map(function(d) { return { id: d.id, name: d.name, effect: d.effect, rect: d.rect, by: d.by, cnt: d.cnt }; }),
-    faction: this.state.system.faction, controller: this.state.system.controller, zones: this.zones, zoneBox: this.zoneBox,
-    buildings: this.state.buildings || [], plots: this.state.plots || []
+    map: this.mapPacked, structs: c.viewer.helloStructs(),
+    districts: B.districts.map(function(d) { return { id: d.id, name: d.name, effect: d.effect, rect: d.rect, by: d.by, cnt: [c.side === 0 ? d.cnt[0] : null, c.side === 1 ? d.cnt[1] : null] }; }),
+    faction: this.state.system.faction, controller: home ? this.state.system.controller : null, zones: home ? this.zones : [], zoneBox: this.zoneBox,
+    buildings: c.viewer.helloBuildings(), plots: this.state.plots || []
   }));
   this.cfg.log('info', 'игрок на планете', { room: this.name, user: c.who.user, side: c.side });
 };

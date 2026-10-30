@@ -38,7 +38,7 @@
   var FOG_EVERY = 0.5, AI_EVERY = 2, CAP_EVERY = 0.5, SQ_MAX = 12;
   var SHELL_T = 2.4;               // полёт снаряда артиллерии, с
   var FORT_INF = 0.3;              // пехота с бластером по башне и воротам города: урон ×0,3 (решение Артёма 30.10)
-  var DEFLECT_BACK = 0.5;          // отбитый джедаем болт уходит обратно в стрелка с этим шансом
+  var DEFLECT_BACK = 0.5;          // отбитый джедаем болт уходит обратно в стрелка с этим шансом (охотников бара — нет)
   var SQUARE = 8;                  // площадь города: SQUARE×SQUARE в центре
   var SPREAD = 0.9;                // шаг строя при приказе нескольким
   // Строй на ходу (боты ивентов, orderMove с form): ширина ряда, шаг между бойцами, дальше какого
@@ -1271,10 +1271,10 @@
       if (b.alive && b.inside >= 0 && this.structs[b.inside].kind === 'trench') this.trenchAnswer(b, a);
     }
   };
-  // Отбитый болт уходит обратно: с шансом DEFLECT_BACK — в стрелка (бластер пехоты и героя; снаряд техники,
-  // дробь и ракета не возвращаются). Урон — как этот выстрел по самому стрелку; засчёт — джедаю
+  // Отбитый болт уходит обратно: с шансом DEFLECT_BACK — в стрелка (бластер пехоты; снаряд техники, ракета
+  // и выстрел охотника бара не возвращаются). Урон — как этот выстрел по самому стрелку; засчёт — джедаю
   Ground.prototype.deflectBack = function(a, b, inMul) {
-    if (!a.alive || a.T.vehicle || a.T.artillery || a.T.netter || /launcher/.test(a.tid)) return;
+    if (!a.alive || a.T.vehicle || a.T.artillery || a.T.hunter || /launcher/.test(a.tid)) return;   // охотники бара на одарённых обучены: им не возвращается
     if (a.wh && this.shieldUp(a)) return;                         // раскрытое Колесо: отбитое гасит щит
     if (this.R() >= DEFLECT_BACK) return;
     var d = U.damage(a.T, a.T, inMul) * a.dmgK * (0.8 + this.R() * 0.4);

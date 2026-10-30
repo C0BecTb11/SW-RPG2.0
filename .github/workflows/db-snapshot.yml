@@ -46,8 +46,17 @@ jobs:
         if: steps.chk.outputs.go == '1'
         run: |
           mkdir -p sql/_live
-          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" --schema-only --schema=public --no-owner \
-            --file=sql/_live/schema.raw.sql
+          # подсказка, если строка подключения собрана не так (пароль не печатается)
+          case "$DB_URL" in postgres://*|postgresql://*) ;; *) echo "::error::SUPABASE_DB_URL должен начинаться с postgresql://"; exit 1;; esac
+          case "$DB_URL" in *YOUR-PASSWORD*) echo "::error::В SUPABASE_DB_URL осталось [YOUR-PASSWORD] — подставь пароль базы без квадратных скобок"; exit 1;; esac
+          HOSTPART="${DB_URL##*@}"; HOSTPART="${HOSTPART%%/*}"
+          if ! /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" --schema-only --schema=public --no-owner \
+               --file=sql/_live/schema.raw.sql 2> dump.err; then
+            # ошибка — в аннотацию (её видно в сводке запуска), строка подключения из текста вырезана
+            MSG=$(sed -E 's#postgres(ql)?://[^ ]*#<url>#g' dump.err | tr '\n' ' ' | cut -c1-600)
+            echo "::error::pg_dump не подключился к ${HOSTPART}: ${MSG}"
+            exit 1
+          fi
           # строки с версией pg_dump и меткой времени не меняют смысла — убираем, чтобы diff показывал только правки
           grep -v -E '^-- Dumped (from|by) ' sql/_live/schema.raw.sql | grep -v -E '^\\(restrict|unrestrict) ' > sql/_live/schema.sql
           rm sql/_live/schema.raw.sql

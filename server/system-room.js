@@ -63,6 +63,7 @@ function SystemRoom(name, system, cfg) {
   this.craftHp = {};
   this.lastSync = {};
   this.okHp = {};               // id → корпус, который точно лежит в базе (загружен или записан успешно)
+  this.craftSeen = {};          // id машины → её целость в базе, которую бой уже принял (ремонт сверх — только разница)
   this.upg = {};               // id корабля → отпечаток улучшений (модернизация на верфи — подхватить на ходу)
   this.hitAt = {};             // n → время последнего попадания (бой)
   this.syncAt = Date.now(); this.pullAt = Date.now(); this.quietSince = Date.now(); this.emptySince = Date.now(); this.created = Date.now();
@@ -189,7 +190,11 @@ SystemRoom.prototype.applyShips = function(list, base) {
         self.upg[s.id] = uk; old.bon0 = bonOf(s);
         self.syncUnits(old, s); self.dropMissing(old, s); return;
       }
-    } else if (old) { if (old.captured < 0 && old.why !== 'left') return; delete self.byId[s.id]; }   // погиб в бою — строка с hp 0 ещё лежит
+    } else if (old) {
+      if (old.captured < 0 && old.why !== 'left') return;                          // погиб в бою — строка с hp 0 ещё лежит
+      if (old.captured >= 0 && !old.synced) return;                                // трофей ещё не записан — не воскрешать у прежнего хозяина
+      delete self.byId[s.id];
+    }
     var type = self.types[s.ship_type] || null;
     if (type && type.is_fighter) { self.addFree(s, type); return; }
     if (!hasPlan(s.ship_type)) { self.cfg.log('warn', 'нет плана корабля', { type: s.ship_type }); return; }
@@ -205,7 +210,7 @@ SystemRoom.prototype.applyShips = function(list, base) {
     sh.craftIds = hangarIds(s.craft); self.bayFromGame(sh, s.craft);
     self.byId[s.id] = sh.n; self.lastSync[s.id] = null; self.okHp[s.id] = s.hp; self.upg[s.id] = upgKey(s);
     (s.units || []).forEach(function(u) { self.unitHp[u.id] = u.hp; });
-    (s.craft || []).forEach(function(c) { self.craftHp[c.id] = c.hp; });
+    (s.craft || []).forEach(function(c) { self.craftHp[c.id] = c.hp; self.craftSeen[c.id] = c.hp; });
     added.push(sh);
   });
   // ушли (гиперпространство, погрузка в ангар, продажа): из боя — вон
@@ -273,7 +278,7 @@ SystemRoom.prototype.addFree = function(s, type) {
   var maxHp = type.max_hp || 90;
   var c = B.addCraft(kind, side, home, x, y, hdOf(s.facing), s.hp / maxHp);
   if (!c) return;
-  c.gameId = s.id; c.gameMax = maxHp; this.free[s.id] = c; this.craftHp[s.id] = s.hp;
+  c.gameId = s.id; c.gameMax = maxHp; this.free[s.id] = c; this.craftHp[s.id] = s.hp; this.craftSeen[s.id] = s.hp;
 };
 // бойцы трюма подхватываются только пока экипаж спит (бой их ещё не «взял» в тела)
 SystemRoom.prototype.syncUnits = function(sh, s) {
@@ -286,7 +291,7 @@ SystemRoom.prototype.syncUnits = function(sh, s) {
   sh.units = (s.units || []).map(function(u) { return { id: u.id, hpMax: u.hp }; });
   sh.craftIds = hangarIds(s.craft); this.bayFromGame(sh, s.craft);
   (s.units || []).forEach(function(u) { self.unitHp[u.id] = u.hp; });
-  (s.craft || []).forEach(function(c) { self.craftHp[c.id] = c.hp; });
+  (s.craft || []).forEach(function(c) { self.craftHp[c.id] = c.hp; self.craftSeen[c.id] = c.hp; });
 };
 // строка корабля для клиента: [класс, сторона, x, y, армия, курс, { id, owner, name, faction, trophy }]
 SystemRoom.prototype.shipRow = function(sh) {
@@ -386,7 +391,8 @@ SystemRoom.prototype.step = function() {
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }
   // десант пошёл на абордаж (сборы, шаттлы, высадка) — список занятых бойцов в базу сразу: их уже не высадить
   if (ev.boards.length) this.busyDirty = true;
-  if (now - this.syncAt >= SYNC_EVERY || ev.kills.length || ((fresh || this.busyDirty) && now - this.syncAt >= 500)) { this.busyDirty = false; this.sync(); }
+  if (fresh) this.fireDirty = true;                 // первое попадание ближе 500 мс к сверке — запомнить до следующей
+  if (now - this.syncAt >= SYNC_EVERY || ev.kills.length || ((this.fireDirty || this.busyDirty) && now - this.syncAt >= 500)) { this.busyDirty = false; this.fireDirty = false; this.sync(); }
   if (now - this.pullAt >= PULL_EVERY) this.pull();
 };
 // Взгляд изнутри будит спящий корабль: свой под командой игрока или тот, где идёт абордаж его стороны;
@@ -456,18 +462,37 @@ SystemRoom.prototype.syncNow = function() {
   // гибель корабля, бойцов, машин и трофей терялись навсегда (SPACE-BUG-013)
   var rb = { ships: [], unit: {}, craft: {} };
   var setU = function(id, v, row) { if (!Object.prototype.hasOwnProperty.call(rb.unit, id)) rb.unit[id] = Object.prototype.hasOwnProperty.call(self.unitHp, id) ? self.unitHp[id] : undefined; self.unitHp[id] = v; units.push(row || { id: id, hp: v }); };
-  var setC = function(id, v) { if (!Object.prototype.hasOwnProperty.call(rb.craft, id)) rb.craft[id] = Object.prototype.hasOwnProperty.call(self.craftHp, id) ? self.craftHp[id] : undefined; self.craftHp[id] = v; craft.push({ id: id, hp: v }); };
-  var done = function(sh) { sh.synced = true; rb.ships.push(sh); };
+  // seen — целость в базе, которую бой уже принял: ремонт база прибавит только сверх неё (иначе принятый через
+  // pull ремонт прибавлялся второй раз)
+  var setC = function(id, v) { if (!Object.prototype.hasOwnProperty.call(rb.craft, id)) rb.craft[id] = Object.prototype.hasOwnProperty.call(self.craftHp, id) ? self.craftHp[id] : undefined; self.craftHp[id] = v; craft.push({ id: id, hp: v, seen: self.craftSeen[id] != null ? self.craftSeen[id] : null }); };
+  var done = function(sh) { sh.synced = true; rb.ships.push(sh); }, moved = [];
   B.ships.forEach(function(sh) {
     if (!sh.gameId || sh.why === 'left' || sh.synced) return;
     // предел — как при загрузке (Army.fromGame): тип + бонусы исследований; без бонусов корабль с ними
     // терял долю корпуса и щитов при каждом открытии орбиты
     var type = self.types[sh.cls], bo = sh.bon0 || bonOf({}), maxHp = type ? (type.max_hp || 0) + bo.hp : 0, maxSh = type ? (type.max_shield || 0) + bo.sh : 0;
+    // трюм погибшего или захваченного ушёл на шаттле и ещё в полёте — ждать, чем кончится (сядет — запишется на
+    // тот борт, собьют — погиб): иначе бойцов записало бы в трюм цели заранее, а гибель шаттла уже никто бы не записал
+    if (sh.dead && !sh.dormant && !self.closed && self.inFlight(sh)) return;
     if (sh.captured >= 0 && sh.dead) {
       // трофей: хозяину абордажа; строка корабля в базе переходит, бой подхватит его заново
       if (sh.boardBy) captured.push({ id: sh.gameId, by: sh.boardBy, faction: sh.captured === 1 ? 'cis' : 'republic' });
       done(sh);
-      (sh.units || []).forEach(function(u) { if (self.unitHp[u.id] !== 0) setU(u.id, 0); });
+      // свой трюм: кто ушёл на шаттле и жив на чужом борту — туда, остальные погибли в обороне (SPACE-BUG-015)
+      (sh.units || []).forEach(function(u) {
+        if (self.unitHp[u.id] === 0) return;
+        var where = !sh.dormant ? self.whereIs(sh, u.id) : null;
+        if (where) setU(u.id, where.hp, { id: u.id, hp: where.hp, on: where.on }); else setU(u.id, 0);
+      });
+      // десант захватчика: живые остаются на борту трофея (в базе — в его трюм), погибшие после прошлой сверки — 0;
+      // дома их тела «ушли» — гасятся после записи (иначе вечно в списке занятых)
+      if (!sh.dormant) sh.crew.agents.forEach(function(a) {
+        if (!a.uid || a.team === sh.side || self.unitHp[a.uid] === 0) return;
+        if (!a.alive) { setU(a.uid, 0); return; }
+        if (!sh.boardBy) return;
+        var v = Math.max(1, Math.round(self.unitHpMax(sh, a.uid) * a.hp / (a.hpMax || 100)));
+        setU(a.uid, v, { id: a.uid, hp: v, on: sh.gameId }); moved.push(a.uid);
+      });
       return;
     }
     var box = boxOf(type, facingOf(sh.hd)), fc = facingOf(sh.hd);
@@ -486,7 +511,8 @@ SystemRoom.prototype.syncNow = function() {
               Math.round(mx / 20) + ',' + Math.round(my / 20) + ',' + Math.round(hd * 50) + ',' + stK;
     var last = self.lastSync[sh.gameId];
     if (!last || last.key !== key) {
-      var row = { id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, held: held, mx: mx, my: my, hd: hd };
+      var row = { id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, held: held, mx: mx, my: my, hd: hd,
+                  seen: self.okHp[sh.gameId] != null ? self.okHp[sh.gameId] : null };   // корпус в базе, что бой уже принял
       if (st !== undefined && (!last || last.stK !== stK)) row.st = st;           // null — всё целое (стереть запись)
       ships.push(row); self.lastSync[sh.gameId] = { key: key, hp: hp, stK: stK };
     }
@@ -500,7 +526,8 @@ SystemRoom.prototype.syncNow = function() {
         else setU(u.id, 0);
       });
       // чужой десант на борту гибнет вместе с кораблём (SPACE-BUG-016): в базе он в трюме своего корабля
-      if (!sh.dormant) sh.crew.agents.forEach(function(a) { if (a.uid && a.team !== sh.side && a.alive && self.unitHp[a.uid] !== 0) { a.alive = false; setU(a.uid, 0); } });
+      // и погибший после прошлой сверки тоже (его не пишет никто); alive не трогаем — при сбое записи повтор найдёт его снова
+      if (!sh.dormant) sh.crew.agents.forEach(function(a) { if (a.uid && a.team !== sh.side && self.unitHp[a.uid] !== 0) setU(a.uid, 0); });
       sh.craftIds.forEach(function(id) { if (self.craftHp[id] !== 0) setC(id, 0); });
       done(sh); return;
     }
@@ -549,6 +576,8 @@ SystemRoom.prototype.syncNow = function() {
     .then(function(res) {
       if (res && res.closed) { self.cfg.log('warn', 'орбита закрыта базой (сверка)', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
       ships.forEach(function(r) { self.okHp[r.id] = r.hp; });
+      craft.forEach(function(r) { if (r.hp > 0) self.craftSeen[r.id] = r.hp; else delete self.craftSeen[r.id]; });
+      moved.forEach(function(uid) { self.dropHome(uid); });
       if (res && res.rep) self.applyRep(res.rep);
       if (captured.length) self.pullAt = 0;
     })
@@ -579,6 +608,20 @@ SystemRoom.prototype.whereIs = function(home, uid) {
     for (j = 0; j < c.party.length; j++) if (c.party[j].uid === uid) return { on: tg.gameId, hp: Math.max(1, Math.round(hp0 * (c.party[j].hp || 100) / (c.party[j].hpMax || 100))) };
   }
   return null;
+};
+// Шаттл с бойцами этого корабля ещё летит к цели (не сел и не сбит)
+SystemRoom.prototype.inFlight = function(home) {
+  var cr = this.B.craft;
+  for (var i = 0; i < cr.length; i++) { var c = cr[i]; if (!c.dead && !c.back && c.party && c.party.length && c.home === home.n) return true; }
+  return false;
+};
+// Десант остался на трофее (в базе — в его трюме): тело «ушедшего» дома гасится, в списке занятых его больше нет
+SystemRoom.prototype.dropHome = function(uid) {
+  this.B.ships.forEach(function(o) {
+    if (o.dormant || !o.crew || !o.crew.agents) return;
+    o.crew.agents.forEach(function(a) { if (a.uid === uid && a.gone) { a.gone = false; a.alive = false; a.uid = ''; a.utype = a.utype || 'left'; } });
+    if (o.units) o.units = o.units.filter(function(u) { return u.id !== uid; });
+  });
 };
 // Ремонт на верфи до полного: отсеки целы, погибший экипаж больше не «недобор» (у спящего — с самого начала)
 SystemRoom.prototype.yardFix = function(sh) {
@@ -613,6 +656,7 @@ SystemRoom.prototype.applyRep = function(rep) {
       return;
     }
     var c = self.free[id];
+    self.craftSeen[id] = hp;
     if (c && !c.dead) { c.hp = Math.min(c.max, Math.max(c.hp, c.max * hp / (c.gameMax || 1))); self.craftHp[id] = Math.max(1, Math.round(c.gameMax * c.hp / c.max)); return; }
     B.ships.forEach(function(o) {
       if (o.dead || !o.craftIds) return;

@@ -136,7 +136,9 @@ returns jsonb language sql stable security definer set search_path to 'public', 
     'units', (select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'unit_type', u.unit_type, 'quantity', u.quantity, 'hp', u.hp,
                        'bonus_hp', u.bonus_hp, 'bonus_damage', u.bonus_damage, 'hero_name', u.hero_name, 'hero_id', u.hero_id,
                        'portrait', u.portrait, 'owner_user_id', u.owner_user_id, 'carrier_ship_id', u.carrier_ship_id)), '[]'::jsonb)
-                from unit_positions u where u.carrier_ship_id = s.id and u.carrier_unit_id is null and u.hp > 0)
+                -- чужой десант, застрявший на борту (орбиту закрыли посреди абордажа), — не экипаж этого корабля
+                from unit_positions u where u.carrier_ship_id = s.id and u.carrier_unit_id is null and u.hp > 0
+                  and u.faction is not distinct from s.faction)
   ) order by s.created_at), '[]'::jsonb)
   from ships s
   where s.system_id = p_system and not coalesce(s.in_transit, false) and s.carrier_ship_id is null and s.hp > 0;
@@ -171,12 +173,15 @@ begin
            greatest(0, (x->'sh'->>0)::integer) as sf, greatest(0, (x->'sh'->>1)::integer) as ss,
            greatest(0, (x->'sh'->>2)::integer) as sa, greatest(0, (x->'sh'->>3)::integer) as sp,
            (x->>'mx')::double precision as mx, (x->>'my')::double precision as my, (x->>'hd')::double precision as hd,
-           x ? 'st' as has_st, case when jsonb_typeof(x->'st') = 'object' then x->'st' end as st
+           x ? 'st' as has_st, case when jsonb_typeof(x->'st') = 'object' then x->'st' end as st,
+           (x->>'seen')::integer as seen
     from jsonb_array_elements(coalesce(p_ships, '[]'::jsonb)) x
     where coalesce((x->>'hp')::integer, 0) > 0),
   calc as (
     select rows.*, t.max_hp + coalesce(s.bonus_hp, 0) as mhp, t.max_shield + coalesce(s.bonus_shield, 0) as msh, coalesce(s.bonus_fore, 0) as mfore,
-           greatest(0, s.hp - coalesce(l.hp_sync, s.hp)) as rep_d
+           -- ремонт — сверх записанного боем и сверх того, что бой уже принял из базы (seen): иначе подхваченный
+           -- через pull ремонт прибавлялся второй раз
+           greatest(0, s.hp - greatest(coalesce(l.hp_sync, s.hp), coalesce(rows.seen, 0))) as rep_d
     from rows
     join rt_battle_locks l on l.obj_kind = 'ship' and l.obj_id = rows.id and l.battle_id = p_battle
     join ships s on s.id = rows.id join ship_types t on t.id = s.ship_type
@@ -200,11 +205,12 @@ begin
 
   -- машины ангара и истребители на орбите (носитель — или сама машина — в системе боя и не в пути)
   with rows as (
-    select (x->>'id')::uuid as id, greatest(1, (x->>'hp')::integer) as hp
+    select (x->>'id')::uuid as id, greatest(1, (x->>'hp')::integer) as hp, (x->>'seen')::integer as seen
     from jsonb_array_elements(coalesce(p_craft, '[]'::jsonb)) x
     where coalesce((x->>'hp')::integer, 0) > 0),
   calc as (
-    select rows.id, rows.hp, t.max_hp + coalesce(f.bonus_hp, 0) as mhp, greatest(0, f.hp - coalesce(l.hp_sync, f.hp)) as rep_d
+    select rows.id, rows.hp, t.max_hp + coalesce(f.bonus_hp, 0) as mhp,
+           greatest(0, f.hp - greatest(coalesce(l.hp_sync, f.hp), coalesce(rows.seen, 0))) as rep_d
     from rows
     join rt_battle_locks l on l.obj_kind = 'ship' and l.obj_id = rows.id and l.battle_id = p_battle
     join ships f on f.id = rows.id join ship_types t on t.id = f.ship_type

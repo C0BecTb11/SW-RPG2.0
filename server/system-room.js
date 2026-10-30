@@ -93,6 +93,7 @@ SystemRoom.prototype.open = function() {
     B.board = function(n, t, all, now) { var r = board0.call(B, n, t, all, now); if (r && r.ok && B.ships[t]) B.ships[t].boardBy = B.ships[n].owner || null; return r; };
     self.B = B;
     self.setEyes();
+    self.stKey = stationKey(st.station);
     self.applyShips(st.ships || []);
     self.applyFind(st.find || null);
     self.cfg.log('info', 'орбита открыта', { room: self.name, battle: self.battleId, ships: B.ships.length, system: st.system.faction });
@@ -105,6 +106,57 @@ SystemRoom.prototype.setEyes = function() {
   var st = this.state && this.state.station, sl = this.state && this.state.slot;
   this.B.eyes = st && st.ready && st.faction ? [[sideOf(st.faction), ((st.x != null ? st.x : sl.x) + (st.size || sl.size) / 2) * CELL_M, ((st.y != null ? st.y : sl.y) + (st.size || sl.size) / 2) * CELL_M, STATION_SENS]] : [];
 };
+// Станция под туманом войны (решение Артёма, 30.10): чужая сторона не знает, что стоит на месте станции,
+// пока её корабль или истребитель не подойдёт к месту на дальность своих датчиков. Знают всегда: хозяева
+// планеты и хозяева станции. Не знающим место приходит без станции и с пометкой fog — пустое место
+// и чужая станция для них выглядят одинаково, так что туман ничего не выдаёт.
+function stationKey(stn) { return stn ? stn.id + '|' + (stn.ready === false ? 0 : 1) + '|' + stn.faction : ''; }
+function sideOfKnown(f) { return f === 'republic' ? 0 : f === 'cis' ? 1 : -1; }
+SystemRoom.prototype.slotKnown = function(side) {
+  var st = this.state || {}, stn = st.station;
+  if (st.system && sideOfKnown(st.system.faction) === side) return true;
+  if (stn && sideOfKnown(stn.faction) === side) return true;
+  return !!(this.slotSeen && this.slotSeen[side]);
+};
+SystemRoom.prototype.stationView = function(side) {
+  var st = this.state || {}, known = this.slotKnown(side);
+  return { station: known ? (st.station || null) : null, fog: !known && !!st.slot };
+};
+SystemRoom.prototype.sendStation = function(side) {
+  var v = this.stationView(side), msg = JSON.stringify({ t: 'station', station: v.station, fog: v.fog }), self = this;
+  this.clients.forEach(function(c) { if (c.viewer && c.side === side) self.send(c, msg); });
+};
+// раз в 10 тактов: подошёл ли кто-то из не знающих к месту станции
+SystemRoom.prototype.slotSight = function() {
+  var st = this.state, sl = st && st.slot, B = this.B; if (!sl || !B) return;
+  var cx = (sl.x + sl.size / 2) * CELL_M, cy = (sl.y + sl.size / 2) * CELL_M, rr = sl.size * CELL_M / 2, side, i;
+  for (side = 0; side < 2; side++) {
+    if (this.slotKnown(side)) continue;
+    var seen = false;
+    for (i = 0; i < B.ships.length && !seen; i++) {
+      var o = B.ships[i]; if (o.dead || o.side !== side) continue;
+      var r = B.sensRange(o) + rr, dx = o.x - cx, dy = o.y - cy;
+      if (dx * dx + dy * dy < r * r) seen = true;
+    }
+    for (i = 0; i < B.craft.length && !seen; i++) {
+      var k = B.craft[i]; if (k.dead || k.side !== side) continue;
+      var r2 = CRAFT_SENS + rr, ex = k.x - cx, ey = k.y - cy;
+      if (ex * ex + ey * ey < r2 * r2) seen = true;
+    }
+    if (seen) { (this.slotSeen = this.slotSeen || {})[side] = true; this.sendStation(side); }
+  }
+};
+// станцию построили, достроили, снесли или захватили — всем, кто имеет право знать; разведка места — заново
+SystemRoom.prototype.stationChanged = function() {
+  var key = stationKey(this.state && this.state.station);
+  if (key === this.stKey) return;
+  var idOld = (this.stKey || '').split('|')[0], idNew = key.split('|')[0];
+  this.stKey = key;
+  if (idOld !== idNew) this.slotSeen = {};
+  this.sendStation(0); this.sendStation(1);
+};
+var CRAFT_SENS = 3500;                       // датчики истребителя (shared/rt-space.js, sense)
+
 // Корабли из базы → бой. Повторный вызов (pull) добавляет прибывших и убирает ушедших.
 // base — корпуса, которые лежали в базе к моменту запроса (pull): рост сверх них — ремонт в доке
 SystemRoom.prototype.applyShips = function(list, base) {
@@ -237,12 +289,12 @@ SystemRoom.prototype.admit = function(c) {
   this.cfg.log('info', 'игрок на орбите', { room: this.name, user: c.who.user, side: c.side });
 };
 SystemRoom.prototype.hello = function(c) {
-  var B = this.B, self = this, st = this.state;
+  var B = this.B, self = this, st = this.state, sv = this.stationView(c.side);
   return {
     t: 'hello', kind: 'sys', caps: ['many'], fog: true, system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
     user: c.who.user,
     sc: { name: st.system.name, ships: B.ships.map(function(sh) { return self.shipRow(sh); }) },
-    grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: st.station || null },
+    grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: sv.station, slotFog: sv.fog },
     find: this.findInfo()
   };
 };
@@ -294,7 +346,7 @@ SystemRoom.prototype.step = function() {
     var fr = c.viewer.frames(this.tickN);
     for (j = 0; j < fr.length; j++) this.send(c, fr[j]);
   }
-  if (this.tickN % 10 === 0) { this.wakeStep(); this.pirateStep(); }
+  if (this.tickN % 10 === 0) { this.wakeStep(); this.pirateStep(); this.slotSight(); }
   var now = Date.now();
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }
   if (now - this.syncAt >= SYNC_EVERY || ev.kills.length) this.sync();
@@ -441,6 +493,7 @@ SystemRoom.prototype.pullNow = function() {
     if (!st || st.closed) { self.cfg.log('warn', 'орбита закрыта базой', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
     self.state = st;
     self.setEyes();
+    self.stationChanged();
     self.applyShips(st.ships || [], base);
     self.applyFind(st.find || null);
     return self.takeOrders();

@@ -364,8 +364,8 @@
   "sha": "ddf8c69a7db1"
  },
  "shared/rt-army.js": {
-  "v": "9",
-  "sha": "e1ed73ef122e"
+  "v": "10",
+  "sha": "026da0437175"
  },
  "shared/rt-board.js": {
   "v": "10",
@@ -376,8 +376,8 @@
   "sha": "ee82bbfd757b"
  },
  "shared/rt-crew.js": {
-  "v": "10",
-  "sha": "1c9ac021d481"
+  "v": "11",
+  "sha": "68d5c9528043"
  },
  "shared/rt-events-cat.js": {
   "v": "2",
@@ -416,8 +416,8 @@
   "sha": "30de0cd555f5"
  },
  "shared/rt-space.js": {
-  "v": "36",
-  "sha": "14eac47fab1e"
+  "v": "37",
+  "sha": "d2a6fe12bcd0"
  },
  "shared/rt-town.js": {
   "v": "3",

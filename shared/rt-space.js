@@ -158,6 +158,7 @@
       var r = plan.rooms[i], st = { n: r.n, t: r.t, r: r, integ: 100, stun: 0, need: 0, fires: 0, anchor: null, staffed: 0, assigned: 0, fixers: 0, fighters: 0, firedAt: -99, runner: 0, spots: null };
       this.rooms[r.n] = st; this.roomList.push(st);
     }
+    SWCrew.applyInteg(this, opts.integ);
     this.recount(opts);
   }
   // сколько людей будет на борту, когда корабль проснётся (для сводок и строки «экипаж»): посты отсеков —
@@ -206,7 +207,7 @@
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: sensOf(plan.h * plan.cellM, A.visB), flash: -99,
       crew: null, crewOpts: { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
-                              roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0,
+                              roster: A.roster || [], figIds: o.figIds, kit: SWArmy ? SWArmy.kit : null, crewLost: A.crewLost || 0, integ: A.integ || null,
                               guards: C.guard ? { n: C.guard, kit: SWArmy ? SWArmy.kit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') : null, hp: SWArmy && SWArmy.unit ? (SWArmy.unit(plan.faction === 'cis' ? 'cis_b1' : 'rep_dc15a') || [])[2] : 0 } : null },
       dormant: !!o.dormant, owner: o.owner || null, faction: o.faction || plan.faction,
       vehicles: (A.vehicles || []).slice(), gameId: A.id || null,
@@ -1234,7 +1235,7 @@
   Battle.prototype.addCraft = function(type, side, home, x, y, hd, hpK) {
     var C = CRAFT[type]; if (!C || !this.ships[home]) return null;
     var c = { id: this.nextCraft++, type: type, role: C.role, img: C.img, side: side, home: home,
-              x: x, y: y, hd: hd || 0, v: 0, hp: C.hp * Math.max(0.02, Math.min(1, hpK == null ? 1 : hpK)), max: C.hp, speed: C.speed,
+              x: x, y: y, hd: hd || 0, v: 0, hp: C.hp * Math.max(0.001, Math.min(1, hpK == null ? 1 : hpK)), max: C.hp, speed: C.speed,
               cd: 1 + this.R(), tgt: null, mode: 'go', dead: false, len: C.len, born: this.t, idle: !!this.ships[home].dormant };
     this.craft.push(c);
     return c;

@@ -170,6 +170,7 @@
       st.spots = this.workSpots(r);
       this.rooms[r.n] = st; this.roomList.push(st);
     }
+    applyInteg(this, opts.integ);                   // повреждения отсеков с прошлых орбит (ships.rt_state)
     // люди
     this.agents = [];
     var figs = opts.figs || [0], fmap = opts.figMap || null;
@@ -1040,5 +1041,20 @@
     if (best) { a.x = best[0]; a.y = best[1]; }
   };
 
-  return { Crew: Crew, POST: POST, KEY: KEY, GROUP: GROUP, K: K, STEP: STEP, R: R, RUN: RUN, WALK: WALK, DX: DX, DY: DY, turn: turn };
+  // Целость отсеков из базы (ships.rt_state.integ: номер отсека → 0..100) — у настоящего и спящего экипажа
+  function applyInteg(crew, integ) {
+    if (!integ || typeof integ !== 'object') return;
+    for (var k in integ) { var st = crew.rooms[k], v = +integ[k]; if (st && isFinite(v)) st.integ = Math.max(0, Math.min(100, v)); }
+  }
+  // Что записать в базу (ships.rt_state): погибший штатный экипаж (с прошлых орбит и этой) и отсеки целее 100 нет
+  // off — сколько из погибших уже восполнила верфь (ремонт посреди открытой орбиты)
+  function stateOf(crew, off) {
+    var lost = crew.crewLost || 0, ag = crew.agents || [], integ = null, i;
+    for (i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.uid && !a.utype && a.team === crew.team && !a.alive && !a.absent && !a.gone && a.role !== 'guard') lost++; }
+    lost = Math.max(0, lost - (off || 0));
+    var rl = crew.roomList || [];
+    for (i = 0; i < rl.length; i++) if (rl[i].integ < 99.5) { (integ = integ || {})[rl[i].n] = Math.round(rl[i].integ); }
+    return lost || integ ? { lost: lost, integ: integ } : null;
+  }
+  return { Crew: Crew, POST: POST, KEY: KEY, GROUP: GROUP, K: K, STEP: STEP, R: R, RUN: RUN, WALK: WALK, DX: DX, DY: DY, turn: turn, applyInteg: applyInteg, stateOf: stateOf };
 });

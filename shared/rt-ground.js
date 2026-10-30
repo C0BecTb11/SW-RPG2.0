@@ -37,6 +37,8 @@
   var DEATH_KEEP = 40;             // сколько секунд тело остаётся в списке
   var FOG_EVERY = 0.5, AI_EVERY = 2, CAP_EVERY = 0.5, SQ_MAX = 12;
   var SHELL_T = 2.4;               // полёт снаряда артиллерии, с
+  var FORT_INF = 0.3;              // пехота с бластером по башне и воротам города: урон ×0,3 (решение Артёма 30.10)
+  var DEFLECT_BACK = 0.5;          // отбитый джедаем болт уходит обратно в стрелка с этим шансом
   var SQUARE = 8;                  // площадь города: SQUARE×SQUARE в центре
   var SPREAD = 0.9;                // шаг строя при приказе нескольким
   // Строй на ходу (боты ивентов, orderMove с form): ширина ряда, шаг между бойцами, дальше какого
@@ -723,7 +725,7 @@
   // Что прикрывает бойца — для карточки: укрепление, рельеф рядом, свет
   Ground.prototype.coverInfo = function(a) {
     if (a.air || a.fly) return { k: 'air', text: 'в воздухе' };
-    if (a.inside >= 0) { var st = this.structs[a.inside]; if (st && !st.dead) return { k: 'struct', text: st.name.toLowerCase() + ' · урон −' + st.cover + ' %' + (st.kind === 'trench' ? ', стреляет чаще' : '') }; }
+    if (a.inside >= 0) { var st = this.structs[a.inside]; if (st && !st.dead) return { k: 'struct', text: st.name.toLowerCase() + ' · урон −' + st.cover + ' %' + (st.kind === 'trench' ? ', отвечает огнём' : '') }; }
     var m = this.map, bx = Math.floor(a.x), by = Math.floor(a.y), near = 0, lit = !!this.light[by * N + bx];
     for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var x = bx + dx, y = by + dy; if (x < 0 || y < 0 || x >= N || y >= N) continue; var c = y * N + x; if (m.t[c] === T.COVER || m.t[c] === T.TRAP) near++; }
     if (near) return { k: 'cover', text: 'за укрытием (с той стороны, где оно)' + (lit ? ' · на свету' : '') };
@@ -774,11 +776,13 @@
     // постройки врага (турели, радар, глушилка) — техника и артиллерия
     if (a.T.cls !== 'infantry' || true) for (i = 0; i < this.structs.length; i++) {
       var st = this.structs[i]; if (st.dead || st.team === team || st.team === 2) continue;
-      if (team === 2 ? !LOOT[st.kind] : (st.kind !== 'turret' && st.kind !== 'radar' && st.kind !== 'jammer' && a.T.cls === 'infantry')) continue;
+      // пехота — по турелям, радарам, глушилкам и по башням и воротам города (по ним — слабее, FORT_INF, и после бойцов)
+      var fort = st.kind === 'tower' || st.kind === 'gate';
+      if (team === 2 ? !LOOT[st.kind] : (st.kind !== 'turret' && st.kind !== 'radar' && st.kind !== 'jammer' && !fort && a.T.cls === 'infantry')) continue;
       var sdx = st.x + st.w / 2 - a.x, sdy = st.y + st.h / 2 - a.y, sd = sdx * sdx + sdy * sdy;
       if (sd > a.range * a.range) continue;
       if (!this.structSeen(team, st)) continue;
-      cand.push(sd * (st.kind === 'turret' || st.kind === 'tower' ? 1.2 : st.kind === 'gate' ? 1.5 : 2.5), 100000 + i);
+      cand.push(sd * (st.kind === 'turret' || st.kind === 'tower' ? 1.2 : st.kind === 'gate' ? 1.5 : 2.5) * (fort && a.T.cls === 'infantry' ? 2.5 : 1), 100000 + i);
     }
     // ближайшие (по весу) — проверка видимости и линии огня
     var tries = 0;
@@ -1200,6 +1204,8 @@
     s.hp -= d;
     if (s.hp <= 0) { s.hp = 0; s.dead = true; this.stVer = (this.stVer || 0) + 1; this.ev.booms.push({ t: this.t, x: s.x + s.w / 2, y: s.y + s.h / 2, r: s.w + 0.5 }); this.msg(s.kind === 'gate' ? 'Ворота выбиты' : s.name + ' уничтожен' + (/[аяь]$/.test(s.name) ? 'а' : ''), s.team, 'bad'); }
   };
+  // пехота с бластером по башне и воротам города — урон ×FORT_INF (гранатомётчики бьют как по любой постройке)
+  Ground.prototype.fortInf = function(a, s) { return a.T.cls === 'infantry' && (s.kind === 'tower' || s.kind === 'gate') && !/launcher/.test(a.tid); };
   Ground.prototype.shot = function(a, tg, hit, d, ti) {
     var x1 = tg.x, y1 = tg.y, mx = 0, my = 0;
     if (!hit) { mx = (this.R() - 0.5) * 2.2; my = (this.R() - 0.5) * 2.2; }
@@ -1227,7 +1233,7 @@
       var moving = Math.abs(a.vx) + Math.abs(a.vy) > 0.4, hit, dmg;
       if (tg.s) {
         hit = this.R() < Math.max(0.05, a.T.acc / 100) * (moving ? 0.7 : 1);
-        dmg = hit ? U.damage(a.T, { cls: 'structure' }) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
+        dmg = hit ? U.damage(a.T, { cls: 'structure' }) * a.dmgK * (0.8 + this.R() * 0.4) * (this.fortInf(a, tg.s) ? FORT_INF : 1) : 0;
         this.shot(a, tg, hit, dmg, 100000 + tg.s.i);
         if (hit) this.hurtStruct(tg.s, dmg);
         continue;
@@ -1242,7 +1248,7 @@
       for (var vv = 0, nv = a.wh || a.T.mando ? 2 : 1; vv < nv && b.alive; vv++) {     // Колесо Смерти и мандалорец — спаренные бластеры
         hit = this.R() < p;
         // джедай отражает выстрелы: часть попаданий уходит обратно (в сети — не отражает; дробь — вдвое реже)
-        if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && !(b.netT > this.t) && this.R() < b.hero.passive.deflect / 100 * (a.T.netter ? HUNT.scatter.deflect : 1)) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; }
+        if (hit && b.hero && b.hero.passive.deflect && b.hero.act !== 'slash' && !(b.netT > this.t) && this.R() < b.hero.passive.deflect / 100 * (a.T.netter ? HUNT.scatter.deflect : 1)) { hit = false; this.ev.fx.push({ t: this.t, k: 'deflect', x: b.x, y: b.y, id: b.id }); b.hero.act = 'deflect'; b.hero.actT = 0.35; this.deflectBack(a, b, inMul); }
         dmg = hit ? U.damage(a.T, b.T, inMul) * a.dmgK * hk * (0.8 + this.R() * 0.4) : 0;
         this.shot(a, tg, hit, dmg, b.id);
         if (nv > 1) { var q2 = this.ev.shots[this.ev.shots.length - 1], ox = -Math.sin(a.aim) * (vv ? 0.16 : -0.16), oy = Math.cos(a.aim) * (vv ? 0.16 : -0.16); q2.x0 += ox; q2.y0 += oy; q2.x1 += ox; q2.y1 += oy; }
@@ -1250,8 +1256,6 @@
         if (hit) {
           this.hurt(b, dmg, a.id);
           if (!b.alive) a.tgt = -1;
-          // окоп: сразу отвечает огнём
-          if (b.alive && b.inside >= 0 && this.structs[b.inside].kind === 'trench' && b.cd > 0.3) b.cd = 0.3;
           // гранатомёт и ракеты: задевает рядом
           // разлёт — от урона без матрицы (её splash применит к каждому сам), основная цель своё уже получила (BUG-014)
           var splash = /launcher/.test(a.tid) ? 1.6 : a.tid === 'cis_missile' ? 2 : 0;
@@ -1263,7 +1267,28 @@
           }
         }
       }
+      // окоп: сразу отвечает огнём тому, кто по нему стреляет (попал или нет), если тот в его дальности
+      if (b.alive && b.inside >= 0 && this.structs[b.inside].kind === 'trench') this.trenchAnswer(b, a);
     }
+  };
+  // Отбитый болт уходит обратно: с шансом DEFLECT_BACK — в стрелка (бластер пехоты и героя; снаряд техники,
+  // дробь и ракета не возвращаются). Урон — как этот выстрел по самому стрелку; засчёт — джедаю
+  Ground.prototype.deflectBack = function(a, b, inMul) {
+    if (!a.alive || a.T.vehicle || a.T.artillery || a.T.netter || /launcher/.test(a.tid)) return;
+    if (a.wh && this.shieldUp(a)) return;                         // раскрытое Колесо: отбитое гасит щит
+    if (this.R() >= DEFLECT_BACK) return;
+    var d = U.damage(a.T, a.T, inMul) * a.dmgK * (0.8 + this.R() * 0.4);
+    this.ev.shots.push({ t: this.t, x0: b.x, y0: b.y, x1: a.x, y1: a.y, team: this.ctl(b), hit: true, w: a.T.cls, d: Math.round(d), ti: a.id, from: b.id });
+    this.hurt(a, d, b.id);
+  };
+  // Окоп отвечает огнём: стрелок в дальности бойца — тот берёт его целью (если игрок не дал свою) и стреляет сразу
+  Ground.prototype.trenchAnswer = function(b, a) {
+    if (!a.alive || b.T.dmg <= 0 || b.T.artillery || b.stun > 0 || b.fear > 0 || b.choke >= 0 || b.mind && b.mind.until > this.t) return;
+    if (b.focus >= 0 || this.ctl(a) === this.ctl(b)) return;
+    var dx = a.x - b.x, dy = a.y - b.y, r = this.rangeTo(b, a);
+    if (dx * dx + dy * dy > r * r) return;
+    b.tgt = a.id; b.scan = Math.max(b.scan, 1);
+    if (b.cd > 0.3) b.cd = 0.3;
   };
   // ---- способности бойцов (исследования)
   Ground.prototype.skill = function(a, tg) {
@@ -1601,7 +1626,7 @@
       if (d.fear) { var ag4 = this.agents; for (var r = 0; r < ag4.length; r++) { var g = ag4[r]; if (!g.alive || g.hero || g.T.vehicle || g.T.hunter || this.ctl(g) === a.team) continue; var gx = g.x - a.x, gy = g.y - a.y; if (gx * gx + gy * gy <= 9 * RANGE_K * RANGE_K) { g.fear = 6; g.tgt = -1; } } }
       else if (b && b.alive && !b.hero && !b.T.hunter) {
         if (d.pacify) { b.stun = Math.max(b.stun, 8); }
-        else { b.mind = { until: this.t + (d.power || 300), by: a.team, orig: b.team }; b.tgt = -1; b.focus = -1; b.goal = null; b.at = true; b.post = false; b.sq = 0; }
+        else if (!b.T.vehicle) { b.mind = { until: this.t + (d.power || 300), by: a.team, orig: b.team }; b.tgt = -1; b.focus = -1; b.goal = null; b.at = true; b.post = false; b.sq = 0; }
       }
     } else if (act === 'heal' && b && b.alive) { b.hp = Math.min(b.hpMax, b.hp + (d.power || 80)); this.ev.fx.push({ t: this.t, k: 'healed', x: b.x, y: b.y, id: b.id }); }
     else if (act === 'barrier') {
@@ -1629,6 +1654,7 @@
       if (A[1] === 'enemy' && this.ctl(b) === team) return 'это свой';
       if (A[1] === 'ally' && this.ctl(b) !== team) return 'это враг';
       if (A[0] === 'mind' && b.T.hunter) return 'охотника внушение не берёт';
+      if ((abilId === 'mind_enslave' || abilId === 'mind_suasion') && b.T.vehicle) return 'технику не взять под контроль';
       var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy);
       // далеко — герой сам подходит на дальность и применяет (pendStep); новый приказ игрока отменяет
       if (d > rng + 0.5) return approach ? this.pendStart(team, a, abilId, b) : 'далеко';

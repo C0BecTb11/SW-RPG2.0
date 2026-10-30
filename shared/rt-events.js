@@ -256,7 +256,7 @@
       if (ab === 'fear_dark' && close < 3) continue;
       if ((ab === 'push_dark' || ab === 'push_light') && close < 2) continue;
       if ((ab === 'dash_dark' || ab === 'dash_light') && nd < 3) continue;
-      var tg = ab === 'mind_enslave' || ab === 'mind_suasion' || ab === 'pacify_light' ? self.strongest(foes, a, A[2] * RK)
+      var tg = ab === 'mind_enslave' || ab === 'mind_suasion' || ab === 'pacify_light' ? self.strongest(foes, a, A[2] * RK, ab !== 'pacify_light')
         : (ab === 'dash_dark' || ab === 'dash_light' || ab === 'throw_dark' || ab === 'throw_light') && pick ? pick : near;
       if (!tg) continue;
       if (Math.sqrt(d2(tg, a.x, a.y)) > A[2] * RK) continue;
@@ -278,7 +278,8 @@
     }
     if (goal) { var gd = Math.sqrt(d2(a, goal[0], goal[1])); if (gd > near2) this.go(a, Math.floor(goal[0]), Math.floor(goal[1])); else if (!a.at) { a.goal = null; a.at = true; } }
   };
-  Hunt.prototype.strongest = function(list, a, r) { var best = null, bh = -1; list.forEach(function(h) { if (d2(h, a.x, a.y) <= r * r && h.hpMax > bh && !h.hero) { bh = h.hpMax; best = h; } }); return best; };
+  // noVeh — для порабощения и внушения: технику под контроль не взять
+  Hunt.prototype.strongest = function(list, a, r, noVeh) { var best = null, bh = -1; list.forEach(function(h) { if (d2(h, a.x, a.y) <= r * r && h.hpMax > bh && !h.hero && !(noVeh && h.T.vehicle)) { bh = h.hpMax; best = h; } }); return best; };
   Hunt.prototype.nextTask = function(a, foes) {
     var best = null, bs = 1e18, self = this;
     this.tasks.forEach(function(k) {

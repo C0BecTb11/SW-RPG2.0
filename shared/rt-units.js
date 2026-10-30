@@ -112,6 +112,7 @@
 
   // ---------------------------------------------------------------- реальное время
   var SPEED_K = 0.35;                      // клеток/с на единицу move_range
+  var ART_SPLASH_K = 1.5;                  // залп артиллерии: круг splash_size × 1,5 клетки боя (решение Артёма 30.10: шире, но не втрое)
   var ROF = { infantry: 1.6, hero: 0.9, vehicle: 2.4, aa: 1.2, air: 1.4, artillery: 12, turret: 6 };   // секунд между выстрелами
   var AIM_FALLOFF = 0.5;                   // на предельной дальности меткость ×(1 − это)
   var TURRET_TURN = 2.4;                   // рад/с — поворот башни
@@ -128,7 +129,7 @@
       id: id, name: u[0], side: u[1], cls: cls, hp: u[3], dmg: u[4],
       speed: u[5] * SPEED_K, range: u[6], vision: u[7], acc: u[8], eva: u[9], size: u[10], slots: u[11], carry: u[12],
       vehicle: fl.indexOf('v') >= 0, hero: fl.indexOf('h') >= 0, scout: !!sm, stealth: sm ? +sm[1] : 0, relay: fl.indexOf('r') >= 0,
-      builder: fl.indexOf('b') >= 0, medic: fl.indexOf('m') >= 0, wheel: fl.indexOf('w') >= 0, artillery: !!am, splash: am ? +am[1] : 0,
+      builder: fl.indexOf('b') >= 0, medic: fl.indexOf('m') >= 0, wheel: fl.indexOf('w') >= 0, artillery: !!am, splash: am ? +am[1] * ART_SPLASH_K : 0,
       hunter: fl.indexOf('f') >= 0, netter: fl.indexOf('n') >= 0, mando: fl.indexOf('j') >= 0,
       rof: ROF[cls] || 1.6, air: cls === 'air',
       move: cls === 'air' ? 'air' : fl.indexOf('v') >= 0 ? (id === 'cis_aat' || id === 'cis_mtt' || id === 'cis_stap' || id === 'rep_barc' ? 'hover' : (id === 'rep_laat' || id === 'cis_hmp' ? 'air' : 'track')) : 'foot'

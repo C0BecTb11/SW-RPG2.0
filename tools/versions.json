@@ -164,8 +164,8 @@
   "sha": "cfc0827a6960"
  },
  "js/battle-stats.js": {
-  "v": "6",
-  "sha": "88cec4c86a85"
+  "v": "8",
+  "sha": "72357814e5bb"
  },
  "js/bottom-panel.js": {
   "v": "1",
@@ -384,8 +384,8 @@
   "sha": "c32d70d5ab51"
  },
  "shared/rt-events.js": {
-  "v": "6",
-  "sha": "41ac6e17986c"
+  "v": "8",
+  "sha": "e186b437def3"
  },
  "shared/rt-figures.js": {
   "v": "8",
@@ -396,8 +396,8 @@
   "sha": "4bbc4e2c83f7"
  },
  "shared/rt-ground.js": {
-  "v": "27",
-  "sha": "70a6128822fd"
+  "v": "29",
+  "sha": "e9b49d1a1b1c"
  },
  "shared/rt-heroes.js": {
   "v": "2",
@@ -424,8 +424,8 @@
   "sha": "5c323f94eb7b"
  },
  "shared/rt-units.js": {
-  "v": "6",
-  "sha": "ecc48ab92b7c"
+  "v": "8",
+  "sha": "cd8427a32939"
  },
  "shared/rt-vehicles.js": {
   "v": "6",

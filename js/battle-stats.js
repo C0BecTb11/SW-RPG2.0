@@ -61,7 +61,7 @@ function bsUnitNotes(id) {
   var T = bsType(id); if (!T) return [];
   var G = bsG(), out = [];
   var med = G && G.MEDIC ? G.MEDIC : { every: 2, r: 3, hp: 8 };
-  if (T.artillery) out.push(['arty', '✹ Залп по кругу ' + T.splash + ' кл. в любую точку, которую видят свои · раз в ~' + bsNum(T.rof) + ' с · задевает и своих · авиацию не берёт']);
+  if (T.artillery) out.push(['arty', '✹ Залп по кругу ' + bsNum(T.splash) + ' кл. в любую точку, которую видят свои · раз в ~' + bsNum(T.rof) + ' с · задевает и своих · авиацию не берёт']);
   if (T.hero) out.push(['', '⚔ Ближний бой: клинок достаёт вплотную. Силы и пассивы — в древе одарённого']);
   if (T.cls === 'aa') out.push(['', '▲ По авиации — на полную дальность']);
   else if (T.vehicle && T.cls === 'vehicle' && T.dmg > 0) out.push(['', 'По авиации сам не стреляет — только по приказу, на половину дальности']);
@@ -164,8 +164,8 @@ function bsTurretEvery() { var U = bsU(); return U && U.ROF ? U.ROF.turret : 6; 
 function bsMineR() { var U = bsU(); return U && U.MINE ? U.MINE.r : 2; }
 function bsStructLine(st) {
   switch (st.kind) {
-    case 'trench': return 'по бойцу внутри попадают на ' + st.cover_pct + '% реже · сразу отвечает огнём';
-    case 'bunker': return 'по пехоте внутри попадают на ' + st.cover_pct + '% реже · её урон ×' + Number(st.damage_mult);
+    case 'trench': return 'урон по бойцу внутри −' + st.cover_pct + '% · сразу отвечает огнём тому, кто по нему стреляет';
+    case 'bunker': return 'урон по пехоте внутри −' + st.cover_pct + '% · её урон ×' + Number(st.damage_mult);
     case 'camo':   return 'боец внутри виден врагу лишь ближе ' + 3 * BS_RK + ' кл. · выстрел выдаёт на 2 мин';
     case 'turret': return 'сама бьёт врагов в ' + st.radius * BS_RK + ' кл. · урон ' + st.damage + ' раз в ' + bsTurretEvery() + ' с';
     case 'jammer': return 'враги в ' + st.radius * BS_RK + ' кл. видят всего на ' + 2 * BS_RK + ' кл.';

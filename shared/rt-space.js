@@ -1435,8 +1435,10 @@
   // now — сразу в шаттлах, без сборов (учения полигона)
   Battle.prototype.board = function(n, t, all, now) {
     if (this.ships[n] && this.ships[n].dormant) this.wake(this.ships[n]);
-    if (this.ships[t] && this.ships[t].dormant) this.wake(this.ships[t]);
+    // цель будить — только когда абордаж разрешён (видна, рядом, щит снят): иначе приказ «на абордаж» по номерам
+    // будил бы всю орбиту, и чужие корабли в тумане тоже (аудит космоса, SPACE-BUG-003)
     var can = this.canBoard(n, t, all); if (!can.ok) return can;
+    if (this.ships[t].dormant) this.wake(this.ships[t]);
     var a = this.ships[n], b = this.ships[t], lock = this.portFor(b, a);
     if (!lock) return { ok: false, why: 'у цели нет шлюзов' };
     var main = this.departFrom(a, this.troopsOf(a, all), b, can.party);

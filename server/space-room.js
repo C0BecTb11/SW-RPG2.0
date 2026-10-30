@@ -241,10 +241,21 @@ SpaceRoom.prototype.step = function() {
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }
 };
 
+// Курс — в рамке вокруг расстановки (±FIELD_M от линий флотов): иначе быстрый корабль уводили навсегда
+// (точка 1e300 — «жив», бой без конца; аудит космоса, SPACE-BUG-012)
+var FIELD_M = 30000;
+SpaceRoom.prototype.clampOrder = function(m) {
+  if (!m || m.k !== 'order' || m.x == null || m.x === 'hold') return m;
+  if (!isFinite(+m.x) || !isFinite(+m.y)) { m.x = null; m.y = null; return m; }
+  var dist = this.cfg ? this.cfg.dist : 25000;
+  m.x = Math.max(-FIELD_M, Math.min(dist + FIELD_M, +m.x)); m.y = Math.max(-FIELD_M, Math.min(FIELD_M, +m.y));
+  return m;
+};
 SpaceRoom.prototype.command = function(c, m) {
   if (!c.viewer || c.spectator) return;
-  if (m.t === 'cmd' && m.k === 'many') { Net.eachMany(m, function(x) { c.viewer.command(x); }); return; }
-  if (m.t === 'cmd') { c.viewer.command(m); return; }
+  var self = this;
+  if (m.t === 'cmd' && m.k === 'many') { Net.eachMany(m, function(x) { c.viewer.command(self.clampOrder(x)); }); return; }
+  if (m.t === 'cmd') { c.viewer.command(this.clampOrder(m)); return; }
   // замеры (RT_DEV): подвести врага, прогнать бой вперёд
   if (m.t === 'dbg' && this.dev) {
     var B = this.B, me = B.ships.filter(function(x) { return x.side === c.side && !x.dead; })[0], foe = B.ships.filter(function(x) { return x.side !== c.side && !x.dead; })[0];

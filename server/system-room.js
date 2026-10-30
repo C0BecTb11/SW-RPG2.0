@@ -356,11 +356,24 @@ SystemRoom.prototype.step = function() {
   if (now - this.syncAt >= SYNC_EVERY || ev.kills.length) this.sync();
   if (now - this.pullAt >= PULL_EVERY) this.pull();
 };
+// Взгляд изнутри будит спящий корабль: свой под командой игрока или тот, где идёт абордаж его стороны;
+// союзный — не чаще раза в ALLY_WAKE_MS на игрока (посмотреть можно, перебрать флот союзников — нет)
+var ALLY_WAKE_MS = 10e3;
+SystemRoom.prototype.viewWake = function(c, sh) {
+  if (!sh || sh.dead || !c.viewer) return false;
+  if (c.viewer.ctl(sh)) return true;
+  var bd = sh.crew && sh.crew.board; if (bd && bd.started && bd.over < 0 && bd.att === c.side) return true;
+  if (sh.side !== c.side || !sh.dormant) return false;
+  var now = Date.now(); if (c.allyWakeAt && now - c.allyWakeAt < ALLY_WAKE_MS) return false;
+  c.allyWakeAt = now; return true;
+};
 // Будить спящих: враг рядом, смотрят изнутри, есть приказ
 SystemRoom.prototype.wakeStep = function() {
   var B = this.B, S = B.ships, i, j;
-  var viewed = {};
-  this.clients.forEach(function(c) { if (c.viewer && c.viewer.view >= 0) viewed[c.viewer.view] = 1; });
+  var viewed = {}, self = this;
+  // взгляд изнутри будит только корабль под командой игрока или тот, где идёт его абордаж (номер в «view» шлёт
+  // браузер: иначе перебором номеров будилась вся орбита, и чужие в тумане тоже — SPACE-BUG-003)
+  this.clients.forEach(function(c) { if (c.viewer && c.viewer.view >= 0 && self.viewWake(c, S[c.viewer.view])) viewed[c.viewer.view] = 1; });
   for (i = 0; i < S.length; i++) {
     var a = S[i]; if (a.dead || !a.dormant) continue;
     if (viewed[i] || a.order || a.foeT != null) { B.wake(a); continue; }
@@ -589,7 +602,7 @@ SystemRoom.prototype.command = function(c, m) {
     // заглянуть внутрь: свой — всегда, чужой — только если его видно
     var vs = m.k === 'view' && m.view != null && m.view >= 0 ? this.B.ships[m.view | 0] : null;
     if (vs && vs.pirate != null) return;                     // внутрь пиратского корабля не заглянуть: экипажа игры у него нет
-    if (vs && vs.dormant && (vs.side === c.side || this.B.sees(c.side, vs))) this.B.wake(vs);
+    if (vs && vs.dormant && this.viewWake(c, vs)) this.B.wake(vs);
     var ok = c.viewer.command(m);
     // притягивающий луч: отказ — игроку словами; взял — сразу в базу (прыжок цели закрыт)
     if (m.k === 'tractor' && m.to != null && m.to >= 0) {

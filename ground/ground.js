@@ -191,6 +191,7 @@
     });
     B.noTown = h.kind === 'event';                   // ивент: своя карта без города
     B.buildings = h.buildings || []; B.plots = h.plots || []; B.zones = { deploy: (h.zones || []).map(function(z) { return [z.x, z.y, z.size]; }), slots: (h.plots || []).map(function(p) { return [p.x, p.y]; }) };
+    G.msgSeq = 0;                                    // новое зеркало считает сообщения с нуля (переподключение)
     G.B = B; G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
     document.body.classList.toggle('cisside', G.side === 1);
     $('sp-side').textContent = G.side === 0 ? 'Республика' : 'КНС';
@@ -258,7 +259,7 @@
     $('gd-planet').textContent = pi ? pi.name : planet; $('gd-globe').style.backgroundImage = 'url(../assets/planets/' + planet + '.png)';
     fetchJson('../shared/planets/' + planet + '.json').then(function(js) {
       setTimeout(function() {
-        G.B = makeBattle(js); G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
+        G.B = makeBattle(js); G.msgSeq = 0; G.ended = false; G.usel = []; G.arm = null; G.sheet = ''; G.autoSel = false; FOG_T = -1; G.t = 0;
         // местность — с наложенным городом (стены, кварталы), как в движке
         G.ter = window.GTerrain.create(G.B.mapJson); G.ter.cacheMax = 220; workersStart(G.B.mapJson);
         makeBase();

@@ -149,7 +149,8 @@ EventRoom.prototype.step = function() {
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
     if (c.pending && c.ws.bufferedAmount < BUF_MAX / 2) { var pd = c.pending; c.pending = null; this.send(c, pd, true); }
-    if (this.tickN % Net.FRAME_EVERY === 0) this.send(c, c.viewer.frame(this.tickN));
+    // очередь переполнена — кадр не строим, следующий уйдёт полным (как в server/ground-room.js, BUG-036)
+    if (this.tickN % Net.FRAME_EVERY === 0) { if (c.ws.bufferedAmount > BUF_MAX) c.viewer.lost(); else this.send(c, c.viewer.frame(this.tickN)); }
     if (this.tickN % 5 === 0) this.send(c, JSON.stringify({ t: 'ev', v: H.view(c.side) }));
   }
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }

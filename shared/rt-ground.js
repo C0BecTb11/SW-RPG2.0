@@ -456,6 +456,18 @@
     var self = this, list = ids.map(function(i) { return self.agents[i]; }).filter(function(a) { return self.mine(team, a); });
     if (!list.length) return 0;
     var taken = {}, n = 0;
+    // приказ игрока: места, куда уже идут или где стоят другие (второй игрок, прошлый приказ), заняты —
+    // иначе бойцы двух приказов вставали в одни клетки, а в базе на клетку один боец (аудит 30.10, BUG-039)
+    if (!(opts && opts.auto)) {
+      var inList = {}, ag = this.agents, R = 23;
+      for (var li = 0; li < list.length; li++) inList[list[li].id] = 1;
+      for (var oi = 0; oi < ag.length; oi++) {
+        var o = ag[oi]; if (!o.alive || inList[o.id] || o.air || o.fly) continue;
+        var oc = o.goal && !o.at ? o.goal : this.cellOf(o);
+        if (Math.abs(oc[0] - cx) > R || Math.abs(oc[1] - cy) > R) continue;
+        this.mark(taken, oc[0], oc[1], o);
+      }
+    }
     list.sort(function(a, b) { return b.size - a.size; });
     for (var i = 0; i < list.length; i++) {
       var a = list[i], spot = this.spotNear(a, cx, cy, taken);
@@ -1122,8 +1134,8 @@
 
   // ---- стрельба
   Ground.prototype.hurt = function(b, d, by, melee) {
+    if (!b.alive) return;                         // по уже павшему: убийство не переходит к добившему (аудит 30.10, BUG-050)
     b.hitT = this.t; if (by != null) b.hitBy = by;
-    if (!b.alive) return;
     if (b.wh && !melee && (d = this.shield(b, d, by)) <= 0) return;      // клинок щит не держит
     if (b.barrier > this.t) d *= 0.7;
     if (b.hero && b.hero.passive.absorb) d *= 1 - b.hero.passive.absorb / 100;

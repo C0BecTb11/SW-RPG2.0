@@ -960,7 +960,7 @@ begin
   if not found then raise exception 'Группа не найдена'; end if;
   return (select coalesce(jsonb_agg(p order by (p->>'jumps')::integer, p->>'system_name'), '[]'::jsonb) from (
     select jsonb_build_object('system_id', sy.id, 'system_name', sy.name, 'jumps', spy_jumps(g.base_system, sy.id),
-             'owner', (select nickname from profiles where id = sc.controller_user_id),
+             'held', sc.controller_user_id is not null,       -- ник управляющего врагу не раскрываем
              'victim_full', sc.controller_user_id is not null
                             and (select count(*) from spy_ops o where o.victim = sc.controller_user_id and o.launched_at > now() - interval '24 hours'
                                   and o.result is distinct from 'void') >= 2,

@@ -73,6 +73,23 @@ function spPaintStationPanel(lease) {
 
   var shipyardBtn = document.getElementById('station-shipyard-btn');
 
+  // Туман войны (орбита 2.0, server/system-room.js): чужое место станции не разведано, или разведана
+  // станция противника — её записи из базы нам не отдают, показываем то, что видят датчики
+  var live = window.__sp && __sp.G && __sp.G.sys;
+  var foe = live && live.station && spaceMyFaction && live.station.faction !== spaceMyFaction ? live.station : null;
+  if (!stationRecord && live && (live.slotFog || foe)) {
+    titleEl.textContent = foe ? (foe.name || 'Космическая станция') : 'Место станции';
+    textEl.textContent = foe
+      ? (foe.ready === false ? 'Станция противника строится' : 'Станция противника: её датчики видят корабли вокруг')
+      : 'Не разведано: подведи корабль ближе — датчики покажут, что здесь стоит';
+    buildBtn.style.display = 'none';
+    demolishBtn.style.display = 'none';
+    if (shipyardBtn) shipyardBtn.style.display = 'none';
+    spPaintStationLease(null, false);
+    panel.style.display = 'flex';
+    return;
+  }
+
   if (stationRecord) {
     var building = stationRecord.completes_at
       && new Date(stationRecord.completes_at).getTime() > sbNow();
@@ -128,6 +145,12 @@ function spPaintStationPanel(lease) {
 
   panel.style.display = 'flex';
 }
+
+// Орбита 2.0 прислала новое о месте станции (разведали, построили) — открытая панель перерисовывается сразу
+window.SP_STATION_CHANGED = function() {
+  var panel = document.getElementById('station-panel');
+  if (panel && panel.style.display !== 'none' && panel.style.display !== '') spPaintStationPanel(spStationLease());
+};
 
 function spPaintStationLease(lease, canOffer) {
   var host = document.getElementById('station-lease');

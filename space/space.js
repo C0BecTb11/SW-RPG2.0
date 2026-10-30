@@ -1278,8 +1278,9 @@
     if (sl) {
       var st = S.station, q2 = toS((sl.x + sl.size / 2) * M, (sl.y + sl.size / 2) * M), r = sl.size * M * s / 2;
       var art = st && stationArt(st.faction);
-      c.strokeStyle = st ? (st.faction === 'cis' ? 'rgba(217,74,74,0.7)' : 'rgba(74,144,217,0.7)') : 'rgba(143,168,196,0.35)';
-      c.lineWidth = st ? 2 : 1; c.setLineDash(st ? [] : [3, 5]);
+      // не разведано (туман войны): что стоит на месте — неизвестно; кольцо бледнее и реже
+      c.strokeStyle = st ? (st.faction === 'cis' ? 'rgba(217,74,74,0.7)' : 'rgba(74,144,217,0.7)') : S.slotFog ? 'rgba(143,168,196,0.22)' : 'rgba(143,168,196,0.35)';
+      c.lineWidth = st ? 2 : 1; c.setLineDash(st ? [] : S.slotFog ? [2, 8] : [3, 5]);
       if (art) {
         // арт станции (как на старой орбите): вписан в квадрат места, с тенью; строящаяся — бледная, под пунктиром
         var iw = art.naturalWidth, ih = art.naturalHeight, k0 = Math.min(2 * r / iw, 2 * r / ih), dw = iw * k0, dh = ih * k0;
@@ -1292,7 +1293,7 @@
         c.beginPath(); c.arc(q2[0], q2[1], Math.max(6, r), 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
         if (st) { c.beginPath(); c.arc(q2[0], q2[1], Math.max(3, r * 0.45), 0, Math.PI * 2); c.stroke(); for (var k = 0; k < 4; k++) { var an = k * Math.PI / 2 + Math.PI / 4; c.beginPath(); c.moveTo(q2[0] + Math.cos(an) * r * 0.45, q2[1] + Math.sin(an) * r * 0.45); c.lineTo(q2[0] + Math.cos(an) * r, q2[1] + Math.sin(an) * r); c.stroke(); } }
       }
-      if (r > 18) { c.fillStyle = 'rgba(232,217,168,0.7)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(st ? (st.name || 'Станция').toUpperCase() : 'МЕСТО ПОД СТАНЦИЮ', q2[0], q2[1] + r + 4); }
+      if (r > 18) { c.fillStyle = 'rgba(232,217,168,0.7)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(st ? (st.name || 'Станция').toUpperCase() : S.slotFog ? 'МЕСТО СТАНЦИИ · НЕ РАЗВЕДАНО' : 'МЕСТО ПОД СТАНЦИЮ', q2[0], q2[1] + r + 4); }
       // подсветка места (кнопка «Строительство»): золотое кольцо и расходящийся от него импульс, к концу гаснет
       var hiLeft = G.slotHi ? (G.slotHi - performance.now()) / 1000 : 0;
       if (hiLeft > 0) {
@@ -3669,6 +3670,12 @@
       if (m.t === 'error') { N.err = m.msg; return; }
       if (m.t === 'note') { toast(m.msg, m.kind === 'bad' ? 'bad' : 'gold'); return; }
       if (m.t === 'find') { vfSet(m.find || null); return; }
+      // место станции разведано (или станция изменилась): сервер шлёт только то, что этой стороне положено знать
+      if (m.t === 'station') {
+        if (G.sys) { G.sys.station = m.station || null; G.sys.slotFog = !!m.fog; }
+        if (typeof window.SP_STATION_CHANGED === 'function') window.SP_STATION_CHANGED();   // открытая панель места (js/space-battle.js)
+        return;
+      }
       if (m.t === 'pong') return;
       if (N.ready) N.M.onText(m); else N.q.push(m);
     };
@@ -3701,7 +3708,7 @@
     var sc = sys ? m.sc : m.cfg ? scObj({ cfg: m.cfg }) : SCEN[m.scen]; if (!sc) { netFail('Сервер прислал неизвестный бой'); return; }
     if (m.cfg) N.cfg = m.cfg;
     N.ready = false; N.q = []; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
-    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, deep: !!m.deep, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station, find: null };
+    if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, deep: !!m.deep, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station, slotFog: !!m.grid.slotFog, find: null };
     if (sys) vfSet(m.find || null);
     var token = ++START;
     // переподключение к тому же бою: вернуть, где игрок был (внутри корабля, выбор, камера)

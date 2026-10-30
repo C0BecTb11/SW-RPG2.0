@@ -317,7 +317,7 @@ function soTargetHtml() {
     html += '<div class="so-planet' + (soPick.sys === p.system_id ? ' on' : '') + '" id="so-p-' + p.system_id + '">' +
       '<div class="so-planet-top">' +
         '<span class="so-thumb"' + (ms && ms.tex ? ' style="background-image:url(\'../' + soEsc(ms.tex) + '\')"' : '') + '></span>' +
-        '<div class="so-planet-info"><b>' + soEsc(p.system_name) + '</b><span>' + soEsc(p.owner || '') + ' · ' + soJumps(p.jumps) + ' · перелёт ' + soMin(p.jumps * c.jump_min) + '</span></div>' +
+        '<div class="so-planet-info"><b>' + soEsc(p.system_name) + '</b><span>' + soJumps(p.jumps) + ' · перелёт ' + soMin(p.jumps * c.jump_min) + '</span></div>' +
         '<em title="без учёта охраны цели">≈ ' + p.chance + ' %</em>' +
       '</div>';
     if (p.victim_full) html += '<div class="so-note warn">Хозяин уже пережил две операции за сутки — его пока не трогают.</div>';
@@ -363,7 +363,7 @@ function soAgitHtml(g, t, c) {
   var html = '<button type="button" class="so-back" data-so="back-target">← К целям</button>';
   html += '<div class="so-target so-agit-t lo-s-' + k + '">' +
     '<span class="so-agit-ico">' + SO_ICON.agitate + '</span>' +
-    '<div><b>Народ планеты ' + soEsc(t.p.system_name) + '</b><span>' + soEsc(t.p.owner || 'без управляющего') + ' · народ ' + (L ? L.ST[k].t : '') + ' · поддержка хозяина ' + (L ? L.signed(s) : s) +
+    '<div><b>Народ планеты ' + soEsc(t.p.system_name) + '</b><span>' + (t.p.held ? '' : 'без управляющего · ') + 'народ ' + (L ? L.ST[k].t : '') + ' · поддержка хозяина ' + (L ? L.signed(s) : s) +
       (a.cell ? ' · наша сеть ур. ' + a.cell : '') + '</span>' + (L ? L.scale(v, null, true) : '') + '</div>' +
   '</div>';
   html += '<div class="so-chance">' +
@@ -398,7 +398,7 @@ function soOpHtml() {
   var ch = t.p.chance, fly = t.p.jumps * c.jump_min;
   html += '<div class="so-target">' +
     '<i style="background:' + soEsc(t.s.color || '#8fa8c4') + '"></i>' +
-    '<div><b>' + soEsc(t.s.name) + '</b><span>' + soEsc(t.p.system_name) + ' · ' + soEsc(t.p.owner || '') + ' · ' + soEsc(t.s.res_name) + '</span></div>' +
+    '<div><b>' + soEsc(t.s.name) + '</b><span>' + soEsc(t.p.system_name) + ' · ' + soEsc(t.s.res_name) + '</span></div>' +
   '</div>';
   html += '<div class="so-chance">' +
     '<div class="so-ring" style="--p:' + ch + '"><b>' + ch + '%</b></div>' +

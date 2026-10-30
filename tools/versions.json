@@ -312,20 +312,20 @@
   "sha": "d557e452976d"
  },
  "js/space-battle.js": {
-  "v": "8",
-  "sha": "2371cf90901d"
+  "v": "9",
+  "sha": "5a35e58672f3"
  },
  "js/space-live.js": {
-  "v": "33",
-  "sha": "d42e9bc83398"
+  "v": "34",
+  "sha": "b1bc7683edfc"
  },
  "js/spy-map.js": {
   "v": "2",
   "sha": "ffeded052e99"
  },
  "js/spy-ops.js": {
-  "v": "4",
-  "sha": "079fdccdcf74"
+  "v": "5",
+  "sha": "f544d3655fc2"
  },
  "js/supabase-client.js": {
   "v": "2",
@@ -472,7 +472,7 @@
   "sha": "65639c1e068f"
  },
  "space/space.js": {
-  "v": "50",
-  "sha": "010a47243141"
+  "v": "51",
+  "sha": "89f66b353206"
  }
 }

@@ -1830,6 +1830,42 @@ $$;
 
 
 --
+-- Name: can_see_station(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.can_see_station(p_system text, p_faction text) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+declare v_me text; sl record;
+begin
+  select faction into v_me from profiles where id = auth.uid();
+  if v_me is null then return false; end if;
+  if p_faction = v_me then return true; end if;
+  if exists (select 1 from systems where id = p_system and faction = v_me) then return true; end if;
+  select x, y, size into sl from station_slots where system_id = p_system limit 1;
+  if not found then return false; end if;
+  return exists (
+    select 1
+    from ships s
+    join ship_types st on st.id = s.ship_type
+    cross join lateral (
+      select ship_box_w(st.width_cells, st.height_cells, s.facing) as w,
+             ship_box_h(st.width_cells, st.height_cells, s.facing) as h) b
+    where s.system_id = p_system
+      and s.faction = v_me
+      and s.hp > 0
+      and not s.in_transit
+      and s.carrier_ship_id is null
+      and s.x is not null
+      and greatest(
+            greatest(sl.x - (s.x + b.w - 1), s.x - (sl.x + sl.size - 1), 0),
+            greatest(sl.y - (s.y + b.h - 1), s.y - (sl.y + sl.size - 1), 0))
+          <= st.vision_range + coalesce(s.bonus_vision, 0));
+end $$;
+
+
+--
 -- Name: can_see_structure(text, text, text, integer, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4934,6 +4970,13 @@ begin
   if r->>'side' <> v_side then raise exception 'Эта роль — за другую сторону'; end if;
   if (event_my_match(v_me)).id is not null then raise exception 'Ты уже в бою ивента'; end if;
   if exists (select 1 from event_queue where user_id = v_me and state = 'waiting' and call_id is not null) then raise exception 'Идёт сбор — подтверди или выйди'; end if;
+  -- вышел из сбора или не подтвердил его — короткая пауза, иначе выход-вход срывает подбор всем
+  if exists (select 1 from event_queue where user_id = v_me and state = 'left' and call_id is not null
+              and left_at > now() - interval '60 seconds') then
+    raise exception 'Сбор сорвался — записаться снова можно через % с',
+      greatest(1, ceil(extract(epoch from (select max(left_at) from event_queue where user_id = v_me and state = 'left'
+                                            and call_id is not null) + interval '60 seconds' - now()))::integer);
+  end if;
   update event_queue set state = 'left', left_at = now() where user_id = v_me and state = 'waiting';
   insert into event_queue (user_id, event_id, tier, role, side, nick, day)
   values (v_me, p_event, (v_today->>'tier')::integer, p_role, v_side, v_nick, (v_today->>'day')::date);
@@ -15869,6 +15912,16 @@ begin
     raise exception 'Запрос на эту планету уже отправлен';
   end if;
 
+  -- запросить → отозвать по кругу: пауза на ту же планету и общий предел в час
+  perform pg_advisory_xact_lock(hashtext('planet_request:' || v_me::text));
+  if exists (select 1 from planet_requests where user_id = v_me and system_id = p_system_id
+              and status = 'cancelled' and resolved_at > now() - interval '10 minutes') then
+    raise exception 'Эту планету ты только что отозвал — попросить снова можно через несколько минут';
+  end if;
+  if (select count(*) from planet_requests where user_id = v_me and created_at > now() - interval '1 hour') >= 6 then
+    raise exception 'Слишком много запросов за час — подожди немного';
+  end if;
+
   if (select count(*) from planet_requests where user_id = v_me and status = 'pending') >= 3 then
     raise exception 'Не больше трёх запросов одновременно — дождись ответа лидера';
   end if;
@@ -19552,7 +19605,7 @@ begin
   if not found then raise exception 'Группа не найдена'; end if;
   return (select coalesce(jsonb_agg(p order by (p->>'jumps')::integer, p->>'system_name'), '[]'::jsonb) from (
     select jsonb_build_object('system_id', sy.id, 'system_name', sy.name, 'jumps', spy_jumps(g.base_system, sy.id),
-             'owner', (select nickname from profiles where id = sc.controller_user_id),
+             'held', sc.controller_user_id is not null,       -- ник управляющего врагу не раскрываем
              'victim_full', sc.controller_user_id is not null
                             and (select count(*) from spy_ops o where o.victim = sc.controller_user_id and o.launched_at > now() - interval '24 hours'
                                   and o.result is distinct from 'void') >= 2,
@@ -30194,13 +30247,6 @@ CREATE POLICY "Anyone can view ship types" ON public.ship_types FOR SELECT USING
 
 
 --
--- Name: space_stations Anyone can view space stations; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Anyone can view space stations" ON public.space_stations FOR SELECT USING (true);
-
-
---
 -- Name: station_slots Anyone can view station slots; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -30318,6 +30364,13 @@ CREATE POLICY "Own ship cargo" ON public.ship_cargo FOR SELECT USING ((EXISTS ( 
 --
 
 CREATE POLICY "Own ship orders" ON public.ship_orders FOR SELECT USING ((owner_user_id = auth.uid()));
+
+
+--
+-- Name: space_stations Stations under fog of war; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Stations under fog of war" ON public.space_stations FOR SELECT TO authenticated USING (public.can_see_station(system_id, faction));
 
 
 --
@@ -31651,6 +31704,15 @@ GRANT ALL ON FUNCTION public.can_see_position(p_system_id text, p_layer text, p_
 REVOKE ALL ON FUNCTION public.can_see_ship_box(p_system_id text, p_x integer, p_y integer, p_type text, p_facing integer, p_faction text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.can_see_ship_box(p_system_id text, p_x integer, p_y integer, p_type text, p_facing integer, p_faction text) TO authenticated;
 GRANT ALL ON FUNCTION public.can_see_ship_box(p_system_id text, p_x integer, p_y integer, p_type text, p_facing integer, p_faction text) TO service_role;
+
+
+--
+-- Name: FUNCTION can_see_station(p_system text, p_faction text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.can_see_station(p_system text, p_faction text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.can_see_station(p_system text, p_faction text) TO authenticated;
+GRANT ALL ON FUNCTION public.can_see_station(p_system text, p_faction text) TO service_role;
 
 
 --

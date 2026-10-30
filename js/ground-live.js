@@ -43,10 +43,10 @@
       var srv = (r && r.data && r.data.server && r.data.server.url) || GD_SERVER_FALLBACK;
       if (r && r.data && r.data.server && r.data.server.online === false) toastSoon('Сервер боёв не на связи — планета может не открыться', 'bad');
       window.GD_LIVE = { system: systemId, srv: srv, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=39'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=40'; document.body.appendChild(s);
     }, function() {
       window.GD_LIVE = { system: systemId, srv: GD_SERVER_FALLBACK, ws: null, tries: 0 };
-      var s = document.createElement('script'); s.src = '../ground/ground.js?v=39'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../ground/ground.js?v=40'; document.body.appendChild(s);
     });
   }
   var toastQ = [];
@@ -228,9 +228,17 @@
     if (k === 'load') {
       var ids = sel.filter(function(a) { return a.owner === GL.user; }).map(function(a) { return a.id; });
       if (!ids.length) return;
+      // повторное касание того же корабля с тем же выбором в течение 2 с — не новый приказ (BUG-077);
+      // сколько пошло на борт, скажет сервер («На борт: N — идут в зону погрузки»)
+      var lk = t.getAttribute('data-ship') + ':' + ids.join(','), nw = Date.now();
+      if (GL.loadKey === lk && nw - GL.loadAt < 2000) return;
+      GL.loadKey = lk; GL.loadAt = nw;
       GD.B.orderLoad(ids, t.getAttribute('data-ship'));
-      GD.toast('На борт: ' + ids.length + ' — идут в зону погрузки', 'gold');
-    } else if (k === 'ships') { loadShips(true).then(function() { GD.hud(); }); }
+    } else if (k === 'ships') {
+      // обновить список кораблей — не чаще раза в 3 с (каждое касание шло в базу, BUG-077)
+      if (Date.now() - GL.shipsAt < 3000) { GD.toast('Список кораблей только что обновлён', ''); return; }
+      loadShips(true).then(function() { GD.hud(); });
+    }
     else if (k === 'build') { var row = GL.rowByAgent(+t.getAttribute('data-id')); if (row && typeof openStructureBuildPanel === 'function') { window.selectedUnit = row; openStructureBuildPanel(row); } }
     else if (k === 'scout') {
       var sid = +t.getAttribute('data-id'), sa = GD.B.agents[sid];
@@ -291,7 +299,7 @@
       drop.classList.toggle('gl-drop-empty', att && !n);
     }, 700);
     window.GD_COMPACT = true;                    // верхней панели нет: захват площади — в нижней полосе
-    $('sp-bottom').addEventListener('pointerdown', onSheetClick);
+    window.SPTap($('sp-bottom'), onSheetClick);          // по отпусканию на месте: прокрутка шторки — не нажатие (BUG-063)
     // лоток десанта открыт — низ нового экрана уступает место
     var mo = new MutationObserver(function() { document.body.classList.toggle('dt-open', typeof dtOpen !== 'undefined' && !!dtOpen); });
     mo.observe(document.body, { childList: true, subtree: false, attributes: true, attributeFilter: ['class'] });

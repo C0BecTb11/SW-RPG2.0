@@ -224,6 +224,10 @@
       for (var bi = 0; bi < bl.length; bi++) { var bb = bl[bi], bk = bb.x + ',' + bb.y; if (!this.bKnown[bk] && this.bldSees(bb)) { this.bKnown[bk] = 1; bn.push(this.bldRow(bb)); } }
       if (bn.length) f.bld = bn;
       f.fog = rle(B.seen[side]);
+      // откаты сил своих героев (время движка): кнопки показывают «ещё N с» и в живом бою (BUG-019)
+      var cd = {}, cdn = 0;
+      for (i = 0; i < ag.length; i++) { var ha = ag[i]; if (!ha.alive || !ha.hero || ha.team !== side) continue; var hc = {}, hn = 0; for (var ab in ha.hero.cds) if (ha.hero.cds[ab] > t) { hc[ab] = r1(ha.hero.cds[ab]); hn++; } if (hn) { cd[ha.id] = hc; cdn++; } }
+      var ck = JSON.stringify(cd); if (ck !== this.cdKey || full) { this.cdKey = ck; f.cd = cd; }
       var sq = B.teams[side].squads.map(function(q) { return { id: q.id, members: q.members.slice() }; }), sk = JSON.stringify(sq);
       if (sk !== this.sqKey || full) { this.sqKey = sk; f.sq = sq; }
       if (B.over >= 0) { f.over = B.over; f.why = B.why; }
@@ -250,7 +254,11 @@
     // занимал бы процессор сервера, общий для всех планет
     var now = Date.now(), cost = Array.isArray(m.ids) ? Math.min(m.ids.length, 400) : 1;
     this.idTok = Math.min(800, (this.idTok == null ? 800 : this.idTok) + (now - (this.idAt || now)) * 0.4); this.idAt = now;
-    if (cost > this.idTok) return;
+    if (cost > this.idTok) {
+      // приказ не принят — сказать (не чаще раза в 2 с), а не молчать (BUG-071)
+      if (!this.idWarn || now - this.idWarn > 2000) { this.idWarn = now; this.B.msg('Слишком много приказов подряд — повтори через секунду', this.side, 'bad'); }
+      return;
+    }
     this.idTok -= cost;
     var B = this.B, side = this.side, ids = this.ids(m.ids);
     // новый приказ игрока отменяет ждущее дело сервера (погрузка, вылет разведчика, стройка), если оно ещё не начато
@@ -265,7 +273,7 @@
       if (nLoad) B.msg('Погрузка отменена' + (nLoad > 1 ? ': ' + nLoad : ''), side, 'gold');
     }
     switch (m.k) {
-      case 'move': { var x = +m.x, y = +m.y; if (!isFinite(x) || !isFinite(y)) return; x = Math.floor(x); y = Math.floor(y); if (x < 0 || y < 0 || x >= N || y >= N) return; if (ids.length) B.orderMove(side, ids, x, y); return; }
+      case 'move': { var x = +m.x, y = +m.y; if (!isFinite(x) || !isFinite(y)) return; x = Math.floor(x); y = Math.floor(y); if (x < 0 || y < 0 || x >= N || y >= N) return; if (ids.length && !B.orderMove(side, ids, x, y)) B.msg('Туда не пройти', side, 'bad'); return; }
       case 'attack': { var tg = B.agents[m.tid | 0]; if (!tg || !tg.alive || !this.visible(tg) || B.ctl(tg) === side) return; if (ids.length) B.orderAttack(side, ids, tg.id); return; }
       case 'hold': if (ids.length) B.orderHold(side, ids); return;
       case 'stop': if (ids.length) B.orderStop(side, ids); return;
@@ -331,8 +339,34 @@
   };
   Mirror.prototype.alive = function(team) { return this.cnt[team] || 0; };
   Mirror.prototype.squadOf = function(team, id) { var sqs = this.teams[team].squads; for (var i = 0; i < sqs.length; i++) if (sqs[i].id === id) return sqs[i]; return null; };
-  Mirror.prototype.cmd = function(k, o) { o = o || {}; o.t = 'cmd'; o.k = k; this.send(JSON.stringify(o)); };
-  Mirror.prototype.orderMove = function(team, ids, x, y) { var self = this, now = Date.now(), lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.goal = [x, y]; a.at = false; a.post = true; a.hold = false; a.focus = -1; a.ordT = now; a.lockT = lk; } }); this.cmd('move', { ids: ids, x: x, y: y }); return ids.length; };
+  // приказ — частями по 400 бойцов (столько сервер берёт за раз, Viewer.ids): иначе сверх 400 молча
+  // отбрасывались (аудит 30.10, BUG-071)
+  Mirror.prototype.cmd = function(k, o) {
+    o = o || {}; o.t = 'cmd'; o.k = k;
+    if (Array.isArray(o.ids) && o.ids.length > 400) {
+      for (var i = 0; i < o.ids.length; i += 400) { var p = {}; for (var kk in o) p[kk] = o[kk]; p.ids = o.ids.slice(i, i + 400); this.send(JSON.stringify(p)); }
+      return;
+    }
+    this.send(JSON.stringify(o));
+  };
+  // Туда вообще можно встать? Как spotNear движка: проходимая клетка в 14 (технике — 20) клетках от точки
+  // хотя бы для одного рода войск выбранных; нет — приказ не уходит и линия хода не рисуется (BUG-066)
+  Mirror.prototype.canGo = function(ids, x, y) {
+    var self = this, mv = {}, any = false;
+    ids.forEach(function(i) { var a = self.agents[i]; if (a && a.T) { mv[(a.T.move || 'foot') + (a.size === 2 ? 2 : 1)] = 1; any = true; } });
+    if (!any || !this.map) return true;
+    for (var key in mv) {
+      var move = key.slice(0, -1), sz = +key.slice(-1), R = sz === 2 ? 20 : 14;
+      if (move === 'air') return true;
+      for (var r = 0; r < R; r++) for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        var cx = x + dx, cy = y + dy; if (cx < 0 || cy < 0 || cx + sz > N || cy + sz > N) continue;
+        if (sz === 2 ? P.canBox(this.map, cx, cy, 2, move) : P.speed(this.map, cx, cy, move) > 0) return true;
+      }
+    }
+    return false;
+  };
+  Mirror.prototype.orderMove = function(team, ids, x, y) { if (!this.canGo(ids, x, y)) return 0; var self = this, now = Date.now(), lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.goal = [x, y]; a.at = false; a.post = true; a.hold = false; a.focus = -1; a.ordT = now; a.lockT = lk; } }); this.cmd('move', { ids: ids, x: x, y: y }); return ids.length; };
   Mirror.prototype.orderAttack = function(team, ids, tid) { var self = this, lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.focus = tid; a.hold = false; a.lockT = lk; } }); this.cmd('attack', { ids: ids, tid: tid }); return ids.length; };
   Mirror.prototype.orderHold = function(team, ids) { var self = this, lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = true; a.at = true; a.post = true; a.lockT = lk; } }); this.cmd('hold', { ids: ids }); return ids.length; };
   Mirror.prototype.orderStop = function(team, ids) { var self = this, lk = clock() + LOCK; ids.forEach(function(i) { var a = self.agents[i]; if (a) { a.hold = false; a.at = true; a.post = false; a.goal = null; a.focus = -1; a.lockT = lk; } }); this.cmd('stop', { ids: ids }); return ids.length; };
@@ -432,6 +466,7 @@
     if (f.dist) for (i = 0; i < f.dist.length && i < this.districts.length; i++) { this.districts[i].by = f.dist[i][0]; this.districts[i].cnt = [f.dist[i][1], f.dist[i][2]]; }
     if (f.fog) { unrle(f.fog, this.seen[this.side]); this.fogN++; }
     if (f.sq) this.teams[this.side].squads = f.sq;
+    if (f.cd) for (i = 0; i < this.agents.length; i++) { var ca = this.agents[i]; if (ca && ca.hero && ca.team === this.side) ca.hero.cds = f.cd[ca.id] || {}; }
     if (f.over != null) { this.over = f.over; this.why = f.why || ''; }
     while (this.ev.shots.length > 600) this.ev.shots.shift();
   };

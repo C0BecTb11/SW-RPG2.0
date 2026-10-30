@@ -333,13 +333,21 @@
     try { frameBody(now); } catch (err) { if (!G.frameErr || now - G.frameErr > 5000) { G.frameErr = now; console.error('Такт экрана не прошёл:', err); } if (window.errReport) errReport(err, 'ground.frame'); }
   }
   function frameBody(now) {
+    // экономия заряда — не чаще 30 к/с (как на орбите); поле закрыто панелью игры (исследования, древо,
+    // поселение) — 8 к/с: бой идёт, а батарея и нагрев не тратятся на невидимое (BUG-067)
+    if (G.last) {
+      var gap = now - G.last;
+      if (now - (G.covT || 0) > 500) { G.covT = now; G.covered = fieldCovered(); }
+      if (G.covered ? gap < 120 : GFX.get('eco') && gap < 30) return;
+    }
     var dt = Math.min(0.1, (now - (G.last || now)) / 1000); G.last = now;
     G.vcT = (G.vcT || 0) + dt; if (G.vcT > 0.5) { G.vcT = 0; viewCentre(); }
     G.fpsN++; if (now - G.fpsT > 1000) { G.fps = G.fpsN; G.fpsN = 0; G.fpsT = now; $('sp-fps').textContent = G.fps; }
     var B = G.B;
     if (B) {
       if (G.live) { B.step(dt); G.t = B.t; } else if (!G.ended && G.speed) { B.step(dt * G.speed); G.t = B.t; }
-      $('sp-time').textContent = Math.floor(B.t / 60) + ':' + ('0' + Math.floor(B.t % 60)).slice(-2);
+      var tStr = Math.floor(B.t / 60) + ':' + ('0' + Math.floor(B.t % 60)).slice(-2);
+      if (tStr !== G.tStr) { G.tStr = tStr; $('sp-time').textContent = tStr; }      // в DOM — раз в секунду, а не каждый кадр
       // ошибка в одном кадре не должна останавливать бой: кадр пропускается, цикл живёт
       var d0 = performance.now(); try { draw(); } catch (err) { if (ctx.reset) ctx.reset(); else cv.width = cv.width; if (!G.drawErr || now - G.drawErr > 5000) { G.drawErr = now; console.error('Кадр не отрисован:', err); } if (window.errReport) errReport(err, 'ground.draw'); } G.drawMs = G.drawMs * 0.9 + (performance.now() - d0) * 0.1 || 0; takeMsgs();
       if (B.over >= 0 && !G.ended) endBattle();
@@ -350,8 +358,19 @@
     // раз в 5 с: подложка на месте? (она в обычной памяти — проверка дешёвая; листы ловят сброс сами)
     G.chkT = (G.chkT || 0) + dt; if (G.chkT > 5) { G.chkT = 0; if (G.base && G.baseReady && !baseOk()) gfxLost(); }
   }
+  // поле закрыто чем-то во весь экран (панель игры поверх боя): верх и середина поля — не холст и не панели боя
+  function fieldCovered() {
+    if (document.hidden) return false;
+    var pts = [[G.vw / 2, G.vh * 0.3], [G.vw * 0.25, G.vh * 0.5], [G.vw * 0.75, G.vh * 0.5]];
+    for (var i = 0; i < pts.length; i++) {
+      var el = document.elementFromPoint(pts[i][0], pts[i][1]);
+      if (!el || el === cv || el.closest('#sp-bottom,#sp-toast,#sp-tr,#sp-tl,#sp-top,#sp-back,.sp-end,#credits-bar,#build-toggle')) return false;
+    }
+    return true;
+  }
   function draw() {
     var c = ctx, s = CAM.s, dpr = G.dpr, B = G.B, T = G.ter, t = B.t;
+    G.vecN = 0;                                           // векторных фигурок в этом кадре (BUG-069)
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.fillStyle = '#05060a'; c.fillRect(0, 0, G.vw, G.vh);
     c.imageSmoothingEnabled = true;
@@ -706,12 +725,15 @@
       c.restore();
     }
   }
+  var VEC_MAX = 48;
   function figOf(a) { if (a._fi != null) return a._fi; var k = Army.kit(a.tid); var id = k ? k.fig : (a.team === 0 ? 'rep_dc15a' : 'cis_b1'); a._fi = FIG_IDX[id] != null ? FIG_IDX[id] : 0; return a._fi; }
   function drawVehicle(c, a, s, p, alpha, wreck) {
     var id = a.tid, vt = V.TYPES[id]; if (!vt) return;
     c.save(); if (alpha != null) c.globalAlpha = alpha;
     // лист — пока машина на экране не крупнее его точек (вблизи — живьём, чтобы не мылить)
-    var E = s * G.dpr > 128 * 1.7 ? null : sheet('veh', id); if (E && s * G.dpr > E.ppc * 1.7) E = null;
+    // векторных фигурок на кадр — не больше VEC_MAX: дальше листы, хоть и мягче (при 1000 бойцах вблизи — 6 к/с, BUG-069)
+    var vec = (G.vecN || 0) < VEC_MAX, E = s * G.dpr > 128 * 1.7 && vec ? null : sheet('veh', id); if (E && s * G.dpr > E.ppc * 1.7 && vec) E = null;
+    if (!E) G.vecN = (G.vecN || 0) + 1;
     if (E) {
       var dir = Math.round(((a.aim % TAU) + TAU) % TAU / TAU * V.DIRS) % V.DIRS, fr = E.frames > 1 && !wreck && a.mv > 0.3 ? 1 + Math.floor(a.phase / (TAU / (V.FRAMES - 1))) % (V.FRAMES - 1) : 0;
       var kk = dir * E.frames + fr, size = E.span * s, half = size / 2;
@@ -806,12 +828,12 @@
         var hr = m.hero;
         H.draw(c, { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase, act: hr.actT > 0 ? hr.act : (m.mv > 0.3 ? 'run' : 'idle'), k: hr.k, look: heroLook(m) });
         c.restore();
-      } else if ((A = s * G.dpr * F.FIG * 1.15 * FIGK <= Math.round(GFX.Q().atlas) * 1.7 ? sheet('fig', figOf(m)) : null)) {
+      } else if ((A = s * G.dpr * F.FIG * 1.15 * FIGK <= Math.round(GFX.Q().atlas) * 1.7 || G.vecN >= VEC_MAX ? sheet('fig', figOf(m)) : null)) {
         var size = s * A.scale * FIGK, half = size / 2;
         var dir = Math.round(((m.aim % TAU) + TAU) % TAU / TAU * A.dirs) % A.dirs, fr = m.mv > 0.3 ? 1 + Math.floor(m.phase / (TAU / 4)) % 4 : 0;
         var kk = dir * A.frames + fr;
         c.drawImage(A.canvas, (kk % A.cols) * A.cell, Math.floor(kk / A.cols) * A.cell, A.cell, A.cell, p[0] - half, p[1] - half, size, size);
-      } else { c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK); F.draw(c, ALL[figOf(m)], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase }); c.restore(); }
+      } else { G.vecN++; c.save(); c.translate(p[0], p[1]); c.scale(s * FIGK, s * FIGK); F.draw(c, ALL[figOf(m)], { aim: m.aim, legs: m.legs, mv: m.mv, phase: m.phase }); c.restore(); }
       // состояния
       if (m.netT > t) drawNet(c, p[0], p[1], rr * 1.15, t, m.id);
       if (m.stun > 0) { c.fillStyle = 'rgba(200,170,255,0.9)'; for (var q = 0; q < 3; q++) { var qa = t * 5 + q * 2.1; c.beginPath(); c.arc(p[0] + Math.cos(qa) * s * 0.5, p[1] - s * 0.6 + Math.sin(qa) * s * 0.15, 2, 0, TAU); c.fill(); } }
@@ -1029,11 +1051,18 @@
       label(c, String(q.id), p[0], p[1] - s * 1.6 - 8, '#e8d9a8', 10);
     });
   }
-  function drawMini(c) {
+  // верх нижней панели — меряется вместе с панелью (hud, 4 раза в секунду), а не в каждом кадре:
+  // чтение размеров после записи в DOM заставляло браузер пересчитывать вёрстку каждый кадр (BUG-068)
+  function bottomTop() {
     var abb = $('gd-abbar'), btop = $('sp-bottom').getBoundingClientRect().top; if (abb && !abb.hidden) btop = Math.min(btop, abb.getBoundingClientRect().top);
+    return btop;
+  }
+  function drawMini(c) {
+    // выключена — и касание того угла больше не двигает камеру (BUG-073)
+    if (!GFX.get('mini')) { G.mini = null; return; }
+    var btop = G.btop != null ? G.btop : (G.btop = bottomTop());
     if (G.dockLeft) btop = G.vh;                         // панели слева — мини-карта в правом нижнем углу
     var B = G.B, W = Math.min(120, G.vw * 0.3), x0 = G.vw - W - 10, y0 = btop - W - 10, k = W / N;
-    if (!GFX.get('mini')) return;
     c.save(); c.globalAlpha = 0.9;
     c.drawImage(G.base, x0, y0, W, W);
     c.drawImage(FOG, x0, y0, W, W);
@@ -1082,10 +1111,11 @@
     $('sp-stat').innerHTML = capLine + '<div class="sp-bd-strip' + (cp.status === 'capturing' && !mineAtt ? ' bad' : '') + '">' + stat + '<span class="gd-tip">' + tip + '</span></div>';
     dockTabs([['units', 'Войска', B.teams[G.side].squads.length ? '<em class="dot"></em>' : ''], ['act', 'Приказы']]);
     $('gd-all').classList.toggle('on', G.usel.length > 0); $('gd-all').textContent = G.usel.length ? 'Снять' : 'Все свои';
-    if (G.sheet === 'units') $('sp-ship').innerHTML = unitsPanel(B, sel);
-    else if (G.sheet === 'act') $('sp-ship').innerHTML = actPanel(B, sel);
+    var shEl = $('sp-ship'), shH = G.sheet === 'units' ? unitsPanel(B, sel) : G.sheet === 'act' ? actPanel(B, sel) : null;
+    if (shH != null && shEl._h !== shH) { shEl.innerHTML = shH; shEl._h = shH; }
     sheetShow();
     abBar(B, sel);
+    G.btop = bottomTop();
   }
   // Полоса сил героя над нижней панелью: выбран герой, шторка закрыта. Сила → касание цели на поле.
   var AB_SHORT = { push_dark: 'Телекинез', drain_dark: 'Вытягивание', heal_light: 'Исцеление', barrier_light: 'Купол', lightning_dark: 'Молнии', fear_dark: 'Страх', dash_dark: 'Бросок', throw_dark: 'Клинок', push_light: 'Толчок' };
@@ -1182,11 +1212,13 @@
   }
 
   // ---------------------------------------------------------------- ввод
-  var PTR = {}, GES = null, pressT = 0;
+  var PTR = {}, GES = null, pressT = 0, SEL_MAX = 400;
   function agentAt(px, py) {
     var B = G.B, w = toW(px, py), best = -1, bd = 1e9;
     if (!B) return -1;
-    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; var r = vrad(a) + 0.25, dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < r * r && d < bd) { bd = d; best = i; } }
+    // зона касания — не меньше 20 CSS px: при общем виде боец — 2–7 px, и пальцем не попасть (BUG-064)
+    var rMin = 20 / CAM.s;
+    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!a.alive) continue; if (a.team !== G.side && !B.canSee(G.side, a)) continue; var r = Math.max(vrad(a) + 0.25, rMin), dx = a.x - w[0], dy = a.y - w[1], d = dx * dx + dy * dy; if (d < r * r && d < bd) { bd = d; best = i; } }
     return best;
   }
   function tap(px, py) {
@@ -1224,7 +1256,10 @@
     var B = G.B, x0 = Math.min(b[0], b[2]), y0 = Math.min(b[1], b[3]), x1 = Math.max(b[0], b[2]), y1 = Math.max(b[1], b[3]);
     G.usel = [];
     if (!B) return;
-    for (var i = 0; i < B.agents.length && G.usel.length < 160; i++) { var a = B.agents[i]; if (!mine(a)) continue; var p = toS(a.x, a.y); if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) G.usel.push(i); }
+    // рамка — до 400 бойцов (столько берёт один приказ на сервере); больше — честно сказать (BUG-071)
+    var over = 0;
+    for (var i = 0; i < B.agents.length; i++) { var a = B.agents[i]; if (!mine(a)) continue; var p = toS(a.x, a.y); if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) { if (G.usel.length < SEL_MAX) G.usel.push(i); else over++; } }
+    if (over) toast('Рамкой — не больше ' + SEL_MAX + ' бойцов: ещё ' + over + ' не выбраны', 'gold');
     hud();
   }
   function bind() {
@@ -1251,7 +1286,10 @@
         else if (GES.k === 'box') { if (Math.abs(G.box[2] - G.box[0]) > 6 && Math.abs(G.box[3] - G.box[1]) > 6) boxSelect(G.box); else tap(e.clientX, e.clientY); }
       }
       delete PTR[e.pointerId];
-      if (!Object.keys(PTR).length) { GES = null; G.box = null; }
+      var left = Object.keys(PTR);
+      if (!left.length) { GES = null; G.box = null; }
+      // щипок кончился, палец остался — он ведёт камеру (BUG-074)
+      else if (left.length === 1 && GES && GES.k === 'pinch') { var lp = PTR[left[0]]; GES = { k: 'pan', x: lp[0], y: lp[1], cx: CAM.x, cy: CAM.y, t: performance.now() }; }
     }
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('wheel', function(e) { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
@@ -1259,9 +1297,11 @@
     $('gd-all').onclick = function() { var B = G.B; if (!B) return; if (G.usel.length) G.usel = []; else B.agents.forEach(function(a) { if (mine(a)) G.usel.push(a.id); }); hud(); };
     $('sp-pause').onclick = function() { setSpeed(G.speed === 0 ? (G.lastSpd || 1) : 0); };
     $('sp-spd').onclick = function() { var c = G.speed || G.lastSpd || 1; setSpeed(c === 1 ? 2 : c === 2 ? 4 : 1); };
-    $('sp-gfx-b').onclick = function() { GFX.open(G.fps); };
+    // на земле нет жетонов и тряски своего корабля — эти переключатели не показываем (BUG-067)
+    $('sp-gfx-b').onclick = function() { GFX.open(G.fps, { hide: { view: true, shake: true }, mini: 'Мини-карта поля' }); };
     GFX.on(function(k) { if (k === 'q') { sheetsReset(); resize(); } });
-    $('sp-bottom').addEventListener('pointerdown', function(e) {
+    // нажатие — по отпусканию на месте (прокрутка шторки пальцем — не нажатие), space-gfx.js SPTap
+    window.SPTap($('sp-bottom'), function(e) {
       var t = e.target.closest('[data-tab],[data-ba],[data-as],[data-sq],[data-type],[data-ab],[data-abx],#sp-sheet-x'); if (!t) return;
       e.preventDefault();
       var B = G.B;
@@ -1281,7 +1321,12 @@
         var ab = t.getAttribute('data-ab'), sel = selected(), hero = sel.filter(function(a) { return a.hero; })[0]; if (!hero) return;
         var A = GR.ABIL[ab];
         if (A[1] === 'self' || !A[1]) { var err = B.useAbility(G.side, hero.id, ab, null); if (err) toast(err, 'bad'); }
-        else if (A[1] === 'ally' && ab === 'heal_light') { var err2 = B.useAbility(G.side, hero.id, ab, { tid: hero.id }); if (err2) { G.arm = { id: hero.id, ab: ab }; toast('Выбери союзника — герой подойдёт сам', 'gold'); } }
+        // исцеление: раненого героя — сразу его самого; целого — выбор союзника. В живом бою ответ движка
+        // приходит с сервера позже, поэтому решаем по здоровью героя, а не по ошибке (аудит 30.10, BUG-065)
+        else if (A[1] === 'ally' && ab === 'heal_light') {
+          if (hero.hp < hero.hpMax - 0.5) { var err2 = B.useAbility(G.side, hero.id, ab, { tid: hero.id }); if (err2) toast(err2, 'bad'); }
+          else { G.arm = G.arm && G.arm.ab === ab ? null : { id: hero.id, ab: ab }; if (G.arm) toast('Выбери союзника — герой подойдёт сам', 'gold'); }
+        }
         else { G.arm = G.arm && G.arm.ab === ab ? null : { id: hero.id, ab: ab }; if (G.arm) toast('Теперь коснись цели на поле', 'gold'); }
         // цель выбирают на поле — шторка не должна его закрывать
         if (G.arm) G.sheet = '';

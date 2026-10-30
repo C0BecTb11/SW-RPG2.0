@@ -71,22 +71,25 @@
   function toggle(key, name, about) {
     return '<button type="button" class="sp-gfx-tg' + (S[key] ? ' on' : '') + '" data-gt="' + key + '"><i></i><span><b>' + name + '</b><em>' + about + '</em></span></button>';
   }
+  // ctx — что умеет экран: наземка без жетонов и тряски (hide), своя подпись мини-карты (mini)
+  var CTX = {};
   function render(fps) {
     if (!el) return;
-    var lv = level(), P = PRESET[lv];
+    var lv = level(), P = PRESET[lv], hide = CTX.hide || {};
     el.querySelector('.sp-gfx-body').innerHTML =
       '<div class="sp-poly-lab">Качество графики</div><div class="sp-poly-chips">' +
       chips('q', [['auto', 'Авто', S.q === 'auto' ? PRESET[AUTO || (AUTO = autoQ())].name.toLowerCase() : ''], ['low', 'Минимум'], ['mid', 'Средне'], ['high', 'Высоко'], ['ultra', 'Ультра']]) + '</div>' +
       '<p class="sp-gfx-about">' + P.about + (fps ? ' <span>Сейчас ' + fps + ' к/с.</span>' : '') + '</p>' +
-      '<div class="sp-poly-lab">Бойцы на палубе</div><div class="sp-poly-chips">' +
-      chips('view', [['auto', 'Авто', 'по масштабу'], ['tokens', 'Жетоны'], ['figures', 'Фигурки']]) + '</div>' +
+      (hide.view ? '' : '<div class="sp-poly-lab">Бойцы на палубе</div><div class="sp-poly-chips">' +
+      chips('view', [['auto', 'Авто', 'по масштабу'], ['tokens', 'Жетоны'], ['figures', 'Фигурки']]) + '</div>') +
       '<div class="sp-poly-lab">Экран боя</div><div class="sp-gfx-tgs">' +
-      toggle('nums', 'Цифры урона', 'над бойцом при попадании') +
-      toggle('mini', 'Мини-карта палубы', 'в углу; касание — камера туда') +
-      toggle('shake', 'Тряска', 'от попаданий по своему кораблю') +
+      (hide.nums ? '' : toggle('nums', 'Цифры урона', 'над бойцом при попадании')) +
+      (hide.mini ? '' : toggle('mini', CTX.mini || 'Мини-карта палубы', 'в углу; касание — камера туда')) +
+      (hide.shake ? '' : toggle('shake', 'Тряска', 'от попаданий по своему кораблю')) +
       toggle('eco', 'Экономия заряда', 'не чаще 30 кадров в секунду') + '</div>';
   }
-  function open(fps) {
+  function open(fps, ctx) {
+    CTX = ctx || {};
     if (!el) {
       el = document.createElement('div');
       el.className = 'sp-end sp-poly sp-gfx'; el.id = 'sp-gfx'; el.hidden = true;
@@ -108,5 +111,26 @@
   root.SPGfx = {
     Q: Q, level: level, get: function(k) { return S[k]; }, set: set, open: open, PRESET: PRESET,
     on: function(fn) { subs.push(fn); }
+  };
+
+  // Нажатие в нижней панели боя (полоса, шторка): действие — когда палец отпущен на месте, а не в момент
+  // касания. Иначе прокрутка шторки пальцем выбирала бойцов и отправляла их на борт (аудит 30.10, BUG-063).
+  // Панель перерисовывается 4 раза в секунду, поэтому click (он требует того же элемента под пальцем при
+  // нажатии и отпускании) теряется — цель берётся заново под точкой отпускания. Прокрутка (pointercancel,
+  // сдвиг больше 8 px, сдвиг прокрутки) — не нажатие.
+  root.SPTap = function(rootEl, fn) {
+    var st = null;
+    function scrolls(t) { var s = 0; for (var e = t; e && e !== rootEl.parentNode; e = e.parentNode) s += e.scrollTop || 0; return s; }
+    rootEl.addEventListener('pointerdown', function(e) { if (e.button > 0) return; st = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), tg: e.target, sc: scrolls(e.target) }; });
+    rootEl.addEventListener('pointercancel', function(e) { if (st && st.id === e.pointerId) st = null; });
+    rootEl.addEventListener('pointerup', function(e) {
+      var s0 = st; st = null;
+      if (!s0 || s0.id !== e.pointerId) return;
+      if (Math.abs(e.clientX - s0.x) + Math.abs(e.clientY - s0.y) > 8 || Date.now() - s0.t > 1200) return;
+      if (s0.tg.isConnected && scrolls(s0.tg) !== s0.sc) return;
+      var t = document.elementFromPoint(e.clientX, e.clientY) || e.target;
+      if (!rootEl.contains(t)) return;
+      fn({ target: t, preventDefault: function() { e.preventDefault(); }, clientX: e.clientX, clientY: e.clientY });
+    });
   };
 })(typeof self !== 'undefined' ? self : this);

@@ -901,7 +901,8 @@
     for (var i = 0; i < sh.length; i++) {
       var q = sh[i], k = (t - q.t0) / (q.t1 - q.t0); if (k < 0 || k > 1) continue;
       if (q.k === 'net' || q.k === 'rk') { drawShot2(c, s, q, k, t); continue; }
-      var x = q.x0 + (q.x1 - q.x0) * k, y = q.y0 + (q.y1 - q.y0) * k, h = Math.sin(k * Math.PI) * 6;
+      // h — выпущен из тумана: точки вылета нет, снаряд падает сверху в точку падения
+      var x = q.x0 + (q.x1 - q.x0) * k, y = q.y0 + (q.y1 - q.y0) * k, h = q.h ? Math.cos(k * Math.PI / 2) * 6 : Math.sin(k * Math.PI) * 6;
       var p = toS(x, y - h), g = toS(x, y);
       c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.arc(g[0], g[1], Math.max(2, s * 0.2), 0, TAU); c.fill();
       c.fillStyle = '#ffd27a'; c.beginPath(); c.arc(p[0], p[1], Math.max(2, s * 0.22), 0, TAU); c.fill();

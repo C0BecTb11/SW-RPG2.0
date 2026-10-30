@@ -60,7 +60,8 @@
   // сторона хозяина планеты (ей видно всё своё)
   function Viewer(B, side, user, opts) {
     this.B = B; this.side = side; this.user = user; this.opts = opts || {};
-    this.known = {}; this.seenAt = {}; this.lastT = -1; this.msgSeq = 0; this.full = true; this.stHp = {}; this.stKnown = {}; this.sqKey = ''; this.last = {}; this.shown = {};
+    // сообщения — с текущего: вошедшему (и вернувшемуся после обрыва) не сыплется старая пачка (BUG-044)
+    this.known = {}; this.seenAt = {}; this.lastT = -1; this.msgSeq = B.seq || 0; this.full = true; this.stHp = {}; this.stKnown = {}; this.sqKey = ''; this.last = {}; this.shown = {};
     this.bKnown = {};
     this.helloStructs();
   }
@@ -148,6 +149,9 @@
     var B = this.B, side = this.side, t = B.t, ag = B.agents, i, a;
     var slow = this.full || tickN % SLOW_EVERY === 0, full = this.full || tickN % FULL_EVERY === 0, snap = this.full || tickN % 20 === 0;
     var f = { t: 'f', T: r2(t), n: [], ev: {} }, nw = [], gone = [], hide = [];
+    // полный кадр (вход, после пропуска): в f.n — все, кого сторона видит; кого нет — экран снимает
+    // (иначе гибель и уход из вида в пропущенных кадрах оставляли призраков, BUG-036)
+    if (this.full) f.full = 1;
     var sn = B.seen[side], vis = function(x, y) { var c = Math.floor(y) * N + Math.floor(x); return !sn || (c >= 0 && c < N * N && sn[c] === 2); };
     // гибель бойца сторона узнаёт, только если видела его (свой, был на виду или место гибели открыто):
     // иначе id погибших выдавали число и гибель врагов в тумане (BUG-041)
@@ -401,6 +405,15 @@
     }
     // гибель — когда время экрана до неё дойдёт (экран отстаёт): иначе боец пропадает раньше, чем в него попали
     if (f.gone) for (i = 0; i < f.gone.length; i++) { var g = this.agents[f.gone[i]]; if (g && g.alive && g.dieT == null) { g.dieT = now; g.dieHide = true; } }
+    // полный кадр: кого в нём нет — свой погиб или снят с карты, чужой ушёл из вида
+    if (f.full) {
+      var inF = {}; for (i = 0; i < f.n.length; i++) inF[f.n[i][0]] = 1;
+      for (i = 0; i < this.agents.length; i++) {
+        var z = this.agents[i]; if (!z || z.ph || !z.alive || inF[z.id]) continue;
+        if (z.team === this.side) { if (z.dieT == null) { z.dieT = now; z.dieHide = true; } }
+        else z.vis = false;
+      }
+    }
     if (f.hide) for (i = 0; i < f.hide.length; i++) { var hd = this.agents[f.hide[i]]; if (hd) hd.vis = false; }
     if (f.ev) {
       var e = f.ev;

@@ -212,7 +212,11 @@ function roomFail(r, name, e) {
   log('error', 'комната закрыта после ошибок', { room: name, n: r.errN });
   try { if (r.kind === 'event' && r.abort && !r.closed) r.abort('ошибка сервера боя'); else if (r.close && !r.closed) r.close('error'); } catch (e2) {}
   (r.clients || []).slice().forEach(function(c) { try { c.ws.send(JSON.stringify({ t: 'error', msg: 'Бой прерван из-за ошибки сервера — зайди снова чуть позже' })); c.ws.close(4011); } catch (e3) {} });
-  if (r.kind === 'event') { r.closed = true; r.failed = r.failed || 'ошибка сервера'; } else ROOMS.delete(name);
+  // планета и орбита уходят из списка, когда закрытие записано в базу (tickRoom): иначе новая комната взяла бы
+  // тот же бой, а запоздавший rt_ground_close его завершил бы и выкинул игроков (BUG-045)
+  if (r.kind === 'event') { r.closed = true; r.failed = r.failed || 'ошибка сервера'; }
+  else if ((r.kind === 'ground' || r.kind === 'system') && r.closed) { /* tickRoom уберёт после closeDone */ }
+  else ROOMS.delete(name);
 }
 var lateLogAt = 0, lateLogN = 0;
 function loop() {

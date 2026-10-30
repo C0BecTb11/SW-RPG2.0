@@ -45,6 +45,7 @@ function GroundRoom(name, system, cfg) {
   this.ms = []; this.bytes = 0; this.bytesRate = 0; this.rateAt = Date.now(); this.tickN = 0;
   this.battle = { tick: 0 };
   this.byUid = {}; this.structByUid = {}; this.lastSync = {}; this.structSync = {}; this.structOk = {};
+  this.dbCell = {}; this.lastSt = {}; this.boardDead = {};
   this.syncAt = Date.now(); this.pullAt = Date.now(); this.quietSince = Date.now(); this.emptySince = Date.now(); this.created = Date.now();
   this.loads = []; this.goneAt = {};
   var self = this;
@@ -126,8 +127,11 @@ GroundRoom.prototype.applyUnits = function(units, asked) {
       if (self.ready && !a.leave) raid++;
     }
     if (u.training) a.hold = true;
+    self.restoreSt(a, u.rt, team);
     self.byUid[u.id] = a.id;
     self.lastSync[u.id] = x + ',' + y + ',' + Math.round(a.hp);
+    self.dbCell[u.id] = u.x + ',' + u.y;
+    self.lastSt[u.id] = stKey(self.stOf(a));
   });
   if (raid) [0, 1].forEach(function(tm) { B.msg(raid > 1 ? 'Банда мародёров у поселения: ' + raid : 'Мародёр у поселения', tm, 'bad'); });
   if (leave) [0, 1].forEach(function(tm) { B.msg('Мародёры уходят с добычей', tm, 'bad'); });
@@ -136,8 +140,40 @@ GroundRoom.prototype.applyUnits = function(units, asked) {
     if (seen[uid]) return;
     var a = B.agents[self.byUid[uid]];
     if (a && a.alive) { a.alive = false; a.gone = true; a.removed = true; a.diedAt = B.t - 100; }
-    delete self.byUid[uid]; delete self.lastSync[uid];
+    delete self.byUid[uid]; delete self.lastSync[uid]; delete self.dbCell[uid]; delete self.lastSt[uid];
   });
+};
+// Откаты героя и порабощение живут дольше комнаты: в базе (unit_positions.rt_state) — в абсолютном
+// времени (секунды эпохи), иначе переоткрытие комнаты сбрасывало «Порабощение» и освобождало раба (BUG-018)
+function stKey(st) { return st ? JSON.stringify(st) : ''; }
+GroundRoom.prototype.stOf = function(a) {
+  var B = this.B, now = Date.now() / 1000, st = null, k;
+  if (a.hero && a.hero.cds) {
+    a.cdAbs = a.cdAbs || {};
+    for (k in a.hero.cds) {
+      var v = a.hero.cds[k]; if (!(v > B.t)) { delete a.cdAbs[k]; continue; }
+      if (!a.cdAbs[k] || a.cdAbs[k][0] !== v) a.cdAbs[k] = [v, Math.round(now + v - B.t)];
+      (st = st || {}).cd = st.cd || {}; st.cd[k] = a.cdAbs[k][1];
+    }
+  }
+  if (a.mind && a.mind.until > B.t) {
+    if (!a.mindAbs || a.mindAbs[0] !== a.mind.until) a.mindAbs = [a.mind.until, Math.round(now + a.mind.until - B.t)];
+    (st = st || {}).mind = { by: a.mind.by, until: a.mindAbs[1] };
+  } else a.mindAbs = null;
+  return st;
+};
+GroundRoom.prototype.restoreSt = function(a, rt, team) {
+  if (!rt || typeof rt !== 'object') return;
+  var B = this.B, now = Date.now() / 1000, k;
+  if (a.hero && rt.cd) for (k in rt.cd) {
+    var left = +rt.cd[k] - now; if (!(left > 0) || !GR.ABIL[k]) continue;
+    a.hero.cds[k] = B.t + left; (a.cdAbs = a.cdAbs || {})[k] = [a.hero.cds[k], +rt.cd[k]];
+  }
+  var m = rt.mind;
+  if (m && (m.by === 0 || m.by === 1 || m.by === 2) && m.by !== team && +m.until > now) {
+    a.mind = { until: B.t + (+m.until - now), by: m.by, orig: team }; a.mindAbs = [a.mind.until, +m.until];
+    a.tgt = -1; a.focus = -1; a.goal = null; a.at = true; a.post = false; a.sq = 0;
+  }
 };
 // base — прочность построек, которая лежала в базе к моменту запроса (pull)
 GroundRoom.prototype.applyStructs = function(list, base) {
@@ -181,6 +217,11 @@ GroundRoom.prototype.join = function(c) {
   for (var i = this.clients.length - 1; i >= 0; i--) {
     var o = this.clients[i];
     if (o.who && o.who.user === c.who.user && c.who.user !== 'dev') { o.ws.send(JSON.stringify({ t: 'error', msg: 'Эта планета открыта в другой вкладке' })); o.ws.close(4006); this.clients.splice(i, 1); }
+  }
+  // и в очереди открытия: пока комната открывается, второе окно того же игрока не встаёт рядом с первым (BUG-051)
+  for (i = this.waiting.length - 1; i >= 0; i--) {
+    var w = this.waiting[i];
+    if (w.who && w.who.user === c.who.user && c.who.user !== 'dev') { try { w.ws.send(JSON.stringify({ t: 'error', msg: 'Эта планета открыта в другой вкладке' })); w.ws.close(4006); } catch (e) {} this.waiting.splice(i, 1); }
   }
   if (!this.ready) { this.waiting.push(c); return true; }
   this.admit(c);
@@ -233,7 +274,9 @@ GroundRoom.prototype.step = function() {
   this.buildsStep();
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
-    if (this.tickN % Net.FRAME_EVERY === 0) this.send(c, c.viewer.frame(this.tickN));
+    // очередь игрока переполнена — кадр не строим (построенный и выброшенный кадр уносил гибели и скрытия,
+    // BUG-036); следующий уйдёт полным
+    if (this.tickN % Net.FRAME_EVERY === 0) { if (c.ws.bufferedAmount > BUF_MAX) { c.viewer.lost(); continue; } this.send(c, c.viewer.frame(this.tickN)); }
   }
   var now = Date.now();
   if (now - this.rateAt >= 2000) { this.bytesRate = this.bytes / ((now - this.rateAt) / 1000); this.bytes = 0; this.rateAt = now; }
@@ -243,30 +286,60 @@ GroundRoom.prototype.step = function() {
 
 // Записать в базу изменившиеся позиции и здоровье
 // Запись в базу — строго по очереди: два запроса вперемешку могли бы записать старое поверх нового
+// Запись, что ещё ждёт очереди, одна: она возьмёт состояние на момент своего начала, этого хватит всем, кто
+// её ждёт. Иначе при медленной базе каждый такт ставил новую — очередь росла без предела (BUG-038)
 GroundRoom.prototype.sync = function() {
-  var self = this, p = (this.syncQ || Promise.resolve()).then(function() { return self.syncNow(); });
+  if (this.syncWait) return this.syncWait;
+  var self = this;
+  this.syncAt = Date.now();
+  var p = this.syncWait = (this.syncQ || Promise.resolve()).then(function() { self.syncWait = null; return self.syncNow(); });
   this.syncQ = p.catch(function() {});
   return p;
 };
 GroundRoom.prototype.syncNow = function() {
-  var B = this.B, rows = [], srows = [], self = this;
-  this.syncAt = Date.now();
+  var B = this.B, rows = [], srows = [], self = this, live = [], used = {}, cellFor = {};
+  // клетки в базе: на клетку один боец (idx_unit_positions_cell). Двое в одной клетке — второму ближайшая
+  // свободная, иначе база оставляла ему старую позицию, и захват считался по ней (BUG-039).
+  // Сначала — те, кто в базе уже стоит в своей клетке, потом остальные
+  Object.keys(this.byUid).forEach(function(uid) {
+    var a = B.agents[self.byUid[uid]];
+    if (!a || a.removed || a.left || !a.alive) return;
+    var c = B.cellOf(a); live.push([uid, a, c]);
+  });
+  var claim = function(uid, c) { used[c[0] + ',' + c[1]] = uid; cellFor[uid] = c; };
+  live.forEach(function(L) { var k = L[2][0] + ',' + L[2][1]; if (self.dbCell[L[0]] === k && !used[k]) claim(L[0], L[2]); });
+  live.forEach(function(L) {
+    var uid = L[0], a = L[1], c = L[2]; if (cellFor[uid]) return;
+    if (!used[c[0] + ',' + c[1]]) { claim(uid, c); return; }
+    var m = B.pass[a.move + a.size], best = null;
+    for (var r = 1; r <= 4 && !best; r++) for (var dy = -r; dy <= r && !best; dy++) for (var dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      var x = c[0] + dx, y = c[1] + dy; if (x < 0 || y < 0 || x + a.size > N || y + a.size > N || used[x + ',' + y]) continue;
+      if (m && !m[y * N + x]) continue;
+      best = [x, y]; break;
+    }
+    claim(uid, best || c);
+  });
   Object.keys(this.byUid).forEach(function(uid) {
     var a = B.agents[self.byUid[uid]];
     // мародёр ушёл с карты: строку в базе убирает rt_ground_sync (как погибшего, без засчёта)
     if (a && a.left) { if (self.lastSync[uid] !== 'left') { self.lastSync[uid] = 'left'; var lc = B.cellOf(a); rows.push({ id: uid, x: lc[0], y: lc[1], hp: 0, fire: false }); } return; }
     if (!a || a.removed) return;
     // погиб, когда база уже снимает его с карты (погрузка, вылет): гибель не пишем — иначе база стёрла бы
-    // бойца, который уже на борту или в пути. Не вышло снять — запишется следующей сверкой
+    // бойца, который уже на борту или в пути. Сняла — гибель запишется отдельно (boardDead), не вышло —
+    // следующей сверкой
     if (!a.alive && a.loading) return;
-    var c = B.cellOf(a), hp = a.alive ? Math.max(1, Math.round(a.hp)) : 0, fire = a.alive && B.t - (a.hitT || -99) < 30;
-    var key = c[0] + ',' + c[1] + ',' + hp + ',' + (fire ? 1 : 0);
-    if (self.lastSync[uid] === key) return;
+    var c = a.alive ? cellFor[uid] || B.cellOf(a) : B.cellOf(a), hp = a.alive ? Math.max(1, Math.round(a.hp)) : 0, fire = a.alive && B.t - (a.hitT || -99) < 30;
+    var key = c[0] + ',' + c[1] + ',' + hp + ',' + (fire ? 1 : 0), st = a.alive ? self.stOf(a) : null, sk = stKey(st);
+    if (self.lastSync[uid] === key && (!a.alive || self.lastSt[uid] === sk)) return;
     self.lastSync[uid] = key;
     var row = { id: uid, x: c[0], y: c[1], hp: hp, fire: fire };        // под огнём — в базе закрыта погрузка со стороны
+    if (a.alive && self.lastSt[uid] !== sk) { row.st = st; self.lastSt[uid] = sk; }   // откаты и порабощение (BUG-018)
     if (!a.alive && a.hitBy != null) { var k = B.agents[a.hitBy]; if (k && k.uid) row.by = k.uid; }   // кому засчитать (герою)
     rows.push(row);
   });
+  // погиб, пока база грузила его на борт: база его уже погрузила — снять с борта (BUG-060)
+  Object.keys(this.boardDead).forEach(function(uid) { var bd = self.boardDead[uid]; rows.push({ id: uid, x: bd.x, y: bd.y, hp: 0, fire: false, board: true, by: bd.by || undefined }); });
   Object.keys(this.structByUid).forEach(function(uid) {
     var s = B.structs[self.structByUid[uid]]; if (!s) return;
     var hp = s.dead ? 0 : Math.round(s.hp);
@@ -275,10 +348,15 @@ GroundRoom.prototype.syncNow = function() {
   });
   if (!rows.length && !srows.length) return Promise.resolve();
   return this.rpc('rt_ground_sync', { p_battle: this.battleId, p_units: rows, p_structs: srows })
-    .then(function() { srows.forEach(function(r) { self.structOk[r.id] = r.hp; }); })
+    .then(function(res) {
+      srows.forEach(function(r) { self.structOk[r.id] = r.hp; });
+      rows.forEach(function(r) { if (r.board) delete self.boardDead[r.id]; else if (r.hp > 0) self.dbCell[r.id] = r.x + ',' + r.y; });
+      // клетка у кого-то осталась занятой (busy) — кто именно, база не говорит: эти строки — ещё раз в следующий раз
+      if (res && res.busy > 0) rows.forEach(function(r) { if (r.hp > 0) { delete self.lastSync[r.id]; delete self.dbCell[r.id]; } });
+    })
     .catch(function(e) {
       self.cfg.log('error', 'rt_ground_sync', { room: self.name, err: e.message });
-      Object.keys(self.lastSync).forEach(function(k) { if (rows.some(function(r) { return r.id === k; })) delete self.lastSync[k]; });
+      rows.forEach(function(r) { delete self.lastSync[r.id]; if (r.st !== undefined) delete self.lastSt[r.id]; });
       srows.forEach(function(r) { delete self.structSync[r.id]; });      // постройки — повторить запись в следующий раз
     });
 };
@@ -332,7 +410,7 @@ GroundRoom.prototype.onLoad = function(ids, ship, user, c) {
     var a = B.agents[id]; if (!a || !a.alive || !a.uid || a.loading) return;
     var z = self.zoneFor(a); if (!z) return;
     a.loadShip = ship; a.scoutTo = null; a.loadZone = z; a.loadUser = user;
-    if (!(a.x >= z.x && a.x < z.x + z.w && a.y >= z.y && a.y < z.y + z.h)) B.orderMove(c.side, [id], z.cx, z.cy);
+    if (!self.inZone(a, z)) B.orderMove(c.side, [id], z.cx, z.cy);
     n++;
   });
   if (n) B.msg('На борт: ' + n + ' — идут в зону погрузки', c.side, 'gold');
@@ -342,7 +420,8 @@ GroundRoom.prototype.loadsStep = function() {
   if (this.tickN % 10 !== 0) return;
   for (var i = 0; i < ag.length; i++) {
     var a = ag[i]; if (!a.alive || !(a.loadShip || a.scoutTo) || a.loading) continue;
-    var z = a.loadZone; if (!(a.x >= z.x && a.x < z.x + z.w && a.y >= z.y && a.y < z.y + z.h)) continue;
+    var z = a.loadZone;
+    if (!this.inZone(a, z)) { if (a.at && !a.loading && this.tickN % 50 === 0) B.orderMove(a.team, [a.id], z.cx, z.cy); continue; }   // встал с краю — ещё шаг внутрь
     // под огнём не грузятся — то же правило, что у панели армии в базе (rt_battle_guard: 30 с после попадания).
     // Через сервер боя оно обходилось: rt_ground_act идёт мимо сторожа (решение Артёма 30.10 — закрыть)
     if (B.t - (a.hitT == null ? -99 : a.hitT) < LOAD_FIRE_S) {
@@ -356,6 +435,8 @@ GroundRoom.prototype.loadsStep = function() {
       self.sync().then(function() {
         return self.rpc('rt_ground_act', { p_user: user, p_fn: a.T.vehicle ? 'load_vehicle_to_ship' : 'load_unit_from_ground', p_args: { unit: a.uid, ship: ship } });
       }).then(function() {
+        // пал, пока база грузила: на борт он уже попал — гибель записать отдельно (BUG-060)
+        if (!a.alive) { var dc = B.cellOf(a), kb = a.hitBy != null && B.agents[a.hitBy]; self.boardDead[a.uid] = { x: dc[0], y: dc[1], by: kb && kb.uid || null }; self.drop(a); self.sync(); return; }
         self.drop(a);
         B.msg((a.name || a.T.name) + ' — на борту', a.team, 'gold');
       }, function(e) {
@@ -366,6 +447,11 @@ GroundRoom.prototype.loadsStep = function() {
   }
 };
 
+// Целиком ли боец в зоне (как в базе: is_box_in_*_zone смотрит всю коробку техники, BUG-043)
+GroundRoom.prototype.inZone = function(a, z) {
+  var c = this.B.cellOf(a), s = a.size || 1;
+  return c[0] >= z.x && c[1] >= z.y && c[0] + s <= z.x + z.w && c[1] + s <= z.y + z.h;
+};
 // Боец снят с карты руками комнаты (погрузка, вылет): без сцены гибели, и старый снимок базы его не вернёт
 GroundRoom.prototype.drop = function(a) {
   a.alive = false; a.gone = true; a.removed = true; a.diedAt = this.B.t - 100;
@@ -382,7 +468,7 @@ GroundRoom.prototype.onScout = function(id, to, user, c) {
   var z = this.zoneFor(a);
   if (!z) { B.msg('Нет зоны вылета: разведчик улетает из зоны высадки', c.side, 'bad'); return; }
   a.scoutTo = to; a.scoutName = hasMap(to) ? (mapJson(to).name || '') : ''; a.loadShip = null; a.build = null; a.loadZone = z; a.loadUser = user;
-  if (!(a.x >= z.x && a.x < z.x + z.w && a.y >= z.y && a.y < z.y + z.h)) {
+  if (!this.inZone(a, z)) {
     B.orderMove(c.side, [id], z.cx, z.cy);
     B.msg((a.name || a.T.name) + ' идёт в зону вылета' + (a.scoutName ? ' → ' + a.scoutName : ''), c.side, 'gold');
   }
@@ -411,6 +497,7 @@ GroundRoom.prototype.onBuild = function(id, job, user, c) {
   var B = this.B, a = B.agents[id];
   if (!a || !a.alive || !a.uid || !a.T.builder) { B.msg('Строить умеет только инженер', c.side, 'bad'); return; }
   if (a.loading) { B.msg((a.name || a.T.name) + ' уже грузится на борт', c.side, 'bad'); return; }
+  if (a.build && a.build.busy) { B.msg((a.name || a.T.name) + ' уже закладывает укрепление — дождись', c.side, 'bad'); return; }
   // на стенах, воротах и башнях города и поверх других построек не строят (база этих клеток не знает)
   for (var jy = job.y; jy < job.y + job.h; jy++) for (var jx = job.x; jx < job.x + job.w; jx++) {
     var so = B.structAt[jy * N + jx]; if (so >= 0 && !B.structs[so].dead) { B.msg('Здесь уже стоит ' + B.structs[so].name.toLowerCase() + ' — выбери другое место', c.side, 'bad'); return; }
@@ -449,11 +536,11 @@ GroundRoom.prototype.buildsStep = function() {
       self.sync().then(function() {
         return self.rpc('rt_ground_act', { p_user: j.user, p_fn: 'build_structure', p_args: { unit: a.uid, type: j.type, x: j.x, y: j.y } });
       }).then(function() {
-        a.build = null;
+        if (a.build === j) a.build = null;                   // ответ на старую стройку не отменяет новую (BUG-049)
         B.msg((a.name || a.T.name) + ' заложил укрепление', a.team, 'gold');
         self.pullAt = 0;                                     // подхватить постройку базой пораньше
       }, function(e) {
-        a.build = null;
+        if (a.build === j) a.build = null;
         B.msg('Стройка: ' + String(e.message || e).replace(/^.*?: /, ''), a.team, 'bad');
       });
     })(a, j);

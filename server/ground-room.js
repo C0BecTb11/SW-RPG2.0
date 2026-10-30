@@ -54,6 +54,14 @@ function GroundRoom(name, system, cfg) {
 
 GroundRoom.prototype.rpc = function(fn, args) { args = args || {}; args.p_key = this.cfg.key; return this.cfg.rpc(fn, args); };
 
+// Ключ того, что вписано в карту комнаты при открытии: поселение, хозяин и здания на участках (6×6 непроходимы).
+// Изменилось — комната пересоздаётся: здание, построенное или снесённое при открытой комнате, иначе не было бы
+// ни преградой, ни проходом до следующего открытия (аудит 30.10, BUG-007)
+function mapKey(st) {
+  var settle = st.settle ? { level: st.settle.level, districts: st.settle.districts || [] } : { level: 1, districts: [] };
+  var bl = (st.buildings || []).map(function(b) { return b.x + ',' + b.y; }).sort().join(';');
+  return JSON.stringify(settle) + '|' + (st.system && st.system.faction) + '|' + bl;
+}
 GroundRoom.prototype.open = function() {
   var self = this;
   if (!hasMap(this.system)) return Promise.reject(new Error('нет карты планеты ' + this.system));
@@ -67,7 +75,7 @@ GroundRoom.prototype.open = function() {
     (st.buildings || []).forEach(function(b) { for (var y = b.y; y < b.y + 6; y++) for (var x = b.x; x < b.x + 6; x++) if (x >= 0 && y >= 0 && x < N && y < N) { map.t[y * N + x] = P.T.BLOCK; map.m[y * N + x] = 18; } });
     var js = { id: json.id, v: json.v, w: json.w, h: json.h, seed: json.seed, town: json.town, t: map.t, e: map.e, m: map.m, objs: json.objs, paths: json.paths, name: json.name, about: json.about, look: json.look, zones: json.zones };
     var settle = st.settle ? { level: st.settle.level, districts: st.settle.districts || [] } : { level: 1, districts: [] };
-    self.settleKey = JSON.stringify(settle) + '|' + st.system.faction;
+    self.settleKey = mapKey(st);
     var B = new GR.Ground(js, { seed: (Date.now() % 100000) | 0, auto0: false, auto1: false, att: self.att, captureSeconds: st.capture_goal || 21600, settle: settle, militiaAuto: false, capExternal: true });
     self.B = B;
     // карта игрокам — слоями в base64 (типизированные массивы в JSON не уходят)
@@ -140,7 +148,7 @@ GroundRoom.prototype.applyStructs = function(list, base) {
       // разбитая постройка снова цела — только если база уже знала о гибели (там был 0): старый снимок,
       // где гибель ещё не записана, её не воскрешает
       var st0 = B.structs[self.structByUid[s.id]], b0 = base ? base[s.id] : self.structOk[s.id];
-      if (st0 && st0.dead && s.hp > 0 && b0 === 0) { st0.dead = false; st0.hp = s.hp; self.structSync[s.id] = self.structOk[s.id] = Math.round(s.hp); }
+      if (st0 && st0.dead && s.hp > 0 && b0 === 0) { st0.dead = false; st0.hp = s.hp; B.stVer = (B.stVer || 0) + 1; self.structSync[s.id] = self.structOk[s.id] = Math.round(s.hp); }
       return;
     }
     if (s.building) return;                                   // ещё строится — подхватим, когда готова
@@ -150,10 +158,10 @@ GroundRoom.prototype.applyStructs = function(list, base) {
     var st = B.addStruct(s.kind, teamOf(s.faction), s.x, s.y, { w: s.w, h: s.h, hp: Math.min(s.hp, s.hpMax || s.hp), uid: s.id, res: res });
     if (!st) return;
     if (s.hpMax) st.hpMax = s.hpMax;
-    if (s.hp <= 0) st.dead = true;
+    if (s.hp <= 0) { st.dead = true; B.stVer = (B.stVer || 0) + 1; }
     self.structByUid[s.id] = st.i; self.structSync[s.id] = self.structOk[s.id] = st.dead ? 0 : Math.round(st.hp);
   });
-  Object.keys(this.structByUid).forEach(function(uid) { if (!seen[uid]) { var st = B.structs[self.structByUid[uid]]; if (st) st.dead = true; delete self.structByUid[uid]; } });
+  Object.keys(this.structByUid).forEach(function(uid) { if (!seen[uid]) { var st = B.structs[self.structByUid[uid]]; if (st && !st.dead) { st.dead = true; B.stVer = (B.stVer || 0) + 1; } delete self.structByUid[uid]; } });
 };
 GroundRoom.prototype.applyCapture = function(cap, goal) {
   var B = this.B;
@@ -287,10 +295,9 @@ GroundRoom.prototype.pullNow = function() {
     return self.rpc('rt_ground_pull', { p_battle: self.battleId, p_system: self.system });
   }).then(function(st) {
     if (!st || st.closed) { self.cfg.log('warn', 'бой закрыт базой', { room: self.name }); self.closed = true; self.kick('Бой на планете закрыт'); return; }
-    var settle = st.settle ? { level: st.settle.level, districts: st.settle.districts || [] } : { level: 1, districts: [] };
-    var key = JSON.stringify(settle) + '|' + (st.system && st.system.faction);
+    var key = mapKey(st);
     if (key !== self.settleKey) {
-      // планета сменила хозяина или поселение выросло: комната пересоздаётся
+      // планета сменила хозяина, поселение выросло или на участках встало (снесено) здание: комната пересоздаётся
       self.cfg.log('info', 'планета изменилась — комната закрывается', { room: self.name });
       self.close('planet changed').then(function() { self.kick('Планета изменилась — открой её заново'); });
       return;
@@ -401,6 +408,12 @@ GroundRoom.prototype.onBuild = function(id, job, user, c) {
   var B = this.B, a = B.agents[id];
   if (!a || !a.alive || !a.uid || !a.T.builder) { B.msg('Строить умеет только инженер', c.side, 'bad'); return; }
   if (a.loading) { B.msg((a.name || a.T.name) + ' уже грузится на борт', c.side, 'bad'); return; }
+  // на стенах, воротах и башнях города и поверх других построек не строят (база этих клеток не знает)
+  for (var jy = job.y; jy < job.y + job.h; jy++) for (var jx = job.x; jx < job.x + job.w; jx++) {
+    var so = B.structAt[jy * N + jx]; if (so >= 0 && !B.structs[so].dead) { B.msg('Здесь уже стоит ' + B.structs[so].name.toLowerCase() + ' — выбери другое место', c.side, 'bad'); return; }
+    var mm = B.map.m[jy * N + jx]; if (mm === 8 || mm === 9) {   // стена или частокол (shared/rt-town.js, M.wall / M.palisade)
+      B.msg('На стене города не строят', c.side, 'bad'); return; }
+  }
   if (a.loadShip || a.scoutTo) { a.loadShip = null; a.scoutTo = null; a.loading = false; }
   a.build = { type: job.type, x: job.x, y: job.y, w: job.w, h: job.h, user: user, busy: false };
   // цель хода: ближайшая к бойцу проходимая клетка в кольце на 1 клетку от коробки

@@ -590,6 +590,8 @@ begin
     raise exception 'На этой планете наши агитаторы уже работали — следующая агитация не раньше чем через % ч', ceil(extract(epoch from v_until - now()) / 3600);
   end if;
   select controller_user_id into v_ctl from system_control where system_id = p_system;
+  -- общий потолок на хозяина: агитация и диверсии разом не проскочат его вдвоём (как в spy_launch)
+  if v_ctl is not null then perform pg_advisory_xact_lock(hashtext('spy_victim:' || v_ctl::text)); end if;
   if v_ctl is not null and (select count(*) from spy_ops where victim = v_ctl and launched_at > now() - interval '24 hours' and result is distinct from 'void') >= 2 then
     raise exception 'Хозяин этой планеты за сутки уже пережил две операции — его не трогают до завтра';
   end if;

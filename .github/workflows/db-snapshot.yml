@@ -1,0 +1,63 @@
+# Снимок живой базы в репозиторий: схема public (таблицы, функции, триггеры, политики, права) —
+# в sql/_live/schema.sql. Файлы sql/*.sql — история правок, а правда — база; снимок делает её видимой
+# в репозитории, и любое расхождение видно обычным сравнением (git diff).
+#
+# Нужен секрет репозитория (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL — строка подключения к базе из Supabase (Project Settings → Database →
+#   Connection string → URI, вариант «Session pooler»), с паролем базы.
+# Без секрета задание просто ничего не делает.
+name: db-snapshot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'      # раз в сутки, ночью по Москве — после выдачи поселений
+
+permissions:
+  contents: write
+
+concurrency:
+  group: db-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - name: Секрет на месте?
+        id: chk
+        run: |
+          if [ -z "$DB_URL" ]; then echo "SUPABASE_DB_URL не задан — пропускаю"; echo "go=0" >> "$GITHUB_OUTPUT"; else echo "go=1" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.chk.outputs.go == '1'
+
+      - name: pg_dump 17
+        if: steps.chk.outputs.go == '1'
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-17
+
+      - name: Снимок схемы
+        if: steps.chk.outputs.go == '1'
+        run: |
+          mkdir -p sql/_live
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" --schema-only --schema=public --no-owner \
+            --file=sql/_live/schema.raw.sql
+          # строки с версией pg_dump и меткой времени не меняют смысла — убираем, чтобы diff показывал только правки
+          grep -v -E '^-- Dumped (from|by) ' sql/_live/schema.raw.sql | grep -v -E '^\\(restrict|unrestrict) ' > sql/_live/schema.sql
+          rm sql/_live/schema.raw.sql
+
+      - name: Записать, если изменилось
+        if: steps.chk.outputs.go == '1'
+        run: |
+          git add sql/_live/schema.sql
+          if git diff --cached --quiet; then echo "Схема не изменилась"; exit 0; fi
+          git config user.name "db-snapshot"
+          git config user.email "db-snapshot@users.noreply.github.com"
+          git commit -m "Снимок базы: $(date -u +%Y-%m-%d)"
+          git push

@@ -226,7 +226,9 @@
                ch: bd.charge ? { a: bd.charge.armed ? 1 : 0, l: r1(bd.charge.left), p: r1(bd.charge.plant), d: r1(bd.charge.defuse) } : null,
                su: { att: su.att, def: su.def, crew: su.crew, sq: su.sq, dsq: bd.def === this.side ? su.dsq : [], dm: bd.defManual ? 1 : 0 }, held: this.heldList(bd), seq: bd.seq || 0,
                br: bd.bridge && bd.rs[bd.bridge] ? [bd.rs[bd.bridge].held ? 1 : 0, r1(bd.rs[bd.bridge].hold), bd.rs[bd.bridge].cnt[0], bd.rs[bd.bridge].cnt[1]] : null,
-               pw: bd.canPlant(), vw: bd.canVent(this.side), t: r1(bd.t), msgs: this.newMsgs(sh, bd) };
+               pw: bd.canPlant(), vw: bd.canVent(this.side), t: r1(bd.t), msgs: this.newMsgs(sh, bd),
+               // может ли этот игрок командовать: обороной — хозяин корабля, штурмом — хозяин корабля десанта (SPACE-BUG-006)
+               cm: (bd.att === this.side ? this.boardCtl(bd) : this.ctl(sh)) ? 1 : 0 };
     }
     return null;
   };
@@ -452,6 +454,13 @@
     if (sh.side === this.side) return true;
     var bd = sh.crew.board; return !!(bd && bd.started && bd.att === this.side);
   };
+  // Штурм под командой этого игрока: десант пришёл с его корабля (или десант ничей, «dev» — вся сторона)
+  Viewer.prototype.boardCtl = function(bd) {
+    if (!this.user || this.user === 'dev') return true;
+    var src = bd.src || {}, any = false;
+    for (var k in src) { var o = this.B.ships[k]; if (!o) continue; any = true; if (o.side === this.side && (!o.owner || o.owner === this.user)) return true; }
+    return !any;
+  };
   // Корабль под командой этого игрока: своей стороны и его (или ничей; «dev» — вся сторона)
   Viewer.prototype.ctl = function(sh) { return sh.side === this.side && (!sh.owner || !this.user || this.user === 'dev' || sh.owner === this.user); };
   // Приказ игрока: проверка, что корабль свой, и исполнение
@@ -475,9 +484,11 @@
       case 'tractor': this.lastWhy = ''; if (!mine) return false; this.lastWhy = B.tractor(m.n, m.to == null ? -1 : m.to | 0); return !this.lastWhy;
       case 'wing': if (!mine) return false; return B.setWing(m.n, String(m.mode));
     }
-    // абордаж: по кораблю-цели, сторона — игрока
+    // абордаж: по кораблю-цели, сторона — игрока. Обороной командует хозяин корабля-цели, штурмом — хозяин корабля,
+    // откуда пришёл десант (bd.src): союзник или зритель своей стороны чужими отрядами, дверьми и продувкой не командует (SPACE-BUG-006)
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;
     if (!bd || !bd.started || bd.over >= 0) return false;
+    if (side === bd.def ? !this.ctl(t) : side === bd.att ? !this.boardCtl(bd) : true) return false;
     switch (m.k) {
       case 'border': return bd.order(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null, m.room | 0, m.cell != null ? m.cell | 0 : -1);
       case 'plant': return bd.plant(side);
@@ -718,7 +729,7 @@
     var held = {}; o.held.forEach(function(n) { held[n] = 1; });
     for (var k in bd.rs) bd.rs[k].held = !!held[k];
     if (o.br && bd.bridge && bd.rs[bd.bridge]) { var b = bd.rs[bd.bridge]; b.held = !!o.br[0]; b.hold = o.br[1]; b.cnt[0] = o.br[2]; b.cnt[1] = o.br[3]; }
-    bd.netSum = o.su; bd.netPlant = o.pw; bd.netVent = o.vw;
+    bd.netSum = o.su; bd.netPlant = o.pw; bd.netVent = o.vw; bd.netCm = o.cm == null ? 1 : o.cm;
     if (!bd.netPatched) {
       bd.netPatched = true;
       var self = this, n = sh.n;

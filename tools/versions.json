@@ -200,8 +200,8 @@
   "sha": "528f12f29b7d"
  },
  "js/events-feed.js": {
-  "v": "13",
-  "sha": "f76e1a691707"
+  "v": "14",
+  "sha": "e95b060b067a"
  },
  "js/events.js": {
   "v": "6",
@@ -316,8 +316,8 @@
   "sha": "5a35e58672f3"
  },
  "js/space-live.js": {
-  "v": "37",
-  "sha": "5cd45bb363ce"
+  "v": "38",
+  "sha": "a5a516e91236"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -368,8 +368,8 @@
   "sha": "026da0437175"
  },
  "shared/rt-board.js": {
-  "v": "10",
-  "sha": "24606f9928e5"
+  "v": "11",
+  "sha": "4bd9e9c5ee2a"
  },
  "shared/rt-core.js": {
   "v": "5",
@@ -408,16 +408,16 @@
   "sha": "7aab942bfe56"
  },
  "shared/rt-ship.js": {
-  "v": "2",
-  "sha": "973b756c3c83"
+  "v": "3",
+  "sha": "a02b83a74308"
  },
  "shared/rt-space-net.js": {
-  "v": "23",
-  "sha": "eb58868ec58e"
+  "v": "24",
+  "sha": "7558132cff5c"
  },
  "shared/rt-space.js": {
-  "v": "38",
-  "sha": "5bbb7459fd79"
+  "v": "39",
+  "sha": "2c5b796e475e"
  },
  "shared/rt-town.js": {
   "v": "3",
@@ -472,7 +472,7 @@
   "sha": "8bc9f1c0e2b0"
  },
  "space/space.js": {
-  "v": "54",
-  "sha": "44ba345143b4"
+  "v": "55",
+  "sha": "807d8831684e"
  }
 }

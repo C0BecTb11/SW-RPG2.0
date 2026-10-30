@@ -332,13 +332,19 @@
   function attView() {
     if (G.mode !== 'inside') return null;
     var s = G.B.ships[G.view], b = s && boardOf(s.n);
-    return b && b.att === G.side && s.side !== G.side ? b : null;
+    return b && b.att === G.side && s.side !== G.side && b.netCm !== 0 ? b : null;
+  }
+  // Абордаж, где командует союзник (его десант или его корабль в обороне): смотреть можно, приказы — не отсюда
+  function attWatch() {
+    if (G.mode !== 'inside') return null;
+    var s = G.B.ships[G.view], b = s && boardOf(s.n);
+    return b && b.netCm === 0 && b.over < 0 && (b.att === G.side ? s.side !== G.side : b.def === G.side && s.side === G.side) ? b : null;
   }
   // Смотрим внутрь своего корабля, на который высадился враг
   function defView() {
     if (G.mode !== 'inside') return null;
     var s = G.B.ships[G.view], b = s && boardOf(s.n);
-    return b && b.def === G.side && s.side === G.side && b.over < 0 ? b : null;
+    return b && b.def === G.side && s.side === G.side && b.over < 0 && b.netCm !== 0 ? b : null;
   }
   // Смотрим внутрь своего корабля без боя на борту: десант трюма (не экипаж) ставят на посты
   function ownView() {
@@ -610,7 +616,7 @@
       '<button class="sp-mini' + (hold ? ' gold' : '') + '" data-ba="hold" data-n="' + sh.n + '">' + (hold ? 'Открыть огонь' : 'Прекратить огонь') + '</button></div>';
     acts += '<div class="sp-dim sp-bd-hint">экипаж <b>' + s.crew + '</b> · в шлюзах до <b>' + SP.boardCap(sh) + '</b> бойцов<br>' +
       'Пол — выбранные (или отряды) бегут туда и держат точку. Свой боец — выбрать, двойное касание — его отряд; удержи палец и веди — рамка. Враг — огонь по нему.</div>';
-    return { stat: head + gl + modeLine() + uCard(sh) + sq, obj: grid, act: acts };
+    return { stat: head + gl + modeLine() + uCard(sh) + sq, top: head + gl, obj: grid, act: acts };
   }
   // Панель обороны: смотрим внутрь своего корабля, на который высадился враг
   function defPanel(sh, b) {
@@ -665,7 +671,7 @@
     acts += '<div class="sp-dim sp-bd-hint">экипаж <b>' + s.crew + '</b> · шлюзы врага до <b>' + SP.boardCap(sh) + '</b> бойцов<br>' +
       (man ? 'Отряды собираешь ты: выбери бойцов (касание, рамка или «свободные») → «в отряд». Без отряда боец держит место и стреляет. ' : '') +
       'Пол — выбранные (или отряды) встают там и держат. Враг — огонь по нему. «Сами» — оборону ведёт ИИ. «Контра» — абордаж в ответ.</div>';
-    return { stat: head + gl + modeLine() + uCard(sh) + sq, obj: grid, act: acts };
+    return { stat: head + gl + modeLine() + uCard(sh) + sq, top: head + gl, obj: grid, act: acts };
   }
   // Боец обороны (с отрядом или без) — им командует защитник
   function defU(a) { return !!(a.dsq || (a.job && a.job.kind === 'defend')); }
@@ -2949,10 +2955,10 @@
       var mineS = B.ships.filter(function(x) { return !x.dead && ctl(x); })[0]; if (mineS) selectShip(mineS.n);
     }
     var sh = B.ships[G.sel], box = $('sp-ship'), stat = $('sp-stat');
-    var bv = attView(), dvw = defView();
-    document.body.classList.toggle('boardview', !!(bv || dvw));
+    var bv = attView(), dvw = defView(), bw = !bv && !dvw ? attWatch() : null;
+    document.body.classList.toggle('boardview', !!(bv || dvw || bw));
     document.body.classList.toggle('defview', !!dvw);
-    $('sp-kicker').textContent = bv ? 'Абордаж' : dvw ? 'Оборона корабля' : G.mode === 'inside' ? 'Внутри корабля' : G.sys ? 'Орбита · ' + G.sys.name : 'Космический бой 2.0';
+    $('sp-kicker').textContent = bv || bw ? 'Абордаж' : dvw ? 'Оборона корабля' : G.mode === 'inside' ? 'Внутри корабля' : G.sys ? 'Орбита · ' + G.sys.name : 'Космический бой 2.0';
     if (!dvw && G.dmode) G.dmode = null;
     $('sp-view').textContent = 'Обзор';
     $('sp-view').title = G.mode === 'inside' ? 'Весь корабль на экране' : 'Все корабли на экране';
@@ -2963,6 +2969,17 @@
       dockTabs([['obj', 'Цели'], ['act', 'Действия']]);
       box.innerHTML = G.sheet === 'obj' ? P.obj : G.sheet === 'act' ? P.act : '';
       sheetShow(false);
+      return;
+    }
+    if (bw) {
+      // штурм союзника: счёт виден, приказы — у хозяина корабля, откуда пришёл десант
+      var wSh = B.ships[G.view], wAtt = bw.att === G.side;
+      stat.innerHTML = (wAtt ? boardPanel(wSh, bw) : defPanel(wSh, bw)).top +
+        '<div class="sp-hint">' + (wAtt ? 'Штурм ведёт союзник — его десант, его приказы.' : 'Оборону ведёт хозяин корабля' + (ownerNick(wSh) ? ' ' + esc(ownerNick(wSh)) : '') + '.') + ' Ты смотришь.</div>';
+      // свой десант в подкрепление — можно: им командуешь уже ты
+      var wMe = B.ships[G.sel], wCan = wAtt && wMe && ctl(wMe) ? B.canBoard(G.sel, wSh.n) : null;
+      if (wCan) stat.innerHTML += '<div class="sp-btns sp-bd-acts"><button class="sp-btn' + (wCan.ok ? ' gold' : ' off') + '" data-ba="go" data-n="' + wSh.n + '" title="' + esc(wCan.why || '') + '">' + (wCan.ok ? 'Свой десант · ' + wCan.party : 'Свой десант') + '</button></div>';
+      dockTabs([]); box.innerHTML = ''; sheetShow(false);
       return;
     }
     if (!sh) { document.body.classList.remove('spectate'); stat.innerHTML = '<div class="sp-hint">Твоих кораблей не осталось.</div>'; dockTabs([]); box.innerHTML = ''; sheetShow(false); return; }

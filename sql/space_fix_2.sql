@@ -336,7 +336,9 @@ begin
   end if;
   -- боец трюма дерётся на орбите (абордаж, оборона, шаттл, сборы у шлюза — rt_battles.snapshot.busy): не высадить,
   -- не перевести, не распустить — иначе он воевал бы и в космосе, и на земле (SPACE-BUG-014)
-  if k = 'unit' and auth.uid() is not null and old.carrier_ship_id is not null
+  -- поля бойца читаются только для бойцов: у строки корабля их нет (plpgsql берёт все поля выражения сразу)
+  if k = 'unit' then
+  if auth.uid() is not null and old.carrier_ship_id is not null
      and (tg_op = 'DELETE' or new.carrier_ship_id is distinct from old.carrier_ship_id or new.carrier_unit_id is distinct from old.carrier_unit_id
           or new.owner_user_id is distinct from old.owner_user_id or new.layer is distinct from old.layer)
      and exists (select 1 from rt_battle_locks l join rt_battles b on b.id = l.battle_id
@@ -344,6 +346,7 @@ begin
                     and b.heartbeat_at > now() - interval '90 seconds' and coalesce(b.snapshot->'busy', '[]'::jsonb) ? old.id::text) then
     raise exception 'Отряд сейчас дерётся на орбите — высадить или перевести его можно, когда стычка кончится'
       using errcode = 'P0001', hint = 'rt_busy';
+  end if;
   end if;
   select l.battle_id into bid from rt_battle_locks l where l.obj_kind = k and l.obj_id = old.id;
   if bid is null then

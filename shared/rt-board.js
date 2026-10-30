@@ -237,8 +237,8 @@
     if (!this.started) {
       this.started = true;
       this.prep = PREP;
-      this.setAlarm(true);
-      this.msg('Абордаж! Тревога: шлюзы и бронедвери заперты. До штурма ' + PREP + ' с — запирай, заваривай, ставь отряды', this.def, 'bad');
+      var alarmOn = this.setAlarm(true);
+      this.msg('Абордаж! ' + (alarmOn ? 'Тревога: шлюзы и бронедвери заперты. ' : 'Связь у врага — тревогу не поднять. ') + 'До штурма ' + PREP + ' с — запирай, заваривай, ставь отряды', this.def, 'bad');
       this.msg('Стыковка. Подготовка ' + PREP + ' с: раздай отрядам цели — штурм начнётся сам', this.att, 'gold');
       // бойцы из казарм — к обороне (кто уже встал на пост погибшего расчётчика — остаётся на посту)
       for (i = 0; i < c.agents.length; i++) {
@@ -296,6 +296,7 @@
   // Новый абордаж того же корабля (прошлый отбит): двери, турели, насосы — как есть
   Board.prototype.reopen = function() {
     this.over = -1; this.why = ''; this.started = false; this.bridgeT = 0; this.charge = null; this.squads = []; this.dsq = [];
+    this.alarmCd = 0; this.src = {}; this.attAi = false;       // новый абордаж: тревога снова поднимается (SPACE-BUG-034), чьи отряды — заново
     for (var i = 0; i < this.c.agents.length; i++) this.c.agents[i].dsq = 0;
   };
   Board.prototype.wpnOf = function(a) {

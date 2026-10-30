@@ -418,7 +418,7 @@ function feedSet(list) {
 }
 
 // Орбита: корабли, станция, флот в системе
-var FEED_SPACE = feedSet(['ship_built', 'ship_lost',
+var FEED_SPACE = feedSet(['ship_built', 'ship_lost', 'ship_captured', 'ship_trophy',
   'station_built', 'station_started', 'station_demolished', 'fleet_arrived', 'fleet_pushed_out', 'fleet_stranded', 'cargo_delivered',
   'cargo_lost']);
 var FEED_STATION = feedSet(['station_built', 'station_started']);

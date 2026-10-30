@@ -3664,9 +3664,16 @@
       N.lastAt = performance.now();
       if (typeof e.data !== 'string') { if (N.ready) N.M.onBin(e.data); else N.q.push(e.data); return; }
       var m; try { m = JSON.parse(e.data); } catch (er) { return; }
-      if (m.t === 'hello') { N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return; }
+      if (m.t === 'hello') {
+        // сервер боёв обновился раньше страницы — перезагрузка (раз на версию, чтобы не крутиться)
+        if (m.pv > NETLIB.PV) {
+          var rk = 'sp-pv-' + m.pv, was = null; try { was = sessionStorage.getItem(rk); sessionStorage.setItem(rk, '1'); } catch (er) {}
+          if (!was) { toast('Игра обновилась — перезагружаю экран', 'gold'); setTimeout(function() { location.reload(); }, 1200); return; }
+        } else if ((m.pv || 1) < NETLIB.PV) toast('Сервер боёв обновляется — через минуту всё встанет на место', 'gold');
+        N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return;
+      }
       if (m.t === 'roster') { N.seats = m.seats; N.own = m.own || null; netRow(); return; }
-      if (m.t === 'ships') { netShips(m.ships || []); return; }
+      if (m.t === 'ships') { netShips(m.ships || [], !!m.full); return; }
       // верфь или док поставили улучшения: пределы корпуса и щитов, луч — как на сервере.
       // До готовности боя и пока корабль в очереди появления — ждёт (netRefit)
       if (m.t === 'refit') { (N.refit = N.refit || {})[m.n] = m; if (N.ready) netRefit(N); return; }
@@ -3716,7 +3723,7 @@
     var N = G.net, sys = m.kind === 'sys';
     var sc = sys ? m.sc : m.cfg ? scObj({ cfg: m.cfg }) : SCEN[m.scen]; if (!sc) { netFail('Сервер прислал неизвестный бой'); return; }
     if (m.cfg) N.cfg = m.cfg;
-    N.ready = false; N.q = []; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
+    N.ready = false; N.q = []; N.shipsQ = null; N.side = m.side; N.round = m.round; N.user = m.user || N.user || null;
     if (sys) G.sys = { id: m.system, name: m.name, faction: m.faction, cells: m.grid.cells, cellM: m.grid.cellM, deep: !!m.deep, zone: m.grid.zone, pads: m.grid.pads || [], slot: m.grid.slot, station: m.grid.station, slotFog: !!m.grid.slotFog, find: null };
     if (sys) vfSet(m.find || null);
     var token = ++START;
@@ -3739,6 +3746,8 @@
         if (keep.mode === 'inside' && okN(keep.view)) { try { setMode('inside', keep.view); } catch (e) {} }
       }
       N.ready = true; N.vkey = ''; N.addQ = Promise.resolve();
+      var sq = N.shipsQ || []; N.shipsQ = null;
+      for (var si = 0; si < sq.length; si++) netShips(sq[si]);                  // прибыли, пока бой грузился
       if (N.refit) netRefit(N);
       netRow();
       var q = N.q; N.q = [];
@@ -3764,17 +3773,25 @@
       });
     });
   }
-  function netShips(rows) {
-    var N = G.net; if (!N || !N.ready) return;
+  // Строки приходят по номерам сервера: известные (полный список после пропуска, k:'sync') — мимо; дыра в номерах
+  // (сообщение потерялось) — не заполнять копиями, а попросить сервер прислать всё заново (SPACE-BUG-005).
+  // Пока бой грузится после hello — строки ждут (раньше пропадали)
+  function netShips(rows, full) {
+    var N = G.net; if (!N) return;
+    if (!N.ready) { (N.shipsQ = N.shipsQ || []).push(rows); return; }
     N.addQ = N.addQ.then(function() {
-      return loadShips({ ships: rows }).then(function() {
+      var fresh = rows.filter(function(r) { var n = r[6] && r[6].n; return n == null || n >= G.B.ships.length; });
+      if (!fresh.length) return;
+      return loadShips({ ships: fresh }).then(function() {
         if (G.net !== N || !G.B) return;
-        rows.forEach(function(r) {
-          var n = r[6] && r[6].n;
-          while (n != null && G.B.ships.length < n) addShipRow(G.B, r, { dormant: true });   // не должно случаться: дыр в нумерации нет
+        fresh.sort(function(a, b) { return ((a[6] && a[6].n) || 0) - ((b[6] && b[6].n) || 0); });
+        for (var i = 0; i < fresh.length; i++) {
+          var r = fresh[i], n = r[6] && r[6].n;
+          if (n != null && n < G.B.ships.length) continue;
+          if (n != null && n > G.B.ships.length) { netSend({ t: 'cmd', k: 'sync' }); break; }
           var sh = addShipRow(G.B, r, { dormant: true });
-          if (G.side === sh.side) toast('На орбите: ' + sh.name, 'gold');
-        });
+          if (G.side === sh.side && !full) toast('На орбите: ' + sh.name, 'gold');
+        }
         buildFleet(); hud();
       });
     }).catch(function(e) { toast('Корабль не загрузился: ' + e.message, 'bad'); });

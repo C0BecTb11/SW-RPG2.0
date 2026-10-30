@@ -901,7 +901,7 @@
     var w = this.toWorld(foe, lx, ly);
     if (miss) { w[0] += (R() - 0.5) * 900; w[1] += (R() - 0.5) * 900; }
     var fly = Math.sqrt((w[0] - g.x) * (w[0] - g.x) + (w[1] - g.y) * (w[1] - g.y)) / BOLT;
-    this.ev.shots.push({ x0: g.x, y0: g.y, x1: w[0], y1: w[1], t0: this.t, dur: fly, side: sh.side, t: g.t, miss: miss });
+    this.ev.shots.push({ x0: g.x, y0: g.y, x1: w[0], y1: w[1], t0: this.t, dur: fly, side: sh.side, t: g.t, miss: miss, from: sh.n, to: foe.n });
     if (!miss) this.pending.push({ at: this.t + fly, ship: foe.n, lx: lx, ly: ly, fx: g.x, fy: g.y, T: T, k: g.k, by: sh.n });
   };
   Battle.prototype.shootCraft = function(sh, g, c) {
@@ -910,7 +910,7 @@
     var miss = R() > hit;
     var fly = Math.sqrt((c.x - g.x) * (c.x - g.x) + (c.y - g.y) * (c.y - g.y)) / BOLT;
     var ox = miss ? (R() - 0.5) * 120 : 0, oy = miss ? (R() - 0.5) * 120 : 0;
-    this.ev.shots.push({ x0: g.x, y0: g.y, x1: c.x + ox, y1: c.y + oy, t0: this.t, dur: fly, side: sh.side, t: g.t, miss: miss, craft: 1 });
+    this.ev.shots.push({ x0: g.x, y0: g.y, x1: c.x + ox, y1: c.y + oy, t0: this.t, dur: fly, side: sh.side, t: g.t, miss: miss, craft: 1, from: sh.n, to: c.id, toC: 1 });
     if (!miss) this.pending.push({ at: this.t + fly, craft: c.id, dmg: T.fdmg });
   };
 
@@ -921,8 +921,8 @@
       if (c.idle) { c.idle = false; if (this.ships[c.home] && this.ships[c.home].dormant) this.wake(this.ships[c.home]); }
       c.hp -= p.dmg;
       if (c.hp <= 0) {
-        c.dead = true; c.deadAt = this.t; this.ev.booms.push({ x: c.x, y: c.y, r: 30, t0: this.t, craft: 1 });
-        this.ev.kills.push({ craft: c.type, side: c.side, party: c.party ? c.party.length : 0 });
+        c.dead = true; c.deadAt = this.t; this.ev.booms.push({ x: c.x, y: c.y, r: 30, t0: this.t, craft: 1, cid: c.id });
+        this.ev.kills.push({ craft: c.type, side: c.side, party: c.party ? c.party.length : 0, cid: c.id });
         if (c.role === 'shuttle') this.shuttleLost(c);
         else if (this.ships[c.home]) this.ships[c.home].wLost++;
       }
@@ -1062,7 +1062,7 @@
       this.ramT[key] = this.t;
       this.ram(a, (close - RAM_V) * RAM_K * 2 * ka, best.x, best.y);
       this.ram(b, (close - RAM_V) * RAM_K * 2 * kb, best.x, best.y);
-      this.ev.booms.push({ x: best.x, y: best.y, r: 40 + close * 3, t0: this.t });           // удар видно обеим сторонам
+      this.ev.booms.push({ x: best.x, y: best.y, r: 40 + close * 3, t0: this.t, ram: [a.n, b.n] });   // удар видно обеим сторонам (и тем, кто видит одного из них)
       this.ev.rams = this.ev.rams || [];
       this.ev.rams.push({ a: a.n, b: b.n, v: Math.round(close) });
     }
@@ -1266,7 +1266,7 @@
           if (d < 700 && c.cd <= 0 && Math.abs(wrap(Math.atan2(dy, dx) - c.hd)) < 0.5) {
             c.cd = 0.6;
             var hitF = R() < 0.3;
-            this.ev.shots.push({ x0: c.x, y0: c.y, x1: foe.x + (hitF ? 0 : (R() - 0.5) * 60), y1: foe.y + (hitF ? 0 : (R() - 0.5) * 60), t0: this.t, dur: d / 2500, side: c.side, t: 'f', miss: !hitF });
+            this.ev.shots.push({ x0: c.x, y0: c.y, x1: foe.x + (hitF ? 0 : (R() - 0.5) * 60), y1: foe.y + (hitF ? 0 : (R() - 0.5) * 60), t0: this.t, dur: d / 2500, side: c.side, t: 'f', miss: !hitF, from: c.id, fromC: 1, to: foe.id, toC: 1 });
             if (hitF) this.pending.push({ at: this.t + d / 2500, craft: foe.id, dmg: 14 });
           }
         } else {
@@ -1312,7 +1312,7 @@
               var lx = rm ? rm.x + 1 + R() * (rm.w - 2) : ship.plan.w / 2, ly = rm ? rm.y + 1 + R() * (rm.h - 2) : ship.plan.h / 2;
               this.pending.push({ at: this.t + 0.4, ship: ship.n, lx: lx, ly: ly, fx: c.x, fy: c.y,
                                   T: { dmg: 11, sh: 0.7, hull: 1, sys: 1.3, fire: 0.8, stun: 0 }, k: 1, by: -1 });
-              this.ev.shots.push({ x0: c.x, y0: c.y, x1: pt[0], y1: pt[1], t0: this.t, dur: 0.4, side: c.side, t: 'b', miss: false });
+              this.ev.shots.push({ x0: c.x, y0: c.y, x1: pt[0], y1: pt[1], t0: this.t, dur: 0.4, side: c.side, t: 'b', miss: false, from: c.id, fromC: 1, to: ship.n });
             }
           } else {
             c.outT -= dt;

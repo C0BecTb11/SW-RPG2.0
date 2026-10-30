@@ -183,8 +183,9 @@ SystemRoom.prototype.applyShips = function(list, base) {
         var uk = upgKey(s);
         if (self.upg[s.id] != null && self.upg[s.id] !== uk && type0) {
           B.refitShip(old.n, Army.fromGame(s, type0, [], [], {}));
+          // модернизация — своей стороне; чужим пределы корпуса и щитов придут лёгким кадром, когда корабль на виду (hm/sm)
           var rmsg = JSON.stringify({ t: 'refit', n: old.n, hm: Math.round(old.hullMax), sm: Math.round(old.shMax * 100) / 100, fk: old.foreK || 1, tb: old.tractor ? 1 : 0 });
-          self.clients.forEach(function(c) { self.send(c, rmsg); });
+          self.clients.forEach(function(c) { if (c.side === old.side) self.send(c, rmsg); });
           self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
         }
         self.upg[s.id] = uk; old.bon0 = bonOf(s);
@@ -226,8 +227,7 @@ SystemRoom.prototype.applyShips = function(list, base) {
     delete self.free[id];
   });
   if (added.length && this.ready) {
-    var msg = JSON.stringify({ t: 'ships', ships: added.map(function(sh) { return self.shipRow(sh); }) });
-    this.clients.forEach(function(c) { self.send(c, msg); });
+    this.sendSide(function(side) { return JSON.stringify({ t: 'ships', ships: self.rowsFor(added, side) }); });
     this.syncAi();
   }
   return added;
@@ -293,6 +293,22 @@ SystemRoom.prototype.syncUnits = function(sh, s) {
   (s.units || []).forEach(function(u) { self.unitHp[u.id] = u.hp; });
   (s.craft || []).forEach(function(c) { self.craftHp[c.id] = c.hp; self.craftSeen[c.id] = c.hp; });
 };
+// Строка корабля для стороны side (туман, SPACE-BUG-004): чужой, которого сторона не видит, — только класс, сторона и номер
+// (место, целость, ангар и хозяин придут лёгким кадром, когда покажется); хозяин — только своим
+SystemRoom.prototype.shipRowFor = function(sh, side) {
+  if (sh.side !== side) {
+    var bd = sh.crew && sh.crew.board, seen = this.B.sees(side, sh) || !!(bd && bd.started && bd.over < 0 && bd.att === side);
+    if (!seen || sh.dead) return [sh.cls, sh.side, null, null, {}, 0, { n: sh.n, faction: sh.faction, hid: 1 }];
+    var r = this.shipRow(sh); r[6].owner = null; r[4].crewLost = 0; return r;
+  }
+  return this.shipRow(sh);
+};
+SystemRoom.prototype.rowsFor = function(list, side) { var self = this; return list.map(function(sh) { return self.shipRowFor(sh, side); }); };
+// всем игрокам комнаты — каждой стороне своё
+SystemRoom.prototype.sendSide = function(fn) {
+  var self = this, cache = {};
+  this.clients.forEach(function(c) { if (!c.viewer) return; var k = c.side; if (!(k in cache)) cache[k] = fn(k); if (cache[k]) self.send(c, cache[k]); });
+};
 // строка корабля для клиента: [класс, сторона, x, y, армия, курс, { id, owner, name, faction, trophy }]
 SystemRoom.prototype.shipRow = function(sh) {
   // пределы корпуса и щитов (bon, foreK) — как на сервере, иначе у клиента доли выше 100 %
@@ -328,9 +344,9 @@ SystemRoom.prototype.admit = function(c) {
 SystemRoom.prototype.hello = function(c) {
   var B = this.B, self = this, st = this.state, sv = this.stationView(c.side);
   return {
-    t: 'hello', kind: 'sys', caps: ['many'], fog: true, system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
+    t: 'hello', pv: Net.PV, kind: 'sys', caps: ['many'], fog: true, system: this.system, name: st.system.name, faction: st.system.faction, deep: !!st.system.deep, side: c.side, spd: 1, round: 1, T: B.t, over: -1,
     user: c.who.user,
-    sc: { name: st.system.name, ships: B.ships.map(function(sh) { return self.shipRow(sh); }) },
+    sc: { name: st.system.name, ships: self.rowsFor(B.ships, c.side) },
     grid: { cells: this.grid, cellM: CELL_M, zone: (st.settings && st.settings.zone) || 14, pads: st.pads || [], slot: st.slot || null, station: sv.station, slotFog: sv.fog },
     find: this.findInfo()
   };
@@ -357,13 +373,25 @@ SystemRoom.prototype.syncAi = function() {
     if (!sh.guard) B.guard(sh.n, true);
   });
 };
+// Служебные сообщения (корабли, модернизация, станция, находка) не повторяются сами — пропущенное из-за полной
+// очереди помечается, и игроку уходит всё заново, когда очередь освободится (resendTo, SPACE-BUG-005)
+var KEEP_RE = /^\{"t":"(ships|refit|station|find)"/;
 SystemRoom.prototype.send = function(c, data) {
-  if (c.ws.bufferedAmount > BUF_MAX) { if (c.viewer) c.viewer.lost(); return; }
+  if (c.ws.bufferedAmount > BUF_MAX) { if (c.viewer) c.viewer.lost(); if (typeof data === 'string' && KEEP_RE.test(data)) c.resend = true; return; }
   var n = typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength;
   this.bytes += n; c.bytes = (c.bytes || 0) + n;
   c.ws.send(data);
 };
 
+// Всё служебное заново (после пропуска или по просьбе экрана, k:'sync'): корабли — полным списком (экран
+// пропустит известные номера), станция, находка, пределы своих кораблей
+SystemRoom.prototype.resendTo = function(c) {
+  var self = this, B = this.B; c.resend = false;
+  this.send(c, JSON.stringify({ t: 'ships', full: 1, ships: this.rowsFor(B.ships, c.side) }));
+  var v = this.stationView(c.side); this.send(c, JSON.stringify({ t: 'station', station: v.station, fog: v.fog }));
+  this.send(c, JSON.stringify({ t: 'find', find: this.findInfo() }));
+  B.ships.forEach(function(sh) { if (!sh.dead && sh.side === c.side && sh.gameId) self.send(c, JSON.stringify({ t: 'refit', n: sh.n, hm: Math.round(sh.hullMax), sm: Math.round(sh.shMax * 100) / 100, fk: sh.foreK || 1, tb: sh.tractor ? 1 : 0 })); });
+};
 // ---- такт
 SystemRoom.prototype.step = function() {
   if (!this.ready || this.closed) return;
@@ -383,6 +411,10 @@ SystemRoom.prototype.step = function() {
   for (i = 0; i < this.clients.length; i++) {
     var c = this.clients[i]; if (!c.viewer) continue;
     c.viewer.push(ev); c.viewer.spd = 1;
+    // очередь переполнена — кадр не строим (события копятся в viewer.ev, а не теряются в выброшенном кадре;
+    // как наземка, BUG-036 → SPACE-BUG-008); освободилась — сначала пропущенное служебное
+    if (c.ws.bufferedAmount > BUF_MAX) { c.viewer.lost(); continue; }
+    if (c.resend) this.resendTo(c);
     var fr = c.viewer.frames(this.tickN);
     for (j = 0; j < fr.length; j++) this.send(c, fr[j]);
   }
@@ -450,8 +482,13 @@ SystemRoom.prototype.poseOf = function(s, type) {
 
 // ---- снимок в базу
 // Запись в базу — строго по очереди: два запроса вперемешку могли бы записать старое поверх нового
+// и не больше одной ожидающей: пока запись ждёт медленную базу, новые просьбы к ней присоединяются (снимок
+// всё равно соберётся на момент её начала) — иначе очередь росла без предела и pull с закрытием стояли (SPACE-BUG-009)
 SystemRoom.prototype.sync = function() {
-  var self = this, p = (this.syncQ || Promise.resolve()).then(function() { return self.syncNow(); });
+  this.syncAt = Date.now();
+  if (this.syncWait) return this.syncWait;
+  var self = this, p = (this.syncQ || Promise.resolve()).then(function() { self.syncWait = null; return self.syncNow(); });
+  this.syncWait = p;
   this.syncQ = p.catch(function() {});
   return p;
 };
@@ -767,6 +804,7 @@ SystemRoom.prototype.command = function(c, m) {
   if (!c.viewer) return;
   // приказы группе кораблей одним сообщением — каждый как обычный (полоса, площадка сброса)
   if (m.t === 'cmd' && m.k === 'many') { var self = this; Net.eachMany(m, function(x) { self.command(c, x); }); return; }
+  if (m.t === 'cmd' && m.k === 'sync') { c.resend = true; return; }          // экран нашёл дыру в номерах кораблей — прислать заново
   if (m.t === 'cmd') {
     var sh = this.B.ships[m.n | 0];
     // будить спящий экипаж — только своему кораблю (иначе один игрок будит всю орбиту и грузит сервер)
@@ -833,10 +871,7 @@ SystemRoom.prototype.applyFind = function(fd) {
     this.pirates = {}; this.vfKey = null;
     var added = [];
     if (!fd.down) (fd.guards || []).forEach(function(g) { if (+g.hp > 0) { var sh = self.addPirate(g); if (sh) added.push(sh); } });
-    if (added.length && this.ready) {
-      var msg = JSON.stringify({ t: 'ships', ships: added.map(function(sh) { return self.shipRow(sh); }) });
-      this.clients.forEach(function(c) { self.send(c, msg); });
-    }
+    if (added.length && this.ready) this.sendSide(function(side) { return JSON.stringify({ t: 'ships', ships: self.rowsFor(added, side) }); });
     if (added.length) this.cfg.log('info', 'охрана находки', { room: this.name, find: fd.id, ships: added.length });
   } else if (fd.down) {
     // охрану сняла база (DEV) — пираты уходят с орбиты

@@ -141,7 +141,8 @@
     };
     return {
       cls: ship.ship_type, id: ship.id, name: ship.name || shipName(ship.ship_type),
-      hpK: maxHp && ship.hp != null ? Math.max(0.02, Math.min(1, ship.hp / maxHp)) : 1, hpBonus: maxHp && type.max_hp ? maxHp / type.max_hp : 1,
+      // нижний предел — 1 единица корпуса игры: раньше 2 % поднимали добитый корабль при каждом открытии орбиты (SPACE-BUG-025)
+      hpK: maxHp && ship.hp != null ? Math.max(1 / maxHp, Math.min(1, ship.hp / maxHp)) : 1, hpBonus: maxHp && type.max_hp ? maxHp / type.max_hp : 1,
       shK: [sh(ship.shield_fore, ship.bonus_fore), sh(ship.shield_starboard), sh(ship.shield_aft), sh(ship.shield_port)],
       shBonus: type && type.max_shield ? maxSh / type.max_shield : 1, dmgK: dmg,
       foreK: maxSh > 0 && ship.bonus_fore > 0 ? (maxSh + Number(ship.bonus_fore)) / maxSh : 1,   // носовой сектор («Мастер лобовой атаки»)
@@ -149,7 +150,9 @@
       tractor: !!(ship.has_tractor || (ship.upgrades || []).indexOf('tractor') >= 0),   // исследование «Притягивающие лучи»
       roster: roster, vehicles: vehicles, other: other,
       hangar: (craft || []).map(function(c) { return CRAFT[c.ship_type]; }).filter(Boolean),
-      crewLost: ship.crew_lost || 0
+      // что осталось от прошлых орбит (ships.rt_state, пишет rt_space_sync): погибший экипаж и целость отсеков (SPACE-BUG-021)
+      crewLost: ship.rt_state && ship.rt_state.lost > 0 ? ship.rt_state.lost | 0 : 0,
+      integ: ship.rt_state && ship.rt_state.integ && typeof ship.rt_state.integ === 'object' ? ship.rt_state.integ : null
     };
   }
 

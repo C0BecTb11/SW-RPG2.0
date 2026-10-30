@@ -313,7 +313,7 @@
  },
  "js/space-battle.js": {
   "v": "9",
-  "sha": "e6288328f1e2"
+  "sha": "5a35e58672f3"
  },
  "js/space-live.js": {
   "v": "34",
@@ -473,6 +473,6 @@
  },
  "space/space.js": {
   "v": "51",
-  "sha": "e72af5cc47c6"
+  "sha": "89f66b353206"
  }
 }

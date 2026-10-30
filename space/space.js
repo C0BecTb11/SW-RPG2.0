@@ -3671,7 +3671,11 @@
       if (m.t === 'note') { toast(m.msg, m.kind === 'bad' ? 'bad' : 'gold'); return; }
       if (m.t === 'find') { vfSet(m.find || null); return; }
       // место станции разведано (или станция изменилась): сервер шлёт только то, что этой стороне положено знать
-      if (m.t === 'station') { if (G.sys) { G.sys.station = m.station || null; G.sys.slotFog = !!m.fog; } return; }
+      if (m.t === 'station') {
+        if (G.sys) { G.sys.station = m.station || null; G.sys.slotFog = !!m.fog; }
+        if (typeof window.SP_STATION_CHANGED === 'function') window.SP_STATION_CHANGED();   // открытая панель места (js/space-battle.js)
+        return;
+      }
       if (m.t === 'pong') return;
       if (N.ready) N.M.onText(m); else N.q.push(m);
     };

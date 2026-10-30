@@ -93,7 +93,7 @@ SystemRoom.prototype.open = function() {
     B.board = function(n, t, all, now) { var r = board0.call(B, n, t, all, now); if (r && r.ok && B.ships[t]) B.ships[t].boardBy = B.ships[n].owner || null; return r; };
     self.B = B;
     self.setEyes();
-    self.stKey = stationKey(st.station);
+    self.stKey = stationKey(st);
     self.applyShips(st.ships || []);
     self.applyFind(st.find || null);
     self.cfg.log('info', 'орбита открыта', { room: self.name, battle: self.battleId, ships: B.ships.length, system: st.system.faction });
@@ -110,7 +110,10 @@ SystemRoom.prototype.setEyes = function() {
 // пока её корабль или истребитель не подойдёт к месту на дальность своих датчиков. Знают всегда: хозяева
 // планеты и хозяева станции. Не знающим место приходит без станции и с пометкой fog — пустое место
 // и чужая станция для них выглядят одинаково, так что туман ничего не выдаёт.
-function stationKey(stn) { return stn ? stn.id + '|' + (stn.ready === false ? 0 : 1) + '|' + stn.faction : ''; }
+function stationKey(st) {
+  var stn = st && st.station, sf = (st && st.system && st.system.faction) || '';
+  return (stn ? stn.id + '|' + (stn.ready === false ? 0 : 1) + '|' + stn.faction : '') + '|' + sf;
+}
 function sideOfKnown(f) { return f === 'republic' ? 0 : f === 'cis' ? 1 : -1; }
 SystemRoom.prototype.slotKnown = function(side) {
   var st = this.state || {}, stn = st.station;
@@ -146,14 +149,15 @@ SystemRoom.prototype.slotSight = function() {
     if (seen) { (this.slotSeen = this.slotSeen || {})[side] = true; this.sendStation(side); }
   }
 };
-// станцию построили, достроили, снесли или захватили — всем, кто имеет право знать; разведка места — заново
+// станцию заложили, достроили, снесли или планета сменила хозяина: новое узнают только те, кто знает место
+// по праву (хозяева планеты или станции). Разведавшие раньше остаются с последним увиденным, пока снова
+// не подлетят (slotSight) — иначе смена надписи выдавала бы стройку или снос без датчиков
 SystemRoom.prototype.stationChanged = function() {
-  var key = stationKey(this.state && this.state.station);
+  var key = stationKey(this.state);
   if (key === this.stKey) return;
-  var idOld = (this.stKey || '').split('|')[0], idNew = key.split('|')[0];
   this.stKey = key;
-  if (idOld !== idNew) this.slotSeen = {};
-  this.sendStation(0); this.sendStation(1);
+  this.slotSeen = {};
+  for (var side = 0; side < 2; side++) if (this.slotKnown(side)) this.sendStation(side);
 };
 var CRAFT_SENS = 3500;                       // датчики истребителя (shared/rt-space.js, sense)
 

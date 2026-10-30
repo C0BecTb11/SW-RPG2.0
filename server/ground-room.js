@@ -11,7 +11,9 @@
 
 var fs = require('fs');
 // Очередь на отправку игроку: больше — кадры пропускаются, потом бой целиком (медленная связь не копит минуты задержки)
-var BUF_MAX = 131072;
+// 256 КБ — больше самого крупного кадра (при 1000 бойцах ~150 КБ): иначе такой кадр сразу переполнял очередь,
+// и следующий всегда шёл полным (аудит 30.10, BUG-076)
+var BUF_MAX = 262144;
 var path = require('path');
 var P = require('../shared/rt-planets.js');
 var U = require('../shared/rt-units.js');
@@ -79,6 +81,8 @@ GroundRoom.prototype.open = function() {
     self.settleKey = mapKey(st);
     var B = new GR.Ground(js, { seed: (Date.now() % 100000) | 0, auto0: false, auto1: false, att: self.att, captureSeconds: st.capture_goal || 21600, settle: settle, militiaAuto: false, capExternal: true });
     self.B = B;
+    // туман (раз в 0,5 с) и ИИ (раз в 2 с) разных комнат — в разные такты: сервер один на все планеты (BUG-070)
+    B.fogT = Math.random() * 0.5; B.aiT = Math.random() * 2;
     // карта игрокам — слоями в base64 (типизированные массивы в JSON не уходят)
     var mj = B.mapJson; self.mapPacked = {};
     Object.keys(mj).forEach(function(k) { self.mapPacked[k] = mj[k]; });
@@ -107,6 +111,10 @@ GroundRoom.prototype.applyUnits = function(units, asked) {
       // мародёр: налёт кончился (npc_brains.state = 'leave') — банда уходит с карты
       var ex = B.agents[self.byUid[u.id]];
       if (ex && ex.alive && ex.team === 2 && u.brain && u.brain.st === 'leave' && !ex.leave) { ex.leave = true; leave++; }
+      // бонусы сменились (пассивка героя, улучшение) — пересчитать, не дожидаясь переоткрытия комнаты (аудит 30.10, BUG-031)
+      var bk = JSON.stringify(u.bonus || {});
+      if (ex && ex.alive && ex.bonusKey != null && ex.bonusKey !== bk) B.rebonus(ex, u.bonus);
+      if (ex) ex.bonusKey = bk;
       return;
     }
     var Ty = U.type(u.type); if (!Ty) { self.cfg.log('warn', 'неизвестный тип бойца', { type: u.type }); return; }
@@ -127,6 +135,7 @@ GroundRoom.prototype.applyUnits = function(units, asked) {
       if (self.ready && !a.leave) raid++;
     }
     if (u.training) a.hold = true;
+    a.bonusKey = JSON.stringify(u.bonus || {});
     self.restoreSt(a, u.rt, team);
     self.byUid[u.id] = a.id;
     self.lastSync[u.id] = x + ',' + y + ',' + Math.round(a.hp);

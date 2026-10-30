@@ -170,7 +170,8 @@
       else if (full) { var it2 = this.intro(a), k2 = JSON.stringify(it2); if (k2 !== this.known[a.id]) { this.known[a.id] = k2; nw.push(it2); } }
       var aux = a.T.vehicle && a.size === 2 ? r2(a.turretA) : a.hero ? [ACT_N[a.hero.actT > 0 ? a.hero.act : 'idle'] || 0, r2(a.hero.k || 0)]
         : a.wh ? [r2(a.wh.k), B.shieldUp(a) ? r2(a.wh.sh / a.wh.shMax) : -1] : 0;
-      var row = [a.id, r2(a.x), r2(a.y), r2(a.aim), a.mv > 0.3 ? 1 : 0, Math.round(a.hp), this.flags(a), aux];
+      // живой — не меньше 1 (0,4 hp округлялось в «0», BUG-029)
+      var row = [a.id, r2(a.x), r2(a.y), r2(a.aim), a.mv > 0.3 ? 1 : 0, Math.max(1, Math.round(a.hp)), this.flags(a), aux];
       // свои: куда идёт (клетка приказа) и что прикрывает — для линий хода и карточки
       if (a.team === side) { row.push(a.goal && !a.at ? a.goal[1] * N + a.goal[0] : -1, a.inside >= 0 ? a.inside : -1); }
       var key = row.join(',');
@@ -419,7 +420,9 @@
           if (b.ks.length > KEYS) b.ks.splice(0, b.ks.length - KEYS);
         }
       }
-      b.aim = u[3]; b.mv = u[4]; b.hp = u[5]; var fl = u[6];
+      // здоровье — по времени кадра, как и положение: экран отстаёт на lag, и полоска раньше выстрела не худеет (BUG-029)
+      b.aim = u[3]; b.mv = u[4]; var fl = u[6];
+      if (!b.vis || !b.hpQ) { b.hp = u[5]; b.hpQ = []; } else if (u[5] !== (b.hpQ.length ? b.hpQ[b.hpQ.length - 1][1] : b.hp)) { b.hpQ.push([now, u[5]]); if (b.hpQ.length > 8) b.hpQ.shift(); }
       // свой свежий приказ важнее кадров, что уже летели: 0,9 с не трогать цель и стояние
       var locked = b.lockT && clock() < b.lockT;
       b.inside = fl & 1 ? 0 : -1; b.stun = fl & 2 ? 1 : 0; b.fear = fl & 4 ? 1 : 0; if (!locked) { b.hold = !!(fl & 8); b.at = !!(fl & 16); } b.barrier = fl & 32 ? now + 1 : 0;
@@ -481,6 +484,7 @@
       var a = ag[i]; if (!a) continue;
       if (a.dieT != null && a.alive && t >= a.dieT) { a.alive = false; a.diedAt = a.dieT; if (a.dieHide) a.vis = false; a.dieT = null; a.dieHide = false; }
       if (!a.alive) { if (!a.gone && t - a.diedAt > 40) a.gone = true; continue; }
+      if (a.hpQ) while (a.hpQ.length && a.hpQ[0][0] <= t) a.hp = a.hpQ.shift()[1];
       var ks = a.ks;
       if (ks && ks.length) {
         var j = ks.length - 1; while (j > 0 && ks[j].T > t) j--;

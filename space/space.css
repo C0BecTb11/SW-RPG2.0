@@ -748,3 +748,10 @@ body.sys #sp-top, body.sys .sp-speed { display: none; }
 @media (orientation: landscape) and (max-height: 520px) {
   #sp-find { top: calc(10px + env(safe-area-inset-top, 0px)); width: min(330px, calc(100vw - 560px)); min-width: 250px; }
 }
+
+/* Палец: кнопки шторки, сил героя и нижней панели — не ниже 32–36 px (рекомендуемый минимум для касания;
+   было 22–30, аудит наземки 30.10, BUG-075). Мышь — прежние размеры */
+@media (pointer: coarse) {
+  .sp-sheet-b .sp-chip, .gd-abbar .sp-chip { min-height: 32px; }
+  .sp-dock .sp-btn { min-height: 36px; }
+}

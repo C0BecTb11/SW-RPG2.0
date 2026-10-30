@@ -32,6 +32,7 @@ Object.defineProperty(Socket.prototype, 'bufferedAmount', {
 });
 
 Socket.prototype.onData = function(d) {
+  if (!this.open) return;                        // закрыт — то, что ещё долетает до сброса сокета, не копим (аудит 30.10, BUG-047)
   this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d;
   while (this.open) {
     var b = this.buf;

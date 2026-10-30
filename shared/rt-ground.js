@@ -302,9 +302,10 @@
       if (bo.range && !Ty.hero) { a.range += bo.range * RANGE_K; a.rangeB = bo.range; }   // спад меткости — на всю новую дальность (statsOf); у героя клинок
       if (bo.vision) a.vision += bo.vision * RANGE_K;
       if (bo.move) a.speed = Math.max(0.2, (Ty.speed / U.SPEED_K + bo.move) * U.SPEED_K);
-      if (bo.damage && Ty.dmg > 0) a.dmgK *= (Ty.dmg + bo.damage) / Ty.dmg;
+      if (bo.damage && Ty.dmg > 0) a.dmgK *= Math.max(0, (Ty.dmg + bo.damage) / Ty.dmg);
       a.accB = bo.accuracy || 0; a.evaB = bo.evasion || 0;
     }
+    a.bonusB = bo || {}; a.dmgK0 = extra.dmgK || 1;
     if (Ty.artillery) a.range = Ty.range;       // артиллерия: на всю карту (144)
     // способности из исследований: [вид, сила, урон]; первая готова не сразу — через 3–11 с
     if (extra.skills && extra.skills.length) {
@@ -578,7 +579,7 @@
     return true;
   };
   Ground.prototype.orderAttack = function(team, ids, tid) {
-    var self = this, tg = this.agents[tid]; if (!tg || !tg.alive || tg.team === team) return 0;
+    var self = this, tg = this.agents[tid]; if (!tg || !tg.alive || this.ctl(tg) === team) return 0;     // порабощённый — по хозяину (BUG-021)
     var n = 0;
     ids.forEach(function(i) { var a = self.agents[i]; if (!self.mine(team, a)) return; self.microEnd(a, true); if (a.hero) a.hero.pend = null; a.focus = tid; a.post = false; a.hold = false; a.goal = null; a.at = true; a.auto = false; a.dpost = null; a.sortie = false; n++; });
     return n;
@@ -699,11 +700,13 @@
     return true;
   };
   // Укрытие цели от стрелка: 1 — нет, меньше — хуже попасть
+  // Шанс попасть с поправкой на рельеф. Укрепление (окоп, бункер) режет не шанс, а урон — любой, от выстрела
+  // до меча и взрыва (hurt, structure_types: «вдвое меньше урона»; аудит 30.10, BUG-016). Канонерка (fly) —
+  // в воздухе, наземное укрытие ей не положено (BUG-020)
   Ground.prototype.cover = function(ax, ay, b) {
-    if (b.air) return 1;
+    if (b.air || b.fly) return 1;
     var k = 1, m = this.map, bc = Math.floor(b.y) * N + Math.floor(b.x);
-    if (b.inside >= 0) { var st = this.structs[b.inside]; if (!st.dead && st.cover) k *= 1 - st.cover / 100; }
-    else {
+    if (b.inside < 0) {
       var dx = ax - b.x, dy = ay - b.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
       for (var q = 0.6; q <= 1.6; q += 0.5) {
         var x = Math.floor(b.x + dx / L * q), y = Math.floor(b.y + dy / L * q);
@@ -736,9 +739,18 @@
     var dx = tg.x - a.x, dy = tg.y - a.y;
     return { x: tg.x, y: tg.y, d: Math.sqrt(dx * dx + dy * dy), a: tg };
   };
-  Ground.prototype.canHit = function(a, b) {
-    if (b.air) return a.T.cls === 'aa' || a.T.cls === 'air' || a.hero ? true : a.range * 0.5 > 0;
-    return !a.air || true;
+  // Бонусы игры (bonus_*) сменились посреди боя — герой выучил пассивку, боец получил улучшение (pull комнаты):
+  // пересчитать то, что add() взял из них. Здоровье: предел меняется, текущее — на прибавку (не выше предела)
+  Ground.prototype.rebonus = function(a, bo) {
+    var Ty = a.T, ob = a.bonusB || {}, nb = bo || {};
+    var dh = (nb.hp || 0) - (ob.hp || 0);
+    if (dh) { a.hpMax = Math.max(1, a.hpMax + dh); a.hp = Math.max(1, Math.min(a.hpMax, a.hp + Math.max(0, dh))); }
+    if (Ty.dmg > 0) a.dmgK = (a.dmgK0 || 1) * Math.max(0, (Ty.dmg + (nb.damage || 0)) / Ty.dmg);
+    a.vision += ((nb.vision || 0) - (ob.vision || 0)) * RANGE_K;
+    if (!Ty.hero && !Ty.artillery) { a.range += ((nb.range || 0) - (ob.range || 0)) * RANGE_K; a.rangeB = nb.range || 0; }
+    if ((nb.move || 0) !== (ob.move || 0)) a.speed = Math.max(0.2, (Ty.speed / U.SPEED_K + (nb.move || 0)) * U.SPEED_K);
+    a.accB = nb.accuracy || 0; a.evaB = nb.evasion || 0;
+    a.bonusB = nb;
   };
   Ground.prototype.rangeTo = function(a, b) { return b.air && a.T.cls !== 'aa' && a.T.cls !== 'air' ? a.range * 0.5 : a.range; };
   Ground.prototype.findTarget = function(a) {
@@ -1133,9 +1145,12 @@
   };
 
   // ---- стрельба
-  Ground.prototype.hurt = function(b, d, by, melee) {
+  // pierce — удар мимо укрепления (выстрел в голову: «верный», как и раньше)
+  Ground.prototype.hurt = function(b, d, by, melee, pierce) {
     if (!b.alive) return;                         // по уже павшему: убийство не переходит к добившему (аудит 30.10, BUG-050)
+    if (!(d > 0) || !isFinite(d)) return;         // ни лечения отрицательным уроном, ни NaN (BUG-030)
     b.hitT = this.t; if (by != null) b.hitBy = by;
+    if (b.inside >= 0 && !pierce) { var cst = this.structs[b.inside]; if (cst && !cst.dead && cst.cover) d *= 1 - cst.cover / 100; }
     if (b.wh && !melee && (d = this.shield(b, d, by)) <= 0) return;      // клинок щит не держит
     if (b.barrier > this.t) d *= 0.7;
     if (b.hero && b.hero.passive.absorb) d *= 1 - b.hero.passive.absorb / 100;
@@ -1238,11 +1253,12 @@
           // окоп: сразу отвечает огнём
           if (b.alive && b.inside >= 0 && this.structs[b.inside].kind === 'trench' && b.cd > 0.3) b.cd = 0.3;
           // гранатомёт и ракеты: задевает рядом
+          // разлёт — от урона без матрицы (её splash применит к каждому сам), основная цель своё уже получила (BUG-014)
           var splash = /launcher/.test(a.tid) ? 1.6 : a.tid === 'cis_missile' ? 2 : 0;
-          if (splash) { this.splash(tg.x, tg.y, splash, dmg * 0.5, a); this.ev.booms.push({ t: this.t, x: tg.x, y: tg.y, r: splash * 0.8 }); }
+          if (splash) { this.splash(tg.x, tg.y, splash, dmg / Math.max(0.01, U.mult(a.T.cls, b.T.cls)) * 0.5, { id: a.id, cls: a.T.cls, team: this.ctl(a) }, b); this.ev.booms.push({ t: this.t, x: tg.x, y: tg.y, r: splash * 0.8 }); }
           // картечь: сосед цели тоже ловит дробь
           if (a.T.netter && this.R() < HUNT.scatter.chance) {
-            var pb = this.secondFoe(this.ctl(a), b, HUNT.scatter.pellet);
+            var pb = this.secondFoe(this.ctl(a), b, HUNT.scatter.pellet, a);
             if (pb) { var pd = U.damage(a.T, pb.T, inMul) * a.dmgK * HUNT.scatter.part * (pb.hero ? HUNT.hero : 1); this.shot(a, { x: pb.x, y: pb.y, a: pb }, true, pd, pb.id); this.hurt(pb, pd, a.id); }
           }
         }
@@ -1265,27 +1281,29 @@
         if (s.k !== 'suppression' && tg.d < r + 0.5) continue;
         if (this.alliesAt(team, tg.x, tg.y, r, s.k === 'he', a) >= Math.max(1, nf)) continue;
         var dm = (s.dmg || S.dmg) * a.dmgK;
-        if (s.k === 'grenade') this.ev.shells.push({ t0: t, t1: t + 0.8, x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: r, dmg: dm, by: a.id, foe: true });
-        else { this.shot(a, tg, true, 0, b.id); this.blast(team, a.id, tg.x, tg.y, r, dm, s.k === 'he', s.k === 'suppression'); }
+        if (s.k === 'grenade') this.ev.shells.push({ t0: t, t1: t + 0.8, x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: r, dmg: dm, by: a.id, foe: true, cls: a.T.cls });
+        else { this.shot(a, tg, true, 0, b.id); this.blast(team, a.id, tg.x, tg.y, r, dm, s.k === 'he', s.k === 'suppression', a.T.cls); }
         ok = true;
       } else if (s.k === 'stun') {
         // верное оглушение (100 %) — разряд без урона; с шансом — обычный верный выстрел, который может оглушить
         if (b.stun > 0 || b.hero) continue;
-        var sv = s.v || 10, sd = sv < 100 ? U.damage(a.T, b.T, a.inside >= 0 ? this.structs[a.inside].inMul : 1) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
-        this.shot(a, tg, true, sd, b.id);
+        // с шансом — «бьёт как обычно»: и попасть надо как обычно (BUG-025)
+        var sv = s.v || 10, sh0 = sv >= 100 || this.R() < U.hitChance(this.statsOf(a), this.statsOf(b), tg.d / RANGE_K, this.cover(a.x, a.y, b));
+        var sd = sv < 100 && sh0 ? U.damage(a.T, b.T, a.inside >= 0 ? this.structs[a.inside].inMul : 1) * a.dmgK * (0.8 + this.R() * 0.4) : 0;
+        this.shot(a, tg, sh0, sd, b.id);
         if (sd) this.hurt(b, sd, a.id);
-        if (b.alive && this.R() * 100 < sv) { b.stun = Math.max(b.stun, STUN_T); b.tgt = -1; }
+        if (sh0 && b.alive && this.R() * 100 < sv) { b.stun = Math.max(b.stun, STUN_T); b.tgt = -1; }
         ok = true;
       } else if (s.k === 'headshot') {
         if (b.T.vehicle) continue;
         var hd = b.hero ? b.hpMax * 0.25 : b.hp + 1;          // одарённый устоит
-        this.shot(a, tg, true, hd, b.id); this.hurt(b, hd, a.id); ok = true;
+        this.shot(a, tg, true, hd, b.id); this.hurt(b, hd, a.id, false, true); ok = true;
       } else if (s.k === 'ap') {
         if (!b.T.vehicle) continue;
         var ad = U.damage(a.T, b.T) * a.dmgK * 2;
         this.shot(a, tg, true, ad, b.id); this.hurt(b, ad, a.id); ok = true;
       } else if (s.k === 'twin') {
-        var c2 = this.secondFoe(team, b, 3 * RANGE_K); if (!c2) continue;
+        var c2 = this.secondFoe(team, b, 3 * RANGE_K, a); if (!c2) continue;
         var d1 = U.damage(a.T, b.T) * a.dmgK; this.shot(a, tg, true, d1, b.id); this.hurt(b, d1, a.id);
         if (this.R() * 100 < (s.v || 50)) { var d2 = U.damage(a.T, c2.T) * a.dmgK; this.shot(a, { x: c2.x, y: c2.y, a: c2 }, true, d2, c2.id); this.hurt(c2, d2, a.id); }
         ok = true;
@@ -1310,7 +1328,7 @@
         if (!b.hero && !b.T.vehicle && nf2 < 2 && !(b.inside >= 0)) continue;
         if (tg.d < rr0 + 0.5 || b.air) continue;
         if (this.alliesAt(team, tg.x, tg.y, rr0, false, a) >= Math.max(1, nf2)) continue;
-        this.ev.shells.push({ k: 'rk', t0: t, t1: t + Math.max(0.2, tg.d / HUNT.rocket.spd), x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: rr0, dmg: (s.dmg || S.dmg) * a.dmgK, by: a.id, foe: true });
+        this.ev.shells.push({ k: 'rk', t0: t, t1: t + Math.max(0.2, tg.d / HUNT.rocket.spd), x0: a.x, y0: a.y, x1: tg.x, y1: tg.y, team: team, r: rr0, dmg: (s.dmg || S.dmg) * a.dmgK, by: a.id, foe: true, cls: a.T.cls });
         ok = true;
       }
       if (ok) {
@@ -1370,10 +1388,13 @@
     return n;
   };
   // вторая цель спаренного выстрела: живой враг рядом с первой
-  Ground.prototype.secondFoe = function(team, b, r) {
+  // Сосед цели (вторая цель двойного выстрела, дробь): from — стрелок, вторая цель тоже в его дальности и на
+  // линии огня (BUG-025)
+  Ground.prototype.secondFoe = function(team, b, r, from) {
     var best = null, bd = r * r, ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
       var e = ag[i]; if (e === b || !e.alive || e.air || this.ctl(e) === team || !this.canSee(team, e)) continue;
+      if (from) { var fx = e.x - from.x, fy = e.y - from.y; if (fx * fx + fy * fy > this.rangeTo(from, e) * this.rangeTo(from, e) || !this.los(from.x, from.y, e.x, e.y)) continue; }
       var dx = e.x - b.x, dy = e.y - b.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = e; }
     }
     return best;
@@ -1381,30 +1402,35 @@
   // взрыв способности: бьёт всех в круге — и своих (решение Артёма), кроме самого стрелка; inf — фугас не
   // берёт технику; supp — заградительный огонь: кто уцелел, тот залёг. Свои ранены «без стрелка» (by −1):
   // гибель своего не засчитывается бойцу, а раненый не ищет стрелка среди своих
-  Ground.prototype.blast = function(team, by, x, y, r, dmg, inf, supp) {
+  // cls — класс атакующего: взрыв тоже идёт по матрице урона (граната пехотинца по AT-TE — ×0,4, BUG-015);
+  // заградогонь прижимает пехоту, не технику
+  Ground.prototype.blast = function(team, by, x, y, r, dmg, inf, supp, cls) {
     var ag = this.agents;
     for (var j = 0; j < ag.length; j++) {
       var e = ag[j]; if (!e.alive || e.air || e.id === by || (inf && e.T.vehicle)) continue;
       var dx = e.x - x, dy = e.y - y, d2 = dx * dx + dy * dy; if (d2 >= r * r) continue;
-      this.hurt(e, dmg * (1 - Math.sqrt(d2) / r * 0.4) * (e.hero ? 0.5 : 1), this.ctl(e) === team ? -1 : by);
-      if (supp && e.alive) e.suppT = this.t + SUPP_T;
+      this.hurt(e, dmg * (cls ? U.mult(cls, e.T.cls) : 1) * (1 - Math.sqrt(d2) / r * 0.4) * (e.hero ? 0.5 : 1), this.ctl(e) === team ? -1 : by);
+      if (supp && e.alive && !e.T.vehicle) e.suppT = this.t + SUPP_T;
     }
     this.ev.booms.push({ t: this.t, x: x, y: y, r: r * 0.6 });
   };
-  Ground.prototype.splash = function(x, y, r, dmg, by) {
+  // Разлёт (гранатомёт, артиллерия): dmg — без матрицы, src — { id, cls, team } стрелка (живого или уже
+  // павшего: снаряд в полёте помнит, чей он, BUG-022), skip — основная цель (она своё получила, BUG-014).
+  // Свои задеты «без стрелка» (by −1), как во взрыве способности
+  Ground.prototype.splash = function(x, y, r, dmg, src, skip) {
     var ag = this.agents;
     for (var j = 0; j < ag.length; j++) {
-      var sb = ag[j]; if (!sb.alive || sb.air) continue;
+      var sb = ag[j]; if (!sb.alive || sb.air || sb === skip) continue;
       var dx = sb.x - x, dy = sb.y - y, d2 = dx * dx + dy * dy;
-      if (d2 < r * r) this.hurt(sb, dmg * (by ? U.mult(by.T.cls, sb.T.cls) : 1) * (1 - Math.sqrt(d2) / r * 0.5), by ? by.id : -1);
+      if (d2 < r * r) this.hurt(sb, dmg * (src ? U.mult(src.cls, sb.T.cls) : 1) * (1 - Math.sqrt(d2) / r * 0.5), src && this.ctl(sb) !== src.team ? src.id : -1);
     }
-    for (var s = 0; s < this.structs.length; s++) { var st = this.structs[s]; if (st.dead) continue; var sx = clamp(x, st.x, st.x + st.w), sy = clamp(y, st.y, st.y + st.h); if ((sx - x) * (sx - x) + (sy - y) * (sy - y) < r * r) this.hurtStruct(st, dmg * (by ? U.mult(by.T.cls, 'structure') : 1)); }
+    for (var s = 0; s < this.structs.length; s++) { var st = this.structs[s]; if (st.dead) continue; var sx = clamp(x, st.x, st.x + st.w), sy = clamp(y, st.y, st.y + st.h); if ((sx - x) * (sx - x) + (sy - y) * (sy - y) < r * r) this.hurtStruct(st, dmg * (src ? U.mult(src.cls, 'structure') : 1)); }
   };
   // Артиллерия: залп по площади, снаряд летит SHELL_T секунд; цель должна быть видна команде
   Ground.prototype.artillery = function(a, tg) {
     a.cd = a.T.rof * (0.9 + this.R() * 0.2);
     var sx = tg.x + (this.R() - 0.5) * 2.5, sy = tg.y + (this.R() - 0.5) * 2.5;
-    this.ev.shells.push({ t0: this.t, t1: this.t + SHELL_T, x0: a.x, y0: a.y, x1: sx, y1: sy, team: a.team, r: a.T.splash, dmg: a.T.dmg * a.dmgK, by: a.id });
+    this.ev.shells.push({ t0: this.t, t1: this.t + SHELL_T, x0: a.x, y0: a.y, x1: sx, y1: sy, team: this.ctl(a), r: a.T.splash, dmg: a.T.dmg * a.dmgK, by: a.id, cls: a.T.cls });
     a.revealT = this.t;
     this.ev.fx.push({ t: this.t, k: 'artfire', x: a.x, y: a.y, id: a.id });
   };
@@ -1414,8 +1440,8 @@
       var s = sh[i]; if (this.t < s.t1) continue;
       var by = this.agents[s.by];
       if (s.k === 'net') { this.netLand(s); sh.splice(i, 1); continue; }
-      if (s.foe) { this.blast(s.team, s.by, s.x1, s.y1, s.r, s.dmg, false, false); sh.splice(i, 1); continue; }   // граната, ракета бойца
-      this.splash(s.x1, s.y1, s.r, s.dmg, by && by.alive ? by : null);
+      if (s.foe) { this.blast(s.team, s.by, s.x1, s.y1, s.r, s.dmg, false, false, s.cls); sh.splice(i, 1); continue; }   // граната, ракета бойца
+      this.splash(s.x1, s.y1, s.r, s.dmg, s.cls ? { id: s.by, cls: s.cls, team: s.team } : by ? { id: by.id, cls: by.T.cls, team: s.team } : null);
       this.ev.booms.push({ t: this.t, x: s.x1, y: s.y1, r: s.r, big: true });
       sh.splice(i, 1);
     }
@@ -1567,9 +1593,10 @@
         if (this.R() < 0.5 && !f.T.hunter) f.stun = Math.max(f.stun, 2);
       }
     } else if (act === 'choke' && b && b.alive) {
-      var cdm = (d.power || 90) * dmgK;
+      var cdm = (d.power || 90) * dmgK, hp0 = b.hp;
       this.hurt(b, cdm, a.id); b.choke = -1;
-      if (d.drain) a.hp = Math.min(a.hpMax, a.hp + cdm * 0.6);
+      // вытягивание — 0,6 от того, что реально отнято (у почти павшего много не вытянешь, BUG-023)
+      if (d.drain) a.hp = Math.min(a.hpMax, a.hp + Math.max(0, hp0 - b.hp) * 0.6);
     } else if (act === 'mind') {
       if (d.fear) { var ag4 = this.agents; for (var r = 0; r < ag4.length; r++) { var g = ag4[r]; if (!g.alive || g.hero || g.T.vehicle || g.T.hunter || this.ctl(g) === a.team) continue; var gx = g.x - a.x, gy = g.y - a.y; if (gx * gx + gy * gy <= 9 * RANGE_K * RANGE_K) { g.fear = 6; g.tgt = -1; } } }
       else if (b && b.alive && !b.hero && !b.T.hunter) {
@@ -1579,7 +1606,7 @@
     } else if (act === 'heal' && b && b.alive) { b.hp = Math.min(b.hpMax, b.hp + (d.power || 80)); this.ev.fx.push({ t: this.t, k: 'healed', x: b.x, y: b.y, id: b.id }); }
     else if (act === 'barrier') {
       var ag5 = this.agents;
-      for (var s = 0; s < ag5.length; s++) { var m = ag5[s]; if (!m.alive || m.team !== a.team) continue; var mx = m.x - a.x, my = m.y - a.y; if (mx * mx + my * my <= 9 * RANGE_K * RANGE_K) m.barrier = this.t + 12; }
+      for (var s = 0; s < ag5.length; s++) { var m = ag5[s]; if (!m.alive || this.ctl(m) !== this.ctl(a)) continue; var mx = m.x - a.x, my = m.y - a.y; if (mx * mx + my * my <= 9 * RANGE_K * RANGE_K) m.barrier = this.t + 12; }
       this.ev.fx.push({ t: this.t, k: 'dome', x: a.x, y: a.y, r: 3 * RANGE_K, until: this.t + 12, id: a.id });
     }
     h.data = null;
@@ -1600,7 +1627,7 @@
       // скрытый туманом враг — как нет цели: способность не бьёт вслепую и не выдаёт, кто где (аудит 30.10, BUG-037)
       if (!b || !b.alive || (b.team !== team && this.ctl(b) !== team && !this.canSee(team, b))) return 'нет цели';
       if (A[1] === 'enemy' && this.ctl(b) === team) return 'это свой';
-      if (A[1] === 'ally' && b.team !== team) return 'это враг';
+      if (A[1] === 'ally' && this.ctl(b) !== team) return 'это враг';
       if (A[0] === 'mind' && b.T.hunter) return 'охотника внушение не берёт';
       var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy);
       // далеко — герой сам подходит на дальность и применяет (pendStep); новый приказ игрока отменяет
@@ -1645,7 +1672,7 @@
     if (!this.mine(p.team, a)) { h.pend = null; return; }
     if (!b || !b.alive || b.gone) return drop(this, 'цели больше нет');
     if (A[1] === 'enemy' && (this.ctl(b) === p.team || !this.canSee(p.team, b))) return drop(this, 'цель потеряна');
-    if (A[1] === 'ally' && b.team !== p.team) return drop(this, 'цель потеряна');
+    if (A[1] === 'ally' && this.ctl(b) !== p.team) return drop(this, 'цель потеряна');
     if (this.t > p.until) return drop(this, 'не дошёл до цели');
     if (h.actT > 0 || a.stun > 0 || a.netT > this.t) return;   // ударом, оглушением или сетью занят — дождаться
     var dx = b.x - a.x, dy = b.y - a.y, rng = A[2] * RANGE_K;
@@ -1927,7 +1954,7 @@
     var ag = this.agents, ds = this.districts, i, j;
     for (j = 0; j < ds.length; j++) { ds[j].cnt[0] = 0; ds[j].cnt[1] = 0; }
     for (i = 0; i < ag.length; i++) {
-      var a = ag[i]; a.rofK = 1; if (!a.alive || a.team > 1 || a.air || a.fly) continue;
+      var a = ag[i]; a.rofK = 1; if (!a.alive || this.ctl(a) > 1 || a.air || a.fly) continue;
       for (j = 0; j < ds.length; j++) { var r = ds[j].rect; if (a.x >= r[0] && a.x < r[0] + r[2] && a.y >= r[1] && a.y < r[1] + r[3]) { ds[j].cnt[this.ctl(a)]++; a.inD = j; break; } }
       if (j === ds.length) a.inD = -1;
     }
@@ -1971,8 +1998,9 @@
     }
     var cnt = [0, 0], ag = this.agents;
     for (var i = 0; i < ag.length; i++) {
-      var a = ag[i]; if (!a.alive || a.air || a.T.vehicle || a.team > 1) continue;
-      if (a.x >= this.sx && a.x < this.sx + SQUARE && a.y >= this.sy && a.y < this.sy + SQUARE) cnt[a.team]++;
+      // площадь: порабощённый стоит за хозяина (как в базе — capture_counts по rt_state, BUG-021)
+      var a = ag[i], ac = this.ctl(a); if (!a.alive || a.air || a.T.vehicle || ac > 1) continue;
+      if (a.x >= this.sx && a.x < this.sx + SQUARE && a.y >= this.sy && a.y < this.sy + SQUARE) cnt[ac]++;
     }
     var c = this.cap; c.cnt = cnt;
     var A = cnt[this.att], D = cnt[this.def];

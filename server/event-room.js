@@ -9,7 +9,7 @@
 
 var fs = require('fs');
 // Очередь на отправку игроку: больше — кадры пропускаются, потом бой целиком (медленная связь не копит минуты задержки)
-var BUF_MAX = 131072;
+var BUF_MAX = 262144;          // больше самого крупного кадра (как в server/ground-room.js, BUG-076)
 var path = require('path');
 var P = require('../shared/rt-planets.js');
 var GR = require('../shared/rt-ground.js');

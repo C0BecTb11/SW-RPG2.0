@@ -59,7 +59,7 @@
     loading(true, 'Связь с планетой…');
     var url = LIVE.srv.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws', ws;
     try { ws = new WebSocket(url); } catch (e) { loading(false); toast('Сервер боёв недоступен', 'bad'); if (window.errReport) errReport(e, 'rt.socket'); return; }
-    LIVE.ws = ws; G.closing = false;
+    LIVE.ws = ws; G.closing = false; LIVE.retryIn = 0;     // просьба «повтори» относится только к своему сокету
     // рукопожатие потерялось (связь «заморожена») — сокет висит в подключении вечно: бросить и повторить
     clearTimeout(LIVE.openT);
     LIVE.openT = setTimeout(function() {
@@ -71,7 +71,7 @@
       LIVE.stage = 'токен';
       Promise.resolve(window.GD_TOKEN ? window.GD_TOKEN() : 'dev').then(function(token) {
         if (ws.readyState !== 1) return;
-        var auth = { t: 'auth', token: token || 'dev', room: LIVE.room || 'gr:' + LIVE.system };
+        var auth = { t: 'auth', token: token || 'dev', room: LIVE.room || 'gr:' + LIVE.system, tk: 1 };   // tk — обновлю токен по просьбе сервера
         if (/[?&]side=(0|1)/.test(location.search)) auth.side = +/[?&]side=(0|1)/.exec(location.search)[1];
         ws.send(JSON.stringify(auth));
         LIVE.stage = 'вход';
@@ -81,6 +81,10 @@
       LIVE.lastMsg = Date.now();
       var m; try { m = JSON.parse(e.data); } catch (err) { return; }
       if (m.t === 'hello') { LIVE.tries = 0; onHello(m, ws); return; }
+      // сервер просит свежий токен (старый истекает) — отдать, не прерывая боя
+      if (m.t === 'token') { if (window.GD_TOKEN) Promise.resolve(window.GD_TOKEN()).then(function(tk) { if (ws.readyState === 1 && tk && tk !== 'dev') ws.send(JSON.stringify({ t: 'token', token: tk })); }, function() {}); return; }
+      // прошлый бой здесь ещё записывается: не ошибка — тихий повтор (сокет закроется, переподключение — в onclose)
+      if (m.t === 'error' && m.retry) { LIVE.retryIn = +m.retry || 1500; LIVE.stage = 'ждём записи прошлого боя'; return; }
       if (m.t === 'error') {
         // сервер отказал (планета не открылась, бой прерван): не тост, который исчезнет, оставив пустой экран, —
         // окно с причиной и кнопками
@@ -103,6 +107,8 @@
       if (G.closing || LIVE.ws !== ws) return;
       // комната ивента закрылась после итога (4008): переподключаться некуда — итог уже на экране
       if (e && e.code === 4008 && G.evOver) { G.closing = true; toast('Бой окончен — поле закрыто', 'gold'); return; }
+      // сервер попросил подождать (бой записывается): повтор через указанное время, без счёта неудач
+      if (LIVE.retryIn) { var ri = LIVE.retryIn; LIVE.retryIn = 0; retryLive(ri + Math.random() * 300); return; }
       LIVE.tries++;
       if (LIVE.hadHello && !LIVE.stuckOn) toast('Связь с планетой прервана, переподключение…', 'bad');   // до первого входа — молча, ждёт сторож
       retryLive(Math.min(5000, 1000 * LIVE.tries) + Math.random() * 500);
@@ -179,7 +185,7 @@
     LIVE.tries++; toast('Нет связи с сервером боёв — переподключение…', 'bad'); retryLive(300);
   }
   function onHello(h, ws) {
-    LIVE.waitSince = 0; LIVE.stuckRep = false; LIVE.hadHello = true; stuckHide();
+    LIVE.waitSince = 0; LIVE.stuckRep = false; LIVE.hadHello = true; LIVE.retryIn = 0; stuckHide();
     // кто я: приказы — только своим бойцам (старый сервер «me» не шлёт — тогда id со страницы игры)
     G.me = h.me || (window.GL && GL.user) || null;
     G.own = h.own != null ? !!h.own && !!G.me : !!(window.GL && GL.user);
@@ -599,15 +605,18 @@
   // клетки (кэш), живое — голова турели, тарелка радара, волны глушилки, бур — поверх каждый кадр.
   // Голова турели смотрит туда, куда был последний выстрел (выстрел из центра постройки), между
   // выстрелами держит цель, а без боя медленно осматривается — у каждой свой сектор, от центра карты.
-  var FCACHE = {}, FCN = 0, FPAD = 0.45, FTIP = {};
+  var FCACHE = {}, FCN = 0, FPX = 0, FPAD = 0.45, FTIP = {};
   function fortHp(st) { if (st.dead) return 0; var k = st.hp / (st.hpMax || 1); return k < 0.35 ? 0.25 : k < 0.65 ? 0.5 : 1; }
   function fortBase(st, s) {
     var ppc = Math.max(8, Math.min(192, Math.round(s * G.dpr / 4) * 4)), hp = fortHp(st);
     var key = st.kind + '|' + st.team + '|' + (st.res || '') + '|' + st.w + 'x' + st.h + '|' + (st.dead ? 'x' : hp) + '|' + ppc;
     var cv = FCACHE[key]; if (cv) return cv;
-    if (FCN > 160) { FCACHE = {}; FCN = 0; }
+    // кэш — и по числу, и по памяти: каждая ступень масштаба печёт новые картинки, а холсты на телефоне — общая
+    // память видеокарты (сотни МБ ведут к сбросу холстов, аудит 30.10, BUG-072). 12 Мп ≈ 48 МБ
+    var cw = Math.ceil((st.w + FPAD * 2) * ppc), ch = Math.ceil((st.h + FPAD * 2) * ppc);
+    if (FCN > 160 || FPX + cw * ch > 12e6) { FCACHE = {}; FCN = 0; FPX = 0; }
     cv = document.createElement('canvas');
-    cv.width = Math.ceil((st.w + FPAD * 2) * ppc); cv.height = Math.ceil((st.h + FPAD * 2) * ppc);
+    cv.width = cw; cv.height = ch; FPX += cw * ch;
     var c = cv.getContext('2d'); c.scale(ppc, ppc); c.translate(FPAD + st.w / 2, FPAD + st.h / 2);
     SWForts.draw(c, st.kind, { team: st.team, w: st.w, h: st.h, res: st.res, hp: hp, dead: st.dead }, 'base');
     FCACHE[key] = cv; FCN++;

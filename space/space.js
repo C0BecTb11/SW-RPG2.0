@@ -3653,7 +3653,12 @@
     // рукопожатие потерялось (связь «заморожена») — не висеть в подключении вечно
     clearTimeout(N.openT);
     N.openT = setTimeout(function() { if (G.net !== N || N.ws !== ws || ws.readyState !== 0) return; netDrop(N, ws); }, 7000);
-    ws.onopen = function() { ws.send(JSON.stringify({ t: 'auth', token: N.auth.token, room: N.sys ? 'so:' + N.sys : 'sp:' + N.code + ':' + N.scen, side: N.side >= 0 ? N.side : N.want, cfg: N.cfg || undefined })); };
+    // токен — свежий на каждое подключение: сохранённый при входе через час истекает, и переподключение
+    // упиралось бы в «вход не подтверждён»
+    ws.onopen = function() {
+      var send = function(tk) { if (tk) N.auth.token = tk; if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'auth', token: N.auth.token, room: N.sys ? 'so:' + N.sys : 'sp:' + N.code + ':' + N.scen, side: N.side >= 0 ? N.side : N.want, cfg: N.cfg || undefined, tk: window.SP_TOKEN ? 1 : undefined })); };     // tk — обновлю токен по просьбе сервера (есть чем)
+      if (window.SP_TOKEN && N.auth.token !== 'dev') Promise.resolve(window.SP_TOKEN()).then(send, function() { send(null); }); else send(null);
+    };
     ws.onmessage = function(e) {
       if (G.net !== N || N.ws !== ws) return;
       N.lastAt = performance.now();
@@ -3667,7 +3672,7 @@
       if (m.t === 'refit') { (N.refit = N.refit || {})[m.n] = m; if (N.ready) netRefit(N); return; }
       if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
-      if (m.t === 'error') { N.err = m.msg; return; }
+      if (m.t === 'error') { N.err = m.msg; if (m.retry) N.retryIn = +m.retry || 1500; return; }
       if (m.t === 'note') { toast(m.msg, m.kind === 'bad' ? 'bad' : 'gold'); return; }
       if (m.t === 'find') { vfSet(m.find || null); return; }
       // место станции разведано (или станция изменилась): сервер шлёт только то, что этой стороне положено знать
@@ -3677,12 +3682,16 @@
         return;
       }
       if (m.t === 'pong') return;
+      // сервер просит свежий токен (старый истекает) — отдать, не прерывая боя
+      if (m.t === 'token') { if (window.SP_TOKEN) Promise.resolve(window.SP_TOKEN()).then(function(tk) { if (ws.readyState === 1 && tk && tk !== 'dev') ws.send(JSON.stringify({ t: 'token', token: tk })); }, function() {}); return; }
       if (N.ready) N.M.onText(m); else N.q.push(m);
     };
     ws.onclose = function(ev) {
       if (G.net !== N || N.ws !== ws) return;
       N.ws = null; N.ready = N.ready && false; netRow();
       // отказ сервера (полная комната, вход не подтверждён) — не повторять
+      // прошлый бой орбиты ещё записывается (4012) — тихий повтор через указанное время
+      if (ev.code === 4012 || N.retryIn) { var ri = N.retryIn || 1500; N.retryIn = 0; N.err = ''; toast('Прошлый бой здесь ещё записывается — вход через секунду', 'gold'); setTimeout(function() { if (G.net === N && !N.ws) netConnect(); }, ri + Math.random() * 300); return; }
       if (ev.code === 4003 || ev.code === 4004 || ev.code === 4005 || ev.code === 4006 || ev.code === 4007) { netFail(N.err || 'Сервер не пустил в бой'); return; }
       if (ev.code === 4008) { N.side = -1; }                                   // орбита пересоздана — войти заново
       // код закрытия в подсказке: по нему видно, кто оборвал (1006 — сеть или защита на компьютере, 1000/1001 — закрыто штатно)

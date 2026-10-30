@@ -20,6 +20,7 @@ var Net = require('../shared/rt-ground-net.js');
 
 var N = P.N;
 var SYNC_EVERY = 5000, PULL_EVERY = 5000, QUIET_MS = 3 * 60e3;
+var LOAD_FIRE_S = 30;          // погрузка на борт — не раньше 30 с после последнего попадания по бойцу
 var MAPS = {};
 function mapJson(id) {
   if (!MAPS[id]) MAPS[id] = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'shared', 'planets', id + '.json'), 'utf8'));
@@ -332,6 +333,13 @@ GroundRoom.prototype.loadsStep = function() {
   for (var i = 0; i < ag.length; i++) {
     var a = ag[i]; if (!a.alive || !(a.loadShip || a.scoutTo) || a.loading) continue;
     var z = a.loadZone; if (!(a.x >= z.x && a.x < z.x + z.w && a.y >= z.y && a.y < z.y + z.h)) continue;
+    // под огнём не грузятся — то же правило, что у панели армии в базе (rt_battle_guard: 30 с после попадания).
+    // Через сервер боя оно обходилось: rt_ground_act идёт мимо сторожа (решение Артёма 30.10 — закрыть)
+    if (B.t - (a.hitT == null ? -99 : a.hitT) < LOAD_FIRE_S) {
+      if (!a.loadWarn) { a.loadWarn = true; B.msg((a.name || a.T.name) + ' под огнём — погрузка, когда 30 с не будет попаданий', a.team, 'bad'); }
+      continue;
+    }
+    a.loadWarn = false;
     a.loading = true;
     if (a.scoutTo) { this.scoutGo(a); continue; }
     (function(a, ship, user) {

@@ -139,10 +139,11 @@
   };
   // Приказ от игрока: только своим; чужие id отбрасываются
   Viewer.prototype.ids = function(list) {
-    var B = this.B, side = this.side, user = this.user, own = this.opts.ownerCheck, out = [];
+    var B = this.B, side = this.side, user = this.user, own = this.opts.ownerCheck, out = [], seen = {};
     if (!Array.isArray(list)) return out;
     for (var i = 0; i < list.length && i < 400; i++) {
-      var id = list[i] | 0, a = B.agents[id]; if (!a || !a.alive) continue;
+      var id = list[i] | 0, a = B.agents[id]; if (!a || !a.alive || seen[id]) continue;   // повтор одного бойца — один раз
+      seen[id] = 1;
       if (B.ctl(a) !== side) continue;
       if (own && a.owner !== user) continue;
       if (a.npc) continue;
@@ -151,6 +152,12 @@
     return out;
   };
   Viewer.prototype.command = function(m) {
+    // бюджет бойцов в приказах: 400 в секунду (запас до 800). Приказ с сотнями id 30 раз в секунду иначе
+    // занимал бы процессор сервера, общий для всех планет
+    var now = Date.now(), cost = Array.isArray(m.ids) ? Math.min(m.ids.length, 400) : 1;
+    this.idTok = Math.min(800, (this.idTok == null ? 800 : this.idTok) + (now - (this.idAt || now)) * 0.4); this.idAt = now;
+    if (cost > this.idTok) return;
+    this.idTok -= cost;
     var B = this.B, side = this.side, ids = this.ids(m.ids);
     // новый приказ игрока отменяет ждущее дело сервера (погрузка, вылет разведчика, стройка), если оно ещё не начато
     if (m.k === 'move' || m.k === 'attack' || m.k === 'hold' || m.k === 'stop') {
@@ -164,7 +171,7 @@
       if (nLoad) B.msg('Погрузка отменена' + (nLoad > 1 ? ': ' + nLoad : ''), side, 'gold');
     }
     switch (m.k) {
-      case 'move': { var x = m.x | 0, y = m.y | 0; if (x < 0 || y < 0 || x >= N || y >= N) return; if (ids.length) B.orderMove(side, ids, x, y); return; }
+      case 'move': { var x = +m.x, y = +m.y; if (!isFinite(x) || !isFinite(y)) return; x = Math.floor(x); y = Math.floor(y); if (x < 0 || y < 0 || x >= N || y >= N) return; if (ids.length) B.orderMove(side, ids, x, y); return; }
       case 'attack': { var tg = B.agents[m.tid | 0]; if (!tg || !tg.alive || !this.visible(tg) || B.ctl(tg) === side) return; if (ids.length) B.orderAttack(side, ids, tg.id); return; }
       case 'hold': if (ids.length) B.orderHold(side, ids); return;
       case 'stop': if (ids.length) B.orderStop(side, ids); return;
@@ -174,7 +181,7 @@
         var hid = this.ids([m.id])[0]; if (hid == null) return;
         var tgt = null;
         if (m.tgt && m.tgt.tid != null) { var ta = B.agents[m.tgt.tid | 0]; if (!ta || !ta.alive) return; tgt = { tid: ta.id }; }
-        else if (m.tgt && m.tgt.x != null) tgt = { x: +m.tgt.x, y: +m.tgt.y };
+        else if (m.tgt && m.tgt.x != null) { var ax = +m.tgt.x, ay = +m.tgt.y; if (!isFinite(ax) || !isFinite(ay)) return; tgt = { x: Math.max(0, Math.min(N, ax)), y: Math.max(0, Math.min(N, ay)) }; }
         var err = B.useAbility(side, hid, String(m.ab || ''), tgt, true);   // приказ игрока: далеко — подойдёт сам
         if (err) B.msg(err, side, 'bad');
         return;

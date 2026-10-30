@@ -141,16 +141,24 @@
 
   // ---------------------------------------------------------------- поле направлений
   // Dijkstra от цели по проходимости рода войск; dir: 0..7 шаг, 254 — на месте, 255 — не дойти
-  function Flows(g) { this.g = g; this.cache = {}; this.keys = []; this.MAX = 64; this.built = 0; this.ms = 0; }
-  Flows.prototype.get = function(mv, size, tx, ty) {
+  // Кэш полей (поле ~20 КБ). Вытесняются только поля, которыми 2 с никто не пользовался: раньше при 64+ разных
+  // целях вытеснялись нужные в том же такте и строились заново каждый такт (80 целей — 15 с счёта на 5 с боя).
+  // soft (ход бойца): не больше BUDGET новых полей за шаг движка — остальные бойцы ждут шаг, а не тормозят всех.
+  function Flows(g) { this.g = g; this.cache = {}; this.keys = []; this.MAX = 96; this.HARD = 512; this.BUDGET = 4; this.stepT = -1; this.stepN = 0; this.built = 0; this.ms = 0; }
+  Flows.prototype.get = function(mv, size, tx, ty, soft) {
     var key = mv + size + ':' + tx + ',' + ty, f = this.cache[key];
     if (f) { f.used = this.g.t; return f; }
+    if (soft) {
+      if (this.stepT !== this.g.t) { this.stepT = this.g.t; this.stepN = 0; }
+      if (this.stepN >= this.BUDGET) return null;
+      this.stepN++;
+    }
     var t0 = Date.now();
     f = this.build(mv, size, tx, ty);
     this.cache[key] = f; this.keys.push(key); this.built++; this.ms += Date.now() - t0;
     if (this.keys.length > this.MAX) {
-      var self = this; this.keys.sort(function(a, b) { return self.cache[a].used - self.cache[b].used; });
-      while (this.keys.length > this.MAX * 0.75) delete this.cache[this.keys.shift()];
+      var self = this, cut = this.g.t - 2; this.keys.sort(function(a, b) { return self.cache[a].used - self.cache[b].used; });
+      while (this.keys.length > this.MAX * 0.75 && (this.cache[this.keys[0]].used < cut || this.keys.length > this.HARD)) delete this.cache[this.keys.shift()];
     }
     return f;
   };
@@ -654,7 +662,9 @@
     var key = a.key || a.goal;
     if ((a.air || a.fly) || (dist < 6 && this.straight(a, gx + off, gy + off))) { tx = gx + off; ty = gy + off; }
     else {
-      var f = this.flows.get(a.move, a.size, key[0], key[1]), d = f.dir[cy * N + cx];
+      var f = this.flows.get(a.move, a.size, key[0], key[1], true);
+      if (!f) { a.mv += (0 - a.mv) * Math.min(1, dt * 6); return; }          // поле строится в следующий шаг (бюджет на шаг)
+      var d = f.dir[cy * N + cx];
       if (d === 255) {
         // не на проходимой клетке (сдвинут) или цель недостижима: к ближайшей годной
         var alt = this.nearestOk(a.move, a.size, cx, cy);

@@ -102,6 +102,9 @@ function verify(token) {
     }).then(function(rows) {
       if (!Array.isArray(rows)) throw new Error('профиль не прочитан');
       var p = rows[0] || {};
+      // сторона только у одобренного игрока: без неё (новый аккаунт, ещё не распределён) бой не открывается вовсе,
+      // иначе такой игрок входил бы стороной Республики и видел всё, что видит она
+      if (p.faction !== 'republic' && p.faction !== 'cis') { var eNo = new Error('Сторона ещё не назначена — бои откроются, когда тебя распределят'); eNo.deny = true; throw eNo; }
       var who = { user: u.id, side: p.faction === 'cis' ? 1 : 0, nick: String(p.nickname || '').slice(0, 40), until: Date.now() + 5 * 60e3 };
       TOKENS.set(token, who);
       if (TOKENS.size > 500) TOKENS.delete(TOKENS.keys().next().value);
@@ -330,6 +333,17 @@ server.on('upgrade', function(req, sock, head) {
       verify(m.token).then(function(who) {
         clearTimeout(authTimer);
         if (!ws.open) return;
+        // открыть ЗАКРЫТУЮ планету может только тот, у кого на ней дело: планета своей стороны, своё управление,
+        // свои бойцы на земле или корабль в системе (sql/ground_fix_1.sql, rt_can_open). Иначе любой вошедший
+        // открывал бы чужие планеты: открытие запирает всех бойцов планеты и занимает места на сервере.
+        // В уже открытую комнату можно войти — туман войны всё равно покажет только своё.
+        var gp0 = !CFG.dev && m.room ? Ground.parse(String(m.room).slice(0, 40)) : null, ex0 = gp0 && ROOMS.get(gp0.key);
+        var gate = gp0 && !(ex0 && !ex0.closed)
+          ? groundRpc('rt_can_open', { p_key: CFG.key, p_system: gp0.system, p_user: who.user, p_layer: 'ground' })
+          : Promise.resolve(true);
+        return gate.then(function(ok) {
+        if (!ws.open) return;
+        if (ok !== true) { ws.send(JSON.stringify({ t: 'error', deny: 1, msg: 'Чужая планета: бой здесь откроется, когда у тебя будут войска на земле или корабль в системе' })); ws.close(4004); return; }
         // сторона — из профиля игрока; выбрать её самому можно только в замерах
         c.who = who; c.side = (CFG.dev && (m.side === 0 || m.side === 1)) ? m.side : who.side;
         var r = m.room ? getRoom(String(m.room).slice(0, 40), m.cfg, who) : null;   // без комнаты — не в нагрузочный бой по умолчанию
@@ -345,9 +359,10 @@ server.on('upgrade', function(req, sock, head) {
         } else r.join(c);
         c.room = r;
         log('info', 'игрок вошёл', { room: r.name, user: who.user, nick: who.nick, side: c.side, ua: c.ua });
+        });
       }, function(e) {
         c.authing = false;
-        ws.send(JSON.stringify({ t: 'error', msg: e.message })); ws.close(4003);
+        ws.send(JSON.stringify(e && e.deny ? { t: 'error', deny: 1, msg: e.message } : { t: 'error', msg: e.message })); ws.close(4003);
       }).catch(function(e) {
         // сбой при входе в комнату — этому игроку ошибка, серверу ничего
         log('error', 'вход в бой не удался', { err: String(e && e.stack || e).slice(0, 400) });

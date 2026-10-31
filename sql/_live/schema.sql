@@ -2147,6 +2147,8 @@ begin
           and is_in_settlement_zone(u.x, u.y))
       or exists (select 1 from system_capture sc where sc.system_id = s.id))
   loop
+   -- каждая планета — своя подтранзакция: сбой одной не срывает захват остальных (econ_fix_2b)
+   begin
     select * into c from capture_counts(sysrec.id);
     select * into v_row from system_capture where system_id = sysrec.id;
 
@@ -2242,6 +2244,9 @@ begin
             rate = excluded.rate, status = excluded.status,
             updated_at = excluded.updated_at, goal = excluded.goal;
     end if;
+   exception when others then
+     perform err_db('capture_tick', sqlstate, sysrec.id || ': ' || sqlerrm, true);
+   end;
   end loop;
 end;
 $$;
@@ -15011,6 +15016,7 @@ declare
   -- позже 00:00, в эту выдачу не попадает — ждёт следующих суток.
   v_p timestamptz := last_payout_at();
 begin
+  if not pg_try_advisory_xact_lock(hashtext('production_tick')) then return; end if;   -- econ_fix_2
   for b in
     select bd.id, bd.system_id, bd.faction,
            bt.produces_resource as res, bt.produces_per_day as per_day,
@@ -15027,7 +15033,10 @@ begin
       and (bd.completes_at is null or bd.completes_at <= now())
       and (bd.last_extract_at is null or bd.last_extract_at < v_p)
       and payout_eligible(bd.built_at, bd.completes_at, v_p)
+      and bd.faction is not distinct from s.faction   -- трофей без участка не добывает захватчику (ECON-BUG-017)
   loop
+   -- каждое здание — своя подтранзакция (ECON-BUG-037)
+   begin
     if b.consumes = '{}'::jsonb then
       -- ---------- добыча ----------
       if    b.res = b.prim then v_rate := b.per_day;
@@ -15104,9 +15113,31 @@ begin
 
       update buildings set last_extract_at = now() where id = b.id;
     end if;
+   exception when others then
+     perform err_db('production_tick', sqlstate, b.id || ': ' || sqlerrm, true);
+   end;
   end loop;
 end;
 $$;
+
+
+--
+-- Name: profiles_credits_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_credits_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  -- трата больше остатка (две траты разом, проверка без блокировки): отказ с понятным текстом;
+  -- CHECK profiles_credits_nonneg остаётся последней страховкой (ECON-BUG-040, econ_fix_2)
+  if new.credits < 0 and new.credits < old.credits then
+    raise exception 'Недостаточно кредитов: не хватает %', - new.credits
+      using errcode = 'P0001', hint = 'credits';
+  end if;
+  return new;
+end $$;
 
 
 --
@@ -15395,6 +15426,9 @@ begin
     from unit_orders uo
     join unit_types ut on ut.id = uo.unit_type
     where uo.system_id = p_system_id and not uo.delivered
+    -- под блокировкой: выдача (deliver_ready_units, skip locked) заказ не возьмёт, а уже начатая — дождётся,
+    -- и строка с delivered = true сюда не попадёт (ECON-BUG-023, econ_fix_2)
+    for update of uo
   loop
     v_half := floor(coalesce(r.cost, 0) * r.quantity / 2.0);
     update profiles set credits = credits + v_half where id = r.owner_user_id;
@@ -15410,6 +15444,7 @@ begin
     select ro.id, ro.owner_user_id, ro.cost
     from repair_orders ro
     where ro.system_id = p_system_id and not ro.delivered
+    for update of ro   -- ECON-BUG-023
   loop
     v_half := floor(coalesce(r.cost, 0) / 2.0);
     update profiles set credits = credits + v_half where id = r.owner_user_id;
@@ -15426,6 +15461,7 @@ begin
     from ship_orders so
     join ship_types st on st.id = so.ship_type
     where so.system_id = p_system_id and not so.delivered
+    for update of so   -- ECON-BUG-023
   loop
     v_half := floor(coalesce(r.cost, 0) / 2.0);
     update profiles set credits = credits + v_half where id = r.owner_user_id;
@@ -17733,7 +17769,8 @@ begin
      where id = r.id;
     update ships set owner_user_id = r.captor, faction = r.faction where carrier_ship_id = r.id;
     perform set_config('app.owner_transfer', '', true);
-    for o in select ro.id, ro.owner_user_id, ro.cost, ro.kind from repair_orders ro where ro.ship_id = r.id and not ro.delivered loop
+    for o in select ro.id, ro.owner_user_id, ro.cost, ro.kind from repair_orders ro where ro.ship_id = r.id and not ro.delivered
+             for update of ro loop   -- выданное не возвращается второй раз (ECON-BUG-023, econ_fix_2)
       v_half := floor(coalesce(o.cost, 0) / 2.0);
       if v_half > 0 then update profiles set credits = credits + v_half where id = o.owner_user_id; end if;
       delete from repair_orders where id = o.id;
@@ -18908,12 +18945,19 @@ declare
   v_p timestamptz := last_payout_at();
   v_lock integer := game_setting_int('payout_lock_hours', 4);
 begin
-  perform settlement_dev_tick();
+  -- ручной вызов во время такта не платит второй раз (econ_fix_2)
+  if not pg_try_advisory_xact_lock(hashtext('settlement_tick')) then return; end if;
+  begin perform settlement_dev_tick(); exception when others then perform err_db('settlement_tick', sqlstate, sqlerrm, true); end;
 
   for sys in select id, faction from systems
                  where faction is not null and not is_deep_space loop
+   -- каждая планета — своя подтранзакция: сбой одной не откатывает выплату остальным (ECON-BUG-037)
+   begin
 
+    -- блокируем строку суток только у планеты, которой пора платить (econ_fix_2b)
     select * into st from settlement_state where system_id = sys.id;
+    if found and st.cycle_started >= v_p then continue; end if;
+    select * into st from settlement_state where system_id = sys.id for update;
 
     if not found then
       insert into settlement_state (system_id, satisfaction, cycle_started)
@@ -19032,6 +19076,9 @@ begin
 
     update settlement_state set cycle_started = v_p where system_id = sys.id;
     perform issue_settlement_tasks(sys.id, v_p);
+   exception when others then
+     perform err_db('settlement_tick', sqlstate, sys.id || ': ' || sqlerrm, true);
+   end;
   end loop;
 end;
 $$;
@@ -20960,6 +21007,8 @@ begin
       and sy.faction = fs.faction and fs.hp > 0
     for update of fs
   loop
+   -- каждая постройка — своя подтранзакция (ECON-BUG-037, econ_fix_2)
+   begin
     if s.produces_resource is not null and s.produces_per_day > 0 then
       v_got := add_planet_stock(s.system_id, s.produces_resource, s.produces_per_day);
       perform log_event_digest(s.owner_user_id, s.faction, 'resource_extracted',
@@ -20976,6 +21025,9 @@ begin
     end if;
 
     update field_structures set last_tick_at = now() where id = s.id;
+   exception when others then
+     perform err_db('structures_tick', sqlstate, s.id || ': ' || sqlerrm, true);
+   end;
   end loop;
 
   -- Глушилки: вражеский разведчик ближе radius клеток сгорает
@@ -21683,17 +21735,20 @@ CREATE FUNCTION public.supply_put_cargo(p_commander_id uuid, p_here text, p_res 
     AS $$
 declare
   v_unit integer := game_setting_int('cargo_units_per_slot', 2);
-  sh record; v_left integer := p_amount; v_fit integer;
+  sh record; v_left integer := p_amount; v_fit integer; v_free integer;
 begin
   if p_amount <= 0 then return 0; end if;
+  -- корабль под блокировкой, место считается после неё: ручная погрузка в ту же секунду не переполнит трюм
+  -- (порядок по id — как в ручных функциях, без взаимоблокировок) (ECON-BUG-032, econ_fix_2)
   for sh in
-    select s.id, st.capacity - ship_load_used(s.id) as free_slots
-    from ships s cross join lateral ship_stats(s.id) st
+    select s.id from ships s
     where s.commander_id = p_commander_id and not s.in_transit and s.system_id = p_here
     order by s.id
+    for update
   loop
     exit when v_left <= 0;
-    v_fit := least(v_left, greatest(0, sh.free_slots) * v_unit);
+    select st.capacity - ship_load_used(sh.id) into v_free from ship_stats(sh.id) st;
+    v_fit := least(v_left, greatest(0, coalesce(v_free, 0)) * v_unit);
     continue when v_fit <= 0;
     insert into ship_resource_cargo (ship_id, resource, amount)
     values (sh.id, p_res, v_fit)
@@ -29305,6 +29360,13 @@ CREATE INDEX void_finds_status ON public.void_finds USING btree (status, ends_at
 
 
 --
+-- Name: profiles a_profiles_credits_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER a_profiles_credits_guard BEFORE UPDATE OF credits ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_credits_guard();
+
+
+--
 -- Name: auto_moves a_rt_battle_lock; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -35395,6 +35457,14 @@ GRANT ALL ON FUNCTION public.production_access_error(p_user uuid, p_system_id te
 
 REVOKE ALL ON FUNCTION public.production_tick() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.production_tick() TO service_role;
+
+
+--
+-- Name: FUNCTION profiles_credits_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_credits_guard() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.profiles_credits_guard() TO service_role;
 
 
 --

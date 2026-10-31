@@ -427,9 +427,9 @@
   function drawMini(c, sh, fitS) {
     S.mini = null;
     if (!X.gfx.get('mini') || X.ICAM.s < fitS * 1.3) return;
-    var pl = sh.plan, v = X.view(), maxW = Math.min(132, X.CAM.vw * 0.34), maxH = Math.min(112, v.h * 0.24);
+    var pl = sh.plan, v = X.view(), vr = v.right != null ? v.right : X.CAM.vw, maxW = Math.min(132, (v.w || X.CAM.vw) * 0.34), maxH = Math.min(112, v.h * 0.24);
     var k = Math.min(maxW / pl.w, maxH / pl.h), mw = pl.w * k, mh = pl.h * k;
-    var x = X.CAM.vw - mw - 14, y = v.top + 8;
+    var x = vr - mw - 14, y = v.top + 8;                  // в углу свободной части (лёжа справа — колонка панели)
     S.mini = { x: x, y: y, w: mw, h: mh, k: k };
     c.save();
     c.fillStyle = 'rgba(5,7,12,0.82)'; rrect(c, x - 5, y - 5, mw + 10, mh + 10, 7); c.fill();

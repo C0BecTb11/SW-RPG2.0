@@ -760,3 +760,29 @@ body.sys #sp-top, body.sys .sp-speed { display: none; }
   /* шторка «Орудия», кнопки цели, закрытие шторки, верхние кнопки — не меньше 32 px под палец (SPACE-BUG-067) */
   .sp-gun, .sp-tg-grid .sp-btn, .sp-sheet-x, #sp-tr button { min-height: 32px; }
 }
+
+/* ---------- телефон лёжа (низкий экран): панели колонками по бокам, поле — между ними (SPACE-BUG-062) ----------
+   Раньше верх и низ занимали по ~100 px из 390, шторка «Орудия» оставалась в 13 px, касание корабля попадало в список флота.
+   space.js view() меряет колонки и ставит камеру в середину свободной части; body.sp-cols ставит только space.js
+   (наземка берёт тот же space.css, но камеру по колонкам не считает) */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.sp-cols .sp-panel { margin: 0; max-width: none; }
+  body.sp-cols .sp-top {
+    left: calc(10px + env(safe-area-inset-left, 0px)); right: auto; width: min(290px, 34vw);
+    max-height: calc(100vh - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  }
+  body.sp-cols .sp-top::-webkit-scrollbar { display: none; }
+  body.sp-cols .sp-bottom {
+    left: auto; right: calc(10px + env(safe-area-inset-right, 0px)); width: min(320px, 38vw);
+    max-height: calc(100vh - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; box-shadow: 0 8px 26px rgba(0,0,0,0.5);
+  }
+  /* открыта шторка — колонка во всю высоту, шторка над кнопками */
+  body.sp-cols.sheet-open .sp-bottom { top: calc(54px + env(safe-area-inset-top, 0px)); }
+  body.sp-cols #sp-stat { max-height: none; flex: 1 1 auto; min-height: 0; }
+  body.sp-cols .sp-bottom .sp-dock { flex: none; flex-wrap: wrap; }
+  body.sp-cols .sp-bottom .sp-dock .sp-btn { flex: 1 1 calc(33% - 5px); }
+  /* шторка — во всю колонку над нижними кнопками, а не над полем */
+  body.sp-cols .sp-sheet { left: -3px; right: -1px; top: -1px; bottom: var(--sp-dock-h, 92px); max-height: none; box-shadow: 0 8px 26px rgba(0,0,0,0.55); }
+}

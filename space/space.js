@@ -1734,7 +1734,7 @@
     if (!sh || sh.dead) return;
     var rooms = sh.plan.rooms, s = CAM.s;
     for (var i = 0; i < rooms.length; i++) {
-      var r = rooms[i], sys = sysOf(r.t);
+      var r = rooms[i], sys = sysOf(r.t, sh.plan);
       if (!sys && r.auto) continue;
       var pts = roomPoly(sh, r), st = sh.crew.rooms[r.n];
       c.fillStyle = sys ? 'rgba(217,169,64,0.10)' : 'rgba(143,168,196,0.06)';
@@ -1747,7 +1747,15 @@
       }
     }
   }
-  function sysOf(t) { for (var i = 0; i < SP.SYS.length; i++) if (SP.SYS[i].types.indexOf(t) >= 0) return SP.SYS[i]; return null; }
+  // plan — у корабля без генератора щитов энергоузел подписан как «Щиты» (SYS.alt)
+  function sysOf(t, plan) {
+    var has = function(x) { return plan && plan.rooms.some(function(r) { return r.t === x; }); };
+    for (var i = 0; i < SP.SYS.length; i++) {
+      var S = SP.SYS[i], ty = S.alt && plan && !S.types.some(has) ? S.alt : S.types;
+      if (ty.indexOf(t) >= 0) return S;
+    }
+    return null;
+  }
 
   function drawCraft(c, cr) {
     if (cr.dead) return;

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Баланс классов орбиты: дуэли ИИ против ИИ (без абордажа и авиации) для пар, равных в базе.
+// Баланс классов орбиты: дуэли ИИ против ИИ (без абордажа и авиации) для пар республика — КНС.
 // Каждая пара — N боёв с разными сидами, половина со сменой сторон (стартовая сторона не даёт перевеса).
 //   node tools/space-balance.js                 — все пары, 30 боёв
 //   node tools/space-balance.js venator:providence 40
@@ -13,9 +13,10 @@ var SWShip = require(path.join(ROOT, 'rt-ship.js')), SP = require(path.join(ROOT
 var P = {};
 function plan(id) { return P[id] || (P[id] = SWShip.load(JSON.parse(fs.readFileSync(path.join(ROOT, 'ships', (id === 'cis_munificent' ? 'munificent' : id === 'cis_hardcell' ? 'hardcell' : id) + '.json'), 'utf8')))); }
 
-// пары, равные в базе (ship_types): республика — КНС
-var PAIRS = ['venator:providence', 'acclamator:munificent', 'tantive:hardcell', 'rep_valiant:cis_recusant',
-             'rep_arquitens:cis_diamond', 'rep_mandator:cis_subjugator', 'rep_victory:cis_lucrehulk'];
+// пары республика — КНС. Равные (почти равные) в базе — к 50 %; tantive:hardcell и rep_victory:cis_lucrehulk в базе
+// неравны (сильнее КНС: Hardcell на ~25 % живучее, Лукрехалк — в 1,5 раза) — подобраны с --target=0.35 и 0.25
+var PAIRS = ['venator:providence', 'acclamator:munificent', 'rep_valiant:cis_recusant',
+             'rep_arquitens:cis_diamond', 'rep_mandator:cis_subjugator', 'tantive:hardcell', 'rep_victory:cis_lucrehulk'];
 
 function duel(a, b, seed, swap) {
   var B = new SP.Battle({ seed: seed, fog: false, aiBoard: [false, false] });

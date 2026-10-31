@@ -208,7 +208,6 @@ SystemRoom.prototype.applyShips = function(list, base, seq0) {
       // ремонт — только если в базе больше, чем было в ней на момент запроса: старый снимок (запись ещё
       // не дошла или упала) — не ремонт, иначе урон последних секунд откатывался бы
       var b0 = base && base[s.id] != null ? base[s.id] : self.okHp[s.id];
-      if (max0 && b0 != null && s.hp > b0) { old.hull = Math.min(old.hullMax, Math.max(old.hull, old.hullMax * s.hp / max0)); self.okHp[s.id] = s.hp; if (s.hp >= max0 && !s.rt_state) self.yardFix(old); }
       if (old.faction !== s.faction || old.owner !== (s.owner_user_id || null)) { old.dead = true; old.why = 'left'; old.deadAt = B.t; delete self.byId[s.id]; }
       else {
         if (self.movedByBase(old, s, type0, seq0)) {
@@ -229,6 +228,8 @@ SystemRoom.prototype.applyShips = function(list, base, seq0) {
           self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
         }
         self.upg[s.id] = uk; old.bon0 = bonOf(s);
+        // ремонт — после модернизации: от нового предела (иначе ремонт и модернизация в одном ответе теряли ремонт)
+      if (max0 && b0 != null && s.hp > b0) { old.hull = Math.min(old.hullMax, Math.max(old.hull, old.hullMax * s.hp / max0)); self.okHp[s.id] = s.hp; if (s.hp >= max0 && !s.rt_state) self.yardFix(old); }
         self.syncUnits(old, s); self.dropMissing(old, s); return;
       }
     } else if (old) {

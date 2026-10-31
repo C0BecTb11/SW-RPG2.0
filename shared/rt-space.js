@@ -66,11 +66,12 @@
   var REACTOR_FUSE = 90;     // реактор разбит — столько секунд до взрыва (экипаж успевает поднять до 25% — отбой)
   var SYS_BY = {}; SYS.forEach(function(s) { SYS_BY[s.id] = s; });
   // отсек → система (приказ «по отсеку» на другом корабле становится приказом по той же системе)
-  function sysOfRoom(t) { for (var i = 0; i < SYS.length; i++) if (SYS[i].types.indexOf(t) >= 0) return SYS[i].id; return null; }
+  // plan — корабль, чей отсек: у кого нет генератора, энергоузел — это «Щиты» (alt)
+  function sysOfRoom(t, plan) { for (var i = 0; i < SYS.length; i++) if ((plan ? sysTypes(plan, SYS[i]) : SYS[i].types).indexOf(t) >= 0) return SYS[i].id; return null; }
   // Приказ пушки, перенесённый на другой корабль: та же система (отсек → его система, иначе корпус)
   function carryTgt(t, foe, fromShip) {
     if (t.k === 'sys') return { k: 'sys', ship: foe.n, sys: t.sys };
-    if (t.k === 'room') { var r = fromShip && fromShip.plan.roomByN[t.room], sy = r ? sysOfRoom(r.t) : null; return sy ? { k: 'sys', ship: foe.n, sys: sy } : { k: 'hull', ship: foe.n }; }
+    if (t.k === 'room') { var r = fromShip && fromShip.plan.roomByN[t.room], sy = r ? sysOfRoom(r.t, fromShip.plan) : null; return sy ? { k: 'sys', ship: foe.n, sys: sy } : { k: 'hull', ship: foe.n }; }
     return { k: 'hull', ship: foe.n };
   }
 
@@ -90,7 +91,7 @@
     rep_arquitens:  { troops: 20, guard: 6, hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
     tantive:        { troops: 12, guard: 4, hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
     cis_subjugator: { troops: 90, guard: 18, hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'], bal: 1.13 },
-    cis_lucrehulk:  { troops: 120, guard: 20, hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
+    cis_lucrehulk:  { troops: 120, guard: 20, hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'], bal: 1.13 },
     cis_recusant:   { troops: 40, guard: 8, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.25 },
     cis_diamond:    { troops: 50, guard: 8, hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1 },
     hardcell:       { troops: 30, guard: 6, hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50, bal: 1.25 }
@@ -279,6 +280,7 @@
     if (A.shBonus) sh.shMax *= A.shBonus;
     sh.foreK = A.foreK > 1 ? A.foreK : 1;              // «Мастер лобовой атаки»: носовой сектор держит больше
     for (var q = 0; q < 4; q++) sh.sh[q] = this.secMax(sh, q) * (A.shK && A.shK[q] != null ? A.shK[q] : 1);
+    if (sh.noShield) sh.sh = [0, 0, 0, 0];                 // трофей: и без строки типа щиты не наберутся
     this.ships.push(sh);
     if (!sh.dormant) this.applyStands(sh);
     this.place(sh);
@@ -593,7 +595,7 @@
     var need = -1, nv = 1e9;
     for (s = 0; s < 4; s++) {
       sh.shHit[s] = Math.max(0, sh.shHit[s] - dt);
-      var cap = this.shieldCap(sh, s), r = calm ? this.secMax(sh, s) * sh.regenQ * e.shield * e.power : base * (sh.shHit[s] > 0 ? 0.12 : 1) * (s === sh.focus ? 1.4 : 1);
+      var cap = this.shieldCap(sh, s), r = calm ? sh.shMax * sh.regenQ * e.shield * e.power : base * (sh.shHit[s] > 0 ? 0.12 : 1) * (s === sh.focus ? 1.4 : 1);
       sh.sh[s] = Math.min(cap, sh.sh[s] + r * dt);
       if (sh.sh[s] > cap) sh.sh[s] = cap;
       if (sh.shHit[s] > 0 && sh.sh[s] / cap < nv) { nv = sh.sh[s] / cap; need = s; }
@@ -849,7 +851,7 @@
       // цель погибла — пушка помнит, ЧТО бить (реактор, орудия…), и переходит на следующего врага;
       // сейчас некого — ждёт «сама», выбор хранит до появления врага
       // (каждая пушка — по своему сектору: первый враг, которого она достаёт, — по той же системе)
-      g.keep = { k: t.k === 'room' ? 'sys' : t.k, sys: t.k === 'room' ? (tgtShip && tgtShip.plan.roomByN[t.room] ? sysOfRoom(tgtShip.plan.roomByN[t.room].t) : null) : t.sys };
+      g.keep = { k: t.k === 'room' ? 'sys' : t.k, sys: t.k === 'room' ? (tgtShip && tgtShip.plan.roomByN[t.room] ? sysOfRoom(tgtShip.plan.roomByN[t.room].t, tgtShip.plan) : null) : t.sys };
       if (g.keep.k === 'sys' && !g.keep.sys) g.keep = { k: 'hull' };
       g.tgt = { k: 'auto' };
       return this.pick(sh, g);
@@ -871,7 +873,7 @@
     var sys = null;
     // на борту свой абордаж: бить по орудиям цели, мимо отсеков, где наши
     if (this.ourBoard(sh.side, foe)) return { ship: foe, room: this.gunRoomFree(foe, sh.side, g) };
-    if (g.t === 'ion') sys = foe.sh[this.sector(foe, g.x, g.y)] > this.secMax(foe, this.sector(foe, g.x, g.y)) * 0.2 ? (hasType(foe.plan, 'shield') ? 'shield' : 'engine') : 'engine';
+    if (g.t === 'ion') sys = foe.sh[this.sector(foe, g.x, g.y)] > this.secMax(foe, this.sector(foe, g.x, g.y)) * 0.2 ? (sysTypes(foe.plan, SYS_BY.shield).some(function(t) { return hasType(foe.plan, t); }) ? 'shield' : 'engine') : 'engine';
     else if (g.t === 'heavy') sys = this.sector(foe, g.x, g.y) === 2 ? 'engine' : 'guns';
     else if (g.t === 'pd') return { ship: foe, room: 0 };
     else sys = 'bridge';
@@ -949,7 +951,7 @@
     if (miss) { w[0] += (R() - 0.5) * 900; w[1] += (R() - 0.5) * 900; }
     var fly = Math.sqrt((w[0] - g.x) * (w[0] - g.x) + (w[1] - g.y) * (w[1] - g.y)) / BOLT;
     this.ev.shots.push({ x0: g.x, y0: g.y, x1: w[0], y1: w[1], t0: this.t, dur: fly, side: sh.side, t: g.t, miss: miss, from: sh.n, to: foe.n });
-    if (!miss) this.pending.push({ at: this.t + fly, ship: foe.n, lx: lx, ly: ly, fx: g.x, fy: g.y, T: T, k: g.k, by: sh.n });
+    if (!miss) this.pending.push({ at: this.t + fly, ship: foe.n, lx: lx, ly: ly, fx: g.x, fy: g.y, T: T, k: g.k, gk: g.t === 'pd' ? null : g.k, by: sh.n });
   };
   Battle.prototype.shootCraft = function(sh, g, c) {
     var T = g.T, R = this.R;
@@ -998,7 +1000,7 @@
     }
     sh.hull -= dmg * T.hull;
     this.ev.booms.push({ x: w[0], y: w[1], r: 14 + dmg * 1.4, t0: this.t, ship: sh.n, ion: !!T.stun });
-    this.hitRoom(sh, p.lx, p.ly, dmg, T, 1, p.k);
+    this.hitRoom(sh, p.lx, p.ly, dmg, T, 1, p.gk);   // множитель нормировки — только у главного калибра (ПВО, бомбы — как было)
     if (sh.hull <= 0) this.kill(sh, 'hull');
   };
   // Удар внутрь: поломка отсека, пожар, люди. gk — множитель пушки (нормировка огня): людей и пожары он масштабирует

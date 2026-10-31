@@ -365,7 +365,7 @@
  },
  "shared/rt-army.js": {
   "v": "11",
-  "sha": "3b8b01939c80"
+  "sha": "06d64ce36b54"
  },
  "shared/rt-board.js": {
   "v": "11",
@@ -412,12 +412,12 @@
   "sha": "a02b83a74308"
  },
  "shared/rt-space-net.js": {
-  "v": "25",
-  "sha": "4c3bb24c0306"
+  "v": "26",
+  "sha": "c3bf8e6bf844"
  },
  "shared/rt-space.js": {
   "v": "41",
-  "sha": "b3985f23639d"
+  "sha": "bc6654fa57c0"
  },
  "shared/rt-town.js": {
   "v": "3",
@@ -473,6 +473,6 @@
  },
  "space/space.js": {
   "v": "57",
-  "sha": "15f5a3f1afbc"
+  "sha": "9c7702e38f2b"
  }
 }

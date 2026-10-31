@@ -244,3 +244,57 @@ begin
       for each row execute function public.profiles_credits_guard();
   end if;
 end $t$;
+
+-- ================= Доработка после ревью (econ_fix_2b) =================
+--  • capture_tick — каждая планета в своей подтранзакции: сбой в возврате при захвате одной планеты (в том числе
+--    взаимоблокировка с выдачей) больше не откатывает такт захвата по всем планетам.
+--  • settlement_tick — строку суток блокирует только планета, которой пора платить: остальные 19 каждые 30 с читаются
+--    без блокировки, как раньше (не мешают стройке кварталов и расширению).
+
+do $patch$
+declare d text;
+begin
+  d := pg_get_functiondef('public.capture_tick()'::regprocedure);
+  if position('econ_fix_2b' in d) = 0 then
+    d := pg_temp.econ_sub(d,
+$q$  loop
+    select * into c from capture_counts(sysrec.id);$q$,
+$q$  loop
+   -- каждая планета — своя подтранзакция: сбой одной не срывает захват остальных (econ_fix_2b)
+   begin
+    select * into c from capture_counts(sysrec.id);$q$,
+      'capture_tick: начало цикла');
+    d := pg_temp.econ_sub(d,
+$q$            updated_at = excluded.updated_at, goal = excluded.goal;
+    end if;
+  end loop;
+end;$q$,
+$q$            updated_at = excluded.updated_at, goal = excluded.goal;
+    end if;
+   exception when others then
+     perform err_db('capture_tick', sqlstate, sysrec.id || ': ' || sqlerrm, true);
+   end;
+  end loop;
+end;$q$,
+      'capture_tick: конец цикла');
+    execute d;
+  end if;
+end $patch$;
+
+do $patch$
+declare d text;
+begin
+  d := pg_get_functiondef('public.settlement_tick()'::regprocedure);
+  if position('econ_fix_2b' in d) = 0 then
+    d := pg_temp.econ_sub(d,
+$q$    select * into st from settlement_state where system_id = sys.id for update;
+$q$,
+$q$    -- блокируем строку суток только у планеты, которой пора платить (econ_fix_2b)
+    select * into st from settlement_state where system_id = sys.id;
+    if found and st.cycle_started >= v_p then continue; end if;
+    select * into st from settlement_state where system_id = sys.id for update;
+$q$,
+      'settlement_tick: блокировка');
+    execute d;
+  end if;
+end $patch$;

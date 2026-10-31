@@ -130,11 +130,22 @@
     CV.width = Math.round(CAM.vw * CAM.dpr); CV.height = Math.round(CAM.vh * CAM.dpr);
     CV.style.width = CAM.vw + 'px'; CV.style.height = CAM.vh + 'px';
   }
+  // Телефон лёжа (низкий экран): панели — колонками по бокам, поле — между ними (SPACE-BUG-062)
+  var COLS = window.matchMedia ? window.matchMedia('(orientation: landscape) and (max-height: 520px)') : null;
+  document.body.classList.add('sp-cols');                // колонки лёжа — только экрану космоса (space.css)
   function view() {
     // свободная часть экрана между панелями
-    var top = $('sp-top').getBoundingClientRect().bottom + 6, bot = $('sp-bottom').getBoundingClientRect().top - 6;
-    if (bot - top < 120) { top = 0; bot = CAM.vh; }
-    return { top: top, bot: bot, cy: (top + bot) / 2, h: bot - top };
+    var tp = $('sp-top').getBoundingClientRect(), bp = $('sp-bottom').getBoundingClientRect(), left = 0, right = CAM.vw, top, bot;
+    if (COLS && COLS.matches) {
+      top = 48; bot = CAM.vh;
+      if (tp.width > 0 && tp.height > 0) left = tp.right + 6;
+      if (bp.width > 0 && bp.height > 0) right = bp.left - 6;
+      if (right - left < 160) { left = 0; right = CAM.vw; }
+    } else {
+      top = tp.bottom + 6; bot = bp.top - 6;
+      if (bot - top < 120) { top = 0; bot = CAM.vh; }
+    }
+    return { top: top, bot: bot, cy: (top + bot) / 2, h: bot - top, left: left, right: right, cx: (left + right) / 2, w: right - left };
   }
   function toS(x, y) { return [(x - CAM.x) * CAM.s + CAM.vw / 2, (y - CAM.y) * CAM.s + CAM.vh / 2]; }
   function toW(px, py) { return [(px - CAM.vw / 2) / CAM.s + CAM.x, (py - CAM.vh / 2) / CAM.s + CAM.y]; }
@@ -155,9 +166,9 @@
     });
     if (x0 > x1) return null;
     var v = view(), m = 900;
-    var s = Math.min((CAM.vw - 30) / (x1 - x0 + m), (v.h - 30) / (y1 - y0 + m));
+    var s = Math.min((v.w - 30) / (x1 - x0 + m), (v.h - 30) / (y1 - y0 + m));
     s = Math.max(0.012, Math.min(0.25, s));
-    return { s: s, x: (x0 + x1) / 2, y: (y0 + y1) / 2 - (v.cy - CAM.vh / 2) / s };
+    return { s: s, x: (x0 + x1) / 2 - (v.cx - CAM.vw / 2) / s, y: (y0 + y1) / 2 - (v.cy - CAM.vh / 2) / s };
   }
   // Место под станцию: камера летит к нему, место подсвечено несколько секунд (кнопка «Строительство»).
   // Места в системе нет — false
@@ -165,14 +176,14 @@
     var S = G.sys, sl = S && S.slot; if (!sl) return false;
     if (G.mode !== 'space') setMode('space');
     var v = view(), side = sl.size * S.cellM;
-    G.fpt = { x: (sl.x + sl.size / 2) * S.cellM, y: (sl.y + sl.size / 2) * S.cellM, s: clampS(Math.min(CAM.vw, v.h) * 0.45 / side) };
+    G.fpt = { x: (sl.x + sl.size / 2) * S.cellM, y: (sl.y + sl.size / 2) * S.cellM, s: clampS(Math.min(v.w, v.h) * 0.45 / side) };
     G.follow = 'pt'; G.slotHi = performance.now() + 5000;
     return true;
   }
   function focusShip(sh, scale) {
     var v = view();
-    CAM.s = scale || Math.max(CAM.s, Math.min(0.5, (Math.min(CAM.vw, v.h) * 0.8) / sh.len));
-    CAM.x = sh.x; CAM.y = sh.y - (v.cy - CAM.vh / 2) / CAM.s;
+    CAM.s = scale || Math.max(CAM.s, Math.min(0.5, (Math.min(v.w, v.h) * 0.8) / sh.len));
+    CAM.x = sh.x - (v.cx - CAM.vw / 2) / CAM.s; CAM.y = sh.y - (v.cy - CAM.vh / 2) / CAM.s;
   }
   // внутри
   function itoS(x, y) { return [(x - ICAM.x) * ICAM.s + CAM.vw / 2, (y - ICAM.y) * ICAM.s + CAM.vh / 2]; }
@@ -202,7 +213,7 @@
     takeFx();
     if (G.mode === 'space' && G.follow === 'ship' && G.sel >= 0) {
       var sh = B.ships[G.sel];
-      if (sh && !sh.dead) { var v = view(); CAM.x += (sh.x - CAM.x) * Math.min(1, dt * 3); CAM.y += (sh.y - (v.cy - CAM.vh / 2) / CAM.s - CAM.y) * Math.min(1, dt * 3); }
+      if (sh && !sh.dead) { var v = view(); CAM.x += (sh.x - (v.cx - CAM.vw / 2) / CAM.s - CAM.x) * Math.min(1, dt * 3); CAM.y += (sh.y - (v.cy - CAM.vh / 2) / CAM.s - CAM.y) * Math.min(1, dt * 3); }
     } else if (G.mode === 'space' && G.follow === 'all') {
       var f = fitRect(), k = Math.min(1, dt * 1.5);
       if (f) { CAM.s = Math.exp(Math.log(CAM.s) + (Math.log(f.s) - Math.log(CAM.s)) * k); CAM.x += (f.x - CAM.x) * k; CAM.y += (f.y - CAM.y) * k; }
@@ -210,7 +221,7 @@
       // полёт камеры к точке (место станции): масштаб плавно, точка — в середину свободной части экрана
       var vp = view(), kp = Math.min(1, dt * 4);
       CAM.s = Math.exp(Math.log(CAM.s) + (Math.log(G.fpt.s) - Math.log(CAM.s)) * kp);
-      CAM.x += (G.fpt.x - CAM.x) * kp; CAM.y += (G.fpt.y - (vp.cy - CAM.vh / 2) / CAM.s - CAM.y) * kp;
+      CAM.x += (G.fpt.x - (vp.cx - CAM.vw / 2) / CAM.s - CAM.x) * kp; CAM.y += (G.fpt.y - (vp.cy - CAM.vh / 2) / CAM.s - CAM.y) * kp;
     }
     if (G.mode === 'inside' && (!B.ships[G.view] || B.ships[G.view].dead)) setMode('space');
     // небо орбиты (space/space-sky.js): туманность, звёзды, планета системы, солнце — под боем; на стенде — Набу
@@ -767,7 +778,7 @@
       var cnt = b.order(G.side, null, room);
       G.bsel = {};
       toast(cnt ? (k === 'dbridge' ? 'Все отряды — на мостик' : 'Все отряды — в реакторный зал: выбить врага и снять заряд') : 'Некому идти', cnt ? 'gold' : 'bad');
-      var rr0 = G.B.ships[G.view].plan.roomByN[room], vv0 = view(); if (rr0) { ICAM.x = rr0.cx; ICAM.y = rr0.cy - (vv0.cy - CAM.vh / 2) / ICAM.s; }
+      var rr0 = G.B.ships[G.view].plan.roomByN[room], vv0 = view(); if (rr0) { ICAM.x = rr0.cx - (vv0.cx - CAM.vw / 2) / ICAM.s; ICAM.y = rr0.cy - (vv0.cy - CAM.vh / 2) / ICAM.s; }
     } else if (k === 'dauto') {
       b = defView(); if (!b) return;
       var ids0 = selIds(); b.setAuto(G.side, ids0);
@@ -1537,7 +1548,7 @@
     var f = G.sys && G.sys.find; if (!f) return false;
     if (G.mode !== 'space') setMode('space');
     var v = view(), M = G.sys.cellM;
-    G.fpt = { x: (f.cx + 0.5) * M, y: (f.cy + 0.5) * M, s: clampS(Math.min(CAM.vw, v.h) * 0.42 / (f.r * M)) };
+    G.fpt = { x: (f.cx + 0.5) * M, y: (f.cy + 0.5) * M, s: clampS(Math.min(v.w, v.h) * 0.42 / (f.r * M)) };
     G.follow = 'pt';
     return true;
   }
@@ -1600,7 +1611,7 @@
     // мерная линейка
     var L = step * s, v = view();
     c.fillStyle = 'rgba(143,168,196,0.6)'; c.font = '9px "Courier New", monospace'; c.textAlign = 'left'; c.textBaseline = 'bottom';
-    c.fillRect(12, v.bot - 10, L, 1); c.fillText(step / 1000 + ' км', 12, v.bot - 12);
+    c.fillRect(v.left + 12, v.bot - 10, L, 1); c.fillText(step / 1000 + ' км', v.left + 12, v.bot - 12);
   }
 
   // Пираты (сторона 2) — тот же корпус, но ржавый: перекрашенная копия спрайта, одна на класс
@@ -2389,8 +2400,8 @@
         if (v > score) { score = v; best = st.r; }
       });
       var v = view();
-      ICAM.s = Math.max(10, Math.min(16, (CAM.vw - 20) / (best.w + 10)));
-      ICAM.x = best.x + best.w / 2; ICAM.y = best.y + best.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
+      ICAM.s = Math.max(10, Math.min(16, (v.w - 20) / (best.w + 10)));
+      ICAM.x = best.x + best.w / 2 - (v.cx - CAM.vw / 2) / ICAM.s; ICAM.y = best.y + best.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
       G.room = best;
       // идёт абордаж — камера на абордажную команду
       var bb = boardOf(sh.n), bc = bb && squadCenter(bb, null);
@@ -2494,8 +2505,8 @@
   function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); }
   // Камера внутри — к точке плана (в середину свободной части экрана); smooth — плавно
   function flyTo(w, smooth) {
-    var v = view(), y = w[1] - (v.cy - CAM.vh / 2) / ICAM.s;
-    if (smooth === false) { ICAM.x = w[0]; ICAM.y = y; G.ifly = null; } else G.ifly = { x: w[0], y: y };
+    var v = view(), x = w[0] - (v.cx - CAM.vw / 2) / ICAM.s, y = w[1] - (v.cy - CAM.vh / 2) / ICAM.s;
+    if (smooth === false) { ICAM.x = x; ICAM.y = y; G.ifly = null; } else G.ifly = { x: x, y: y };
   }
   // Рамкой выделяют своих бойцов там, где ими командуешь (абордаж и оборона)
   function boxable() { return !!(attView() || defView() || ownView()) && !G.dmode && !G.vent; }
@@ -3155,13 +3166,18 @@
     return y;
   }
   function sheetShow(guns) {
-    var on = !!G.sheet, el = $('sp-sheet');
+    var on = !!G.sheet, el = $('sp-sheet'), cols = !!(COLS && COLS.matches);
     el.hidden = !on;
+    // лёжа: колонка панели на всю высоту, шторка — в ней над кнопками (space.css)
+    document.body.classList.toggle('sheet-open', on && cols);
     if (!on) return;
-    // шторка — не выше верхней панели: её шапка и первые кнопки всегда на экране
-    var room = $('sp-bottom').getBoundingClientRect().top - topEdge() - 14;
-    // не выше 2/3 места между верхом и низом: над шторкой всегда остаётся космос для касаний
-    el.style.maxHeight = Math.max(Math.min(110, room), Math.min(440, room * 0.66, window.innerHeight * 0.6)) + 'px';
+    if (cols) el.style.maxHeight = '';
+    else {
+      // шторка — не выше верхней панели: её шапка и первые кнопки всегда на экране
+      var room = $('sp-bottom').getBoundingClientRect().top - topEdge() - 14;
+      // не выше 2/3 места между верхом и низом: над шторкой всегда остаётся космос для касаний
+      el.style.maxHeight = Math.max(Math.min(110, room), Math.min(440, room * 0.66, window.innerHeight * 0.6)) + 'px';
+    }
     $('sp-sheet-t').textContent = SHEET_T[G.sheet] || '';
     $('sp-gunsbox').hidden = !guns; $('sp-ship').hidden = !!guns;
   }
@@ -3266,11 +3282,11 @@
           var bdo = boardOf(vs.n), sp0 = vs.crew.rooms[rr.n] && vs.crew.rooms[rr.n].anchor, cc = sp0 ? sp0[1] * vs.plan.w + sp0[0] : Math.floor(rr.cy) * vs.plan.w + Math.floor(rr.cx);
           var k2 = bdo ? bdo.orderUnits(G.side, G.usel.slice(), cc) : 0;
           toast(k2 ? k2 + ' ' + plural(k2, 'боец', 'бойца', 'бойцов') + ' → ' + rr.name : 'Туда не пройти', k2 ? 'gold' : 'bad');
-          var vv0 = view(); ICAM.x = rr.cx; ICAM.y = rr.cy - (vv0.cy - CAM.vh / 2) / ICAM.s; hud();
+          var vv0 = view(); ICAM.x = rr.cx - (vv0.cx - CAM.vw / 2) / ICAM.s; ICAM.y = rr.cy - (vv0.cy - CAM.vh / 2) / ICAM.s; hud();
         } else if (rr) {
           boardTap(vs, rr);
           // камера — к цели
-          var vv = view(); ICAM.x = rr.cx; ICAM.y = rr.cy - (vv.cy - CAM.vh / 2) / ICAM.s;
+          var vv = view(); ICAM.x = rr.cx - (vv.cx - CAM.vw / 2) / ICAM.s; ICAM.y = rr.cy - (vv.cy - CAM.vh / 2) / ICAM.s;
         }
         return;
       }
@@ -3334,7 +3350,7 @@
           if (!seen(foe)) { G.aim = false; toast(foe.name + ': нет контакта — схему не видно', 'bad'); hud(); return; }
           G.sheet = '';                                  // шторка не закрывает схему врага
           if (G.mode === 'inside') setMode('space');
-          focusShip(foe, Math.min(0.5, Math.min(CAM.vw, view().h) * 0.9 / foe.len)); G.follow = false;
+          focusShip(foe, Math.min(0.5, Math.min(view().w, view().h) * 0.9 / foe.len)); G.follow = false;
           toast('Коснись отсека на схеме врага', 'gold');
         }
       }
@@ -3361,7 +3377,7 @@
       if (!G.B) return;
       if (G.mode === 'inside') {
         var p = G.B.ships[G.view].plan, v = view();
-        ICAM.s = Math.min((CAM.vw - 20) / p.w, (v.h - 10) / p.h); ICAM.x = p.w / 2; ICAM.y = p.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
+        ICAM.s = Math.min((v.w - 20) / p.w, (v.h - 10) / p.h); ICAM.x = p.w / 2 - (v.cx - CAM.vw / 2) / ICAM.s; ICAM.y = p.h / 2 - (v.cy - CAM.vh / 2) / ICAM.s;
       } else fitAll();
     };
     $('sp-gfx-b').onclick = function() { GFX.open(Math.round(FR.fps)); };

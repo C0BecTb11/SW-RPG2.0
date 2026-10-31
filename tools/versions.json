@@ -316,8 +316,8 @@
   "sha": "026ba2fc5ae5"
  },
  "js/space-live.js": {
-  "v": "41",
-  "sha": "001c960a2d9e"
+  "v": "42",
+  "sha": "52acc57eb35c"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -444,8 +444,8 @@
   "sha": "f4cc01dde857"
  },
  "space/space-deck.js": {
-  "v": "3",
-  "sha": "02681b83d010"
+  "v": "4",
+  "sha": "f96cdf78f95d"
  },
  "space/space-gfx.js": {
   "v": "2",
@@ -468,11 +468,11 @@
   "sha": "36d679e2d151"
  },
  "space/space.css": {
-  "v": "30",
-  "sha": "0323a70f33ba"
+  "v": "31",
+  "sha": "4c582ee65fee"
  },
  "space/space.js": {
-  "v": "58",
-  "sha": "8e4113914c22"
+  "v": "59",
+  "sha": "398b5a7d4fda"
  }
 }

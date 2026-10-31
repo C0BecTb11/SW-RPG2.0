@@ -545,7 +545,6 @@ function subscribeToSystemChanges() {
 }
 
 var commandersReloadTimer = null;
-var arrivalReloadAt = 0;   // когда снова можно перечитать командиров после прибытия ракеты
 
 // Realtime-подписка на командиров: при появлении/перемещении/разблокировке
 // командира любым игроком — карта у всех перерисовывает маркеры заново.
@@ -750,13 +749,8 @@ function animateFlights(frameNow) {
         'translate(-50%, -50%) rotate(' + angleDeg + 'deg)';
     }
 
-    if (progress >= 1 && !(arrivalReloadAt > Date.now())) {
-      // Прибытие фиксирует сервер (такт раз в 30 с), карта обновится по realtime.
-      // Событие могло не дойти — перечитываем командиров сами, не чаще раза в 10 с
-      // на все долетевшие ракеты (перерисовка пересоздаёт их, счётчик общий).
-      arrivalReloadAt = Date.now() + 10000;
-      reloadCommanders();
-    }
+    // Прибытие фиксирует сервер (такт раз в 30 с): карта обновится по realtime,
+    // а пропущенное событие подберёт опрос flightPollTimer (раз в 10 с, пока в небе ракеты)
   } catch (e) { console.error('Ракета перелёта:', e); if (window.errReport) errReport(e, 'planets.flight'); } });
 
   requestAnimationFrame(animateFlights);

@@ -388,3 +388,135 @@ end $t$;
 insert into public.game_settings (key, value)
 values ('market_max_price_x', '20')
 on conflict (key) do nothing;
+
+-- ================= Доработка после ревью (econ_fix_1b) =================
+--  • is_capture_active смотрела на сохранённый progress, а capture_tick пишет строку только при смене статуса:
+--    чистый захват (progress 0, rate 1) не считался идущим — ни старые запреты (стройка, найм, смены), ни новые
+--    не срабатывали. Теперь захват идёт, пока полоса растёт или стоит выше нуля (status <> 'distribution').
+--  • рейс снабжения на остановке ждёт, пока корабль флота в живом бою 2.0 (раньше выгрузка падала, рейс вставал),
+--    и не забирает покупку с планеты, где идёт захват, — ждёт его конца (раньше разовый рейс завершался пустым).
+--  • покупка лота с планеты, где идёт захват, — отказ.
+--  • снос: склад участка переносится после возврата 50 % ресурсов постройки (возврат идёт в пределах склада).
+--  • верх цены лота: base_price 0 считается как 10 (как при отсутствии ресурса).
+--  • задача поселения: строка суток читается под for share — смена суток не проскочит между проверкой и оплатой.
+
+create or replace function public.is_capture_active(p_system_id text) returns boolean
+language sql stable
+as $$
+  -- захват идёт, пока полоса растёт (rate > 0) или стоит выше нуля; строку capture_tick пишет только при смене статуса,
+  -- поэтому сохранённый progress у чистого захвата остаётся 0 (econ_fix_1b)
+  select exists (
+    select 1 from system_capture
+    where system_id = p_system_id and status <> 'distribution' and (progress > 0 or rate > 0)
+  );
+$$;
+
+do $patch$
+declare d text;
+begin
+  d := pg_get_functiondef('public.supply_route_step(uuid)'::regprocedure);
+  if position('econ_fix_1b' in d) = 0 then
+    d := pg_temp.econ_sub(d,
+$q$    if r.phase = 'at_stop' then$q$,
+$q$    if r.phase = 'at_stop' then
+      -- корабль флота в живом бою 2.0: груз не перекладывают, ждём конца стычки (ECON-BUG-030, econ_fix_1b)
+      if exists (select 1 from ships s where s.commander_id = cm.id and s.system_id = v_here and not s.in_transit
+                  and s.carrier_ship_id is null and rt_obj_busy_2_0('ship', s.id) is not null) then
+        update supply_routes set last_note = 'Флот в бою — груз передадут, когда стычка кончится', updated_at = now()
+         where id = r.id and last_note is distinct from 'Флот в бою — груз передадут, когда стычка кончится';
+        exit;
+      end if;
+      -- вывоз покупки с планеты, где идёт захват: ждём его конца (захватят — бронь вернут деньгами) (ECON-BUG-004)
+      if supply_stop_is_pickup(r.stops -> r.stop_index) and is_capture_active(v_here) then
+        update supply_routes set last_note = 'Идёт захват — покупку заберём, когда он кончится · ' || coalesce(v_hname, v_here),
+                                 updated_at = now()
+         where id = r.id and last_note is distinct from 'Идёт захват — покупку заберём, когда он кончится · ' || coalesce(v_hname, v_here);
+        exit;
+      end if;$q$,
+      'supply_route_step: бой и захват');
+    execute d;
+  end if;
+end $patch$;
+
+do $patch$
+declare d text;
+begin
+  d := pg_get_functiondef('public.buy_market_lot(uuid,integer)'::regprocedure);
+  if position('econ_fix_1b' in d) = 0 then
+    d := pg_temp.econ_sub(d,
+$q$  if l.seller_user_id = v_user then raise exception 'Это твой собственный лот'; end if;$q$,
+$q$  if l.seller_user_id = v_user then raise exception 'Это твой собственный лот'; end if;
+  -- захват: склад планеты достаётся захватчику, торги с неё закрыты (ECON-BUG-004, econ_fix_1b)
+  if is_capture_active(l.system_id) then
+    raise exception 'На планете продавца идёт захват — торги закрыты, пока он не кончится';
+  end if;$q$,
+      'buy_market_lot: захват');
+    execute d;
+  end if;
+end $patch$;
+
+do $patch$
+declare d text; blk text;
+begin
+  d := pg_get_functiondef('public.demolish_building(uuid)'::regprocedure);
+  if position('econ_fix_1b' in d) = 0 then
+    blk := $q$  -- участок добычи или цех: смена закрывается, склад участка уходит на склад планеты целиком, даже сверх предела —
+  -- ресурсы при сносе, как и при захвате, остаются на планете (ECON-BUG-016)
+  for v_shift in select id from mine_shifts where building_id = p_building_id and status = 'run' loop
+    perform mine_finish(v_shift, case when v_bld_faction is distinct from v_sys_faction then 'lost' else 'stopped' end);
+  end loop;
+  select * into v_ms from mine_sites where building_id = p_building_id for update;
+  if found then
+    if v_ms.stock > 0 then
+      insert into planet_stock (system_id, resource, amount) values (v_system_id, v_ms.resource, v_ms.stock)
+      on conflict (system_id, resource) do update set amount = planet_stock.amount + excluded.amount;
+    end if;
+    update mine_sites set stock = 0, gone = true, auto_on = false where building_id = p_building_id;
+  end if;
+$q$;
+    d := pg_temp.econ_sub(d, blk || E'\n', '', 'demolish_building: убрать перенос до сноса');
+    d := pg_temp.econ_sub(d,
+$q$      (select cost_resources from building_types where id = v_building_type_id), 0.5);
+  end if;$q$,
+$q$      (select cost_resources from building_types where id = v_building_type_id), 0.5);
+  end if;
+
+  -- после возврата 50 % ресурсов постройки (он идёт в пределах склада) — econ_fix_1b
+$q$ || blk,
+      'demolish_building: перенос после возврата');
+    execute d;
+  end if;
+end $patch$;
+
+do $patch$
+declare d text;
+begin
+  d := pg_get_functiondef('public.create_market_lot(text,text,integer,integer,text)'::regprocedure);
+  if position('econ_fix_1b' in d) = 0 then
+    d := pg_temp.econ_sub(d,
+$q$  if p_price > coalesce((select base_price from resources where id = p_resource), 10) * game_setting_int('market_max_price_x', 20) then
+    raise exception 'Цена не может быть больше %',
+      coalesce((select base_price from resources where id = p_resource), 10) * game_setting_int('market_max_price_x', 20);$q$,
+$q$  if p_price > coalesce((select nullif(base_price, 0) from resources where id = p_resource), 10) * game_setting_int('market_max_price_x', 20) then
+    raise exception 'Цена не может быть больше %',   -- econ_fix_1b: base_price 0 — как 10
+      coalesce((select nullif(base_price, 0) from resources where id = p_resource), 10) * game_setting_int('market_max_price_x', 20);$q$,
+      'create_market_lot: base_price 0');
+    execute d;
+  end if;
+end $patch$;
+
+do $patch$
+declare d text;
+begin
+  d := pg_get_functiondef('public.settlement_pay_task(uuid)'::regprocedure);
+  if position('econ_fix_1b' in d) = 0 then
+    d := pg_temp.econ_sub(d,
+$q$  if not exists (select 1 from settlement_state st
+                 where st.system_id = t.system_id and st.cycle_started = t.cycle_start) then$q$,
+$q$  perform 1 from settlement_state st
+   where st.system_id = t.system_id and st.cycle_started = t.cycle_start for share;   -- econ_fix_1b: смена суток ждёт оплату
+  if not found then$q$,
+      'settlement_pay_task: for share');
+    execute d;
+  end if;
+end $patch$;

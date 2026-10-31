@@ -105,8 +105,8 @@ SystemRoom.prototype.open = function() {
     // За пределом — мягко, не больше 8 м за такт (трофей, захваченный в чужой полосе, выплывает, а не прыгает)
     B.bound = function(sh) {
       if (sh.dead || sh.pirate != null) return;
-      var r = self.reach(sh), N = self.grid * CELL_M;
-      var tx = Math.max(r, Math.min(N - r, sh.x)), ty = self.clampY(sh.side, Math.max(r, Math.min(N - r, sh.y)), sh);
+      var r = self.reachXY(sh), N = self.grid * CELL_M;
+      var tx = Math.max(r[0], Math.min(N - r[0], sh.x)), ty = self.clampY(sh.side, Math.max(r[1], Math.min(N - r[1], sh.y)), sh, r[1]);
       var dx = tx - sh.x, dy = ty - sh.y; if (!dx && !dy) return;
       var d = Math.sqrt(dx * dx + dy * dy), st = Math.min(d, 8);
       sh.x += dx / d * st; sh.y += dy / d * st;
@@ -196,7 +196,7 @@ var CRAFT_SENS = 3500;                       // датчики истребит�
 
 // Корабли из базы → бой. Повторный вызов (pull) добавляет прибывших и убирает ушедших.
 // base — корпуса, которые лежали в базе к моменту запроса (pull): рост сверх них — ремонт в доке
-SystemRoom.prototype.applyShips = function(list, base) {
+SystemRoom.prototype.applyShips = function(list, base, seq0) {
   var B = this.B, self = this, seen = {}, added = [];
   list.forEach(function(s) {
     seen[s.id] = 1;
@@ -210,7 +210,7 @@ SystemRoom.prototype.applyShips = function(list, base) {
       if (max0 && b0 != null && s.hp > b0) { old.hull = Math.min(old.hullMax, Math.max(old.hull, old.hullMax * s.hp / max0)); self.okHp[s.id] = s.hp; if (s.hp >= max0 && !s.rt_state) self.yardFix(old); }
       if (old.faction !== s.faction || old.owner !== (s.owner_user_id || null)) { old.dead = true; old.why = 'left'; old.deadAt = B.t; delete self.byId[s.id]; }
       else {
-        if (self.movedByBase(old, s, type0)) {
+        if (self.movedByBase(old, s, type0, seq0)) {
           // корабль передвинула база (захват планеты, вытеснение): встать туда, курс и место «до боя» — забыты
           // (раньше следующий снимок возвращал его на старую клетку, SPACE-BUG-049)
           var bx0 = boxOf(type0, s.facing);
@@ -321,8 +321,10 @@ SystemRoom.prototype.addFree = function(s, type) {
   c.gameId = s.id; c.gameMax = maxHp; this.free[s.id] = c; this.craftHp[s.id] = s.hp; this.craftSeen[s.id] = s.hp; this.freeAt[s.id] = s.x + ',' + s.y;
 };
 // Клетка или разворот в базе не те, что записал бой последним, и не те, где корабль сейчас, — его двинула база
-SystemRoom.prototype.movedByBase = function(sh, s, type) {
+// (строку записали уже после запроса pull — его ответ старше записи, сравнивать не с чем)
+SystemRoom.prototype.movedByBase = function(sh, s, type, seq0) {
   var ls = this.lastSync[s.id]; if (!ls || ls.cx == null || s.x == null || s.y == null) return false;
+  if (seq0 == null || !(ls.seq <= seq0)) return false;
   var f = ((s.facing || 0) % 360 + 360) % 360;
   if (s.x === ls.cx && s.y === ls.cy && f === ls.fc) return false;
   var fc = facingOf(sh.hd), box = boxOf(type, fc);
@@ -426,7 +428,7 @@ SystemRoom.prototype.syncAi = function() {
 };
 // Служебные сообщения (корабли, модернизация, станция, находка) не повторяются сами — пропущенное из-за полной
 // очереди помечается, и игроку уходит всё заново, когда очередь освободится (resendTo, SPACE-BUG-005)
-var KEEP_RE = /^\{"t":"(ships|refit|station|find)"/;
+var KEEP_RE = /^\{"t":"(ships|refit|station|find|sysf)"/;
 SystemRoom.prototype.send = function(c, data) {
   if (c.ws.bufferedAmount > BUF_MAX) { if (c.viewer) c.viewer.lost(); if (typeof data === 'string' && KEEP_RE.test(data)) c.resend = true; return; }
   var n = typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength;
@@ -441,6 +443,7 @@ SystemRoom.prototype.resendTo = function(c) {
   this.send(c, JSON.stringify({ t: 'ships', full: 1, ships: this.rowsFor(B.ships, c.side) }));
   var v = this.stationView(c.side); this.send(c, JSON.stringify({ t: 'station', station: v.station, fog: v.fog }));
   this.send(c, JSON.stringify({ t: 'find', find: this.findInfo() }));
+  if (this.state && this.state.system) this.send(c, JSON.stringify({ t: 'sysf', faction: this.state.system.faction }));
   B.ships.forEach(function(sh) { if (!sh.dead && sh.side === c.side && sh.gameId) self.send(c, JSON.stringify({ t: 'refit', n: sh.n, hm: Math.round(sh.hullMax), sm: Math.round(sh.shMax * 100) / 100, fk: sh.foreK || 1, tb: sh.tractor ? 1 : 0 })); });
 };
 // ---- такт
@@ -549,7 +552,7 @@ SystemRoom.prototype.syncNow = function() {
   this.syncAt = Date.now();
   // «уже записано» отмечается сразу (следующий снимок не повторит), а при сбое записи — откатывается: иначе
   // гибель корабля, бойцов, машин и трофей терялись навсегда (SPACE-BUG-013)
-  var rb = { ships: [], unit: {}, craft: {} };
+  var rb = { ships: [], unit: {}, craft: {} }, seqN = this.syncSeq = (this.syncSeq || 0) + 1;
   var setU = function(id, v, row) { if (!Object.prototype.hasOwnProperty.call(rb.unit, id)) rb.unit[id] = Object.prototype.hasOwnProperty.call(self.unitHp, id) ? self.unitHp[id] : undefined; self.unitHp[id] = v; units.push(row || { id: id, hp: v }); };
   // seen — целость в базе, которую бой уже принял: ремонт база прибавит только сверх неё (иначе принятый через
   // pull ремонт прибавлялся второй раз)
@@ -605,7 +608,7 @@ SystemRoom.prototype.syncNow = function() {
       var row = { id: sh.gameId, x: cx, y: cy, facing: fc, hp: hp, sh: shv, fire: fire, held: held, mx: mx, my: my, hd: hd, bd: boarded ? 90 : 0,
                   seen: self.okHp[sh.gameId] != null ? self.okHp[sh.gameId] : null };   // корпус в базе, что бой уже принял
       if (st !== undefined && (!last || last.stK !== stK)) row.st = st;           // null — всё целое (стереть запись)
-      ships.push(row); self.lastSync[sh.gameId] = { key: key, hp: hp, stK: stK, cx: cx, cy: cy, fc: fc };
+      ships.push(row); self.lastSync[sh.gameId] = { key: key, hp: hp, stK: stK, cx: cx, cy: cy, fc: fc, seq: seqN };
     }
     if (sh.dead) {
       // трюм погибшего: кто ушёл на шаттле и жив на чужом борту (или летит к живой цели) — переписать в трюм того
@@ -799,10 +802,11 @@ SystemRoom.prototype.pull = function() {
   return this.pullNow().then(function(v) { me.pulling = false; return v; }, function(e) { me.pulling = false; throw e; });
 };
 SystemRoom.prototype.pullNow = function() {
-  var self = this, base = null; this.pullAt = Date.now();
+  var self = this, base = null, seq0 = null; this.pullAt = Date.now();
   // сначала дождаться своих записей: тогда снимок базы не старее того, что мы в неё положили
   return (this.syncQ || Promise.resolve()).then(function() {
     base = {}; for (var k in self.okHp) base[k] = self.okHp[k];
+    seq0 = self.syncSeq || 0;
     return self.rpc('rt_space_pull', { p_battle: self.battleId, p_system: self.system });
   }).then(function(st) {
     if (!st || st.closed) { self.cfg.log('warn', 'орбита закрыта базой', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
@@ -813,7 +817,7 @@ SystemRoom.prototype.pullNow = function() {
     if (f0 && f1 && f0 !== f1) { var fm = JSON.stringify({ t: 'sysf', faction: f1 }); self.clients.forEach(function(c) { self.send(c, fm); }); }
     self.setEyes();
     self.stationChanged();
-    self.applyShips(st.ships || [], base);
+    self.applyShips(st.ships || [], base, seq0);
     self.applyFind(st.find || null);
     return self.takeOrders();
   }).catch(function(e) { self.cfg.log('error', 'rt_space_pull', { room: self.name, err: e.message }); });
@@ -829,9 +833,12 @@ SystemRoom.prototype.takeOrders = function() {
       if (!sh || sh.dead || !isFinite(+o.x) || !isFinite(+o.y)) return;
       if (sh.dormant) self.B.wake(sh);
       sh.dock = null;
-      self.B.order(n, +o.x, self.clampY(sh.side, +o.y), false);
+      // цель — в пределе орбиты (иначе в крайнем ряду корабль упирался в предел и приказ висел вечно)
+      var r = self.reach(sh), NM = self.grid * CELL_M;
+      self.B.order(n, Math.max(r, Math.min(NM - r, +o.x)), self.clampY(sh.side, Math.max(r, Math.min(NM - r, +o.y)), sh), false);
       // рейс снабжения: точно в квадрат прыжка (с обычными 120 м корабль вставал у края, и короб не попадал в зону, SPACE-BUG-052)
       if (sh.order) sh.order.near = 30;
+      if (!self.ctlHere(sh)) self.B.guard(n, true);                 // хозяина нет — по прибытии держит позицию (guard не снимает курс)
     });
   }).catch(function(e) {
     // база без этой функции (старый снимок) — больше не спрашиваем до перезапуска комнаты
@@ -857,9 +864,15 @@ SystemRoom.prototype.reach = function(sh) {
   var type = this.types[sh.cls], box = boxOf(type, facingOf(sh.hd));
   return Math.max(sh.len || 0, sh.wid || 0, Math.max(box.w, box.h) * CELL_M) / 2 + 100;
 };
+// То же по осям при нынешнем развороте (предел для стоящего у края: боком к кромке он не отодвигается на длину корпуса)
+SystemRoom.prototype.reachXY = function(sh) {
+  var type = this.types[sh.cls], box = boxOf(type, facingOf(sh.hd)), c = Math.abs(Math.cos(sh.hd)), s = Math.abs(Math.sin(sh.hd));
+  var L = (sh.len || 0) / 2, W = (sh.wid || 0) / 2;
+  return [Math.max(c * L + s * W, box.w * CELL_M / 2) + 100, Math.max(s * L + c * W, box.h * CELL_M / 2) + 100];
+};
 // sh — корабль: запас от кромки по его размаху (иначе корма заходила в чужую полосу)
-SystemRoom.prototype.clampY = function(side, y, sh) {
-  var z = ((this.state && this.state.settings && this.state.settings.zone) || 14) * CELL_M, N = this.grid * CELL_M, pad = sh ? Math.max(300, this.reach(sh)) : 300;
+SystemRoom.prototype.clampY = function(side, y, sh, ry) {
+  var z = ((this.state && this.state.settings && this.state.settings.zone) || 14) * CELL_M, N = this.grid * CELL_M, pad = sh ? Math.max(300, ry != null ? ry : this.reach(sh)) : 300;
   if (this.myBand(side) === 'top') return Math.min(y, N - z - pad);
   return Math.max(y, z + pad);
 };
@@ -887,7 +900,7 @@ SystemRoom.prototype.dockStep = function() {
     sh.dock = null;
     // встать ровно — только если дошёл сам (приказ снят не прибытием — остановили) и не дальше 150 м: раньше
     // корабль прыгал до ~1 км (SPACE-BUG-048)
-    if (f == null || !(sh.arrivedAt >= (sh.dockAt || 0)) || Math.abs(sh.x - cx) > 150 || Math.abs(sh.y - cy) > 150) continue;
+    if (f == null || !(sh.arrivedAt > (sh.dockAt || 0)) || Math.abs(sh.x - cx) > 150 || Math.abs(sh.y - cy) > 150) continue;
     // в площадке чужой корпус — не ставить в него
     var busy = false;
     for (var j = 0; j < B.ships.length && !busy; j++) { var o = B.ships[j]; if (o === sh || o.dead) continue; var ox = o.x - cx, oy = o.y - cy, rr = pad.size * M / 2 + Math.max(o.len, o.wid) / 2; if (ox * ox + oy * oy < rr * rr) busy = true; }

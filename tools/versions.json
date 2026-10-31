@@ -276,8 +276,8 @@
   "sha": "572ebc4e7c7d"
  },
  "js/planets.js": {
-  "v": "6",
-  "sha": "b9b54ae81326"
+  "v": "7",
+  "sha": "ea7863eda33e"
  },
  "js/processes.js": {
   "v": "3",
@@ -336,8 +336,8 @@
   "sha": "30106420e278"
  },
  "js/supply.js": {
-  "v": "9",
-  "sha": "a1eb5b5e9502"
+  "v": "10",
+  "sha": "43e2224abe39"
  },
  "js/troop-transfer.js": {
   "v": "1",

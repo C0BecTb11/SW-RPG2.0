@@ -314,7 +314,7 @@
 
     if (st.resLoaded) one();
     else {
-      supabase.from('resources').select('id, name, color, sort_order').then(function(r) {
+      supabase.from('resources').select('id, name, color, sort_order, base_price').then(function(r) {
         if (r && !r.error && r.data && r.data.length) {
           st.resources = r.data.slice().sort(function(a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
         }
@@ -2030,7 +2030,14 @@
     if (!(num(f.amount) > 0)) return 'Укажи количество';
     if (num(f.amount) > max) return 'На складе только ' + max;
     if (!(num(f.price) > 0)) return 'Укажи цену';
+    if (num(f.price) > lotMaxPrice(f.res)) return 'Цена не больше ' + money(lotMaxPrice(f.res)) + ' кр';
     return null;
+  }
+
+  // верх цены лота — как в create_market_lot: базовая цена × market_max_price_x (20)
+  function lotMaxPrice(res) {
+    var bp = num(resInfo(res).base_price);
+    return (bp > 0 ? bp : 10) * 20;
   }
 
   function lotSummary(f) {

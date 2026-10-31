@@ -252,7 +252,12 @@
     for (i = 0; i < B.ships.length; i++) {
       var ship = B.ships[i];
       // орбита системы: спящий корабль стоит — его строка нужна раз в десять кадров (и всегда в первом)
-      if (ship.dormant && this.lk % 10 !== 1 && i !== this.sel && i !== this.foe && i !== this.view) continue;
+      // …если стоит: сдвинули (луч, толчок, разворот к врагу) больше 5 м или 1° — сразу, иначе рывками раз в 2 с (SPACE-BUG-053)
+      // невидимый враг — по-старому раз в 2 с (частота его строк не должна выдавать, что он двигается)
+      var sa = this.sentAt || (this.sentAt = {}), ps = sa[i], seen = ship.side === side || !B.fog || B.sees(side, ship);
+      if (ship.dormant && this.lk % 10 !== 1 && i !== this.sel && i !== this.foe && i !== this.view && (!seen || (ps &&
+          (ship.x - ps[0]) * (ship.x - ps[0]) + (ship.y - ps[1]) * (ship.y - ps[1]) < 25 && Math.abs(Math.atan2(Math.sin(ship.hd - ps[2]), Math.cos(ship.hd - ps[2]))) < 0.0175))) continue;
+      if (seen) sa[i] = [ship.x, ship.y, ship.hd];
       out.ships.push(this.shipLight(ship));
     }
     for (i = 0; i < B.craft.length; i++) {

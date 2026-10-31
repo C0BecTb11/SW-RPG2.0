@@ -35,7 +35,7 @@
     var go = function(srv, online) {
       window.SP_LIVE = { system: systemId, srv: srv };
       if (online === false) toastSoon('Сервер боёв не на связи — орбита может не открыться', 'bad');
-      var s = document.createElement('script'); s.src = '../space/space.js?v=55'; document.body.appendChild(s);
+      var s = document.createElement('script'); s.src = '../space/space.js?v=56'; document.body.appendChild(s);
     };
     sb().rpc('rt_space_status', { p_system: systemId }).then(function(r) {
       var d = r && r.data, srv = (d && d.server && d.server.url) || SP_SERVER_FALLBACK;

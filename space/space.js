@@ -1240,9 +1240,10 @@
   }
   function sysOwn() { var S = G.sys; return !!(S && S.faction === (G.side === 1 ? 'cis' : 'republic')); }
   // точка в чужой полосе → прижимаем к её кромке; возвращает [x, y, true] если поправили
-  function sysClamp(x, y) {
+  // sh — корабль: запас от кромки по его размаху, как на сервере (иначе корма заходила в полосу, SPACE-BUG-050)
+  function sysClamp(x, y, sh) {
     var S = G.sys; if (!S) return [x, y, false];
-    var M = S.cellM, N = S.cells * M, z = S.zone * M, pad = 300;
+    var M = S.cellM, N = S.cells * M, z = S.zone * M, pad = sh ? Math.max(300, Math.max(sh.len || 0, sh.wid || 0) / 2 + 100) : 300;
     if (sysMyBand() === 'top') { if (y > N - z - pad) return [x, N - z - pad, true]; }
     else if (y < z + pad) return [x, z + pad, true];
     return [x, y, false];
@@ -2573,7 +2574,7 @@
     if (many) { grpMove(p[0], p[1]); return; }
     var me = B.ships[G.sel];
     if (me && !me.dead) {
-      if (G.sys) { var cl = sysClamp(p[0], p[1]); if (cl[2]) { p = [cl[0], cl[1]]; toast('Чужая полоса гиперпространства закрыта — встанем у её кромки', 'bad'); } }
+      if (G.sys) { var cl = sysClamp(p[0], p[1], me); if (cl[2]) { p = [cl[0], cl[1]]; toast('Чужая полоса гиперпространства закрыта — встанем у её кромки', 'bad'); } }
       B.order(G.sel, p[0], p[1]);
       G.mark = { x: p[0], y: p[1], t: performance.now(), face: false };
       if (!G.taught) { G.taught = true; toast('Курс задан. Удержи палец — развернуться носом к точке', 'gold'); }
@@ -2707,7 +2708,7 @@
     // (по одному прижимать нельзя: ряды легли бы друг на друга)
     if (G.sys) {
       var N = G.sys.cells * G.sys.cellM, sx = 0, sy = 0, cut = false;
-      var fit = function(q) { var cl = sysClamp(q.x + sx, q.y + sy), m = q.sh.len / 2 + 100; if (cl[2]) cut = true; return [Math.max(m, Math.min(N - m, cl[0])) - q.x - sx, Math.max(m, Math.min(N - m, cl[1])) - q.y - sy]; };
+      var fit = function(q) { var cl = sysClamp(q.x + sx, q.y + sy, q.sh), m = Math.max(q.sh.len, q.sh.wid || 0) / 2 + 100; if (cl[2]) cut = true; return [Math.max(m, Math.min(N - m, cl[0])) - q.x - sx, Math.max(m, Math.min(N - m, cl[1])) - q.y - sy]; };
       for (var it = 0; it < 2; it++) {
         var ax = 0, ay = 0;
         out.forEach(function(q) { var f = fit(q); if (Math.abs(f[0]) > Math.abs(ax)) ax = f[0]; if (Math.abs(f[1]) > Math.abs(ay)) ay = f[1]; });
@@ -3695,6 +3696,7 @@
       // верфь или док поставили улучшения: пределы корпуса и щитов, луч — как на сервере.
       // До готовности боя и пока корабль в очереди появления — ждёт (netRefit)
       if (m.t === 'refit') { (N.refit = N.refit || {})[m.n] = m; if (N.ready) netRefit(N); return; }
+      if (m.t === 'sysf') { if (G.sys) { G.sys.faction = m.faction; if (G.B) hud(); } return; }   // планету захватили: полосы гиперпространства — по новой стороне
       if (m.t === 'reset') { toast(m.msg || 'Орбита изменилась', 'gold'); return; }
       if (m.t === 's' && m.spd != null && m.spd !== N.spd) { N.spd = m.spd; speedUi(); }
       if (m.t === 'error') { N.err = m.msg; if (m.retry) N.retryIn = +m.retry || 1500; return; }

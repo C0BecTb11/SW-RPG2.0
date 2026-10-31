@@ -1734,7 +1734,7 @@
     if (!sh || sh.dead) return;
     var rooms = sh.plan.rooms, s = CAM.s;
     for (var i = 0; i < rooms.length; i++) {
-      var r = rooms[i], sys = sysOf(r.t);
+      var r = rooms[i], sys = sysOf(r.t, sh.plan);
       if (!sys && r.auto) continue;
       var pts = roomPoly(sh, r), st = sh.crew.rooms[r.n];
       c.fillStyle = sys ? 'rgba(217,169,64,0.10)' : 'rgba(143,168,196,0.06)';
@@ -1747,7 +1747,15 @@
       }
     }
   }
-  function sysOf(t) { for (var i = 0; i < SP.SYS.length; i++) if (SP.SYS[i].types.indexOf(t) >= 0) return SP.SYS[i]; return null; }
+  // plan — у корабля без генератора щитов энергоузел подписан как «Щиты» (SYS.alt)
+  function sysOf(t, plan) {
+    var has = function(x) { return plan && plan.rooms.some(function(r) { return r.t === x; }); };
+    for (var i = 0; i < SP.SYS.length; i++) {
+      var S = SP.SYS[i], ty = S.alt && plan && !S.types.some(has) ? S.alt : S.types;
+      if (ty.indexOf(t) >= 0) return S;
+    }
+    return null;
+  }
 
   function drawCraft(c, cr) {
     if (cr.dead) return;
@@ -2810,7 +2818,7 @@
     if (foe) {
       btn.push('<button class="sp-btn tgt" data-t="hull">Корпус</button>');
       SP.SYS.forEach(function(sy) {
-        var has = foe.plan.rooms.some(function(r) { return sy.types.indexOf(r.t) >= 0; });
+        var has = foe.plan.rooms.some(function(r) { return sy.types.indexOf(r.t) >= 0 || (sy.alt && sy.alt.indexOf(r.t) >= 0); });
         if (has) btn.push('<button class="sp-btn tgt" data-t="sys" data-sys="' + sy.id + '">' + sy.name + '</button>');
       });
       btn.push('<button class="sp-btn tgt gold' + (btn.length % 4 === 3 ? '' : ' wide') + '" data-t="aim">Отсек на схеме…</button>');
@@ -3790,6 +3798,8 @@
       Object.keys(all).forEach(function(k) {
         var q = all[k], rs = G.B.ships[q.n]; if (!rs || rs.dead) return;
         rs.hullMax = q.hm; rs.shMax = q.sm; rs.foreK = q.fk || 1; rs.tractor = !!q.tb;
+        if (q.ns != null) { rs.noShield = !!q.ns; if (rs.base) { rs.regen = rs.noShield ? 0 : rs.base.regen; rs.xfer = rs.noShield ? 0 : rs.base.xfer; } }
+        if (q.vm > 0) rs.vmax = q.vm;
       });
     });
   }

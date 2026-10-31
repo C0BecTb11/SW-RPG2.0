@@ -416,21 +416,22 @@
 
   // ---------------------------------------------------------------- эффективность
   // Отсек: целость × люди на посту. Без людей пост орудия молчит.
-  Crew.prototype.roomEff = function(n) {
+  // noStun — как если бы сбоя не было (предел щитов: оглушение останавливает подзарядку, но запас не срезает)
+  Crew.prototype.roomEff = function(n, noStun) {
     var st = this.rooms[n]; if (!st) return 0;
     if (st.integ < 12) return 0;
     if (this.board && this.board.heldBy(n) !== this.team) return 0;   // отсек держит абордажная команда
     // реактор в сбое — на аварийном питании (не ноль, но не лучше работающего)
-    if (st.stun > 0) return st.t === 'reactor' ? 0.4 * st.integ / 100 * Math.min(1, st.staffed / st.need) : 0;
+    if (st.stun > 0 && !noStun) return st.t === 'reactor' ? 0.4 * st.integ / 100 * Math.min(1, st.staffed / st.need) : 0;
     var people = Math.min(1, st.staffed / st.need);
     var fire = st.fires ? Math.max(st.t === 'reactor' ? 0.6 : 0.35, 1 - st.fires / (st.t === 'reactor' ? 120 : 40)) : 1;   // реактор — большой зал: пожар в углу не глушит его
     if (KEY[st.t] && st.t !== 'reactor' && st.t !== 'engine' && st.t !== 'shield' && st.t !== 'hyper') return st.integ / 100 * people * fire;
     return st.integ / 100 * (0.3 + 0.7 * people) * fire;
   };
   // Система по типу отсеков (среднее), например 'engine', 'reactor'
-  Crew.prototype.sysEff = function(t) {
+  Crew.prototype.sysEff = function(t, noStun) {
     var s = 0, n = 0;
-    for (var i = 0; i < this.roomList.length; i++) if (this.roomList[i].t === t) { s += this.roomEff(this.roomList[i].n); n++; }
+    for (var i = 0; i < this.roomList.length; i++) if (this.roomList[i].t === t) { s += this.roomEff(this.roomList[i].n, noStun); n++; }
     return n ? s / n : 1;
   };
   // Живые свои (абордажники противника на борту — не экипаж)

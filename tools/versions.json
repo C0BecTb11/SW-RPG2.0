@@ -316,8 +316,8 @@
   "sha": "5a35e58672f3"
  },
  "js/space-live.js": {
-  "v": "39",
-  "sha": "af0f4dfe639f"
+  "v": "40",
+  "sha": "1c106dfd55fd"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -364,8 +364,8 @@
   "sha": "ddf8c69a7db1"
  },
  "shared/rt-army.js": {
-  "v": "10",
-  "sha": "026da0437175"
+  "v": "11",
+  "sha": "06d64ce36b54"
  },
  "shared/rt-board.js": {
   "v": "11",
@@ -376,8 +376,8 @@
   "sha": "ee82bbfd757b"
  },
  "shared/rt-crew.js": {
-  "v": "11",
-  "sha": "68d5c9528043"
+  "v": "12",
+  "sha": "406b762d8b4d"
  },
  "shared/rt-events-cat.js": {
   "v": "2",
@@ -412,12 +412,12 @@
   "sha": "a02b83a74308"
  },
  "shared/rt-space-net.js": {
-  "v": "25",
-  "sha": "4c3bb24c0306"
+  "v": "26",
+  "sha": "c3bf8e6bf844"
  },
  "shared/rt-space.js": {
-  "v": "40",
-  "sha": "cbc6ba9d60dc"
+  "v": "41",
+  "sha": "bc6654fa57c0"
  },
  "shared/rt-town.js": {
   "v": "3",
@@ -472,7 +472,7 @@
   "sha": "cef888084be2"
  },
  "space/space.js": {
-  "v": "56",
-  "sha": "687469357d2b"
+  "v": "57",
+  "sha": "9c7702e38f2b"
  }
 }

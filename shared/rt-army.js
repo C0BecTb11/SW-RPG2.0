@@ -106,6 +106,10 @@
     return order.map(function(k) { return [k, m[k]]; }).sort(function(a, b) { return b[1] - a[1]; });
   }
 
+  function trophyMove(type, ship) {
+    var m = (type && type.move_range ? type.move_range : 0) + (ship.bonus_move || 0);
+    return m > 0 ? Math.max(1, Math.floor(m / 2)) / m : 0.5;
+  }
   // Строки базы → описание корабля для боя.
   //  ship  — строка ships (hp, shield_*, bonus_*, name, ship_type, id)
   //  type  — строка ship_types (max_hp, max_shield, damage) или null
@@ -126,6 +130,8 @@
     var maxHp = type ? (type.max_hp || 0) + (ship.bonus_hp || 0) : null;
     var maxSh = type ? (type.max_shield || 0) + (ship.bonus_shield || 0) : null;
     var dmg = type && type.damage ? (type.damage + (ship.bonus_damage || 0)) / type.damage : 1;
+    // трофей до ремонта — как в игре (ship_stats): урон вдвое (с округлением вверх), ход вдвое, щитов нет (SPACE-BUG-020)
+    if (ship.trophy && type && type.damage) dmg = Math.max(1, Math.ceil((type.damage + (ship.bonus_damage || 0)) / 2)) / type.damage;
     // щит, как его считает игра: записанное при последнем ударе + подзарядка с тех пор, не выше предела;
     // трофей до ремонта — без щитов
     var regen = 0;
@@ -147,6 +153,10 @@
       shBonus: type && type.max_shield ? maxSh / type.max_shield : 1, dmgK: dmg,
       foreK: maxSh > 0 && ship.bonus_fore > 0 ? (maxSh + Number(ship.bonus_fore)) / maxSh : 1,   // носовой сектор («Мастер лобовой атаки»)
       moveB: ship.bonus_move || 0, visB: ship.bonus_vision || 0,             // ход и сонар из исследований (клетки игры)
+      // ход трофея — как ship_stats: целочисленно, greatest(1, (move_range + bonus_move) / 2)
+      moveK: ship.trophy ? trophyMove(type, ship) : 1, noShield: !!ship.trophy,
+      // подзарядка щитов вне боя — как в игре: shield_regen единиц за regenSec секунд (доля предела в секунду, SPACE-BUG-041)
+      regenQ: type && type.shield_regen > 0 && maxSh > 0 ? type.shield_regen / ((opt.regenSec || 30) * maxSh) : null,
       tractor: !!(ship.has_tractor || (ship.upgrades || []).indexOf('tractor') >= 0),   // исследование «Притягивающие лучи»
       roster: roster, vehicles: vehicles, other: other,
       hangar: (craft || []).map(function(c) { return CRAFT[c.ship_type]; }).filter(Boolean),

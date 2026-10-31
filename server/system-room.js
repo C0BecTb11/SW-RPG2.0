@@ -42,7 +42,8 @@ var VF_AGGRO = 7000, VF_LEASH = 10000;
 var VF_HP = +(process.env.VF_HP || 2), VF_DMG = +(process.env.VF_DMG || 1.8);
 
 // отпечаток улучшений корабля: что даёт верфь
-function upgKey(s) { return [s.bonus_hp, s.bonus_shield, s.bonus_damage, s.bonus_move, s.bonus_vision, s.bonus_fore, (s.upgrades || []).join('|')].join(','); }
+// трофей в ключе: ремонт снимает штрафы трофея — корабль в бою пересобирается (refit)
+function upgKey(s) { return [s.bonus_hp, s.bonus_shield, s.bonus_damage, s.bonus_move, s.bonus_vision, s.bonus_fore, (s.upgrades || []).join('|'), s.trophy ? 't' : ''].join(','); }
 function sideOf(faction) { return faction === 'cis' ? 1 : 0; }
 function boxOf(type, facing) {
   var w = type ? type.width_cells || 1 : 1, h = type ? type.height_cells || 1 : 1;
@@ -207,7 +208,6 @@ SystemRoom.prototype.applyShips = function(list, base, seq0) {
       // ремонт — только если в базе больше, чем было в ней на момент запроса: старый снимок (запись ещё
       // не дошла или упала) — не ремонт, иначе урон последних секунд откатывался бы
       var b0 = base && base[s.id] != null ? base[s.id] : self.okHp[s.id];
-      if (max0 && b0 != null && s.hp > b0) { old.hull = Math.min(old.hullMax, Math.max(old.hull, old.hullMax * s.hp / max0)); self.okHp[s.id] = s.hp; if (s.hp >= max0 && !s.rt_state) self.yardFix(old); }
       if (old.faction !== s.faction || old.owner !== (s.owner_user_id || null)) { old.dead = true; old.why = 'left'; old.deadAt = B.t; delete self.byId[s.id]; }
       else {
         if (self.movedByBase(old, s, type0, seq0)) {
@@ -221,13 +221,15 @@ SystemRoom.prototype.applyShips = function(list, base, seq0) {
         // верфь поставила улучшения — корабль в бою меняется сразу (корпус, щиты, орудия, ход, сонар)
         var uk = upgKey(s);
         if (self.upg[s.id] != null && self.upg[s.id] !== uk && type0) {
-          B.refitShip(old.n, Army.fromGame(s, type0, [], [], {}));
+          B.refitShip(old.n, Army.fromGame(s, type0, [], [], { regenSec: (self.state.settings && self.state.settings.regen) || 30 })); old.trophy = !!s.trophy;
           // модернизация — своей стороне; чужим пределы корпуса и щитов придут лёгким кадром, когда корабль на виду (hm/sm)
-          var rmsg = JSON.stringify({ t: 'refit', n: old.n, hm: Math.round(old.hullMax), sm: Math.round(old.shMax * 100) / 100, fk: old.foreK || 1, tb: old.tractor ? 1 : 0 });
+          var rmsg = JSON.stringify({ t: 'refit', n: old.n, hm: Math.round(old.hullMax), sm: Math.round(old.shMax * 100) / 100, fk: old.foreK || 1, tb: old.tractor ? 1 : 0, ns: old.noShield ? 1 : 0, vm: Math.round(old.vmax) });
           self.clients.forEach(function(c) { if (c.side === old.side) self.send(c, rmsg); });
           self.cfg.log('info', 'корабль модернизирован', { room: self.name, ship: s.id, type: s.ship_type });
         }
         self.upg[s.id] = uk; old.bon0 = bonOf(s);
+        // ремонт — после модернизации: от нового предела (иначе ремонт и модернизация в одном ответе теряли ремонт)
+      if (max0 && b0 != null && s.hp > b0) { old.hull = Math.min(old.hullMax, Math.max(old.hull, old.hullMax * s.hp / max0)); self.okHp[s.id] = s.hp; if (s.hp >= max0 && !s.rt_state) self.yardFix(old); }
         self.syncUnits(old, s); self.dropMissing(old, s); return;
       }
     } else if (old) {
@@ -365,7 +367,7 @@ SystemRoom.prototype.sendSide = function(fn) {
 SystemRoom.prototype.shipRow = function(sh) {
   // пределы корпуса и щитов (bon, foreK) — как на сервере, иначе у клиента доли выше 100 %
   var self = this, A = { roster: [], hangar: (sh.hangar || []).slice(), vehicles: (sh.vehicles || []).slice(), hpK: sh.hull / sh.hullMax, shK: [0, 1, 2, 3].map(function(i) { return sh.sh[i] / self.B.secMax(sh, i); }),
-            hpBonus: sh.bon ? sh.bon.hp : 1, shBonus: sh.bon ? sh.bon.sh : 1, dmgK: 1, foreK: sh.foreK || 1, crewLost: sh.crewOpts.crewLost || 0, name: sh.name, id: sh.gameId };
+            hpBonus: sh.bon ? sh.bon.hp : 1, shBonus: sh.bon ? sh.bon.sh : 1, dmgK: 1, foreK: sh.foreK || 1, moveK: sh.trophy && sh.noShield ? 0.5 : 1, noShield: !!sh.noShield, regenQ: sh.regenQ || null, crewLost: sh.crewOpts.crewLost || 0, name: sh.name, id: sh.gameId };
   return [sh.cls, sh.side, Math.round(sh.x), Math.round(sh.y), A, Math.round(sh.hd * 1000) / 1000, { id: sh.gameId, owner: sh.owner, name: sh.name, faction: sh.faction, trophy: !!sh.trophy, n: sh.n }];
 };
 
@@ -444,7 +446,7 @@ SystemRoom.prototype.resendTo = function(c) {
   var v = this.stationView(c.side); this.send(c, JSON.stringify({ t: 'station', station: v.station, fog: v.fog }));
   this.send(c, JSON.stringify({ t: 'find', find: this.findInfo() }));
   if (this.state && this.state.system) this.send(c, JSON.stringify({ t: 'sysf', faction: this.state.system.faction }));
-  B.ships.forEach(function(sh) { if (!sh.dead && sh.side === c.side && sh.gameId) self.send(c, JSON.stringify({ t: 'refit', n: sh.n, hm: Math.round(sh.hullMax), sm: Math.round(sh.shMax * 100) / 100, fk: sh.foreK || 1, tb: sh.tractor ? 1 : 0 })); });
+  B.ships.forEach(function(sh) { if (!sh.dead && sh.side === c.side && sh.gameId) self.send(c, JSON.stringify({ t: 'refit', n: sh.n, hm: Math.round(sh.hullMax), sm: Math.round(sh.shMax * 100) / 100, fk: sh.foreK || 1, tb: sh.tractor ? 1 : 0, ns: sh.noShield ? 1 : 0, vm: Math.round(sh.vmax) })); });
 };
 // ---- такт
 SystemRoom.prototype.step = function() {

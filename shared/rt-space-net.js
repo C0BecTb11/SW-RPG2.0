@@ -171,7 +171,7 @@
     var sq = function(q) { var v = sh.sh[q], m = B.secMax(sh, q); return intel ? r0(v) : Math.min(4, Math.ceil(v / (m * 0.25) - 0.01)) * m * 0.25; };
     var o = { n: sh.n, x: r1(sh.x), y: r1(sh.y), hd: Math.round(sh.hd * 1000) / 1000, v: r1(sh.v), hull: r0(hq),
               sh: [r0(sq(0)), r0(sq(1)), r0(sq(2)), r0(sq(3))], f: own ? sh.focus : -1, fa: sh.focusAuto ? 1 : 0,
-              e: intel ? [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0)] : null,
+              e: intel ? [r2(sh.eff.engine || 0), r2(sh.eff.reactor || 0), r2(sh.eff.shield || 0), r2(sh.eff.bridge || 0), r2(sh.eff.hangar || 0), r2(sh.eff.power || 0), r2(sh.eff.shieldCap != null ? sh.eff.shieldCap : (sh.eff.shield || 0))] : null,
               crit: intel ? r1(sh.crit) : 0, dead: sh.dead ? 1 : 0, why: sh.why || '', cap: sh.captured, inb: sh.inbound,
               burn: sh.crew.burning.length, ct: r2(sh.crew.t) };
     if (sh.tb) o.tb = [sh.tb.to, r1(sh.tb.until - B.t)];               // притягивающий луч: кого держит, сколько осталось
@@ -704,8 +704,9 @@
     if (o.hm) { sh.hullMax = o.hm; sh.shMax = o.sm; sh.foreK = o.fk || 1; }
     sh.v = o.v; sh.hull = o.hull; sh.sh = o.sh;
     if (mine) { sh.focus = o.f; sh.focusAuto = !!o.fa; }
-    if (o.e) { sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5]; }
-    else { sh.eff.engine = sh.eff.reactor = sh.eff.shield = sh.eff.bridge = sh.eff.hangar = sh.eff.power = 1; }   // чужой: систем не видно — рисуем как исправный
+    // e[6] — предел щитов без ионного сбоя (как на сервере, иначе панель во время сбоя показывала до 250 %)
+    if (o.e) { sh.eff.engine = o.e[0]; sh.eff.reactor = o.e[1]; sh.eff.shield = o.e[2]; sh.eff.bridge = o.e[3]; sh.eff.hangar = o.e[4]; sh.eff.power = o.e[5]; sh.eff.shieldCap = o.e[6] != null ? o.e[6] : o.e[2]; }
+    else { sh.eff.engine = sh.eff.reactor = sh.eff.shield = sh.eff.bridge = sh.eff.hangar = sh.eff.power = sh.eff.shieldCap = 1; }   // чужой: систем не видно — рисуем как исправный
     sh.crit = o.crit; if (o.dead && !sh.dead) { sh.dead = true; sh.deadAt = B.t; } sh.why = o.why || sh.why; if (o.cap != null) sh.captured = o.cap; sh.inbound = o.inb;
     var T0 = this.curT != null ? this.curT : B.t;
     if (mine) sh.tb = o.tb ? { to: o.tb[0], until: T0 + o.tb[1] } : null;   // только что взял лучом сам — ждём кадр с сервера (LOCK)

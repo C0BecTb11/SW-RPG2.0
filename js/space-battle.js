@@ -363,6 +363,16 @@ function spSoon(key, fn, ms) {
   }, ms);
 }
 
+var SP_PANEL_KEYS = ['owner_user_id', 'faction', 'in_transit', 'carrier_ship_id', 'ship_type', 'trophy', 'commander_id', 'name',
+                     'bonus_hp', 'bonus_shield', 'bonus_damage', 'bonus_move', 'bonus_vision', 'bonus_fore', 'bonus_hangar', 'bonus_capacity', 'jump_lock_until'];
+function spBattleOnly(p) {
+  if (!window.SL || !window.SL.ready || !p || p.eventType !== 'UPDATE' || !p.new || !p.new.id) return false;
+  var old = null; for (var i = 0; i < (shipsInSystem || []).length; i++) if (shipsInSystem[i].id === p.new.id) { old = shipsInSystem[i]; break; }
+  if (!old) return false;
+  for (var k = 0; k < SP_PANEL_KEYS.length; k++) { var f = SP_PANEL_KEYS[k]; if (f in p.new && String(p.new[f]) !== String(old[f])) return false; }
+  if ('upgrades' in p.new && JSON.stringify(p.new.upgrades || []) !== JSON.stringify(old.upgrades || [])) return false;
+  return true;
+}
 function subscribeToSpaceChanges() {
   if (!systemId) return;
   supabase
@@ -370,7 +380,10 @@ function subscribeToSpaceChanges() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'space_stations', filter: 'system_id=eq.' + systemId }, function() {
       spSoon('station', loadStation, 250);
     })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'ships', filter: 'system_id=eq.' + systemId }, function() {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'ships', filter: 'system_id=eq.' + systemId }, function(p) {
+      // идёт бой 2.0: снимок сервера раз в 5 с меняет место, корпус и щиты — их экран и так берёт из боя; перечитывать
+      // все корабли системы — только когда меняется то, что нужно панелям (SPACE-BUG-061; раз в 15 с — space-live.js)
+      if (spBattleOnly(p)) return;
       spSoon('ships', loadShips, 150);
     })
     .subscribe();

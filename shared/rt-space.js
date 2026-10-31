@@ -469,10 +469,35 @@
   // Разбудить спящий корабль: настоящий экипаж по тому же составу
   Battle.prototype.wake = function(sh) {
     if (!sh || !sh.dormant) return;
-    sh.crew = new SWCrew.Crew(sh.plan, sh.crewOpts); sh.dormant = false;
+    sh.crew = new SWCrew.Crew(sh.plan, sh.crewOpts); sh.dormant = false; sh.wokeAt = this.t;
     this.applyStands(sh);
     for (var i = 0; i < this.craft.length; i++) if (this.craft[i].home === sh.n) this.craft[i].idle = false;   // его истребители — в дело
     this.ev.wakes = this.ev.wakes || []; this.ev.wakes.push(sh.n);
+  };
+  // Обратный сон: экипаж корабля, где давно ничего не происходит, — снова сводка (DormantCrew). Погибший экипаж
+  // и целость отсеков — в crewOpts (как при открытии орбиты из ships.rt_state), десант трюма — с нынешним здоровьем.
+  // Условия (не под огнём, не смотрят изнутри, нет абордажа и пожаров) проверяет сервер (SPACE-BUG-057)
+  Battle.prototype.sleep = function(sh) {
+    if (!sh || sh.dead || sh.dormant || !SWCrew.stateOf) return false;
+    var c = sh.crew, st = SWCrew.stateOf(c, sh.lostOff || 0), by = {}, i;
+    for (i = 0; i < c.agents.length; i++) { var a = c.agents[i]; if (a.uid && a.team === sh.side) by[a.uid] = a; }
+    sh.crewOpts.roster = (sh.crewOpts.roster || []).filter(function(u) {
+      var m = u.uid ? by[u.uid] : null; if (!m) return true;
+      if (!m.alive) return false;                          // погиб (гибель уже записана) — не боец
+      u.hp = Math.max(1, Math.min(u.hpMax || m.hpMax || m.hp, m.hp)); return true;
+    });
+    sh.crewOpts.crewLost = st ? st.lost : 0; sh.crewOpts.integ = st ? st.integ : null; sh.lostOff = 0;
+    // павшая охрана не воскресает во сне
+    var gN = 0, gA = 0; for (i = 0; i < c.agents.length; i++) { var g = c.agents[i]; if (g.team === sh.side && g.role === 'guard') { gN++; if (g.alive) gA++; } }
+    if (sh.crewOpts.guards && gN) sh.crewOpts.guards = { n: gA, kit: sh.crewOpts.guards.kit, hp: sh.crewOpts.guards.hp };
+    sh.crew = new DormantCrew(sh.plan, sh.crewOpts); sh.dormant = true; sh.sleptAt = this.t;
+    this.ev.sleeps = this.ev.sleeps || []; this.ev.sleeps.push(sh.n);
+    return true;
+  };
+  // Погибший или ушедший корабль давно записан: экипаж (1,7–5 МБ) больше не нужен — остаётся сводка (SPACE-BUG-059)
+  Battle.prototype.release = function(sh) {
+    if (!sh || !sh.dead || sh.released) return;
+    sh.crew = new DormantCrew(sh.plan, sh.crewOpts); sh.dormant = true; sh.released = true;   // roster мал и нужен сверке (пределы здоровья десанта)
   };
   // Посты десанта (rt-crew standUnits): uid бойца → клетка плана. Живут в корабле боя (и в базе —
   // ships.troop_posts), поэтому переживают сон корабля и новое открытие орбиты

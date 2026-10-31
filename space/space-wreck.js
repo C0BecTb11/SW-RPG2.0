@@ -23,9 +23,9 @@
   }
 
   // Нарезка: img/crop — спрайт; W, H — размер корабля в метрах (нос вверху)
-  function cut(img, crop, W, H, variant, R) {
+  function cut(img, crop, W, H, variant, R, maxPx) {
     var cw = crop[2] - crop[0], ch = crop[3] - crop[1];
-    var k = Math.min(1, MAXPX / Math.max(cw, ch));
+    var k = Math.min(1, (maxPx || MAXPX) / Math.max(cw, ch));
     var w = Math.max(8, Math.round(cw * k)), h = Math.max(8, Math.round(ch * k));
     var src = document.createElement('canvas'); src.width = w; src.height = h;
     var sc = src.getContext('2d');
@@ -103,11 +103,12 @@
   }
 
   // Новый остов: sh — корабль из боя; why — причина гибели
-  function make(sh, img, plan, why, t) {
+  // maxPx — длинная сторона нарезки (на слабой графике меньше: быстрее и легче в памяти)
+  function make(sh, img, plan, why, t, maxPx) {
     var R = rng((sh.n + 1) * 7919 + Math.floor(t * 10));
     var variant = why === 'reactor' ? 'shatter' : R() < 0.5 ? 'split' : 'chain';
     var W = plan.w * plan.cellM, H = plan.h * plan.cellM;
-    var pieces = cut(img, plan.crop, W, H, variant, R);
+    var pieces = cut(img, plan.crop, W, H, variant, R, maxPx);
     var fast = variant === 'shatter' ? 0.7 : variant === 'chain' ? 0.45 : 0.25;
     var hold = variant === 'chain' ? 2.2 : variant === 'split' ? 0.6 : 0;          // корпус ещё цел, пока идут взрывы
     var vx = Math.cos(sh.hd) * sh.v, vy = Math.sin(sh.hd) * sh.v;

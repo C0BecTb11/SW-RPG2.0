@@ -640,8 +640,7 @@ function renderFlights(commanders) {
       to: to,
       startMs: new Date(c.departed_at).getTime(),
       endMs: new Date(c.arrives_at).getTime(),
-      own: c.user_id === currentUserId,
-      finishRequested: false
+      own: c.user_id === currentUserId
     });
   });
 
@@ -750,18 +749,8 @@ function animateFlights(frameNow) {
         'translate(-50%, -50%) rotate(' + angleDeg + 'deg)';
     }
 
-    if (progress >= 1 && !f.finishRequested && !(f.retryAt > Date.now())) {
-      f.finishRequested = true;
-      // Время вышло — просим сервер зафиксировать прибытие. Функция сама
-      // сверяет время, поэтому вызвать её раньше срока бесполезно.
-      // Не вышло (сеть, ошибка) — повторим через 5 с, иначе ракета висела бы до перезагрузки.
-      var retry = function(err) { console.error('Не удалось завершить перелёт:', err); f.finishRequested = false; f.retryAt = Date.now() + 5000; };
-      supabase.rpc('finish_commander_move', { p_commander_id: f.commanderId }).then(function(res) {
-        if (res.error) { retry(res.error); return; }
-        // Не ждём realtime-события — обновляем карту сразу сами.
-        reloadCommanders();
-      }, retry);
-    }
+    // Прибытие фиксирует сервер (такт раз в 30 с): карта обновится по realtime,
+    // а пропущенное событие подберёт опрос flightPollTimer (раз в 10 с, пока в небе ракеты)
   } catch (e) { console.error('Ракета перелёта:', e); if (window.errReport) errReport(e, 'planets.flight'); } });
 
   requestAnimationFrame(animateFlights);

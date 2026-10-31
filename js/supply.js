@@ -314,10 +314,16 @@
 
     if (st.resLoaded) one();
     else {
-      supabase.from('resources').select('id, name, color, sort_order').then(function(r) {
+      Promise.all([
+        supabase.from('resources').select('id, name, color, sort_order, base_price'),
+        // верх цены лота: base_price × эта настройка (create_market_lot)
+        supabase.from('game_settings').select('value').eq('key', 'market_max_price_x').maybeSingle()
+      ]).then(function(rr) {
+        var r = rr[0], g = rr[1];
         if (r && !r.error && r.data && r.data.length) {
           st.resources = r.data.slice().sort(function(a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
         }
+        if (g && !g.error && g.data && num(g.data.value) > 0) st.maxPriceX = num(g.data.value);
         st.resLoaded = true;
         one();
       }, function() { st.resLoaded = true; one(); });
@@ -2030,7 +2036,17 @@
     if (!(num(f.amount) > 0)) return 'Укажи количество';
     if (num(f.amount) > max) return 'На складе только ' + max;
     if (!(num(f.price) > 0)) return 'Укажи цену';
+    if (num(f.price) > lotMaxPrice(f.res)) return 'Цена не больше ' + money(lotMaxPrice(f.res)) + ' кр';
     return null;
+  }
+
+  // верх цены лота — как в create_market_lot: базовая цена (нет её — 10) × market_max_price_x (по умолчанию 20).
+  // Справочник не загрузился — проверку оставляем серверу
+  function lotMaxPrice(res) {
+    var info = resInfo(res);
+    if (info.base_price == null) return Infinity;
+    var bp = num(info.base_price);
+    return (bp > 0 ? bp : 10) * (st.maxPriceX || 20);
   }
 
   function lotSummary(f) {

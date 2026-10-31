@@ -126,6 +126,8 @@
     var maxHp = type ? (type.max_hp || 0) + (ship.bonus_hp || 0) : null;
     var maxSh = type ? (type.max_shield || 0) + (ship.bonus_shield || 0) : null;
     var dmg = type && type.damage ? (type.damage + (ship.bonus_damage || 0)) / type.damage : 1;
+    // трофей до ремонта — как в игре (ship_stats): урон вдвое (с округлением вверх), ход вдвое, щитов нет (SPACE-BUG-020)
+    if (ship.trophy && type && type.damage) dmg = Math.max(1, Math.ceil((type.damage + (ship.bonus_damage || 0)) / 2)) / type.damage;
     // щит, как его считает игра: записанное при последнем ударе + подзарядка с тех пор, не выше предела;
     // трофей до ремонта — без щитов
     var regen = 0;
@@ -147,6 +149,9 @@
       shBonus: type && type.max_shield ? maxSh / type.max_shield : 1, dmgK: dmg,
       foreK: maxSh > 0 && ship.bonus_fore > 0 ? (maxSh + Number(ship.bonus_fore)) / maxSh : 1,   // носовой сектор («Мастер лобовой атаки»)
       moveB: ship.bonus_move || 0, visB: ship.bonus_vision || 0,             // ход и сонар из исследований (клетки игры)
+      moveK: ship.trophy ? 0.5 : 1, noShield: !!ship.trophy,
+      // подзарядка щитов вне боя — как в игре: shield_regen единиц за regenSec секунд (доля предела в секунду, SPACE-BUG-041)
+      regenQ: type && type.shield_regen > 0 && maxSh > 0 ? type.shield_regen / ((opt.regenSec || 30) * maxSh) : null,
       tractor: !!(ship.has_tractor || (ship.upgrades || []).indexOf('tractor') >= 0),   // исследование «Притягивающие лучи»
       roster: roster, vehicles: vehicles, other: other,
       hangar: (craft || []).map(function(c) { return CRAFT[c.ship_type]; }).filter(Boolean),

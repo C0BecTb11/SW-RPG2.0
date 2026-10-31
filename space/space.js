@@ -2810,7 +2810,7 @@
     if (foe) {
       btn.push('<button class="sp-btn tgt" data-t="hull">Корпус</button>');
       SP.SYS.forEach(function(sy) {
-        var has = foe.plan.rooms.some(function(r) { return sy.types.indexOf(r.t) >= 0; });
+        var has = foe.plan.rooms.some(function(r) { return sy.types.indexOf(r.t) >= 0 || (sy.alt && sy.alt.indexOf(r.t) >= 0); });
         if (has) btn.push('<button class="sp-btn tgt" data-t="sys" data-sys="' + sy.id + '">' + sy.name + '</button>');
       });
       btn.push('<button class="sp-btn tgt gold' + (btn.length % 4 === 3 ? '' : ' wide') + '" data-t="aim">Отсек на схеме…</button>');
@@ -3790,6 +3790,8 @@
       Object.keys(all).forEach(function(k) {
         var q = all[k], rs = G.B.ships[q.n]; if (!rs || rs.dead) return;
         rs.hullMax = q.hm; rs.shMax = q.sm; rs.foreK = q.fk || 1; rs.tractor = !!q.tb;
+        if (q.ns != null) { rs.noShield = !!q.ns; if (rs.base) { rs.regen = rs.noShield ? 0 : rs.base.regen; rs.xfer = rs.noShield ? 0 : rs.base.xfer; } }
+        if (q.vm > 0) rs.vmax = q.vm;
       });
     });
   }

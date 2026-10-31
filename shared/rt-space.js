@@ -50,7 +50,8 @@
   var SYS = [
     { id: 'engine',  name: 'Двигатели', types: ['engine', 'hyper'] },
     { id: 'reactor', name: 'Реактор',   types: ['reactor'] },
-    { id: 'shield',  name: 'Щиты',      types: ['shield'] },
+    // нет генератора щитов (Акламатор, Щедрый, Провиденс) — щиты держит энергоузел: по нему и бьёт приказ «Щиты» (SPACE-BUG-040)
+    { id: 'shield',  name: 'Щиты',      types: ['shield'], alt: ['power'] },
     { id: 'bridge',  name: 'Мостик',    types: ['bridge', 'cic', 'flight'] },
     { id: 'guns',    name: 'Орудия',    types: ['gun', 'pdgun'] },
     { id: 'hangar',  name: 'Ангар',     types: ['hangar', 'dock'] }
@@ -60,6 +61,8 @@
   // Предел поломки отсека за одно попадание: реактор глубоко в броне — одним залпом его не выбить
   var ROOM_CAP = { reactor: 2.2, bridge: 18 };
   var PUSH_MAX = 7;          // м: предел выталкивания корпусов за проход столкновения (до 3 проходов — ~20 м за такт)
+  var PD_W = 0.5;            // доля боя, когда ПВО достаёт до корабля (2,2 км) — для нормировки огня
+  var GK0 = 1.8;             // типичный множитель пушки после нормировки огня (Венатор ~1,83): к нему приведены люди и пожары
   var REACTOR_FUSE = 90;     // реактор разбит — столько секунд до взрыва (экипаж успевает поднять до 25% — отбой)
   var SYS_BY = {}; SYS.forEach(function(s) { SYS_BY[s.id] = s; });
   // отсек → система (приказ «по отсеку» на другом корабле становится приказом по той же системе)
@@ -75,22 +78,22 @@
   var CLASS = {
     venator:    { troops: 60, guard: 12, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['arc170', 'arc170', 'ywing'] },
     acclamator: { troops: 80, guard: 8, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 1.25 },
-    munificent: { troops: 40, guard: 8, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45 },
-    providence: { troops: 60, guard: 12, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.5 },
+    munificent: { troops: 40, guard: 8, hp: 700,  shield: 150, regen: 8, acc: 80, eva: 5, hangar: 0, move: 7, dmg: 45, bal: 0.82 },
+    providence: { troops: 60, guard: 12, hp: 1200, shield: 150, regen: 8, acc: 85, eva: 3, hangar: 3, move: 6, dmg: 120, craft: ['vulture', 'vulture', 'hyena'], bal: 1.07 },
     // guard — штатная охрана из экипажа: на абордаж не ходит, обороняет корабль;
     // troops — десант в трюме (бойцы абордажа и обороны);
     // craft — звенья по 4 машины; у самых больших ангаров число звеньев урезано до 6;
-    // bal — множитель урона по прогонам ИИ против ИИ (равные по старой игре корпуса ≈ 50/50)
+    // bal — множитель урона по прогонам ИИ против ИИ: tools/space-balance.js (равные в базе пары ≈ 50/50, неравные — сильнейший по базе впереди; подобрано 31.10.2026, SPACE-BUG-038)
     rep_mandator:   { troops: 90, guard: 18, hp: 2400, shield: 300, regen: 15, acc: 85, eva: 1,  hangar: 6, move: 4,  dmg: 220, craft: ['arc170', 'arc170', 'ywing', 'arc170', 'ywing', 'arc170'] },
     rep_victory:    { troops: 60, guard: 12, hp: 1100, shield: 200, regen: 10, acc: 83, eva: 4,  hangar: 2, move: 6,  dmg: 130, craft: ['arc170', 'ywing'] },
     rep_valiant:    { troops: 40, guard: 8, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 5,  hangar: 0, move: 7,  dmg: 75 },
     rep_arquitens:  { troops: 20, guard: 6, hp: 620,  shield: 150, regen: 8,  acc: 80, eva: 10, hangar: 0, move: 8,  dmg: 55 },
     tantive:        { troops: 12, guard: 4, hp: 400,  shield: 150, regen: 8,  acc: 78, eva: 18, hangar: 0, move: 10, dmg: 45, bal: 1.2 },
-    cis_subjugator: { troops: 90, guard: 18, hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'] },
+    cis_subjugator: { troops: 90, guard: 18, hp: 2500, shield: 250, regen: 12, acc: 85, eva: 1,  hangar: 4, move: 4,  dmg: 210, craft: ['vulture', 'hyena', 'vulture', 'hyena'], bal: 1.13 },
     cis_lucrehulk:  { troops: 120, guard: 20, hp: 1900, shield: 200, regen: 10, acc: 82, eva: 2,  hangar: 8, move: 4,  dmg: 120, craft: ['vulture', 'vulture', 'hyena', 'vulture', 'vulture', 'hyena'] },
-    cis_recusant:   { troops: 40, guard: 8, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.1 },
-    cis_diamond:    { troops: 50, guard: 8, hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1.15 },
-    hardcell:       { troops: 30, guard: 6, hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50 }
+    cis_recusant:   { troops: 40, guard: 8, hp: 850,  shield: 150, regen: 8,  acc: 82, eva: 4,  hangar: 0, move: 7,  dmg: 70, bal: 1.25 },
+    cis_diamond:    { troops: 50, guard: 8, hp: 650,  shield: 130, regen: 8,  acc: 80, eva: 8,  hangar: 0, move: 8,  dmg: 55, bal: 1 },
+    hardcell:       { troops: 30, guard: 6, hp: 480,  shield: 150, regen: 8,  acc: 78, eva: 15, hangar: 0, move: 9,  dmg: 50, bal: 1.25 }
   };
   // Малые корабли — тоже из ship_types
   var CRAFT = {
@@ -204,7 +207,7 @@
       // генератор щитов рассчитан на огонь корабля своего класса: у малых кораблей
       // восстановление и перекачка слабее, иначе их пушки не продавливают щит вовсе
       shHit: [0, 0, 0, 0], focus: -1, focusAuto: true, foeT: null, regen: C.regen * 0.35 * shK(C), xfer: 1.2 * shK(C), acc: C.acc / 100, eva: C.eva / 100,
-      vmax: (C.move + (A.moveB || 0)) * 9, turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
+      vmax: (C.move + (A.moveB || 0)) * 9 * (A.moveK || 1), turn: 4 * Math.PI / 180, dead: false, deadAt: 0, crit: 0,
       // датчики: дальше у больших кораблей; выстрел выдаёт место на FLASH с
       sens: sensOf(plan.h * plan.cellM, A.visB), flash: -99,
       crew: null, crewOpts: { seed: (this.ships.length + 1) * 7717, figs: o.figs, figMap: o.figMap, alert: true, team: o.side,
@@ -250,6 +253,11 @@
       bestDps = Math.max(bestDps, v);
     }
     if (bestDps > 0) k *= raw / bestDps;
+    // ПВО тоже бьёт по кораблям (вблизи, ~половина боя): его вклад вычитается из доли главного калибра, иначе у классов
+    // с множеством турелей была ничем не учтённая добавка к огню (SPACE-BUG-044)
+    var pdDps = 0, target = (C.dmg / 120) * 44;
+    for (g = 0; g < sh.guns.length; g++) { var gp = sh.guns[g]; if (gp.t === 'pd') pdDps += gp.T.dmg / gp.T.reload * gp.T.hull; }
+    if (pdDps > 0 && target > 0) k *= Math.max(0.6, 1 - PD_W * pdDps / target);
     // ионные пушки слабы по корпусу — их корабль получает прибавку, чтобы итог был равным
     var hw = 0, hs = 0;
     for (g = 0; g < sh.guns.length; g++) { var gt = sh.guns[g]; if (gt.t === 'pd') continue; hw += gt.T.dmg / gt.T.reload * gt.T.hull; hs += gt.T.dmg / gt.T.reload; }
@@ -258,7 +266,10 @@
     // где-то стволы стоят кучно и выбиваются разом, где-то бьют только с носа)
     k *= C.bal || 1;
     // без улучшений — для модернизации на ходу (refit)
-    sh.base = { k: k, hull: sh.hullMax, sh: sh.shMax, vmax: C.move * 9, sens: sh.sens - (A.visB || 0) * 1000, move: C.move };
+    sh.base = { k: k, hull: sh.hullMax, sh: sh.shMax, vmax: C.move * 9, sens: sh.sens - (A.visB || 0) * 1000, move: C.move, regen: sh.regen, xfer: sh.xfer };
+    // трофей до ремонта: генератор щитов не работает (ни подзарядки, ни перекачки)
+    sh.noShield = !!A.noShield; if (sh.noShield) { sh.regen = 0; sh.xfer = 0; sh.sh = [0, 0, 0, 0]; }
+    sh.regenQ = A.regenQ > 0 ? A.regenQ : null;
     sh.bon = { hp: A.hpBonus || 1, sh: A.shBonus || 1, dmg: A.dmgK || 1, move: A.moveB || 0, vis: A.visB || 0 };
     k *= A.dmgK || 1;                                  // улучшение орудий корабля в игре
     for (g = 0; g < sh.guns.length; g++) if (sh.guns[g].t !== 'pd') sh.guns[g].k = k;
@@ -386,17 +397,21 @@
     return this.nearestFoe(sh);
   };
   // Модернизация на ходу (верфь в игре): новые множители корпуса, щитов, орудий, хода и датчиков.
-  // Целость корпуса и щитов — в той же доле, что была
+  // Корпус и щиты — в тех же единицах, что были (как в базе)
   Battle.prototype.refitShip = function(n, A) {
     var sh = this.ships[n]; if (!sh || sh.dead || !sh.base) return;
-    var hk = sh.hull / Math.max(1, sh.hullMax), b = sh.base, q;
+    var b = sh.base, q;
     sh.bon = { hp: A.hpBonus || 1, sh: A.shBonus || 1, dmg: A.dmgK || 1, move: A.moveB || 0, vis: A.visB || 0 };
-    sh.hullMax = b.hull * sh.bon.hp; sh.hull = Math.max(1, sh.hullMax * hk);
-    var self = this, sk = sh.sh.map(function(v, i) { return v / Math.max(1, self.secMax(sh, i)); });
+    // как в базе: модернизация поднимает предел, а не запас — корпус и щиты в тех же единицах (раньше в той же доле:
+    // открытая орбита дарила корпус и щиты, SPACE-BUG-042)
+    sh.hullMax = b.hull * sh.bon.hp; sh.hull = Math.max(1, Math.min(sh.hullMax, sh.hull));
     sh.shMax = b.sh * sh.bon.sh; sh.foreK = A.foreK > 1 ? A.foreK : 1;
-    for (q = 0; q < 4; q++) sh.sh[q] = this.secMax(sh, q) * sk[q];
+    for (q = 0; q < 4; q++) sh.sh[q] = Math.max(0, Math.min(this.secMax(sh, q), sh.sh[q]));
     for (q = 0; q < sh.guns.length; q++) if (sh.guns[q].t !== 'pd') sh.guns[q].k = b.k * sh.bon.dmg;
-    sh.vmax = (b.move + sh.bon.move) * 9; sh.sens = b.sens + sh.bon.vis * 1000;
+    sh.vmax = (b.move + sh.bon.move) * 9 * (A.moveK || 1); sh.sens = b.sens + sh.bon.vis * 1000;
+    // трофей отремонтирован — генератор снова в деле; снова трофей (захватили) — погашен
+    sh.noShield = !!A.noShield; sh.regen = sh.noShield ? 0 : b.regen; sh.xfer = sh.noShield ? 0 : b.xfer; if (sh.noShield) sh.sh = [0, 0, 0, 0];
+    if (A.regenQ > 0) sh.regenQ = A.regenQ;
     sh.tractor = !!A.tractor; if (!sh.tractor && sh.tb) this.tbRelease(sh);
   };
   // ---- притягивающий луч
@@ -530,13 +545,16 @@
     var c = sh.crew, e = sh.eff;
     e.engine = c.sysEff('engine');
     e.reactor = c.sysEff('reactor');
-    e.shield = hasType(sh.plan, 'shield') ? c.sysEff('shield') : e.reactor;
+    var shT = hasType(sh.plan, 'shield') ? 'shield' : hasType(sh.plan, 'power') ? 'power' : 'reactor';
+    e.shield = shT === 'reactor' ? e.reactor : c.sysEff(shT);
+    // предел щитов — по генератору без учёта сбоя: ионный удар глушит подзарядку, но запас не срезает (SPACE-BUG-039)
+    e.shieldCap = c.sysEff(shT, true); e.shStun = e.shieldCap > e.shield + 1e-6;
     e.bridge = (c.sysEff('bridge') * 2 + (hasType(sh.plan, 'cic') ? c.sysEff('cic') : 1)) / 3;
     e.hangar = hasType(sh.plan, 'hangar') ? c.sysEff('hangar') : 0;
     e.power = 0.45 + 0.55 * e.reactor;           // без реактора — аварийные генераторы (почти половина)
     this.shields(sh, dt);
     // генератор щитов в руках абордажной команды — щиты погашены
-    if (sh.crew.board && sh.crew.board.heldType('shield')) { sh.sh[0] = sh.sh[1] = sh.sh[2] = sh.sh[3] = 0; }
+    if (sh.crew.board && (sh.crew.board.heldType('shield') || (!hasType(sh.plan, 'shield') && sh.crew.board.heldType('power')))) { sh.sh[0] = sh.sh[1] = sh.sh[2] = sh.sh[3] = 0; }
     // орудия: люди на посту, целость, питание
     for (var g = 0; g < sh.guns.length; g++) {
       var gun = sh.guns[g], re = gun.room ? c.roomEff(gun.room) : 1;
@@ -562,20 +580,25 @@
   Battle.prototype.secMax = function(sh, s) { return sh.shMax * (s === 0 && sh.foreK > 1 ? sh.foreK : 1); };
   Battle.prototype.shieldCap = function(sh, s) {
     var k = sh.focus < 0 ? 1 : s === sh.focus ? 1.25 : 0.9;
-    return this.secMax(sh, s) * k * (0.4 + 0.6 * (sh.eff.shield == null ? 1 : sh.eff.shield));
+    var ef = sh.eff.shieldCap != null ? sh.eff.shieldCap : sh.eff.shield;
+    return this.secMax(sh, s) * k * (0.4 + 0.6 * (ef == null ? 1 : ef));
   };
+  // Вне боя (по кораблю не били CALM_REGEN с) щиты набираются как в игре (regenQ — доля предела в секунду из базы):
+  // иначе открытая орбита заряжала их в ~6,6 раза быстрее правил, и это уходило в базу (SPACE-BUG-041)
+  var CALM_REGEN = 60;
   Battle.prototype.shields = function(sh, dt) {
     var e = sh.eff, s, base = sh.regen * e.shield * e.power;
+    var calm = sh.regenQ > 0 && sh.regen > 0 && this.t - sh.hurtT >= CALM_REGEN;
     if (sh.focusAuto) this.autoFocus(sh, dt);
     var need = -1, nv = 1e9;
     for (s = 0; s < 4; s++) {
       sh.shHit[s] = Math.max(0, sh.shHit[s] - dt);
-      var cap = this.shieldCap(sh, s), r = base * (sh.shHit[s] > 0 ? 0.12 : 1) * (s === sh.focus ? 1.4 : 1);
+      var cap = this.shieldCap(sh, s), r = calm ? this.secMax(sh, s) * sh.regenQ * e.shield * e.power : base * (sh.shHit[s] > 0 ? 0.12 : 1) * (s === sh.focus ? 1.4 : 1);
       sh.sh[s] = Math.min(cap, sh.sh[s] + r * dt);
       if (sh.sh[s] > cap) sh.sh[s] = cap;
       if (sh.shHit[s] > 0 && sh.sh[s] / cap < nv) { nv = sh.sh[s] / cap; need = s; }
     }
-    if (need >= 0) {
+    if (need >= 0 && !e.shStun) {                       // генератор в сбое — и перекачки нет
       for (s = 0; s < 4; s++) {
         if (s === need || sh.shHit[s] > 0) continue;
         var c2 = this.shieldCap(sh, s);
@@ -590,16 +613,36 @@
     sh.focusT = (sh.focusT || 0) - dt;
     if (sh.focusT > 0) return;
     sh.focusT = 3;
-    var foe = this.nearestFoe(sh);
-    sh.focus = foe ? this.sector(sh, foe.x, foe.y) : -1;
+    var foe = this.nearestFoe(sh), old = sh.focusFoe != null ? this.ships[sh.focusFoe] : null;
+    // новый враг ближе прежнего меньше чем на 15 % — фокус остаётся (раньше скакал между двумя и срезал щит, SPACE-BUG-043)
+    if (foe && !foe.ghost && old && old !== foe && !old.dead && old.side !== sh.side && this.sees(sh.side, old)) {
+      var d1 = (foe.x - sh.x) * (foe.x - sh.x) + (foe.y - sh.y) * (foe.y - sh.y), d0 = (old.x - sh.x) * (old.x - sh.x) + (old.y - sh.y) * (old.y - sh.y);
+      if (d1 > d0 * 0.7225) foe = old;
+    }
+    sh.focusFoe = foe && !foe.ghost ? foe.n : null;
+    this.moveFocus(sh, foe ? this.sector(sh, foe.x, foe.y) : -1);
+  };
+  // Смена усиленного сектора: запас сверх нового предела прежнего сектора переходит в новый, а не сгорает
+  Battle.prototype.moveFocus = function(sh, nf) {
+    var of = sh.focus; if (nf === of) return;
+    sh.focus = nf;
+    if (of < 0 || nf < 0) return;
+    var cap = this.shieldCap(sh, of), extra = sh.sh[of] - cap;
+    if (extra > 0) { sh.sh[of] = cap; sh.sh[nf] = Math.min(this.shieldCap(sh, nf), sh.sh[nf] + extra); }
   };
   // Приказ игрока: усилить сектор (0 нос, 1 правый, 2 корма, 3 левый), −1 — ровно
   Battle.prototype.setFocus = function(shipN, s) {
     var sh = this.ships[shipN]; if (!sh || sh.dead) return;
-    sh.focus = (s === 0 || s === 1 || s === 2 || s === 3) ? s : -1;
+    this.moveFocus(sh, (s === 0 || s === 1 || s === 2 || s === 3) ? s : -1);
     sh.focusAuto = false;
   };
 
+  // Отсеки системы на этом корабле: свои типы, а если их нет — запасные (alt)
+  function sysTypes(plan, S) {
+    if (!S.alt) return S.types;
+    for (var i = 0; i < S.types.length; i++) if (hasType(plan, S.types[i])) return S.types;
+    return S.alt;
+  }
   function hasType(plan, t) {
     if (!plan._types) { plan._types = {}; for (var i = 0; i < plan.rooms.length; i++) plan._types[plan.rooms[i].t] = 1; }
     return !!plan._types[t];
@@ -837,9 +880,9 @@
   // Отсек системы, ближайший к стреляющему (с его стороны)
   Battle.prototype.sysRoom = function(ship, sys, g) {
     var S = SYS_BY[sys]; if (!S) return 0;
-    var best = 0, bd = 1e18, rooms = ship.plan.rooms;
+    var best = 0, bd = 1e18, rooms = ship.plan.rooms, types = sysTypes(ship.plan, S);
     for (var i = 0; i < rooms.length; i++) {
-      var r = rooms[i]; if (S.types.indexOf(r.t) < 0) continue;
+      var r = rooms[i]; if (types.indexOf(r.t) < 0) continue;
       var st = ship.crew.rooms[r.n];
       var w = this.toWorld(ship, r.cx, r.cy), dx = w[0] - g.x, dy = w[1] - g.y, d = dx * dx + dy * dy;
       if (st && st.integ <= 0) d *= 4;              // уже разбитые — в последнюю очередь
@@ -955,11 +998,13 @@
     }
     sh.hull -= dmg * T.hull;
     this.ev.booms.push({ x: w[0], y: w[1], r: 14 + dmg * 1.4, t0: this.t, ship: sh.n, ion: !!T.stun });
-    this.hitRoom(sh, p.lx, p.ly, dmg, T, 1);
+    this.hitRoom(sh, p.lx, p.ly, dmg, T, 1, p.k);
     if (sh.hull <= 0) this.kill(sh, 'hull');
   };
-  // Удар внутрь: поломка отсека, пожар, люди
-  Battle.prototype.hitRoom = function(sh, lx, ly, dmg, T, k) {
+  // Удар внутрь: поломка отсека, пожар, люди. gk — множитель пушки (нормировка огня): людей и пожары он масштабирует
+  // линейно (площадь взрыва ∝ урону, урон человеку — по самой пушке), иначе корабли с немногими крупными стволами
+  // убивали экипаж вдвое быстрее при том же уроне по корпусу (SPACE-BUG-045)
+  Battle.prototype.hitRoom = function(sh, lx, ly, dmg, T, k, gk) {
     var p = sh.plan, x = Math.floor(lx), y = Math.floor(ly), n = 0;
     for (var r = 0; r <= 6 && !n; r++) {
       for (var dy = -r; dy <= r && !n; dy++) for (var dx = -r; dx <= r && !n; dx++) {
@@ -973,8 +1018,10 @@
     k *= armor;
     if (n) c.damageRoom(n, Math.min(ROOM_CAP[tt] || 30, (dmg || 6) * T.sys * 0.7 * k), T.stun ? T.stun * k : 0);
     if (dmg > 0) {
-      if (this.R() < T.fire * Math.min(2, dmg / 12)) c.ignite(lx, ly, 30 + this.R() * 40);
-      c.blast(lx, ly, 2 + dmg / 12, 50 + dmg * 3 * T.hull);
+      // b — урон выстрела при типичной нормировке (GK0): при ней взрыв и пожары — как раньше
+      var q = gk > 0 ? gk : GK0, b = dmg / q * GK0;
+      if (this.R() < Math.min(0.9, T.fire * Math.min(2, b / 12) * q / GK0)) c.ignite(lx, ly, 30 + this.R() * 40);
+      c.blast(lx, ly, 2 + b / 12 * Math.sqrt(q / GK0), 50 + b * 3 * T.hull);
     }
   };
   // ---------------------------------------------------------------- столкновения

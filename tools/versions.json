@@ -316,8 +316,8 @@
   "sha": "5a35e58672f3"
  },
  "js/space-live.js": {
-  "v": "38",
-  "sha": "a5a516e91236"
+  "v": "39",
+  "sha": "af0f4dfe639f"
  },
  "js/spy-map.js": {
   "v": "2",
@@ -412,12 +412,12 @@
   "sha": "a02b83a74308"
  },
  "shared/rt-space-net.js": {
-  "v": "24",
-  "sha": "330fb09c1731"
+  "v": "25",
+  "sha": "7c276579e86c"
  },
  "shared/rt-space.js": {
-  "v": "39",
-  "sha": "4fcc3b0170bc"
+  "v": "40",
+  "sha": "8272bfe32d6e"
  },
  "shared/rt-town.js": {
   "v": "3",
@@ -472,7 +472,7 @@
   "sha": "cef888084be2"
  },
  "space/space.js": {
-  "v": "55",
-  "sha": "dc21f691b74c"
+  "v": "56",
+  "sha": "687469357d2b"
  }
 }

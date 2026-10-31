@@ -59,6 +59,7 @@
   var ARMOR = { reactor: 0.55, bridge: 0.75, shield: 0.85 };
   // Предел поломки отсека за одно попадание: реактор глубоко в броне — одним залпом его не выбить
   var ROOM_CAP = { reactor: 2.2, bridge: 18 };
+  var PUSH_MAX = 20;         // м: предел выталкивания корпусов за проход столкновения
   var REACTOR_FUSE = 90;     // реактор разбит — столько секунд до взрыва (экипаж успевает поднять до 25% — отбой)
   var SYS_BY = {}; SYS.forEach(function(s) { SYS_BY[s.id] = s; });
   // отсек → система (приказ «по отсеку» на другом корабле становится приказом по той же системе)
@@ -426,6 +427,7 @@
     var c = this.tractorCan(n, t); if (!c.ok) return c.why;
     a.tb = { to: t, until: this.t + TRACTOR.hold };
     this.ships[t].heldBy = n;
+    if (this.ships[t].dormant) this.wake(this.ships[t]);       // схваченный лучом отвечает огнём (SPACE-BUG-053)
     return '';
   };
   Battle.prototype.tbRelease = function(a) {
@@ -502,10 +504,12 @@
       if (!sh.dormant) sh.crew.step(dt);
       this.systems(sh, dt);
       this.drive(sh, dt);
+      if (this.bound) this.bound(sh);                // орбита системы: не за край и не в чужую полосу (SPACE-BUG-047)
       this.place(sh);
       if (!sh.dormant) this.wingStep(sh, dt);
     }
     this.collide(dt);
+    if (this.bound) for (i = 0; i < this.ships.length; i++) if (!this.ships[i].dead) this.bound(this.ships[i]);   // толчок не выносит за предел
     this.senseT -= dt;
     if (this.senseT <= 0) { this.senseT = 0.5; this.sense(); }
     this.boardStep(dt);
@@ -620,9 +624,9 @@
         want = Math.atan2(dy, dx); wantV = 0;
         if (Math.abs(wrap(want - sh.hd)) < 0.02) sh.order = null;
       }
-      else if (d < 120) { sh.order = null; }
+      else if (d < (sh.order.near || 120)) { sh.order = null; sh.arrivedAt = this.t; }   // дошёл (площадка сброса ставит ровно только после этого)
       else {
-        want = Math.atan2(dy, dx); wantV = Math.min(vmax, d / 20);
+        want = Math.atan2(dy, dx); wantV = Math.min(vmax, Math.max(sh.order.near ? 6 : 0, d / 20));
         // точка занята чужим корпусом (или туда же идёт свой): упёрся и 12 с не продвинулся — приказ снят;
         // далеко от точки — это толчея на пути (строй разворачивается), ждём дольше — 45 с
         if (sh.order.bd == null || d < sh.order.bd - 40) { sh.order.bd = d; sh.order.bt = this.t; }
@@ -1046,8 +1050,11 @@
     if (a.side !== b.side || blocksGoal(a, b)) a.touchT = this.t;
     if (a.side !== b.side || blocksGoal(b, a)) b.touchT = this.t;
     var ma = a.hullMax, mb = b.hullMax, ka = mb / (ma + mb), kb = ma / (ma + mb);
-    a.x += best.nx * best.depth * ka; a.y += best.ny * best.depth * ka;
-    b.x -= best.nx * best.depth * kb; b.y -= best.ny * best.depth * kb;
+    // не больше PUSH_MAX за проход: корпуса, вставшие друг в друга (короб в базе меньше корпуса, прибытие), расходятся
+    // плавно, а не скачками по 100–200 м (SPACE-BUG-051)
+    var dp = Math.min(best.depth, PUSH_MAX);
+    a.x += best.nx * dp * ka; a.y += best.ny * dp * ka;
+    b.x -= best.nx * dp * kb; b.y -= best.ny * dp * kb;
     // скорость сближения по линии удара
     var va = -(Math.cos(a.hd) * best.nx + Math.sin(a.hd) * best.ny) * a.v, vb = (Math.cos(b.hd) * best.nx + Math.sin(b.hd) * best.ny) * b.v;
     var close = va + vb;
@@ -1060,8 +1067,8 @@
     // свои корабли друг друга не бьют: рулевые расходятся, корпуса только расталкиваются
     if (first && a.side !== b.side && close > RAM_V && this.t - (this.ramT[key] || -99) > 4) {
       this.ramT[key] = this.t;
-      this.ram(a, (close - RAM_V) * RAM_K * 2 * ka, best.x, best.y);
-      this.ram(b, (close - RAM_V) * RAM_K * 2 * kb, best.x, best.y);
+      this.ram(a, (close - RAM_V) * RAM_K * 2 * ka, best.x, best.y, b.n);
+      this.ram(b, (close - RAM_V) * RAM_K * 2 * kb, best.x, best.y, a.n);
       this.ev.booms.push({ x: best.x, y: best.y, r: 40 + close * 3, t0: this.t, ram: [a.n, b.n] });   // удар видно обеим сторонам (и тем, кто видит одного из них)
       this.ev.rams = this.ev.rams || [];
       this.ev.rams.push({ a: a.n, b: b.n, v: Math.round(close) });
@@ -1069,8 +1076,11 @@
     return true;
   };
   // Удар корпусом о корпус: щит сектора не держит (это не болт), бьёт по броне
-  Battle.prototype.ram = function(sh, dmg, wx, wy) {
+  // спящий просыпается (отвечает огнём, крыло взлетает), удар — «под огнём» (сверка, запрет прыжка) (SPACE-BUG-046)
+  Battle.prototype.ram = function(sh, dmg, wx, wy, by) {
     if (sh.dead || dmg <= 0) return;
+    if (sh.dormant) this.wake(sh);
+    sh.hurtT = this.t; if (by != null && by >= 0) sh.hurtBy = by;
     var l = this.toLocal(sh, wx, wy), p = sh.plan;
     var lx = Math.max(1, Math.min(p.w - 2, l[0])), ly = Math.max(1, Math.min(p.h - 2, l[1]));
     sh.hull -= dmg;

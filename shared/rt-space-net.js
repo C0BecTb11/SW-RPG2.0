@@ -235,7 +235,7 @@
     return null;
   };
   // Кадр не дошёл (медленная связь): всё разностное — заново полным
-  Viewer.prototype.lost = function() { this.scFor = -1; this.agPrev = null; this.rmPrev = null; this.craftKnown = {}; this.whoFor = -1; };
+  Viewer.prototype.lost = function() { this.deadN = {}; this.rowK = {}; this.scFor = -1; this.agPrev = null; this.rmPrev = null; this.craftKnown = {}; this.whoFor = -1; };
   Viewer.prototype.heldList = function(bd) { var out = []; for (var k in bd.rs) if (bd.rs[k].held) out.push(+k); return out; };
   Viewer.prototype.newMsgs = function(sh, bd) {
     var m = this.mk(sh.n), out = [];
@@ -253,12 +253,21 @@
       var ship = B.ships[i];
       // орбита системы: спящий корабль стоит — его строка нужна раз в десять кадров (и всегда в первом)
       // …если стоит: сдвинули (луч, толчок, разворот к врагу) больше 5 м или 1° — сразу, иначе рывками раз в 2 с (SPACE-BUG-053)
+      // погибший или ушедший — несколько кадров, потом экран и так помнит (иначе их строки шли вечно, SPACE-BUG-059)
+      if (ship.dead) { var dn = this.deadN || (this.deadN = {}); if ((dn[i] || 0) >= 5) continue; dn[i] = (dn[i] || 0) + 1; }
       // невидимый враг — по-старому раз в 2 с (частота его строк не должна выдавать, что он двигается)
       var sa = this.sentAt || (this.sentAt = {}), ps = sa[i], seen = ship.side === side || !B.fog || B.sees(side, ship);
       if (ship.dormant && this.lk % 10 !== 1 && i !== this.sel && i !== this.foe && i !== this.view && (!seen || (ps &&
           (ship.x - ps[0]) * (ship.x - ps[0]) + (ship.y - ps[1]) * (ship.y - ps[1]) < 25 && Math.abs(Math.atan2(Math.sin(ship.hd - ps[2]), Math.cos(ship.hd - ps[2]))) < 0.0175))) continue;
       if (seen) sa[i] = [ship.x, ship.y, ship.hd];
-      out.ships.push(this.shipLight(ship));
+      var row = this.shipLight(ship);
+      // ничего не поменялось (стоит, без боя и абордажа) — строка раз в секунду, а не 5 раз (SPACE-BUG-058)
+      if (!row.bd && !row.burn && !(row.fs && row.fs.length) && i !== this.sel && i !== this.foe && i !== this.view) {
+        var rk = this.rowK || (this.rowK = {}), ct = row.ct; row.ct = 0; var key = JSON.stringify(row); row.ct = ct;
+        if (rk[i] === key && this.lk % 5 !== 1) continue;
+        rk[i] = key;
+      }
+      out.ships.push(row);
     }
     for (i = 0; i < B.craft.length; i++) {
       var c = B.craft[i]; if (c.dead) continue;

@@ -100,7 +100,7 @@
     // орбита: после переподключения группа та же (по кораблям игры, номера могли смениться)
     var keepG = G.net && G.net.sys && G.B && G.grpMode ? (G.grp || []).map(function(n) { var o = G.B.ships[n]; return o && !o.dead ? o.gameId || o.id : null; }).filter(function(x) { return typeof x === 'string'; }) : [];
     G.who = null; IN.ship = -1; if (!G.speed) G.speed = G.lastSpd || 1;
-    G.B = B; G.fx = { shots: [], booms: [], shields: [] }; DOWN = {}; G.wrecks = []; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
+    G.B = B; G.fx = { shots: [], booms: [], shields: [] }; DOWN = {}; G.wrecks = []; G.wreckQ = []; G.ended = false; G.gsel = {}; G.aim = false; G.move = false; G.room = null;
     G.sel = -1; G.foe = -1; G.bsel = {}; G.bm = {}; G.vent = false; G.quiet = false; G.usel = []; G.uselN = -1; G.lastTap = null; G.fmark = null; G.sheet = '';
     G.grp = []; G.grpMode = false; G.gmarks = null;
     var me = G.net && G.net.sys ? G.net.user : null;
@@ -180,9 +180,20 @@
 
   // ---------------------------------------------------------------- кадр
   var FR = { last: 0, fps: 60, acc: 0, hud: 0 };
+  // Поле закрыто панелью игры (верфь, станция, ангар): бой и небо — не чаще 8 к/с, как на наземке (SPACE-BUG-065)
+  function fieldCovered() {
+    if (document.hidden) return false;
+    var pts = [[CAM.vw / 2, CAM.vh * 0.3], [CAM.vw * 0.25, CAM.vh * 0.5], [CAM.vw * 0.75, CAM.vh * 0.5]];
+    for (var i = 0; i < pts.length; i++) {
+      var el = document.elementFromPoint(pts[i][0], pts[i][1]);
+      if (!el || el === CV || el.tagName === 'CANVAS' || el.closest('#sp-bottom,#sp-toast,#sp-tr,#sp-tl,#sp-top,#sp-back,.sp-end,#credits-bar')) return false;
+    }
+    return true;
+  }
   function frame(t) {
     requestAnimationFrame(frame);
-    if (GFX.get('eco') && FR.last && t - FR.last < 30) return;          // экономия заряда: не чаще 30 к/с
+    if (t - (FR.covT || 0) > 500) { FR.covT = t; FR.covered = fieldCovered(); }
+    if (FR.last && (FR.covered ? t - FR.last < 120 : GFX.get('eco') && t - FR.last < 30)) return;   // экономия заряда: не чаще 30 к/с
     var dt = FR.last ? Math.min(0.1, (t - FR.last) / 1000) : 0.016;
     FR.fps = FR.fps * 0.95 + (1 / Math.max(0.001, dt)) * 0.05; FR.last = t;
     var B = G.B; if (!B) return;
@@ -206,10 +217,23 @@
     if (window.SPSky) window.SPSky.draw(CAM, G.sys || { id: 'naboo' }, { hidden: G.mode === 'inside' });
     if (G.mode === 'inside') { loadStep(); drawInside(t / 1000); } else drawSpace(t / 1000);
     FR.hud += dt;
-    if (FR.hud > 0.25) { FR.hud = 0; hud(); taskRow(); speedUi(); $('sp-fps').textContent = Math.round(FR.fps); }
+    if (FR.hud > 0.25) { FR.hud = 0; hud(); taskRow(); speedUi(); $('sp-fps').textContent = Math.round(FR.fps); netSleep(); }
     if (B.over >= 0 && !G.ended) endBattle();
   }
   function now() { return G.B.t + (G.B.acc || 0); }
+  // Живой бой: корабль, который открывали изнутри, через 30 с после ухода — снова сводка без людей (экипаж 1,7–5 МБ;
+  // люди придут с сервера заново, если открыть снова, SPACE-BUG-070). Пока выбран, в прицеле или на борту абордаж — нет
+  function netSleep() {
+    var B = G.B; if (!G.net || !B || !B.sleep) return;
+    var t = performance.now(), L = G.awakeAt || (G.awakeAt = {});
+    for (var i = 0; i < B.ships.length; i++) {
+      var s = B.ships[i];
+      if (s.dormant || s.dead) { delete L[i]; continue; }
+      if ((G.mode === 'inside' && G.view === i) || G.sel === i || G.foe === i || (s.crew.board && s.crew.board.over < 0)) { L[i] = t; continue; }
+      if (L[i] == null) L[i] = t;
+      else if (t - L[i] > 30000) { B.sleep(s); delete L[i]; if (G.net.M && G.net.M.agFull === i) G.net.M.agFull = -1; }   // снова внутрь — ждать полный кадр людей
+    }
+  }
   // остовы живут по настоящим часам: после конца боя расчёт стоит, а обломки — нет
   function T0() { return performance.now() / 1000; }
 
@@ -285,7 +309,8 @@
       if (k.ship != null) {
         var s = G.B.ships[k.ship];
         // остов: корабль раскалывается на куски своей же картинки
-        if (window.SPWreck && G.imgs[s.cls]) { try { G.wrecks.push(window.SPWreck.make(s, G.imgs[s.cls], s.plan, k.why, T0())); s.wreck = true; } catch (er) {} }
+        // нарезка тяжёлая (до 190 мс на слабом телефоне) — в очередь, по одной за кадр (SPACE-BUG-060)
+        if (window.SPWreck && G.imgs[s.cls]) { (G.wreckQ = G.wreckQ || []).push({ s: s, why: k.why, t: T0() }); s.wreck = true; }
         toast(s.name + ' уничтожен' + (k.why === 'reactor' ? ' — взрыв реактора' : k.why === 'ram' ? ' — столкновение' : ''), s.side === G.side ? 'bad' : 'gold');
         if (k.ship === G.foe) { G.aim = false; G.foe = -1; }
         if (k.ship === G.sel) {
@@ -1137,6 +1162,19 @@
     }
   }
 
+  // Остовы: по одному за кадр и только для корабля на экране (вне экрана — без остова); не больше WRECK_MAX,
+  // на орбите (бой не кончается) — не дольше WRECK_LIFE с, иначе холсты копились десятками МБ
+  var WRECK_MAX = 8, WRECK_LIFE = 180;
+  function wreckStep() {
+    var q = G.wreckQ, t = T0();
+    if (G.wrecks && G.sys) G.wrecks = G.wrecks.filter(function(w) { return t - w.t0 < WRECK_LIFE; });
+    if (!q || !q.length) return;
+    var it = q.shift(), s = it.s, p = toS(s.x, s.y), m = (s.len || 600) * CAM.s;
+    if (t - it.t > 3 || p[0] < -m || p[1] < -m || p[0] > CAM.vw + m || p[1] > CAM.vh + m) return;
+    var px = GFX.level && (GFX.level() === 'low' || GFX.level() === 'mid') ? 320 : 640;
+    try { G.wrecks.push(window.SPWreck.make(s, G.imgs[s.cls], s.plan, it.why, it.t, px)); } catch (er) {}
+    while (G.wrecks.length > WRECK_MAX) G.wrecks.shift();
+  }
   // ---------------------------------------------------------------- космос
   function drawSpace(T) {
     var c = CTX, B = G.B, s = CAM.s, i;
@@ -1144,6 +1182,7 @@
     c.clearRect(0, 0, CAM.vw, CAM.vh);
     drawGrid(c);
     // остовы погибших — под живыми
+    wreckStep();
     if (G.wrecks) for (i = 0; i < G.wrecks.length; i++) window.SPWreck.draw(c, G.wrecks[i], T0(), toS, s, CAM.vw, CAM.vh);
     // корабли: врага вне датчиков не видно — только метка последней засечки
     drawSys(c);
@@ -2464,14 +2503,15 @@
     var b = DECK.S.box, sh = G.B && G.B.ships[G.view]; if (!b || !sh || !boxable()) return;
     var x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
     if (x1 - x0 < 10 && y1 - y0 < 10) return;
-    var bv = attView(), ov = ownView() === sh, ids = [];
+    var bv = attView(), ov = ownView() === sh, ids = [], over = 0;
     sh.crew.agents.forEach(function(a) {
-      if (!a.alive || a.gone || a.team !== G.side || !(bv ? a.sq : ov ? trooper(a) : defU(a)) || ids.length >= 128) return;
+      if (!a.alive || a.gone || a.team !== G.side || !(bv ? a.sq : ov ? trooper(a) : defU(a))) return;
       var q = itoS(a.x, a.y);
-      if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) ids.push(a.id);
+      if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) { if (ids.length < 128) ids.push(a.id); else over++; }
     });
     G.usel = ids; G.uselN = sh.n; G.bsel = {};
-    toast(ids.length ? 'Выбрано бойцов: ' + ids.length + (ov ? '. Коснись пола — встанут там на пост' : '. Пол — бегут туда, враг — огонь по нему') : ov ? 'В рамке нет десанта (экипаж на постах не ставят)' : 'В рамке нет твоих бойцов', ids.length ? 'gold' : 'bad');
+    // больше 128 за раз приказ не берёт — сказать, сколько не вошло (SPACE-BUG-069)
+    toast(ids.length ? 'Выбрано бойцов: ' + ids.length + (over ? ' (ещё ' + over + ' не вошли — за раз не больше 128)' : '') + (ov ? '. Коснись пола — встанут там на пост' : '. Пол — бегут туда, враг — огонь по нему') : ov ? 'В рамке нет десанта (экипаж на постах не ставят)' : 'В рамке нет твоих бойцов', ids.length ? 'gold' : 'bad');
     hud();
   }
   function clampS(s) { return Math.max(0.008, Math.min(1.2, s)); }
@@ -3697,7 +3737,9 @@
           var rk = 'sp-pv-' + m.pv, was = null; try { was = sessionStorage.getItem(rk); sessionStorage.setItem(rk, '1'); } catch (er) {}
           if (!was) { toast('Игра обновилась — перезагружаю экран', 'gold'); setTimeout(function() { location.reload(); }, 1200); return; }
         } else if ((m.pv || 1) < NETLIB.PV) toast('Сервер боёв обновляется — через минуту всё встанет на место', 'gold');
-        N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m); return;
+        N.ok = true; N.tries = 0; N.spd = m.spd != null ? m.spd : 1; netHello(m);
+        if (document.hidden) netSend({ t: 'cmd', k: 'idle', on: 1 });            // переподключились в фоне
+        return;
       }
       if (m.t === 'roster') { N.seats = m.seats; N.own = m.own || null; netRow(); return; }
       if (m.t === 'ships') { netShips(m.ships || [], !!m.full); return; }
@@ -3830,8 +3872,10 @@
     var N = G.net; if (!N) return;
     if (N.ws && N.ws.readyState === 1) { N.ws.send(JSON.stringify(m)); return; }
     // приказ без связи пропал бы молча — сказать игроку (раз в 4 с)
-    if (m.t === 'cmd' && m.k !== 'view' && performance.now() - (N.offAt || -1e9) > 4000) { N.offAt = performance.now(); toast('Нет связи с сервером — приказ не дошёл, повтори после переподключения', 'bad'); }
+    if (m.t === 'cmd' && m.k !== 'view' && m.k !== 'idle' && performance.now() - (N.offAt || -1e9) > 4000) { N.offAt = performance.now(); toast('Нет связи с сервером — приказ не дошёл, повтори после переподключения', 'bad'); }
   }
+  // Вкладка в фоне или экран заблокирован — сервер шлёт редкий лёгкий кадр, а не полный поток (SPACE-BUG-066)
+  document.addEventListener('visibilitychange', function() { if (G.net) netSend({ t: 'cmd', k: 'idle', on: document.hidden ? 1 : 0 }); });
   // Что игрок смотрит: сервер шлёт людей и отсеки только этого корабля
   function netView() {
     var N = G.net, v = G.mode === 'inside' ? G.view : -1, k = G.sel + ':' + G.foe + ':' + v, t = performance.now();

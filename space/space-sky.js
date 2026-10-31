@@ -263,8 +263,9 @@
     setSystem(sys);
     var camKey = Math.round(cam.x) + ',' + Math.round(cam.y) + ',' + cam.s.toFixed(5);
     var moved = camKey !== S.lastCam || resized;
-    // не чаще 30 раз в секунду при движении камеры (небо далеко — глазу хватает), в покое — 20 (мерцание, вращение)
-    if (!resized && now - S.last < (moved ? (Q.eco ? 66 : 33) : Q.motion ? 50 : 1000)) return;
+    // не чаще 30 раз в секунду при движении камеры (небо далеко — глазу хватает), в покое — 10 (мерцание, вращение
+    // планеты — 1 оборот за 30 мин): небо — главная статья растеризации, 20 раз в секунду в покое не нужно (SPACE-BUG-063)
+    if (!resized && now - S.last < (moved ? (Q.eco ? 66 : 33) : Q.motion ? 100 : 1000)) return;
     if (opt && opt.hidden && !moved && now - S.last < 400) return;     // под интерьером корабля — реже
     S.last = now; S.lastCam = camKey;
     var t = Q.motion ? now / 1000 : 0, P = S.place, u = S.u;
@@ -273,7 +274,8 @@
     var zl = Math.log(Math.max(0.004, cam.s) / 0.03) / Math.LN2, zk = function(k) { return Math.max(0.75, Math.min(1.6, 1 + zl * k)); };
     var cx = km(cam.x - 15000), cy = km(cam.y - 15000);           // от центра орбиты (30 км)
     gl.viewport(0, 0, W, H); gl.useProgram(S.prog);
-    gl.uniform2f(u.uR, W, H); gl.uniform1f(u.uT, t % 1000);   // время в шейдере — по кругу: mediump не держит большие числа gl.uniform1f(u.uMo, Q.motion ? 1 : 0);
+    gl.uniform2f(u.uR, W, H); gl.uniform1f(u.uT, t % 1000);   // время в шейдере — по кругу: mediump не держит большие числа
+    gl.uniform1f(u.uMo, Q.motion ? 1 : 0);                    // мерцание звёзд (вызов был в комментарии, SPACE-BUG-064)
     // туманность: квадрат 1,5 размера экрана, сдвиг 3 точки/км (y экрана вниз — у GL вверх)
     var NS = Math.max(W, H) * 1.5 * zk(0.02), nx = (W - NS) / 2 + (P.nebX - 0.5) * NS * 0.2 - cx * 3 * dpr, ny = (H - NS) / 2 + (P.nebY - 0.5) * NS * 0.2 + cy * 3 * dpr;
     gl.uniform4f(u.uNebR, nx, ny, NS, NS);

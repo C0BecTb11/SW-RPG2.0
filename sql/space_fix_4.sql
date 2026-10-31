@@ -1,7 +1,7 @@
 -- Космос, этап 4: абордаж и экипаж (аудит space-audit, SPACE-BUG-019, 027).
 --  019 — пока на борту идёт абордаж, корабль не уйдёт в гиперпространство: сервер шлёт в строке корабля bd (секунды),
 --        сверка держит снимок rt_battles.snapshot.board, сторож rt_battle_guard по нему отказывает.
---  027 — журнал: гибель бойцов орбиты — по строке на бойца (триггер ev_units писал одну на тип за транзакцию);
+--  027 — журнал: гибель бойцов орбиты — строкой на тип с числом (триггер ev_units писал одну на тип за транзакцию, amount 1);
 --        захват — события «Корабль захвачен» прежнему хозяину и «Трофей» захватчику; оплаченные заказы верфи на трофей —
 --        половина назад, как при захвате планеты (refund_pending_on_capture), а не молча «выполнены».
 --  и правка этапа 2: сторож читал поля бойца (carrier_unit_id) и у строки корабля — любое изменение корабля падало.
@@ -35,10 +35,13 @@ begin
 
   -- трофей: павшие в обороне — в журнал по одному
   a := $q$    delete from unit_positions where carrier_ship_id = r.id and carrier_unit_id is null and faction is distinct from r.faction;$q$;
-  b := $q$    for o in select u.id, u.owner_user_id, u.faction, u.unit_type from unit_positions u
-              where u.carrier_ship_id = r.id and u.carrier_unit_id is null and u.faction is distinct from r.faction loop
-      perform log_event(o.owner_user_id, o.faction, v_sys, 'unit_killed', o.unit_type, 1, 'private',
+  b := $q$    for o in select u.owner_user_id, u.faction, u.unit_type, count(*)::integer as n from unit_positions u
+              where u.carrier_ship_id = r.id and u.carrier_unit_id is null and u.faction is distinct from r.faction group by 1, 2, 3 loop
+      perform log_event(o.owner_user_id, o.faction, v_sys, 'unit_killed', o.unit_type, o.n, 'private',
                         jsonb_build_object('layer', 'space', 'ship_id', r.id, 'rt', true));
+    end loop;
+    for o in select u.id from unit_positions u
+              where u.carrier_ship_id = r.id and u.carrier_unit_id is null and u.faction is distinct from r.faction loop
       perform set_config('app.rt_gone', o.id::text, true);
       delete from unit_positions where id = o.id;
     end loop;
@@ -48,11 +51,12 @@ begin
 
   -- трофей: заказы верфи — половина назад; события захвата
   a := $q$    update repair_orders set delivered = true where ship_id = r.id and not delivered;$q$;
-  b := $q$    for o in select ro.id, ro.owner_user_id, ro.cost from repair_orders ro where ro.ship_id = r.id and not ro.delivered loop
+  b := $q$    for o in select ro.id, ro.owner_user_id, ro.cost, ro.kind from repair_orders ro where ro.ship_id = r.id and not ro.delivered loop
       v_half := floor(coalesce(o.cost, 0) / 2.0);
       if v_half > 0 then update profiles set credits = credits + v_half where id = o.owner_user_id; end if;
       delete from repair_orders where id = o.id;
-      perform log_event(o.owner_user_id, null, v_sys, 'order_refunded', 'Ремонт', 1, 'private',
+      perform log_event(o.owner_user_id, null, v_sys, 'order_refunded',
+                        case o.kind when 'refit' then 'Модернизация' when 'hangar' then 'Пополнение ангара' else 'Ремонт' end, 1, 'private',
                         jsonb_build_object('refund', v_half, 'reason', 'capture', 'layer', 'space'));
     end loop;
     perform log_event(v_old, v_oldf, v_sys, 'ship_captured', v_type, 1, 'private', jsonb_build_object('layer', 'space', 'by', r.faction));
@@ -70,18 +74,29 @@ begin
                       and not coalesce(c.in_transit, false) and c.system_id = v_sys);
     n_d := n_d + 1;
   end loop;$q$;
-  b := $q$  for r in
-    select u.id, u.owner_user_id, u.faction, u.unit_type, u.carrier_ship_id
+  b := $q$  -- в журнал — одной строкой на тип и корабль (триггер ev_units писал одну на тип за транзакцию, SPACE-BUG-027)
+  for r in
+    select u.owner_user_id, u.faction, u.unit_type, u.carrier_ship_id, count(*)::integer as n
       from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) e(j)            -- не x: у бойца есть столбец x
       join unit_positions u on u.id = (e.j->>'id')::uuid
      where coalesce((e.j->>'hp')::integer, 0) <= 0 and u.carrier_ship_id is not null
        and exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
                     where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle
                       and not coalesce(c.in_transit, false) and c.system_id = v_sys)
+     group by 1, 2, 3, 4
   loop
-    -- по строке на бойца: триггер ev_units писал одну на тип за транзакцию (SPACE-BUG-027)
-    perform log_event(r.owner_user_id, r.faction, v_sys, 'unit_killed', r.unit_type, 1, 'private',
+    perform log_event(r.owner_user_id, r.faction, v_sys, 'unit_killed', r.unit_type, r.n, 'private',
                       jsonb_build_object('layer', 'space', 'ship_id', r.carrier_ship_id, 'rt', true));
+  end loop;
+  for r in
+    select u.id
+      from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) e(j)
+      join unit_positions u on u.id = (e.j->>'id')::uuid
+     where coalesce((e.j->>'hp')::integer, 0) <= 0 and u.carrier_ship_id is not null
+       and exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
+                    where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle
+                      and not coalesce(c.in_transit, false) and c.system_id = v_sys)
+  loop
     perform set_config('app.rt_gone', r.id::text, true);
     delete from unit_positions where id = r.id;
     n_d := n_d + 1;

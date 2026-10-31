@@ -413,11 +413,11 @@
  },
  "shared/rt-space-net.js": {
   "v": "24",
-  "sha": "7558132cff5c"
+  "sha": "330fb09c1731"
  },
  "shared/rt-space.js": {
   "v": "39",
-  "sha": "2c5b796e475e"
+  "sha": "4fcc3b0170bc"
  },
  "shared/rt-town.js": {
   "v": "3",
@@ -468,11 +468,11 @@
   "sha": "26a531e80361"
  },
  "space/space.css": {
-  "v": "28",
-  "sha": "8bc9f1c0e2b0"
+  "v": "29",
+  "sha": "cef888084be2"
  },
  "space/space.js": {
   "v": "55",
-  "sha": "807d8831684e"
+  "sha": "dc21f691b74c"
  }
 }

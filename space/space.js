@@ -599,6 +599,7 @@
     var sq = '<div class="sp-bd-row"><span class="lab">отряды</span><button class="sp-chip' + (none ? ' on' : '') + '" data-bsq="all">все</button>' +
       s.sq.map(function(q) {
         var r = sh.plan.roomByN[q.room];
+        if (q.x) return '<span class="sp-chip ally" title="Отряд союзника — приказы ему отдаёт он"><b>' + q.id + '</b> · ' + q.n + ' <em>союзник</em></span>';
         return '<button class="sp-chip' + (G.bsel[q.id] ? ' on' : '') + (q.n ? '' : ' dead') + '" data-bsq="' + q.id + '"><b>' + q.id + '</b> · ' + q.n +
           (q.n && (r || q.c >= 0) ? ' <em>' + (q.w ? 'ждёт приказа ' + q.w + ' с' : q.c >= 0 && !q.auto ? '⚑ ' + (r ? esc(shortRoom(r.name)) : 'коридор') : esc(shortRoom(r.name)) + (q.auto ? '' : ' ✓')) + '</em>' : '') + '</button>';
       }).join('') + '</div>';
@@ -2958,7 +2959,7 @@
     var bv = attView(), dvw = defView(), bw = !bv && !dvw ? attWatch() : null;
     document.body.classList.toggle('boardview', !!(bv || dvw || bw));
     document.body.classList.toggle('defview', !!dvw);
-    $('sp-kicker').textContent = bv || bw ? 'Абордаж' : dvw ? 'Оборона корабля' : G.mode === 'inside' ? 'Внутри корабля' : G.sys ? 'Орбита · ' + G.sys.name : 'Космический бой 2.0';
+    $('sp-kicker').textContent = bv || (bw && bw.att === G.side) ? 'Абордаж' : dvw || bw ? 'Оборона корабля' : G.mode === 'inside' ? 'Внутри корабля' : G.sys ? 'Орбита · ' + G.sys.name : 'Космический бой 2.0';
     if (!dvw && G.dmode) G.dmode = null;
     $('sp-view').textContent = 'Обзор';
     $('sp-view').title = G.mode === 'inside' ? 'Весь корабль на экране' : 'Все корабли на экране';

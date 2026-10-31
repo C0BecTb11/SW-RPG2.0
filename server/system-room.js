@@ -102,7 +102,13 @@ SystemRoom.prototype.open = function() {
     B.pullOk = function(sh, x, y) { var c = self.clampY(sh.side, y); return c === y || Math.abs(y - c) < Math.abs(sh.y - self.clampY(sh.side, sh.y)); };
     // кто пошёл на абордаж — тому и трофей
     var board0 = B.board;
-    B.board = function(n, t, all, now) { var r = board0.call(B, n, t, all, now); if (r && r.ok && B.ships[t]) { if (!r.reinforce || !B.ships[t].boardBy) B.ships[t].boardBy = B.ships[n].owner || null; self.busyDirty = true; } return r; };
+    B.board = function(n, t, all, now) {
+      var tg = B.ships[t], tb = tg && tg.crew && tg.crew.board, going = !!(tg && (tg.inbound > 0 || (tb && tb.started && tb.over < 0)));
+      var r = board0.call(B, n, t, all, now);
+      // подкрепление не перехватывает трофей (кому он — решает captorOf по десанту на борту)
+      if (r && r.ok && tg) { if (!going || !tg.boardBy) tg.boardBy = B.ships[n].owner || null; self.busyDirty = true; }
+      return r;
+    };
     // захват: трофей — хозяину, чьих бойцов на борту больше (раньше — тому, кто последним нажал «Абордаж», SPACE-BUG-030)
     var capture0 = B.capture;
     B.capture = function(sh, side) { if (!sh.dead) { var who = self.captorOf(sh, side); if (who) sh.boardBy = who; } return capture0.call(B, sh, side); };
@@ -280,7 +286,7 @@ function bonOf(s) { return { hp: +s.bonus_hp || 0, sh: +s.bonus_shield || 0, for
 // Истребитель, стоящий на орбите сам по себе: в бою — малый корабль своего ближайшего крупного
 SystemRoom.prototype.addFree = function(s, type) {
   var B = this.B, self = this;
-  if (this.free[s.id]) return;
+  if (this.free[s.id] && !(this.free[s.id].dead && this.free[s.id].why === 'left')) return;   // ушла без своих кораблей рядом — может вернуться
   var kind = Army.CRAFT[s.ship_type]; if (!kind) return;
   var side = sideOf(s.faction), x = (s.x + 0.5) * CELL_M, y = (s.y + 0.5) * CELL_M, home = -1, bd = 1e18;
   B.ships.forEach(function(sh) {
@@ -559,7 +565,7 @@ SystemRoom.prototype.syncNow = function() {
     // погибший экипаж и целость отсеков — переживают закрытие орбиты (ships.rt_state, SPACE-BUG-021)
     var st = !sh.dead && !sh.dormant && SWCrew.stateOf ? SWCrew.stateOf(sh.crew, sh.lostOff || 0) : undefined, stK = st === undefined ? '-' : JSON.stringify(st);
     // на борту идёт абордаж — база не пустит в гиперпространство (снимок board, раз в 40 с продлевается; SPACE-BUG-019)
-    var bdS = sh.crew && sh.crew.board, boarded = !!(bdS && bdS.started && bdS.over < 0);
+    var bdS = sh.crew && sh.crew.board, boarded = !sh.dead && !!((bdS && bdS.started && bdS.over < 0) || sh.inbound > 0);   // и пока шаттлы летят
     var key = cx + ',' + cy + ',' + fc + ',' + hp + ',' + shv.join(',') + ',' + (fire ? 1 : 0) + ',' + (hbS ? hbS.n + ':' + Math.round(hbS.tb.until) : 0) + ',' +
               Math.round(mx / 20) + ',' + Math.round(my / 20) + ',' + Math.round(hd * 50) + ',' + stK + ',' + (boarded ? 'b' + Math.floor(B.t / 40) : '');
     var last = self.lastSync[sh.gameId];
@@ -632,6 +638,8 @@ SystemRoom.prototype.syncNow = function() {
       if (res && res.closed) { self.cfg.log('warn', 'орбита закрыта базой (сверка)', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
       ships.forEach(function(r) { self.okHp[r.id] = r.hp; });
       craft.forEach(function(r) { if (r.hp > 0) self.craftSeen[r.id] = r.hp; else delete self.craftSeen[r.id]; });
+      // записанная рана опускает предел: лечение в бою снова до неё, не выше (SPACE-BUG-029)
+      units.forEach(function(r) { if (r.hp > 0 && self.unitBase[r.id] != null) self.unitBase[r.id] = Math.min(self.unitBase[r.id], r.hp); });
       moved.forEach(function(uid) { self.dropHome(uid); });
       if (res && res.rep) self.applyRep(res.rep);
       if (captured.length) self.pullAt = 0;
@@ -692,6 +700,8 @@ SystemRoom.prototype.captorOf = function(sh, side) {
   var cnt = {}, best = null, bn = 0, ships = this.B.ships;
   (sh.crew.agents || []).forEach(function(a) {
     if (!a.alive || a.team !== side || !a.uid) return;
+    // хозяин записан на бойце при высадке (корабль-источник мог погибнуть); иначе — по трюмам
+    if (a.own) { cnt[a.own] = (cnt[a.own] || 0) + 1; return; }
     for (var i = 0; i < ships.length; i++) { var o = ships[i]; if (o === sh || !o.units || !o.owner) continue; if (o.units.some(function(u) { return u.id === a.uid; })) { cnt[o.owner] = (cnt[o.owner] || 0) + 1; break; } }
   });
   for (var k in cnt) if (cnt[k] > bn) { bn = cnt[k]; best = k; }

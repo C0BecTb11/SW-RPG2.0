@@ -221,10 +221,12 @@
   Viewer.prototype.boardLight = function(sh) {
     var bd = sh.crew.board;
     if (bd && bd.started && (bd.att === this.side || bd.def === this.side)) {
-      var su = bd.summary();
+      var su = bd.summary(), own = bd.att === this.side ? this.ownSq(bd) : null;
+      // отряды союзника в общем штурме — помечены (x): видны, но приказы им отдаёт он
+      var sqL = own ? su.sq.map(function(q) { var o = {}; for (var k in q) o[k] = q[k]; if (own.indexOf(q.id) < 0) o.x = 1; return o; }) : su.sq;
       return { over: bd.over, att: bd.att, def: bd.def, alarm: bd.alarm ? 1 : 0, alarmCd: r0(bd.alarmCd), bt: r1(bd.bridgeT), hn: bd.holdNeed, pr: r1(bd.prep || 0),
                ch: bd.charge ? { a: bd.charge.armed ? 1 : 0, l: r1(bd.charge.left), p: r1(bd.charge.plant), d: r1(bd.charge.defuse) } : null,
-               su: { att: su.att, def: su.def, crew: su.crew, sq: su.sq, dsq: bd.def === this.side ? su.dsq : [], dm: bd.defManual ? 1 : 0 }, held: this.heldList(bd), seq: bd.seq || 0,
+               su: { att: su.att, def: su.def, crew: su.crew, sq: sqL, dsq: bd.def === this.side ? su.dsq : [], dm: bd.defManual ? 1 : 0 }, held: this.heldList(bd), seq: bd.seq || 0,
                br: bd.bridge && bd.rs[bd.bridge] ? [bd.rs[bd.bridge].held ? 1 : 0, r1(bd.rs[bd.bridge].hold), bd.rs[bd.bridge].cnt[0], bd.rs[bd.bridge].cnt[1]] : null,
                pw: bd.canPlant(), vw: bd.canVent(this.side), t: r1(bd.t), msgs: this.newMsgs(sh, bd),
                // может ли этот игрок командовать: обороной — хозяин корабля, штурмом — хозяин корабля десанта (SPACE-BUG-006)
@@ -461,6 +463,20 @@
     for (var k in src) { var o = this.B.ships[k]; if (!o) continue; any = true; if (o.side === this.side && (!o.owner || o.owner === this.user)) return true; }
     return !any;
   };
+  // Отряды штурма этого игрока (null — все: «dev», без входа или десант ничей)
+  Viewer.prototype.ownSq = function(bd) {
+    if (!this.user || this.user === 'dev') return null;
+    var u = this.user, any = false, out = [];
+    (bd.squads || []).forEach(function(q) { if (q.own) any = true; if (q.own === u) out.push(q.id); });
+    return any ? out : null;
+  };
+  // Ведёт штурм: его бойцов на борту не меньше половины живых атакующих
+  Viewer.prototype.boardLead = function(bd) {
+    var own = this.ownSq(bd); if (!own) return true;
+    var mine = 0, all = 0, ag = bd.c.agents;
+    for (var i = 0; i < ag.length; i++) { var a = ag[i]; if (!a.alive || a.team !== bd.att) continue; all++; if (own.indexOf(a.sq) >= 0) mine++; }
+    return all > 0 && mine * 2 >= all;
+  };
   // Корабль под командой этого игрока: своей стороны и его (или ничей; «dev» — вся сторона)
   Viewer.prototype.ctl = function(sh) { return sh.side === this.side && (!sh.owner || !this.user || this.user === 'dev' || sh.owner === this.user); };
   // Приказ игрока: проверка, что корабль свой, и исполнение
@@ -489,17 +505,28 @@
     var t = B.ships[m.to | 0]; bd = t && t.crew.board;
     if (!bd || !bd.started || bd.over >= 0) return false;
     if (side === bd.def ? !this.ctl(t) : side === bd.att ? !this.boardCtl(bd) : true) return false;
+    // штурм: приказы — только своим отрядам и бойцам (подкрепление союзника не даёт власти над чужим десантом);
+    // заряд и продувка — у того, чьих бойцов на борту не меньше половины
+    var own = side === bd.att ? this.ownSq(bd) : null, sqs = function(list) {
+      var l = Array.isArray(list) ? list.slice(0, 32).map(Number) : null;
+      if (!own) return l;
+      l = l ? l.filter(function(id) { return own.indexOf(id) >= 0; }) : own.slice();
+      return l.length ? l : false;
+    }, ags = function(list) {
+      var l = Array.isArray(list) ? list.slice(0, 128) : [];
+      return own ? l.filter(function(id) { var a = t.crew.agents[id | 0]; return a && own.indexOf(a.sq) >= 0; }) : l;
+    }, q;
     switch (m.k) {
-      case 'border': return bd.order(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null, m.room | 0, m.cell != null ? m.cell | 0 : -1);
-      case 'plant': return bd.plant(side);
-      case 'vent': return bd.vent(side, m.room | 0);
+      case 'border': q = sqs(m.sq); return q !== false && bd.order(side, q, m.room | 0, m.cell != null ? m.cell | 0 : -1);
+      case 'plant': if (own && !this.boardLead(bd)) return false; return bd.plant(side);
+      case 'vent': if (own && !this.boardLead(bd)) return false; return bd.vent(side, m.room | 0);
       case 'alarm': if (bd.def !== side) return false; return bd.setAlarm(!!m.on);
-      case 'bauto': return bd.setAuto(side, Array.isArray(m.sq) ? m.sq.slice(0, 32).map(Number) : null);
+      case 'bauto': q = sqs(m.sq); return q !== false && bd.setAuto(side, q);
       case 'bassign': return bd.assignDef(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.sq | 0);
       case 'door': return bd.door(side, m.i | 0);
       case 'weld': return bd.weld(side, m.i | 0);
-      case 'bunits': return bd.orderUnits(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.cell | 0);
-      case 'bfocus': return bd.focusUnits(side, Array.isArray(m.ids) ? m.ids.slice(0, 128) : [], m.tgt | 0);
+      case 'bunits': return bd.orderUnits(side, ags(m.ids), m.cell | 0);
+      case 'bfocus': return bd.focusUnits(side, ags(m.ids), m.tgt | 0);
     }
     return false;
   };

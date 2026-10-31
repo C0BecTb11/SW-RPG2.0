@@ -1669,7 +1669,9 @@
     bd.inFlight = b.inbound;
     bd.defManual = this.defHuman ? !!this.defHuman(b) : !this.aiBoard[bd.def];   // оборона за игроком — отряды собирает он
     var sq = bd.addParty(c.party, c.lock, !this.aiBoard[c.side]);   // сторона за игроком — отряды ждут его приказов
-    if (sq) { sq.home = c.home; (bd.src = bd.src || {})[c.home] = 1; }   // откуда десант: приказы ему — хозяину того корабля
+    // откуда десант: приказы отряду — хозяину того корабля (own — и на бойцах: корабль-источник может погибнуть)
+    if (sq) { var hs = this.ships[c.home]; sq.home = c.home; sq.own = hs ? hs.owner || null : null; (bd.src = bd.src || {})[c.home] = 1;
+              for (var si = 0; si < sq.members.length; si++) { var sa = b.crew.agents[sq.members[si]]; if (sa) sa.own = sq.own; } }
     this.ev.boards.push({ dock: 1, n: c.home, t: b.n, count: c.party.length });
   };
   Battle.prototype.shuttleLost = function(c) {
@@ -1737,7 +1739,14 @@
     this.ev.kills.push({ ship: sh.n, side: sh.side, why: 'captured', by: side });
     // машины трофея — и в ангаре, и в воздухе: они переходят захватчику вместе с кораблём (в базе), прежняя сторона
     // ими больше не воюет (раньше летающие оставались у неё и раздваивались, SPACE-BUG-031)
-    for (var i = 0; i < this.craft.length; i++) { var cf = this.craft[i]; if (cf.home === sh.n && !cf.dead && cf.role !== 'shuttle') { cf.dead = true; cf.deadAt = this.t; cf.why = 'captured'; } }
+    for (var i = 0; i < this.craft.length; i++) { var cf = this.craft[i]; if (cf.home === sh.n && !cf.dead && cf.role !== 'shuttle' && cf.gameId == null) { cf.dead = true; cf.deadAt = this.t; cf.why = 'captured'; } }
+    // свободные истребители (свои строки в базе), приписанные к трофею, — к ближайшему живому кораблю своей стороны
+    for (i = 0; i < this.craft.length; i++) {
+      var fc = this.craft[i]; if (fc.home !== sh.n || fc.dead || fc.gameId == null) continue;
+      var nb = null, nd = 1e18;
+      for (var q = 0; q < this.ships.length; q++) { var o = this.ships[q]; if (o === sh || o.dead || o.side !== fc.side) continue; var dd = (o.x - fc.x) * (o.x - fc.x) + (o.y - fc.y) * (o.y - fc.y); if (dd < nd) { nd = dd; nb = o; } }
+      if (nb) fc.home = nb.n; else { fc.dead = true; fc.deadAt = this.t; fc.why = 'left'; }
+    }
     // десант, взявший мостик, возвращается на свои корабли (в базе он и не уходил из их трюмов), а не пропадает
     // до конца орбиты (SPACE-BUG-035); корабль-источник погиб — остаётся на трофее (база перенесла его туда)
     var ag = sh.crew.agents;
@@ -1749,7 +1758,8 @@
         if (!m) continue;
         if (!a.alive) { m.gone = false; m.alive = false; m.lost = true; a.uid = ''; break; }   // пал на штурме — гибель пишет свой корабль
         m.alive = true; m.gone = false; m.job = null; m.dsq = 0; m.hp = Math.max(1, Math.min(m.hpMax || a.hpMax || 100, a.hp)); var hs = h.crew.rooms[m.home]; if (hs) hs.assigned++;
-        h.crew.sendPost(m); a.alive = false; a.uid = '';
+        var hb = h.crew.board; if (hb && hb.started && hb.over < 0 && hb.def === side) { hb.toDefend(m); hb.makeDefSquads(); } else h.crew.sendPost(m);
+        a.alive = false; a.uid = '';
         break;
       }
     }

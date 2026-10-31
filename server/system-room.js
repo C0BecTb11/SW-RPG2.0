@@ -516,34 +516,40 @@ SystemRoom.prototype.wakeStep = function() {
     // Спящий корабль не стреляет — без этого флоты стояли бок о бок, пока игрок не отдаст приказ
     if (this.ctlHere(a) && B.aiFoe(a)) { B.wake(a); continue; }
     // рядом идёт бой (враг не спит и в дальности датчиков) — корабль просыпается и отвечает
-    var near = false;
-    for (j = 0; j < S.length && !near; j++) {
-      var b = S[j]; if (b.dead || b.dormant || b.side === a.side) continue;
-      var dx = a.x - b.x, dy = a.y - b.y;
-      if (dx * dx + dy * dy < WAKE_M * WAKE_M && this.hitAt[b.n] != null && B.t - this.hitAt[b.n] < FIRE_HOLD) near = true;
-    }
-    for (j = 0; j < B.craft.length && !near; j++) {
-      var cr = B.craft[j]; if (cr.dead || cr.idle || cr.side === a.side) continue;
-      var ex = a.x - cr.x, ey = a.y - cr.y;
-      if (ex * ex + ey * ey < WAKE_CRAFT_M * WAKE_CRAFT_M) near = true;
-    }
-    if (near) B.wake(a);
+    if (this.nearFight(a)) B.wake(a);
   }
   this.sleepStep(viewed);
+};
+// Рядом бой: враг под огнём в WAKE_M или чужие машины в WAKE_CRAFT_M (будит — и не даёт уснуть)
+SystemRoom.prototype.nearFight = function(a) {
+  var B = this.B, S = B.ships, j;
+  for (j = 0; j < S.length; j++) {
+    var b = S[j]; if (b.dead || b.dormant || b.side === a.side) continue;
+    var dx = a.x - b.x, dy = a.y - b.y;
+    if (dx * dx + dy * dy < WAKE_M * WAKE_M && this.hitAt[b.n] != null && B.t - this.hitAt[b.n] < FIRE_HOLD) return true;
+  }
+  for (j = 0; j < B.craft.length; j++) {
+    var cr = B.craft[j]; if (cr.dead || cr.idle || cr.side === a.side) continue;
+    var ex = a.x - cr.x, ey = a.y - cr.y;
+    if (ex * ex + ey * ey < WAKE_CRAFT_M * WAKE_CRAFT_M) return true;
+  }
+  return false;
 };
 // Обратный сон (SPACE-BUG-057): корабль, где SLEEP_S секунд ничего не происходит, снова спит — его экипаж больше не
 // считается каждый такт (на ~80 бодрствующих кораблях сервер переставал держать такт). Проснётся по тем же правилам
 var SLEEP_S = 60;
 SystemRoom.prototype.sleepStep = function(viewed) {
   var B = this.B, S = B.ships, self = this, i, j, look = {};
+  // сверка в пути — не усыплять и не отпускать: при её сбое откат вернул бы данные, которые спящий уже не напишет
+  if (this.syncFly > 0) return;
   this.clients.forEach(function(c) { var v = c.viewer; if (!v) return; if (v.view >= 0) look[v.view] = 1; if (v.sel >= 0) look[v.sel] = 1; if (v.foe >= 0) look[v.foe] = 1; });
   for (i = 0; i < S.length; i++) {
     var a = S[i];
     if (a.dead && (a.synced || a.why === 'left') && !a.released && B.t - (a.deadAt || 0) > SLEEP_S && !viewed[i] && !look[i]) { B.release(a); continue; }
     if (a.dead || a.dormant || a.pirate != null || viewed[i] || look[i] || a.order || a.foeT != null || a.inbound > 0 || a.tb || B.holder(a)) continue;
     if (B.t - (a.wokeAt || 0) < SLEEP_S || B.t - a.hurtT < SLEEP_S || (this.hitAt[i] != null && B.t - this.hitAt[i] < SLEEP_S)) continue;
-    var c = a.crew, bd = c.board;
-    if (bd && bd.over < 0) continue;                                                  // идёт абордаж
+    var c = a.crew;
+    if (c.board || this.nearFight(a)) continue;                                       // был абордаж (двери, турели) / рядом бой
     if ((c.burning && c.burning.length) || B.aiFoe(a)) continue;
     var busy = false;
     for (j = 0; j < B.craft.length && !busy; j++) { var cr = B.craft[j]; if (cr.home === i && !cr.dead && cr.gameId == null) busy = true; }      // крыло в воздухе
@@ -557,9 +563,9 @@ SystemRoom.prototype.sleepStep = function(viewed) {
         if (self.unitHp[ag.uid] !== v) busy = true;
       }
     }
-    // чинят или ещё будут чинить (экипаж берётся за отсеки ниже 95 %), горит
-    var crewUp = c.alive && c.alive() > 0;
-    for (j = 0; j < c.roomList.length && !busy; j++) { var rm = c.roomList[j]; if (rm.fixers > 0 || rm.fires > 0 || (crewUp && rm.integ < 95)) busy = true; }
+    // чинят или ещё будут чинить (экипаж берётся за отсеки ниже 95 %), горит; без экипажа — разбитое тоже не усыплять:
+    // спящий считает системы целыми
+    for (j = 0; j < c.roomList.length && !busy; j++) { var rm = c.roomList[j]; if (rm.fixers > 0 || rm.fires > 0 || rm.integ < 95) busy = true; }
     if (busy) continue;
     // экипаж и отсеки — в базе (строка корабля с st записана): ключ снимка тот же, что и сейчас
     var ls = this.lastSync[a.gameId]; if (a.gameId && (!ls || ls.stK !== JSON.stringify(SWCrew.stateOf(a.crew, a.lostOff || 0)))) continue;
@@ -717,8 +723,11 @@ SystemRoom.prototype.syncNow = function() {
   if (!ships.length && !craft.length && !units.length && !captured.length && !sendBusy) return Promise.resolve();
   var args = { p_battle: this.battleId, p_ships: ships, p_craft: craft, p_units: units, p_captured: captured };
   if (sendBusy) { args.p_busy = busy; this.busyK = busyK; }
+  this.syncFly = (this.syncFly || 0) + 1;
+  var fly = function() { self.syncFly = Math.max(0, self.syncFly - 1); };
   return this.rpc('rt_space_sync', args)
     .then(function(res) {
+      fly();
       if (res && res.closed) { self.cfg.log('warn', 'орбита закрыта базой (сверка)', { room: self.name }); self.closed = true; self.kick('Орбита закрыта'); return; }
       ships.forEach(function(r) { self.okHp[r.id] = r.hp; });
       craft.forEach(function(r) { if (r.hp > 0) self.craftSeen[r.id] = r.hp; else delete self.craftSeen[r.id]; });
@@ -729,6 +738,7 @@ SystemRoom.prototype.syncNow = function() {
       if (captured.length) self.pullAt = 0;
     })
     .catch(function(e) {
+      fly();
       self.cfg.log('error', 'rt_space_sync', { room: self.name, err: e.message });
       ships.forEach(function(r) { delete self.lastSync[r.id]; });
       rb.ships.forEach(function(sh) { sh.synced = false; });

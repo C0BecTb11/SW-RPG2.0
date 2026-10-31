@@ -186,7 +186,7 @@
     var pts = [[CAM.vw / 2, CAM.vh * 0.3], [CAM.vw * 0.25, CAM.vh * 0.5], [CAM.vw * 0.75, CAM.vh * 0.5]];
     for (var i = 0; i < pts.length; i++) {
       var el = document.elementFromPoint(pts[i][0], pts[i][1]);
-      if (!el || el === CV || el.tagName === 'CANVAS' || el.closest('#sp-bottom,#sp-toast,#sp-tr,#sp-tl,#sp-top,#sp-back,.sp-end,#credits-bar')) return false;
+      if (!el || el === CV || el.tagName === 'CANVAS' || el.closest('#sp-bottom,#sp-toast,#sp-tr,#sp-tl,#sp-top,#sp-back,.sp-end,#credits-bar,#sp-load,.sp-load')) return false;
     }
     return true;
   }
@@ -229,7 +229,7 @@
     for (var i = 0; i < B.ships.length; i++) {
       var s = B.ships[i];
       if (s.dormant || s.dead) { delete L[i]; continue; }
-      if ((G.mode === 'inside' && G.view === i) || G.sel === i || G.foe === i || (s.crew.board && s.crew.board.over < 0)) { L[i] = t; continue; }
+      if ((G.mode === 'inside' && G.view === i) || G.sel === i || G.foe === i || s.crew.board) { L[i] = t; continue; }   // был абордаж — сервер ещё шлёт его сводку
       if (L[i] == null) L[i] = t;
       else if (t - L[i] > 30000) { B.sleep(s); delete L[i]; if (G.net.M && G.net.M.agFull === i) G.net.M.agFull = -1; }   // снова внутрь — ждать полный кадр людей
     }

@@ -413,11 +413,11 @@
  },
  "shared/rt-space-net.js": {
   "v": "27",
-  "sha": "79d11a92af44"
+  "sha": "1cc95ca3fb31"
  },
  "shared/rt-space.js": {
   "v": "42",
-  "sha": "37fea2056660"
+  "sha": "5058227de1de"
  },
  "shared/rt-town.js": {
   "v": "3",
@@ -473,6 +473,6 @@
  },
  "space/space.js": {
   "v": "58",
-  "sha": "71fc8f56b3c0"
+  "sha": "8e4113914c22"
  }
 }

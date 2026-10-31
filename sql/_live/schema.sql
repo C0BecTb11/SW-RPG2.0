@@ -1655,7 +1655,7 @@ begin
   if not exists (
     select 1 from field_structures s join structure_types st on st.id = s.type_id
     where s.system_id = p_system and st.kind = 'camo'
-      and s.faction is distinct from v_me and s.completes_at <= now()
+      and s.faction is distinct from v_me and s.completes_at <= now() and s.hp > 0
   ) then
     return false;
   end if;
@@ -1678,7 +1678,7 @@ begin
   if not exists (
     select 1 from field_structures s join structure_types st on st.id = s.type_id
     where s.system_id = p_system and st.kind = 'camo' and s.faction = u.faction
-      and s.completes_at <= now()
+      and s.completes_at <= now() and s.hp > 0
       and boxes_overlap(p_x, p_y, u.w, u.h,
                         s.x - st.radius, s.y - st.radius, s.w + st.radius * 2, s.h + st.radius * 2)
   ) then
@@ -2043,26 +2043,36 @@ $$;
 CREATE FUNCTION public.capture_counts(p_system_id text) RETURNS TABLE(attackers integer, defenders integer, attacker_faction text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
-    AS $$
+    AS $_$
   with sys as (select faction from systems where id = p_system_id),
   units as (
-    select u.faction, count(*)::integer as n
+    select f.faction, count(*)::integer as n
     from unit_positions u
     join unit_types t on t.id = u.unit_type
+    -- порабощённый (бой 2.0, срок не вышел) — за хозяина: 0 — Республика, 1 — КНС, 2 — мародёры (не в счёт,
+    -- как в движке: ctl > 1 площадь не держит)
+    cross join lateral (
+      select case
+               when (u.rt_state -> 'mind' ->> 'until') ~ '^[0-9.]+$'
+                and (u.rt_state -> 'mind' ->> 'until')::numeric > extract(epoch from now())
+                and (u.rt_state -> 'mind' ->> 'by') in ('0', '1', '2')
+               then case (u.rt_state -> 'mind' ->> 'by') when '0' then 'republic' when '1' then 'cis' else 'marauder' end
+               else u.faction
+             end as faction) f
     where u.system_id = p_system_id
       and u.layer = 'ground'
       and u.hp > 0
       and u.x is not null
       and not t.is_vehicle
-      and u.faction in ('republic', 'cis')
+      and f.faction in ('republic', 'cis')
       and is_in_settlement_zone(u.x, u.y)
-    group by u.faction
+    group by f.faction
   )
   select
     coalesce((select n from units where faction is distinct from (select faction from sys)), 0),
     coalesce((select n from units where faction = (select faction from sys)), 0),
     (select faction from units where faction is distinct from (select faction from sys) order by n desc limit 1);
-$$;
+$_$;
 
 
 --
@@ -3067,6 +3077,10 @@ begin
     order by completes_at
     for update skip locked
   loop
+    -- боец заперт живым боем 2.0: здоровье считает бой, сторож отменил бы лечение — выдадим, когда отпустит
+    continue when o.kind = 'unit' and rt_obj_busy_2_0('unit', o.unit_id) is not null;
+    -- корабль в бою 2.0: из рук игрока сторож не пустит и откатит весь вызов — заказ выдаст cron
+    continue when o.kind in ('ship', 'refit') and auth.uid() is not null and rt_obj_busy_2_0('ship', o.ship_id) is not null;
     if o.kind = 'unit' then
       update unit_positions u
       set hp = least(t.max_hp + u.bonus_hp, u.hp + coalesce(o.heal_amount, t.max_hp + u.bonus_hp))
@@ -3080,7 +3094,8 @@ begin
                       then least(t.max_hp + sh.bonus_hp, sh.hp + coalesce(o.heal_amount, t.max_hp + sh.bonus_hp))
                     else t.max_hp + sh.bonus_hp end,
           trophy = case when sh.id = o.ship_id then false else sh.trophy end,
-          jump_lock_until = case when sh.id = o.ship_id then null else sh.jump_lock_until end
+          jump_lock_until = case when sh.id = o.ship_id then null else sh.jump_lock_until end,
+          rt_state = case when sh.id = o.ship_id and sh.hp + coalesce(o.heal_amount, t.max_hp + sh.bonus_hp) >= t.max_hp + sh.bonus_hp then null else sh.rt_state end
       from ship_types t
       where t.id = sh.ship_type
         and (sh.id = o.ship_id or sh.carrier_ship_id = o.ship_id);
@@ -3517,6 +3532,7 @@ begin
   where fs.id = p_id for update of fs;
   if not found then raise exception 'Укрепление не найдено'; end if;
   if s.owner_user_id is distinct from v_user then raise exception 'Разобрать может только тот, кто строил'; end if;
+  perform assert_planet_operational(s.system_id);
 
   v_max := greatest(1, coalesce(s.max_hp, 1));
   v_hp := greatest(0, least(coalesce(s.hp, 0), v_max));
@@ -4678,6 +4694,10 @@ begin
     perform log_event(new.owner_user_id, new.faction, new.system_id,
                       'unit_deployed', new.unit_type, 1, 'private', jsonb_build_object('unit_id', new.id, 'x', new.x, 'y', new.y));
   else
+    -- гибель в бою 2.0: строку в журнал уже записал rt_ground_sync
+    if coalesce(current_setting('app.rt_gone', true), '') = old.id::text then
+      return null;
+    end if;
     -- Удаление юнита — это и гибель, и погрузка обратно в трюм.
     -- Различаем по прочности: у погруженного она осталась.
     if old.hp > 0 and old.carrier_ship_id is null then
@@ -9115,7 +9135,7 @@ CREATE FUNCTION public.is_ground_box_free(p_system_id text, p_x integer, p_y int
     )
     and not exists (
       select 1 from field_structures s
-      where s.system_id = p_system_id
+      where s.system_id = p_system_id and s.hp > 0
         and p_x < s.x + s.w and p_x + p_w > s.x
         and p_y < s.y + s.h and p_y + p_h > s.y
     )
@@ -10358,7 +10378,7 @@ declare
   s record; st record; v_used integer; v_need integer; v_ids uuid[];
 begin
   if v_user is null then raise exception 'Не авторизован'; end if;
-  if p_quantity < 1 then raise exception 'Некорректное количество'; end if;
+  if p_quantity is null or p_quantity < 1 then raise exception 'Некорректное количество'; end if;
 
   select * into s from ships where id = p_ship_id for update;
   if not found then raise exception 'Корабль не найден'; end if;
@@ -10383,7 +10403,7 @@ begin
     select u.id
     from unit_positions u
     where u.system_id = s.system_id and u.layer = 'ground'
-      and u.owner_user_id = v_user and u.unit_type = p_unit_type and u.x is not null
+      and u.owner_user_id = v_user and u.unit_type = p_unit_type and u.x is not null and u.hp > 0
       and is_in_deploy_zone(u.system_id, u.x, u.y)
     order by coalesce(cardinality(u.upgrades), 0) desc, u.hp desc, u.id
     limit p_quantity
@@ -10500,6 +10520,8 @@ begin
   if not found then raise exception 'Юнит не найден'; end if;
   if u.owner_user_id <> v_user then raise exception 'Это не твой юнит'; end if;
   if u.x is null then raise exception 'Юнит уже погружен'; end if;
+  if u.layer <> 'ground' then raise exception 'Грузить можно только с поверхности'; end if;
+  if u.hp <= 0 then raise exception 'Юнит уничтожен'; end if;
 
   select * into ut from unit_types where id = u.unit_type;
   if not (ut.is_vehicle or ut.is_hero) then raise exception 'Для пехоты используется обычная погрузка'; end if;
@@ -14332,6 +14354,7 @@ begin
     from npc_brains b
     join unit_positions u on u.id = b.unit_id
     where u.layer = 'ground' and u.x is not null and u.hp > 0
+      and rt_ground_battle(u.system_id) is null          -- живую планету ведёт бой 2.0
     order by b.kind desc, b.created_at, b.unit_id
   loop
     begin
@@ -15077,7 +15100,7 @@ CREATE FUNCTION public.radar_covers(p_system text, p_faction text, p_x integer, 
   select p_faction is not null and p_x is not null and exists (
     select 1 from field_structures s join structure_types st on st.id = s.type_id
     where s.system_id = p_system and st.kind = 'radar' and s.faction = p_faction
-      and s.completes_at <= now()
+      and s.completes_at <= now() and s.hp > 0
       and box_gap(p_x, p_y, p_w, p_h, s.x, s.y, s.w, s.h) <= st.radius);
 $$;
 
@@ -16429,6 +16452,20 @@ begin
      or coalesce(current_setting('app.capture_transfer', true), '') = '1' then
     return case when tg_op = 'UPDATE' then new else old end;
   end if;
+  -- боец трюма дерётся на орбите (абордаж, оборона, шаттл, сборы у шлюза — rt_battles.snapshot.busy): не высадить,
+  -- не перевести, не распустить — иначе он воевал бы и в космосе, и на земле (SPACE-BUG-014)
+  -- поля бойца читаются только для бойцов: у строки корабля их нет (plpgsql берёт все поля выражения сразу)
+  if k = 'unit' then
+  if auth.uid() is not null and old.carrier_ship_id is not null
+     and (tg_op = 'DELETE' or new.carrier_ship_id is distinct from old.carrier_ship_id or new.carrier_unit_id is distinct from old.carrier_unit_id
+          or new.owner_user_id is distinct from old.owner_user_id or new.layer is distinct from old.layer)
+     and exists (select 1 from rt_battle_locks l join rt_battles b on b.id = l.battle_id
+                  where l.obj_kind = 'ship' and l.obj_id = old.carrier_ship_id and b.kind = 'space' and b.status = 'active'
+                    and b.heartbeat_at > now() - interval '90 seconds' and coalesce(b.snapshot->'busy', '[]'::jsonb) ? old.id::text) then
+    raise exception 'Отряд сейчас дерётся на орбите — высадить или перевести его можно, когда стычка кончится'
+      using errcode = 'P0001', hint = 'rt_busy';
+  end if;
+  end if;
   select l.battle_id into bid from rt_battle_locks l where l.obj_kind = k and l.obj_id = old.id;
   if bid is null then
     return case when tg_op = 'UPDATE' then new else old end;
@@ -16445,6 +16482,11 @@ begin
       select (b.snapshot->'held'->>old.id::text)::timestamptz into fire_at from rt_battles b where b.id = bid;
       if fire_at is not null and fire_at > now() then
         raise exception 'Корабль «%» в притягивающем луче — в гиперпространство не уйти',
+          coalesce(old.name, (select t.name from ship_types t where t.id = old.ship_type), '') using errcode = 'P0001', hint = 'rt_busy';
+      end if;
+      select (b.snapshot->'board'->>old.id::text)::timestamptz into fire_at from rt_battles b where b.id = bid;
+      if fire_at is not null and fire_at > now() then
+        raise exception 'Корабль «%» под абордажем — в гиперпространство не уйти',
           coalesce(old.name, (select t.name from ship_types t where t.id = old.ship_type), '') using errcode = 'P0001', hint = 'rt_busy';
       end if;
       return new;
@@ -16558,6 +16600,29 @@ begin
   return rid;
 end;
 $$;
+
+
+--
+-- Name: rt_can_open(text, text, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rt_can_open(p_key text, p_system text, p_user uuid, p_layer text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+declare v_fac text;
+begin
+  perform rt_need_key(p_key);
+  select faction into v_fac from profiles where id = p_user;
+  if v_fac is null or v_fac not in ('republic', 'cis') then return false; end if;
+  if exists (select 1 from systems s where s.id = p_system and s.faction = v_fac) then return true; end if;
+  if exists (select 1 from system_control sc where sc.system_id = p_system and sc.controller_user_id = p_user) then return true; end if;
+  if p_layer = 'ground' and exists (select 1 from unit_positions u
+       where u.system_id = p_system and u.owner_user_id = p_user and u.layer = 'ground' and u.x is not null and u.hp > 0) then
+    return true;
+  end if;
+  return exists (select 1 from ships s where s.system_id = p_system and s.owner_user_id = p_user and not s.in_transit and s.hp > 0);
+end $$;
 
 
 --
@@ -16738,10 +16803,13 @@ CREATE FUNCTION public.rt_ground_close(p_key text, p_battle uuid, p_result jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
+declare v_ok boolean;
 begin
   perform rt_need_key(p_key);
   update rt_battles set status = 'finished', ended_at = now(), result = p_result where id = p_battle and status = 'active';
-  return found;
+  v_ok := found;
+  delete from rt_battle_locks where battle_id = p_battle;
+  return v_ok;
 end;
 $$;
 
@@ -16823,6 +16891,8 @@ begin
   if bid is null then
     update rt_battles set status = 'aborted', ended_at = now()
      where kind = 'ground' and system_id = p_system and status = 'active';
+    delete from rt_battle_locks l using rt_battles b
+     where b.id = l.battle_id and b.kind = 'ground' and b.system_id = p_system and b.status <> 'active';
     insert into rt_battles (kind, system_id, meta) values ('ground', p_system, jsonb_build_object('opened', now()))
     returning id into bid;
   end if;
@@ -16921,6 +16991,7 @@ CREATE FUNCTION public.rt_ground_sync(p_key text, p_battle uuid, p_units jsonb D
     AS $$
 declare
   n_u integer := 0; n_s integer := 0; n_d integer := 0; n_k integer := 0; n_b integer := 0; v_wait uuid[] := '{}';
+  v_sys text; v_dead uuid[] := '{}';
   r record;
   rl record;
   fire jsonb;
@@ -16928,43 +16999,71 @@ begin
   perform rt_need_key(p_key);
   perform set_config('app.rt_battle', '1', true);
 
+  -- писать можно только в живой бой и только по его планете (BUG-058)
+  select b.system_id into v_sys from rt_battles b where b.id = p_battle and b.kind = 'ground' and b.status = 'active';
+  if v_sys is null then
+    return jsonb_build_object('closed', true);
+  end if;
+
   -- погибшие: как в attack_unit — убийство герою, строка с карты долой. Первыми: клетка павшего
-  -- свободна для живых в этом же пакете
+  -- свободна для живых в этом же пакете. Сначала все засчёты — пока строки убийц на месте
+  -- (герой-убийца мог пасть в этой же сверке, BUG-059), потом удаление
   for r in
-    select (x->>'id')::uuid as id, nullif(x->>'by', '')::uuid as killer
+    select (x->>'id')::uuid as id, nullif(x->>'by', '')::uuid as killer, coalesce((x->>'board')::boolean, false) as board
     from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x
     where coalesce((x->>'hp')::integer, 0) <= 0
   loop
+    continue when r.id = any(v_dead);
     if not exists (select 1 from rt_battle_locks l where l.obj_kind = 'unit' and l.obj_id = r.id and l.battle_id = p_battle) then
       continue;
     end if;
-    -- уже не на земле (в пути, на борту): запоздавшая гибель не стирает бойца
-    if not exists (select 1 from unit_positions t where t.id = r.id and t.x is not null and t.transit_to is null and t.carrier_ship_id is null) then
+    -- уже не на земле этой планеты (в пути, на борту): запоздавшая гибель не стирает бойца.
+    -- Кроме board: пал, пока база грузила его на борт, — это комната знает точно (BUG-060)
+    if not exists (select 1 from unit_positions t where t.id = r.id and t.system_id = v_sys and t.transit_to is null
+                     and ((t.x is not null and t.carrier_ship_id is null) or (r.board and t.carrier_ship_id is not null))) then
       continue;
     end if;
+    v_dead := v_dead || r.id;
     if r.killer is not null then
       perform record_hero_kill(r.killer, t.unit_type, t.faction, t.owner_user_id, t.system_id)
         from unit_positions t where t.id = r.id;
     end if;
+  end loop;
+
+  -- в журнал — «погиб» (строка удаляется с живым hp, и триггер записал бы «погружен», BUG-054);
+  -- мародёр, ушедший с карты, без хозяина — ему журнала нет
+  for r in
+    select t.id, t.owner_user_id, t.faction, t.unit_type, t.x, t.y
+    from unit_positions t where t.id = any(v_dead)
+  loop
+    perform log_event(r.owner_user_id, r.faction, v_sys, 'unit_killed', r.unit_type, 1, 'private',
+                      jsonb_build_object('x', r.x, 'y', r.y, 'rt', true));
+    perform set_config('app.rt_gone', r.id::text, true);
     delete from unit_positions where id = r.id;
     delete from rt_battle_locks where obj_kind = 'unit' and obj_id = r.id;
     n_d := n_d + 1;
   end loop;
+  perform set_config('app.rt_gone', '', true);
 
   -- живые: клетка и прочность (только бойцы этого боя). По одному бойцу: в базе на клетку один
   -- боец (idx_unit_positions_cell), а в живом бою двое стоят в одной клетке или меняются местами —
   -- общий запрос падал целиком, и ни позиции, ни здоровье, ни погибшие не записывались.
   -- Клетка занята — второй заход после остальных (цепочки и обмены местами); всё ещё занята —
   -- боец остаётся в прежней клетке до следующей сверки, здоровье пишется всегда.
+  -- Прочность — не выше предела бойца (BUG-058). st — откаты героя и порабощение в секундах эпохи
+  -- (unit_positions.rt_state, BUG-018): есть в строке — записать (null — стереть)
   for rl in
-    select (x->>'id')::uuid as id, (x->>'x')::integer as x, (x->>'y')::integer as y, (x->>'hp')::integer as hp
+    select (x->>'id')::uuid as id, (x->>'x')::integer as x, (x->>'y')::integer as y, (x->>'hp')::integer as hp,
+           x ? 'st' as has_st, nullif(x->'st', 'null'::jsonb) as st
     from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x
     join rt_battle_locks l on l.obj_kind = 'unit' and l.obj_id = (x->>'id')::uuid and l.battle_id = p_battle
     where coalesce((x->>'hp')::integer, 0) > 0
   loop
     begin
-      update unit_positions u set x = rl.x, y = rl.y, hp = rl.hp, updated_at = now()
-       where u.id = rl.id and u.layer = 'ground' and u.x is not null;
+      update unit_positions u set x = rl.x, y = rl.y, hp = least(rl.hp, coalesce(t.max_hp + coalesce(u.bonus_hp, 0), rl.hp)),
+          rt_state = case when rl.has_st then rl.st else u.rt_state end, updated_at = now()
+        from unit_types t
+       where u.id = rl.id and t.id = u.unit_type and u.system_id = v_sys and u.layer = 'ground' and u.x is not null;
       get diagnostics n_k = row_count; n_u := n_u + n_k;
     exception when unique_violation then
       v_wait := v_wait || rl.id;
@@ -16972,27 +17071,44 @@ begin
   end loop;
   if array_length(v_wait, 1) > 0 then
     for rl in
-      select (x->>'id')::uuid as id, (x->>'x')::integer as x, (x->>'y')::integer as y, (x->>'hp')::integer as hp
+      select (x->>'id')::uuid as id, (x->>'x')::integer as x, (x->>'y')::integer as y, (x->>'hp')::integer as hp,
+             x ? 'st' as has_st, nullif(x->'st', 'null'::jsonb) as st
       from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x
       where (x->>'id')::uuid = any(v_wait)
     loop
       begin
-        update unit_positions u set x = rl.x, y = rl.y, hp = rl.hp, updated_at = now()
-         where u.id = rl.id and u.layer = 'ground' and u.x is not null;
+        update unit_positions u set x = rl.x, y = rl.y, hp = least(rl.hp, coalesce(t.max_hp + coalesce(u.bonus_hp, 0), rl.hp)),
+          rt_state = case when rl.has_st then rl.st else u.rt_state end, updated_at = now()
+          from unit_types t
+         where u.id = rl.id and t.id = u.unit_type and u.system_id = v_sys and u.layer = 'ground' and u.x is not null;
         get diagnostics n_k = row_count; n_u := n_u + n_k;
       exception when unique_violation then
-        update unit_positions u set hp = rl.hp, updated_at = now()
-         where u.id = rl.id and u.layer = 'ground' and u.x is not null;
+        update unit_positions u set hp = least(rl.hp, coalesce(t.max_hp + coalesce(u.bonus_hp, 0), rl.hp)),
+          rt_state = case when rl.has_st then rl.st else u.rt_state end, updated_at = now()
+          from unit_types t
+         where u.id = rl.id and t.id = u.unit_type and u.system_id = v_sys and u.layer = 'ground' and u.x is not null;
         get diagnostics n_k = row_count; n_u := n_u + n_k; n_b := n_b + n_k;
       end;
     end loop;
   end if;
 
+  -- постройки: только этой планеты и не выше предела типа (BUG-058)
   with rows as (
-    select (x->>'id')::uuid as id, greatest(0, (x->>'hp')::integer) as hp
+    select distinct on ((x->>'id')::uuid) (x->>'id')::uuid as id, greatest(0, (x->>'hp')::integer) as hp
     from jsonb_array_elements(coalesce(p_structs, '[]'::jsonb)) x)
-  update field_structures f set hp = rows.hp from rows where f.id = rows.id;
+  update field_structures f set hp = least(rows.hp, greatest(1, coalesce(st.max_hp, rows.hp)))
+    from rows, structure_types st
+   where f.id = rows.id and st.id = f.type_id and f.system_id = v_sys;
   get diagnostics n_s = row_count;
+
+  -- разбитые в бою — долой с карты: место, предел построек, выплаты, обзор и стрельба (BUG-052).
+  -- Сработавшие мины (тоже hp 0) убирает structures_tick
+  for r in
+    select f.id from field_structures f join structure_types st on st.id = f.type_id
+    where f.system_id = v_sys and f.hp <= 0 and st.kind <> 'landmine'
+  loop
+    perform destroy_structure(r.id, null);
+  end loop;
 
   -- кто под огнём (rt_battle_guard: погрузка на корабль и его уход закрыты 30 с после попадания)
   select coalesce(jsonb_object_agg(x->>'id', to_jsonb(now())), '{}'::jsonb) into fire
@@ -17030,6 +17146,7 @@ CREATE FUNCTION public.rt_ground_units(p_system text) RETURNS jsonb
                  from researches r where r.id = any(coalesce(u.upgrades, '{}')) and r.effect_kind like 'ability\_%'),
     'training', u.training_until is not null and u.training_until > now(),
     'carrier', u.carrier_unit_id,
+    'rt', u.rt_state,
     'updated', u.updated_at
   ) order by u.id), '[]'::jsonb)
   from unit_positions u
@@ -17106,17 +17223,21 @@ CREATE FUNCTION public.rt_obj_busy_2_0(p_kind text, p_id uuid) RETURNS uuid
   from rt_battle_locks l join rt_battles b on b.id = l.battle_id
   where l.obj_kind = p_kind and l.obj_id = p_id
     and b.status = 'active' and b.heartbeat_at > now() - interval '90 seconds'
-    -- корабль ушёл из системы боя (гиперпространство, другая система) — замок уже не его
+    -- корабль ушёл из системы боя (гиперпространство, другая система) — замок уже не его;
+    -- машина ангара — по носителю: носитель ушёл, и она с ним (SPACE-BUG-023)
     and (p_kind <> 'ship' or not exists (
           select 1 from ships s
            where s.id = p_id
              and (coalesce(s.in_transit, false)
-                  or (s.carrier_ship_id is null and s.system_id is distinct from b.system_id))))
-    -- боец в пути (разведчик) или уже не на планете боя — замок тоже не его
+                  or (s.carrier_ship_id is null and s.system_id is distinct from b.system_id)
+                  or (s.carrier_ship_id is not null and exists (
+                        select 1 from ships c where c.id = s.carrier_ship_id
+                           and (coalesce(c.in_transit, false) or c.system_id is distinct from b.system_id))))))
+    -- боец в пути (разведчик), в трюме корабля или уже не на планете боя — замок тоже не его
     and (p_kind <> 'unit' or not exists (
           select 1 from unit_positions u
            where u.id = p_id
-             and (u.transit_to is not null or u.system_id is distinct from b.system_id)))
+             and (u.transit_to is not null or u.carrier_ship_id is not null or u.system_id is distinct from b.system_id)))
   limit 1;
 $$;
 
@@ -17178,10 +17299,13 @@ CREATE FUNCTION public.rt_space_close(p_key text, p_battle uuid, p_result jsonb 
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
+declare v boolean;
 begin
   perform rt_need_key(p_key);
   update rt_battles set status = 'finished', ended_at = now(), result = p_result where id = p_battle and status = 'active';
-  return found;
+  v := found;
+  delete from rt_battle_locks where battle_id = p_battle;
+  return v;
 end;
 $$;
 
@@ -17197,11 +17321,13 @@ CREATE FUNCTION public.rt_space_lock(p_battle uuid, p_system text) RETURNS integ
 declare
   n integer;
 begin
-  insert into rt_battle_locks (obj_kind, obj_id, battle_id)
-  select 'ship', s.id, p_battle from ships s
+  -- только недостающие и чужие (другого боя): раньше каждый pull (5 с) переписывал все замки системы
+  insert into rt_battle_locks (obj_kind, obj_id, battle_id, hp_sync)
+  select 'ship', s.id, p_battle, s.hp from ships s
    where (s.system_id = p_system and not coalesce(s.in_transit, false) and s.carrier_ship_id is null)
       or s.carrier_ship_id in (select c.id from ships c where c.system_id = p_system and not coalesce(c.in_transit, false) and c.carrier_ship_id is null)
-  on conflict (obj_kind, obj_id) do update set battle_id = excluded.battle_id, locked_at = now();
+  on conflict (obj_kind, obj_id) do update set battle_id = excluded.battle_id, locked_at = now(), hp_sync = excluded.hp_sync
+   where rt_battle_locks.battle_id is distinct from excluded.battle_id;
   get diagnostics n = row_count;
   return n;
 end;
@@ -17232,6 +17358,9 @@ begin
   else
     update rt_battles set heartbeat_at = now() where id = bid;
   end if;
+  -- замки прошлых (закрытых) орбит этой системы — вон
+  delete from rt_battle_locks l using rt_battles b
+   where b.id = l.battle_id and b.kind = 'space' and b.system_id = p_system and b.status <> 'active';
   perform rt_space_lock(bid, p_system);
   update auto_moves set status = 'stopped', stop_reason = 'бой 2.0', updated_at = now()
    where system_id = p_system and layer = 'space' and status = 'active';
@@ -17273,6 +17402,7 @@ CREATE FUNCTION public.rt_space_posts(p_key text, p_battle uuid, p_ships jsonb D
 declare n integer := 0;
 begin
   perform rt_need_key(p_key);
+  if not exists (select 1 from rt_battles b where b.id = p_battle and b.kind = 'space' and b.status = 'active') then return 0; end if;
   perform set_config('app.rt_battle', '1', true);
   with rows as (
     select (x->>'id')::uuid as id, case when jsonb_typeof(x->'posts') = 'object' and x->'posts' <> '{}'::jsonb then x->'posts' end as posts
@@ -17326,14 +17456,16 @@ CREATE FUNCTION public.rt_space_ships(p_system text) RETURNS jsonb
     'bonus_hp', s.bonus_hp, 'bonus_shield', s.bonus_shield, 'bonus_fore', s.bonus_fore, 'bonus_damage', s.bonus_damage,
     'bonus_vision', s.bonus_vision, 'bonus_move', s.bonus_move, 'bonus_hangar', s.bonus_hangar, 'bonus_capacity', s.bonus_capacity,
     'upgrades', to_jsonb(coalesce(s.upgrades, '{}'::text[])), 'commander_id', s.commander_id, 'jump_lock_until', s.jump_lock_until,
-    'troop_posts', s.troop_posts,
+    'troop_posts', s.troop_posts, 'rt_state', s.rt_state,
     'rt_pose', case when s.rt_x is not null and s.rt_y is not null and s.rt_hd is not null then jsonb_build_array(s.rt_x, s.rt_y, s.rt_hd) end,
     'craft', (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'ship_type', f.ship_type, 'hp', f.hp, 'carrier_ship_id', f.carrier_ship_id, 'owner_user_id', f.owner_user_id, 'faction', f.faction) order by f.created_at), '[]'::jsonb)
                 from ships f where f.carrier_ship_id = s.id and f.hp > 0),
     'units', (select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'unit_type', u.unit_type, 'quantity', u.quantity, 'hp', u.hp,
                        'bonus_hp', u.bonus_hp, 'bonus_damage', u.bonus_damage, 'hero_name', u.hero_name, 'hero_id', u.hero_id,
                        'portrait', u.portrait, 'owner_user_id', u.owner_user_id, 'carrier_ship_id', u.carrier_ship_id)), '[]'::jsonb)
-                from unit_positions u where u.carrier_ship_id = s.id and u.carrier_unit_id is null and u.hp > 0)
+                -- чужой десант, застрявший на борту (орбиту закрыли посреди абордажа), — не экипаж этого корабля
+                from unit_positions u where u.carrier_ship_id = s.id and u.carrier_unit_id is null and u.hp > 0
+                  and u.faction is not distinct from s.faction)
   ) order by s.created_at), '[]'::jsonb)
   from ships s
   where s.system_id = p_system and not coalesce(s.in_transit, false) and s.carrier_ship_id is null and s.hp > 0;
@@ -17387,60 +17519,119 @@ $$;
 
 
 --
--- Name: rt_space_sync(text, uuid, jsonb, jsonb, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+-- Name: rt_space_sync(text, uuid, jsonb, jsonb, jsonb, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.rt_space_sync(p_key text, p_battle uuid, p_ships jsonb DEFAULT '[]'::jsonb, p_craft jsonb DEFAULT '[]'::jsonb, p_units jsonb DEFAULT '[]'::jsonb, p_captured jsonb DEFAULT '[]'::jsonb) RETURNS jsonb
+CREATE FUNCTION public.rt_space_sync(p_key text, p_battle uuid, p_ships jsonb DEFAULT '[]'::jsonb, p_craft jsonb DEFAULT '[]'::jsonb, p_units jsonb DEFAULT '[]'::jsonb, p_captured jsonb DEFAULT '[]'::jsonb, p_busy jsonb DEFAULT NULL::jsonb) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 declare
-  n_s integer := 0; n_c integer := 0; n_u integer := 0; n_t integer := 0; n_d integer := 0;
+  n_s integer := 0; n_c integer := 0; n_u integer := 0; n_t integer := 0; n_d integer := 0; n_m integer := 0;
   r record;
   v_max integer;
+  v_old uuid; v_oldf text; v_type text; v_half integer; o record;
+  brd jsonb; brd_off text[];
+  v_sys text;
+  rep jsonb := '{}'::jsonb; rep2 jsonb;
   fire jsonb;
   held jsonb; held_off text[];
 begin
   perform rt_need_key(p_key);
+  -- бой закрыт — ничего не пишем, сервер узнаёт из ответа (как rt_ground_sync)
+  select b.system_id into v_sys from rt_battles b where b.id = p_battle and b.kind = 'space' and b.status = 'active';
+  if v_sys is null then return jsonb_build_object('closed', true); end if;
   perform set_config('app.rt_battle', '1', true);
 
-  -- живые корабли: клетка, разворот, корпус, щиты
+  -- живые корабли: клетка, разворот, корпус (+ ремонт в доке сверх записанного боем), щиты, состояние экипажа
   with rows as (
     select (x->>'id')::uuid as id, (x->>'x')::integer as x, (x->>'y')::integer as y, (x->>'facing')::integer as facing,
-           greatest(0, (x->>'hp')::integer) as hp,
+           greatest(1, (x->>'hp')::integer) as hp,
            greatest(0, (x->'sh'->>0)::integer) as sf, greatest(0, (x->'sh'->>1)::integer) as ss,
            greatest(0, (x->'sh'->>2)::integer) as sa, greatest(0, (x->'sh'->>3)::integer) as sp,
-           (x->>'mx')::double precision as mx, (x->>'my')::double precision as my, (x->>'hd')::double precision as hd
+           (x->>'mx')::double precision as mx, (x->>'my')::double precision as my, (x->>'hd')::double precision as hd,
+           x ? 'st' as has_st, case when jsonb_typeof(x->'st') = 'object' then x->'st' end as st,
+           (x->>'seen')::integer as seen
     from jsonb_array_elements(coalesce(p_ships, '[]'::jsonb)) x
-    where coalesce((x->>'hp')::integer, 0) > 0)
-  update ships s
-     set x = coalesce(rows.x, s.x), y = coalesce(rows.y, s.y), facing = coalesce(rows.facing, s.facing), hp = rows.hp,
-         shield_fore = rows.sf, shield_starboard = rows.ss, shield_aft = rows.sa, shield_port = rows.sp, shields_updated_at = now(),
-         rt_x = rows.mx, rt_y = rows.my, rt_hd = rows.hd
-    from rows join rt_battle_locks l on l.obj_kind = 'ship' and l.obj_id = rows.id and l.battle_id = p_battle
-   where s.id = rows.id and not coalesce(s.in_transit, false)
-     and s.system_id = (select b.system_id from rt_battles b where b.id = p_battle);
-  get diagnostics n_s = row_count;
-
-  -- машины ангара и истребители на орбите
-  with rows as (
-    select (x->>'id')::uuid as id, greatest(0, (x->>'hp')::integer) as hp
-    from jsonb_array_elements(coalesce(p_craft, '[]'::jsonb)) x
-    where coalesce((x->>'hp')::integer, 0) > 0)
-  update ships f set hp = rows.hp
-    from rows join rt_battle_locks l on l.obj_kind = 'ship' and l.obj_id = rows.id and l.battle_id = p_battle
-   where f.id = rows.id;
-  get diagnostics n_c = row_count;
-
-  -- бойцы на борту
-  with rows as (
-    select (x->>'id')::uuid as id, greatest(0, (x->>'hp')::integer) as hp
-    from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x
-    where coalesce((x->>'hp')::integer, 0) > 0)
-  update unit_positions u set hp = rows.hp, updated_at = now()
+    where coalesce((x->>'hp')::integer, 0) > 0),
+  calc as (
+    select rows.*, t.max_hp + coalesce(s.bonus_hp, 0) as mhp, t.max_shield + coalesce(s.bonus_shield, 0) as msh, coalesce(s.bonus_fore, 0) as mfore,
+           -- ремонт — сверх записанного боем и сверх того, что бой уже принял из базы (seen): иначе подхваченный
+           -- через pull ремонт прибавлялся второй раз
+           greatest(0, s.hp - greatest(coalesce(l.hp_sync, s.hp), coalesce(rows.seen, 0))) as rep_d
     from rows
-   where u.id = rows.id and u.carrier_ship_id is not null
-     and exists (select 1 from rt_battle_locks l where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle);
+    join rt_battle_locks l on l.obj_kind = 'ship' and l.obj_id = rows.id and l.battle_id = p_battle
+    join ships s on s.id = rows.id join ship_types t on t.id = s.ship_type
+    where not coalesce(s.in_transit, false) and s.system_id = v_sys and s.carrier_ship_id is null),
+  upd as (
+    update ships s
+       set x = coalesce(calc.x, s.x), y = coalesce(calc.y, s.y), facing = coalesce(calc.facing, s.facing),
+           hp = least(calc.mhp, calc.hp + calc.rep_d),
+           shield_fore = least(calc.sf, calc.msh + calc.mfore), shield_starboard = least(calc.ss, calc.msh),
+           shield_aft = least(calc.sa, calc.msh), shield_port = least(calc.sp, calc.msh), shields_updated_at = now(),
+           rt_x = calc.mx, rt_y = calc.my, rt_hd = calc.hd,
+           rt_state = case when calc.has_st then calc.st else s.rt_state end
+      from calc where s.id = calc.id
+    returning s.id, s.hp, calc.rep_d),
+  lk as (
+    update rt_battle_locks l set hp_sync = upd.hp from upd
+     where l.obj_kind = 'ship' and l.obj_id = upd.id and l.battle_id = p_battle
+    returning upd.id, upd.hp, upd.rep_d)
+  select count(*), coalesce(jsonb_object_agg(id::text, hp) filter (where rep_d > 0), '{}'::jsonb) into n_s, rep2 from lk;
+  rep := rep || rep2;
+
+  -- машины ангара и истребители на орбите (носитель — или сама машина — в системе боя и не в пути)
+  with rows as (
+    select (x->>'id')::uuid as id, greatest(1, (x->>'hp')::integer) as hp, (x->>'seen')::integer as seen,
+           (x->>'x')::integer as cx, (x->>'y')::integer as cy
+    from jsonb_array_elements(coalesce(p_craft, '[]'::jsonb)) x
+    where coalesce((x->>'hp')::integer, 0) > 0),
+  calc as (
+    select rows.id, rows.hp, rows.cx, rows.cy, t.max_hp + coalesce(f.bonus_hp, 0) as mhp,
+           greatest(0, f.hp - greatest(coalesce(l.hp_sync, f.hp), coalesce(rows.seen, 0))) as rep_d
+    from rows
+    join rt_battle_locks l on l.obj_kind = 'ship' and l.obj_id = rows.id and l.battle_id = p_battle
+    join ships f on f.id = rows.id join ship_types t on t.id = f.ship_type
+    join ships c on c.id = coalesce(f.carrier_ship_id, f.id)
+    where not coalesce(c.in_transit, false) and c.system_id = v_sys),
+  -- свободная машина (не в ангаре): и клетка, где её оставил бой
+  upd as (update ships f set hp = least(calc.mhp, calc.hp + calc.rep_d),
+                             x = case when f.carrier_ship_id is null and calc.cx is not null then calc.cx else f.x end,
+                             y = case when f.carrier_ship_id is null and calc.cy is not null then calc.cy else f.y end
+            from calc where f.id = calc.id returning f.id, f.hp, calc.rep_d),
+  lk as (
+    update rt_battle_locks l set hp_sync = upd.hp from upd
+     where l.obj_kind = 'ship' and l.obj_id = upd.id and l.battle_id = p_battle
+    returning upd.id, upd.hp, upd.rep_d)
+  select count(*), coalesce(jsonb_object_agg(id::text, hp) filter (where rep_d > 0), '{}'::jsonb) into n_c, rep2 from lk;
+  rep := rep || rep2;
+
+  -- десант погибшего корабля, живой на чужом борту: в трюм того корабля (поле on) — до удаления своего (каскад)
+  with rows as (
+    select (x->>'id')::uuid as id, greatest(1, (x->>'hp')::integer) as hp, (x->>'on')::uuid as on_id
+    from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x
+    where x ? 'on' and coalesce((x->>'hp')::integer, 0) > 0)
+  update unit_positions u
+     set carrier_ship_id = rows.on_id, hp = least(ut.max_hp + coalesce(u.bonus_hp, 0), rows.hp), updated_at = now()
+    from rows, unit_types ut
+   where u.id = rows.id and ut.id = u.unit_type and u.carrier_ship_id is not null and u.carrier_unit_id is null
+     and exists (select 1 from rt_battle_locks l where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle)
+     and exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
+                  where l.obj_kind = 'ship' and l.obj_id = rows.on_id and l.battle_id = p_battle
+                    and c.carrier_ship_id is null and not coalesce(c.in_transit, false) and c.system_id = v_sys);
+  get diagnostics n_m = row_count;
+
+  -- бойцы на борту: здоровье, не выше предела типа (носитель — в системе боя и не в пути)
+  with rows as (
+    select (x->>'id')::uuid as id, greatest(1, (x->>'hp')::integer) as hp
+    from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x
+    where not (x ? 'on') and coalesce((x->>'hp')::integer, 0) > 0)
+  update unit_positions u set hp = least(ut.max_hp + coalesce(u.bonus_hp, 0), rows.hp), updated_at = now()
+    from rows, unit_types ut
+   where u.id = rows.id and ut.id = u.unit_type and u.carrier_ship_id is not null
+     and exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
+                  where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle
+                    and not coalesce(c.in_transit, false) and c.system_id = v_sys);
   get diagnostics n_u = row_count;
 
   -- трофеи
@@ -17449,33 +17640,79 @@ begin
     from jsonb_array_elements(coalesce(p_captured, '[]'::jsonb)) x
   loop
     if r.captor is null or r.faction not in ('republic', 'cis') then continue; end if;
-    if not exists (select 1 from rt_battle_locks l where l.obj_kind = 'ship' and l.obj_id = r.id and l.battle_id = p_battle) then continue; end if;
-    select t.max_hp + coalesce(s.bonus_hp, 0) into v_max from ships s join ship_types t on t.id = s.ship_type where s.id = r.id;
-    delete from unit_positions where carrier_ship_id = r.id and carrier_unit_id is null;
+    if not exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
+                    where l.obj_kind = 'ship' and l.obj_id = r.id and l.battle_id = p_battle
+                      and not coalesce(c.in_transit, false) and c.system_id = v_sys) then continue; end if;
+    select t.max_hp + coalesce(s.bonus_hp, 0), s.owner_user_id, s.faction, s.ship_type into v_max, v_old, v_oldf, v_type
+      from ships s join ship_types t on t.id = s.ship_type where s.id = r.id;
+    -- трюм прежней стороны — погиб в обороне; десант захватчика остаётся на борту трофея
+    for o in select u.owner_user_id, u.faction, u.unit_type, count(*)::integer as n from unit_positions u
+              where u.carrier_ship_id = r.id and u.carrier_unit_id is null and u.faction is distinct from r.faction group by 1, 2, 3 loop
+      perform log_event(o.owner_user_id, o.faction, v_sys, 'unit_killed', o.unit_type, o.n, 'private',
+                        jsonb_build_object('layer', 'space', 'ship_id', r.id, 'rt', true));
+    end loop;
+    for o in select u.id from unit_positions u
+              where u.carrier_ship_id = r.id and u.carrier_unit_id is null and u.faction is distinct from r.faction loop
+      perform set_config('app.rt_gone', o.id::text, true);
+      delete from unit_positions where id = o.id;
+    end loop;
+    perform set_config('app.rt_gone', '', true);
     perform set_config('app.owner_transfer', '1', true);
-    update ships set owner_user_id = r.captor, faction = r.faction, commander_id = null,
+    update ships set owner_user_id = r.captor, faction = r.faction, commander_id = null, rt_state = null,
                      hp = least(hp, greatest(1, ceil(coalesce(v_max, hp) * 0.25)::integer)),
                      shield_fore = 0, shield_aft = 0, shield_port = 0, shield_starboard = 0, shields_updated_at = now(),
                      trophy = true, jump_lock_until = now() + make_interval(hours => greatest(0, game_setting_int('trophy_jump_lock_hours', 12)))
      where id = r.id;
     update ships set owner_user_id = r.captor, faction = r.faction where carrier_ship_id = r.id;
     perform set_config('app.owner_transfer', '', true);
-    update repair_orders set delivered = true where ship_id = r.id and not delivered;
+    for o in select ro.id, ro.owner_user_id, ro.cost, ro.kind from repair_orders ro where ro.ship_id = r.id and not ro.delivered loop
+      v_half := floor(coalesce(o.cost, 0) / 2.0);
+      if v_half > 0 then update profiles set credits = credits + v_half where id = o.owner_user_id; end if;
+      delete from repair_orders where id = o.id;
+      perform log_event(o.owner_user_id, null, v_sys, 'order_refunded',
+                        case o.kind when 'refit' then 'Модернизация' when 'hangar' then 'Пополнение ангара' else 'Ремонт' end, 1, 'private',
+                        jsonb_build_object('refund', v_half, 'reason', 'capture', 'layer', 'space'));
+    end loop;
+    perform log_event(v_old, v_oldf, v_sys, 'ship_captured', v_type, 1, 'private', jsonb_build_object('layer', 'space', 'by', r.faction));
+    perform log_event(r.captor, r.faction, v_sys, 'ship_trophy', v_type, 1, 'private', jsonb_build_object('layer', 'space', 'ship_id', r.id));
     n_t := n_t + 1;
   end loop;
 
   -- погибшие: бойцы, машины, корабли (груз и ангар уходят каскадом, как в старой игре)
+  -- в журнал — одной строкой на тип и корабль (триггер ev_units писал одну на тип за транзакцию, SPACE-BUG-027)
   for r in
-    select (x->>'id')::uuid as id from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) x where coalesce((x->>'hp')::integer, 0) <= 0
+    select u.owner_user_id, u.faction, u.unit_type, u.carrier_ship_id, count(*)::integer as n
+      from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) e(j)
+      join unit_positions u on u.id = (e.j->>'id')::uuid
+     where coalesce((e.j->>'hp')::integer, 0) <= 0 and u.carrier_ship_id is not null
+       and exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
+                    where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle
+                      and not coalesce(c.in_transit, false) and c.system_id = v_sys)
+     group by 1, 2, 3, 4
   loop
-    delete from unit_positions u where u.id = r.id and u.carrier_ship_id is not null
-       and exists (select 1 from rt_battle_locks l where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle);
+    perform log_event(r.owner_user_id, r.faction, v_sys, 'unit_killed', r.unit_type, r.n, 'private',
+                      jsonb_build_object('layer', 'space', 'ship_id', r.carrier_ship_id, 'rt', true));
+  end loop;
+  for r in
+    select u.id, u.owner_user_id, u.faction, u.unit_type, u.carrier_ship_id
+      from jsonb_array_elements(coalesce(p_units, '[]'::jsonb)) e(j)
+      join unit_positions u on u.id = (e.j->>'id')::uuid
+     where coalesce((e.j->>'hp')::integer, 0) <= 0 and u.carrier_ship_id is not null
+       and exists (select 1 from rt_battle_locks l join ships c on c.id = l.obj_id
+                    where l.obj_kind = 'ship' and l.obj_id = u.carrier_ship_id and l.battle_id = p_battle
+                      and not coalesce(c.in_transit, false) and c.system_id = v_sys)
+  loop
+    perform set_config('app.rt_gone', r.id::text, true);
+    delete from unit_positions where id = r.id;
     n_d := n_d + 1;
   end loop;
+  perform set_config('app.rt_gone', '', true);
   for r in
     select (x->>'id')::uuid as id from jsonb_array_elements(coalesce(p_craft, '[]'::jsonb) || coalesce(p_ships, '[]'::jsonb)) x where coalesce((x->>'hp')::integer, 0) <= 0
   loop
-    if not exists (select 1 from rt_battle_locks l where l.obj_kind = 'ship' and l.obj_id = r.id and l.battle_id = p_battle) then continue; end if;
+    if not exists (select 1 from rt_battle_locks l join ships f on f.id = l.obj_id join ships c on c.id = coalesce(f.carrier_ship_id, f.id)
+                    where l.obj_kind = 'ship' and l.obj_id = r.id and l.battle_id = p_battle
+                      and not coalesce(c.in_transit, false) and c.system_id = v_sys) then continue; end if;
     delete from ships where id = r.id;
     delete from rt_battle_locks where obj_kind = 'ship' and obj_id = r.id;
     n_d := n_d + 1;
@@ -17489,6 +17726,10 @@ begin
     from jsonb_array_elements(coalesce(p_ships, '[]'::jsonb)) x where coalesce((x->>'held')::numeric, 0) > 0;
   select coalesce(array_agg(x->>'id'), '{}') into held_off
     from jsonb_array_elements(coalesce(p_ships, '[]'::jsonb)) x where x ? 'held' and coalesce((x->>'held')::numeric, 0) <= 0;
+  select coalesce(jsonb_object_agg(x->>'id', to_jsonb(now() + make_interval(secs => least(120, (x->>'bd')::numeric)::double precision))), '{}'::jsonb) into brd
+    from jsonb_array_elements(coalesce(p_ships, '[]'::jsonb)) x where coalesce((x->>'bd')::numeric, 0) > 0;
+  select coalesce(array_agg(x->>'id'), '{}') into brd_off
+    from jsonb_array_elements(coalesce(p_ships, '[]'::jsonb)) x where x ? 'bd' and coalesce((x->>'bd')::numeric, 0) <= 0;
   update rt_battles b
      set heartbeat_at = now(),
          snapshot = jsonb_build_object('fire', coalesce((
@@ -17496,10 +17737,16 @@ begin
             where (v #>> '{}')::timestamptz > now() - interval '60 seconds' and not (fire ? k)), '{}'::jsonb) || fire,
                                        'held', coalesce((
            select jsonb_object_agg(k, v) from jsonb_each(coalesce(b.snapshot->'held', '{}'::jsonb)) e(k, v)
-            where (v #>> '{}')::timestamptz > now() and not (held ? k) and not (k = any(held_off))), '{}'::jsonb) || held),
+            where (v #>> '{}')::timestamptz > now() and not (held ? k) and not (k = any(held_off))), '{}'::jsonb) || held,
+                                       -- на борту абордаж — прыжок закрыт (SPACE-BUG-019)
+                                       'board', coalesce((
+           select jsonb_object_agg(k, v) from jsonb_each(coalesce(b.snapshot->'board', '{}'::jsonb)) e(k, v)
+            where (v #>> '{}')::timestamptz > now() and not (brd ? k) and not (k = any(brd_off))), '{}'::jsonb) || brd,
+                                       -- бойцы трюма в деле (сервер шлёт, когда список меняется)
+                                       'busy', case when jsonb_typeof(p_busy) = 'array' then p_busy else coalesce(b.snapshot->'busy', '[]'::jsonb) end),
          snapshot_at = now()
    where b.id = p_battle and b.status = 'active';
-  return jsonb_build_object('ships', n_s, 'craft', n_c, 'units', n_u, 'captured', n_t, 'gone', n_d);
+  return jsonb_build_object('ships', n_s, 'craft', n_c, 'units', n_u, 'moved', n_m, 'captured', n_t, 'gone', n_d, 'rep', rep);
 end;
 $$;
 
@@ -18428,7 +18675,7 @@ CREATE FUNCTION public.settlement_structure_bonus(p_system text) RETURNS integer
   join structure_types st on st.id = s.type_id
   join systems sy on sy.id = s.system_id
   where s.system_id = p_system and s.faction = sy.faction
-    and s.completes_at <= now() and st.satisfaction_bonus > 0;
+    and s.completes_at <= now() and s.hp > 0 and st.satisfaction_bonus > 0;
 $$;
 
 
@@ -20624,7 +20871,7 @@ begin
       and fs.last_tick_at < v_p
       and payout_eligible(fs.created_at, fs.completes_at, v_p)
       and (st.produces_per_day > 0 or st.credits_per_day > 0)
-      and sy.faction = fs.faction
+      and sy.faction = fs.faction and fs.hp > 0
     for update of fs
   loop
     if s.produces_resource is not null and s.produces_per_day > 0 then
@@ -20651,7 +20898,8 @@ begin
     from field_structures fs
     join structure_types st on st.id = fs.type_id
     join systems sy on sy.id = fs.system_id
-    where st.kind = 'jammer' and fs.completes_at <= now() and sy.faction = fs.faction
+    where st.kind = 'jammer' and fs.completes_at <= now() and sy.faction = fs.faction and fs.hp > 0
+      and rt_ground_battle(fs.system_id) is null          -- живую планету ведёт бой 2.0
   loop
     zx := s.x + s.w / 2 - s.radius / 2;
     zy := s.y + s.h / 2 - s.radius / 2;
@@ -20679,7 +20927,8 @@ begin
     from field_structures fs
     join structure_types st on st.id = fs.type_id
     join systems sy on sy.id = fs.system_id
-    where st.kind = 'turret' and fs.completes_at <= now() and sy.faction = fs.faction
+    where st.kind = 'turret' and fs.completes_at <= now() and sy.faction = fs.faction and fs.hp > 0
+      and rt_ground_battle(fs.system_id) is null          -- живую планету ведёт бой 2.0
     for update of fs
   loop
     select u.id, u.unit_type, u.faction, u.owner_user_id, u.x, u.y, t.name as tname, t.hull_class,
@@ -20698,7 +20947,7 @@ begin
            or not exists (
              select 1 from field_structures c join structure_types ct on ct.id = c.type_id
              where c.system_id = s.system_id and ct.kind = 'camo' and c.faction = u.faction
-               and c.completes_at <= now()
+               and c.completes_at <= now() and c.hp > 0
                and boxes_overlap(u.x, u.y, t.width_cells, t.height_cells,
                                  c.x - ct.radius, c.y - ct.radius, c.w + ct.radius * 2, c.h + ct.radius * 2)))
     order by g.gap, u.hp
@@ -23322,6 +23571,7 @@ begin
   select id into v_unit from unit_positions
   where carrier_ship_id = p_ship_id and unit_type = p_unit_type
     and not coalesce(ut.is_vehicle, false) and not coalesce(ut.is_hero, false)
+    and hp > 0
   order by coalesce(cardinality(upgrades), 0) desc, hp desc, id
   limit 1
   for update;
@@ -25980,6 +26230,7 @@ CREATE TABLE public.rt_battle_locks (
     obj_id uuid NOT NULL,
     battle_id uuid NOT NULL,
     locked_at timestamp with time zone DEFAULT now() NOT NULL,
+    hp_sync integer,
     CONSTRAINT rt_battle_locks_obj_kind_check CHECK ((obj_kind = ANY (ARRAY['unit'::text, 'ship'::text])))
 );
 
@@ -26411,6 +26662,7 @@ CREATE TABLE public.ships (
     rt_x double precision,
     rt_y double precision,
     rt_hd double precision,
+    rt_state jsonb,
     CONSTRAINT ships_facing_step CHECK ((facing = ANY (ARRAY[0, 90, 180, 270]))),
     CONSTRAINT ships_name_len CHECK (((name IS NULL) OR ((char_length(name) >= 2) AND (char_length(name) <= 24)))),
     CONSTRAINT ships_place_check CHECK ((((x IS NOT NULL) AND (y IS NOT NULL) AND (carrier_ship_id IS NULL)) OR ((x IS NULL) AND (y IS NULL) AND (carrier_ship_id IS NOT NULL))))
@@ -26900,8 +27152,16 @@ CREATE TABLE public.unit_positions (
     bonus_accuracy integer DEFAULT 0 NOT NULL,
     bonus_evasion integer DEFAULT 0 NOT NULL,
     revealed_until timestamp with time zone,
+    rt_state jsonb,
     CONSTRAINT unit_positions_one_place CHECK ((((x IS NOT NULL) AND (y IS NOT NULL) AND (carrier_unit_id IS NULL) AND (carrier_ship_id IS NULL) AND (transit_to IS NULL) AND (training_until IS NULL)) OR ((x IS NULL) AND (y IS NULL) AND (carrier_unit_id IS NOT NULL) AND (carrier_ship_id IS NULL) AND (transit_to IS NULL) AND (training_until IS NULL)) OR ((x IS NULL) AND (y IS NULL) AND (carrier_unit_id IS NULL) AND (carrier_ship_id IS NOT NULL) AND (transit_to IS NULL) AND (training_until IS NULL)) OR ((x IS NULL) AND (y IS NULL) AND (carrier_unit_id IS NULL) AND (carrier_ship_id IS NULL) AND (transit_to IS NOT NULL) AND (training_until IS NULL)) OR ((x IS NULL) AND (y IS NULL) AND (carrier_unit_id IS NULL) AND (carrier_ship_id IS NULL) AND (transit_to IS NULL) AND (training_until IS NOT NULL))))
 );
+
+
+--
+-- Name: COLUMN unit_positions.rt_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.unit_positions.rt_state IS 'Бой 2.0: откаты способностей героя и порабощение в секундах эпохи (rt_ground_sync)';
 
 
 --
@@ -35292,6 +35552,14 @@ GRANT ALL ON FUNCTION public.rt_bench_submit(p_scenario text, p_device jsonb, p_
 
 
 --
+-- Name: FUNCTION rt_can_open(p_key text, p_system text, p_user uuid, p_layer text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.rt_can_open(p_key text, p_system text, p_user uuid, p_layer text) TO authenticated;
+GRANT ALL ON FUNCTION public.rt_can_open(p_key text, p_system text, p_user uuid, p_layer text) TO service_role;
+
+
+--
 -- Name: FUNCTION rt_event_abort(p_key text, p_match uuid, p_why text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -35559,11 +35827,11 @@ GRANT ALL ON FUNCTION public.rt_space_status(p_system text) TO service_role;
 
 
 --
--- Name: FUNCTION rt_space_sync(p_key text, p_battle uuid, p_ships jsonb, p_craft jsonb, p_units jsonb, p_captured jsonb); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION rt_space_sync(p_key text, p_battle uuid, p_ships jsonb, p_craft jsonb, p_units jsonb, p_captured jsonb, p_busy jsonb); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.rt_space_sync(p_key text, p_battle uuid, p_ships jsonb, p_craft jsonb, p_units jsonb, p_captured jsonb) TO authenticated;
-GRANT ALL ON FUNCTION public.rt_space_sync(p_key text, p_battle uuid, p_ships jsonb, p_craft jsonb, p_units jsonb, p_captured jsonb) TO service_role;
+GRANT ALL ON FUNCTION public.rt_space_sync(p_key text, p_battle uuid, p_ships jsonb, p_craft jsonb, p_units jsonb, p_captured jsonb, p_busy jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.rt_space_sync(p_key text, p_battle uuid, p_ships jsonb, p_craft jsonb, p_units jsonb, p_captured jsonb, p_busy jsonb) TO service_role;
 
 
 --

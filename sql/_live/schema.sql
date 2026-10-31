@@ -1601,11 +1601,15 @@ declare
   l record; v_faction text; v_cost integer; v_credits integer; v_id uuid;
 begin
   if v_user is null then raise exception 'Не авторизован'; end if;
-  if p_amount < 1 then raise exception 'Некорректное количество'; end if;
+  if p_amount is null or p_amount < 1 then raise exception 'Некорректное количество'; end if;   -- econ_fix_1
 
   select * into l from market_lots where id = p_lot_id for update;
   if not found or not l.active then raise exception 'Лот не найден'; end if;
   if l.seller_user_id = v_user then raise exception 'Это твой собственный лот'; end if;
+  -- захват: склад планеты достаётся захватчику, торги с неё закрыты (ECON-BUG-004, econ_fix_1b)
+  if is_capture_active(l.system_id) then
+    raise exception 'На планете продавца идёт захват — торги закрыты, пока он не кончится';
+  end if;
 
   select faction into v_faction from profiles where id = v_user;
   if l.open_to = 'faction' and l.seller_faction is distinct from v_faction then
@@ -2875,6 +2879,11 @@ begin
   if p_price is null or p_price < game_setting_int('market_min_price', 1) then
     raise exception 'Цена не может быть меньше %', game_setting_int('market_min_price', 1);
   end if;
+  -- верх цены: лот по миллиарду никто не купит, а место на торгах он занимает (ECON-BUG-007, econ_fix_1)
+  if p_price > coalesce((select nullif(base_price, 0) from resources where id = p_resource), 10) * game_setting_int('market_max_price_x', 20) then
+    raise exception 'Цена не может быть больше %',   -- econ_fix_1b: base_price 0 — как 10
+      coalesce((select nullif(base_price, 0) from resources where id = p_resource), 10) * game_setting_int('market_max_price_x', 20);
+  end if;
   if p_open_to not in ('faction', 'all') then
     raise exception 'Непонятный круг покупателей';
   end if;
@@ -2882,6 +2891,10 @@ begin
   if not exists (select 1 from system_control sc
                  where sc.system_id = p_system_id and sc.controller_user_id = v_user) then
     raise exception 'Планета не под твоим контролем';
+  end if;
+  -- захват: склад достаётся захватчику, на торги его не выставить (ECON-BUG-004)
+  if is_capture_active(p_system_id) then
+    raise exception 'На планете идёт захват — склад закрыт, пока он не кончится';
   end if;
 
   select faction into v_faction from profiles where id = v_user;
@@ -3371,6 +3384,7 @@ declare
   v_system_id text; v_building_type_id uuid;
   v_bld_faction text; v_sys_faction text;
   v_cost integer; v_half integer; v_pending integer; v_credits integer;
+  v_shift uuid; v_ms record;   -- econ_fix_1
 begin
   if v_user_id is null then raise exception 'Не авторизован'; end if;
 
@@ -3418,6 +3432,22 @@ begin
     perform refund_build_resources(v_system_id,
       (select cost_resources from building_types where id = v_building_type_id), 0.5);
   end if;
+
+  -- после возврата 50 % ресурсов постройки (он идёт в пределах склада) — econ_fix_1b
+  -- участок добычи или цех: смена закрывается, склад участка уходит на склад планеты целиком, даже сверх предела —
+  -- ресурсы при сносе, как и при захвате, остаются на планете (ECON-BUG-016)
+  for v_shift in select id from mine_shifts where building_id = p_building_id and status = 'run' loop
+    perform mine_finish(v_shift, case when v_bld_faction is distinct from v_sys_faction then 'lost' else 'stopped' end);
+  end loop;
+  select * into v_ms from mine_sites where building_id = p_building_id for update;
+  if found then
+    if v_ms.stock > 0 then
+      insert into planet_stock (system_id, resource, amount) values (v_system_id, v_ms.resource, v_ms.stock)
+      on conflict (system_id, resource) do update set amount = planet_stock.amount + excluded.amount;
+    end if;
+    update mine_sites set stock = 0, gone = true, auto_on = false where building_id = p_building_id;
+  end if;
+
 end;
 $$;
 
@@ -3491,6 +3521,11 @@ begin
   if exists (select 1 from ship_orders so
              where so.system_id = p_system_id and not so.delivered) then
     raise exception 'Сначала дождись схода корабля со стапеля';
+  end if;
+  -- док: ремонт, модернизация и пополнение ангара ещё идут (ECON-BUG-024, econ_fix_1)
+  if exists (select 1 from repair_orders ro
+             where ro.system_id = p_system_id and ro.kind in ('ship', 'refit', 'hangar') and not ro.delivered) then
+    raise exception 'Сначала дождись конца работ в доке';
   end if;
 
   select faction, credits into v_faction, v_credits from profiles where id = v_user_id;
@@ -9069,9 +9104,11 @@ $$;
 CREATE FUNCTION public.is_capture_active(p_system_id text) RETURNS boolean
     LANGUAGE sql STABLE
     AS $$
+  -- захват идёт, пока полоса растёт (rate > 0) или стоит выше нуля; строку capture_tick пишет только при смене статуса,
+  -- поэтому сохранённый progress у чистого захвата остаётся 0 (econ_fix_1b)
   select exists (
     select 1 from system_capture
-    where system_id = p_system_id and progress > 0 and status <> 'distribution'
+    where system_id = p_system_id and status <> 'distribution' and (progress > 0 or rate > 0)
   );
 $$;
 
@@ -10260,7 +10297,7 @@ declare
   v_used integer; v_need integer; v_pay integer;
 begin
   if v_user is null then raise exception 'Не авторизован'; end if;
-  if p_amount < 1 then raise exception 'Некорректное количество'; end if;
+  if p_amount is null or p_amount < 1 then raise exception 'Некорректное количество'; end if;   -- econ_fix_1
 
   select * into o from market_orders where id = p_order_id for update;
   if not found then raise exception 'Бронь не найдена'; end if;
@@ -10272,11 +10309,19 @@ begin
   end if;
 
   select * into l from market_lots where id = o.lot_id;
+  -- захват: товар лота при захвате возвращается на склад планеты — вывозить его нельзя (ECON-BUG-004)
+  if is_capture_active(l.system_id) then
+    raise exception 'На планете идёт захват — склад закрыт, пока он не кончится';
+  end if;
 
   select * into s from ships where id = p_ship_id for update;
   if not found then raise exception 'Корабль не найден'; end if;
   if s.owner_user_id <> v_user then raise exception 'Это не твой корабль'; end if;
   if s.in_transit then raise exception 'Корабль в гиперпространстве'; end if;
+  -- живой бой 2.0: трюм не перекладывают, пока стычка не кончится (ECON-BUG-030)
+  if rt_obj_busy_2_0('ship', p_ship_id) is not null then
+    raise exception 'Корабль в бою — груз перекладывают, когда стычка кончится' using errcode = 'P0001', hint = 'rt_busy';
+  end if;
 
   -- Грузиться нужно там, где лежит товар. Планета при этом может быть
   -- чужой — именно бронь и даёт право подойти к чужому складу.
@@ -10286,7 +10331,9 @@ begin
 
   select * into st from ship_stats(p_ship_id);
   v_used := ship_load_used(p_ship_id);
-  v_need := resource_slots(p_amount);
+  -- тот же ресурс докладывается в начатый слот (ECON-BUG-033)
+  v_need := resource_slots(coalesce((select amount from ship_resource_cargo where ship_id = p_ship_id and resource = l.resource), 0) + p_amount)
+          - resource_slots(coalesce((select amount from ship_resource_cargo where ship_id = p_ship_id and resource = l.resource), 0));
 
   if v_used + v_need > st.capacity then
     raise exception 'В трюме не хватает места: занято % из %, нужно ещё %',
@@ -10336,6 +10383,10 @@ begin
   if not found then raise exception 'Корабль не найден'; end if;
   if s.owner_user_id <> v_user then raise exception 'Это не твой корабль'; end if;
   if s.in_transit then raise exception 'Корабль в гиперпространстве'; end if;
+  -- живой бой 2.0: трюм не перекладывают, пока стычка не кончится (ECON-BUG-030, econ_fix_1)
+  if rt_obj_busy_2_0('ship', p_ship_id) is not null then
+    raise exception 'Корабль в бою — груз перекладывают, когда стычка кончится' using errcode = 'P0001', hint = 'rt_busy';
+  end if;
 
   -- Грузить можно только со своей планеты: чужие склады берут штурмом,
   -- а не подлетают и вывозят
@@ -10343,10 +10394,16 @@ begin
                  where sc.system_id = s.system_id and sc.controller_user_id = v_user) then
     raise exception 'Планета не под твоим контролем';
   end if;
+  -- захват: склад достаётся захватчику, вывезти его нельзя (ECON-BUG-004)
+  if is_capture_active(s.system_id) then
+    raise exception 'На планете идёт захват — склад закрыт, пока он не кончится';
+  end if;
 
   select * into st from ship_stats(p_ship_id);
   v_used := ship_load_used(p_ship_id);
-  v_need := resource_slots(p_amount);
+  -- тот же ресурс докладывается в начатый слот (ECON-BUG-033)
+  v_need := resource_slots(coalesce((select amount from ship_resource_cargo where ship_id = p_ship_id and resource = p_resource), 0) + p_amount)
+          - resource_slots(coalesce((select amount from ship_resource_cargo where ship_id = p_ship_id and resource = p_resource), 0));
 
   if v_used + v_need > st.capacity then
     raise exception 'В трюме не хватает места: занято % из %, нужно ещё %',
@@ -11898,7 +11955,9 @@ begin
       v_used := v_used || jsonb_build_object(k, case when p_status = 'lost' then (sh.input ->> k)::integer else v_n end);
       v_back := (sh.input ->> k)::integer - v_n;
       if p_status <> 'lost' and v_back > 0 then
-        perform add_planet_stock(sh.system_id, k, v_back);   -- в пределах склада планеты, как вся добыча
+        -- сырьё лежало на этом складе до смены — возвращается целиком, даже сверх предела (ECON-BUG-018, econ_fix_1)
+        insert into planet_stock (system_id, resource, amount) values (sh.system_id, k, v_back)
+        on conflict (system_id, resource) do update set amount = planet_stock.amount + excluded.amount;
       end if;
     end loop;
     update mine_shifts set input_used = v_used where id = p_shift;
@@ -14479,6 +14538,15 @@ begin
   select faction, credits into v_faction, v_credits from profiles where id = v_user_id;
   if v_type.faction is distinct from v_faction then
     raise exception 'Этот корабль недоступен твоей фракции';
+  end if;
+
+  -- неизвестные и повторные id не видит ни одна проверка ниже, а время шло по длине списка (ECON-BUG-022, econ_fix_1)
+  if exists (select 1 from unnest(coalesce(p_upgrades, '{}')) u2
+             where not exists (select 1 from researches r2 where r2.id = u2)) then
+    raise exception 'Неизвестное дополнение';
+  end if;
+  if (select count(*) <> count(distinct u3) from unnest(coalesce(p_upgrades, '{}')) u3) then
+    raise exception 'Дополнение указано дважды';
   end if;
 
   select r.name into v_missing
@@ -17948,11 +18016,15 @@ declare
   v_faction text; v_post text; v_price integer; v_total integer;
 begin
   if v_user is null then raise exception 'Не авторизован'; end if;
-  if p_amount < 1 then raise exception 'Некорректное количество'; end if;
+  if p_amount is null or p_amount < 1 then raise exception 'Некорректное количество'; end if;   -- econ_fix_1
 
   if not exists (select 1 from system_control sc
                  where sc.system_id = p_system_id and sc.controller_user_id = v_user) then
     raise exception 'Планета не под твоим контролем';
+  end if;
+  -- захват: склад достаётся захватчику, распродать его посту нельзя (ECON-BUG-004)
+  if is_capture_active(p_system_id) then
+    raise exception 'На планете идёт захват — склад закрыт, пока он не кончится';
   end if;
 
   select faction into v_faction from profiles where id = v_user;
@@ -18628,6 +18700,12 @@ begin
   select * into t from settlement_tasks where id = p_task_id for update;
   if not found then raise exception 'Задача не найдена'; end if;
   if t.done then raise exception 'Уже выполнено'; end if;
+  -- зачёт идёт только за текущие сутки: старая задача съела бы деньги впустую (ECON-BUG-012, econ_fix_1)
+  perform 1 from settlement_state st
+   where st.system_id = t.system_id and st.cycle_started = t.cycle_start for share;   -- econ_fix_1b: смена суток ждёт оплату
+  if not found then
+    raise exception 'Срок этой задачи вышел — обнови окно поселения';
+  end if;
 
   if t.kind not in ('donation', 'festival') then
     raise exception 'Эту задачу деньгами не закрыть';
@@ -20706,6 +20784,14 @@ begin
 
   v_n := coalesce(array_length(p_upgrades, 1), 0);
   if v_n = 0 then raise exception 'Не выбрано ни одного улучшения'; end if;
+  -- неизвестные и повторные id: цена шла по найденным темам, время — по длине списка (ECON-BUG-022, econ_fix_1)
+  if exists (select 1 from unnest(p_upgrades) u2
+             where not exists (select 1 from researches r2 where r2.id = u2)) then
+    raise exception 'Неизвестное дополнение';
+  end if;
+  if (select count(*) <> count(distinct u3) from unnest(p_upgrades) u3) then
+    raise exception 'Дополнение указано дважды';
+  end if;
 
   -- Уже стоит
   select r.name into v_bad
@@ -21549,6 +21635,11 @@ begin
   end if;
 
   select * into l from market_lots where id = o.lot_id;
+  -- захват: товар лота при захвате возвращается на склад планеты — рейс его не забирает (ECON-BUG-004, econ_fix_1)
+  if is_capture_active(l.system_id) then
+    perform supply_log(r.id, p_here, 'Идёт захват — склад закрыт, покупку не забрать · ' || coalesce(v_sys, p_here), 0);
+    return 0;
+  end if;
   if l.system_id is distinct from p_here then
     perform supply_log(r.id, p_here, 'Товар лежит не здесь — покупка не забрана', 0);
     return 0;
@@ -21924,6 +22015,20 @@ begin
 
     -- ----- на остановке -----
     if r.phase = 'at_stop' then
+      -- корабль флота в живом бою 2.0: груз не перекладывают, ждём конца стычки (ECON-BUG-030, econ_fix_1b)
+      if exists (select 1 from ships s where s.commander_id = cm.id and s.system_id = v_here and not s.in_transit
+                  and s.carrier_ship_id is null and rt_obj_busy_2_0('ship', s.id) is not null) then
+        update supply_routes set last_note = 'Флот в бою — груз передадут, когда стычка кончится', updated_at = now()
+         where id = r.id and last_note is distinct from 'Флот в бою — груз передадут, когда стычка кончится';
+        exit;
+      end if;
+      -- вывоз покупки с планеты, где идёт захват: ждём его конца (захватят — бронь вернут деньгами) (ECON-BUG-004)
+      if supply_stop_is_pickup(r.stops -> r.stop_index) and is_capture_active(v_here) then
+        update supply_routes set last_note = 'Идёт захват — покупку заберём, когда он кончится · ' || coalesce(v_hname, v_here),
+                                 updated_at = now()
+         where id = r.id and last_note is distinct from 'Идёт захват — покупку заберём, когда он кончится · ' || coalesce(v_hname, v_here);
+        exit;
+      end if;
       -- груз меняют у площадки сброса: флот подходит к ней, потом погрузка и выгрузка (sql/supply_pad.sql)
       -- (только если есть что передать: погрузка, вывоз покупки или груз в трюме под выгрузку)
       if exists (select 1 from jsonb_array_elements(coalesce(r.stops -> r.stop_index -> 'actions', '[]'::jsonb)) x
@@ -22041,6 +22146,13 @@ begin
 
     -- ================= ПОГРУЗКА =================
     if a ->> 'op' = 'load' then
+      -- захват: склад достаётся захватчику, рейс не грузит (ECON-BUG-004, econ_fix_1)
+      if is_capture_active(p_here) then
+        if not v_quiet then
+          perform supply_log(r.id, p_here, 'Идёт захват — погрузка остановлена · ' || v_sys_name, 0);
+        end if;
+        continue;
+      end if;
       perform 1 from planet_stock ps where ps.system_id = p_here and ps.resource = v_res for update;
       select * into ti from supply_take_info(p_here, v_res, r.owner_user_id);
       v_free := supply_fleet_free(r.commander_id, p_here);
@@ -22399,6 +22511,25 @@ begin
   return null;
 end;
 $$;
+
+
+--
+-- Name: system_control_capture_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.system_control_capture_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  -- такты и служебные функции (захват, бунт) меняют управляющего сами; запрет — для действий игроков
+  if auth.uid() is null then return new; end if;
+  if tg_op = 'UPDATE' and new.controller_user_id is not distinct from old.controller_user_id then return new; end if;
+  if is_capture_active(new.system_id) then
+    raise exception 'На планете идёт захват — управляющего не меняют, пока он не кончится' using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
 
 
 --
@@ -23501,6 +23632,10 @@ begin
   if not found then raise exception 'Корабль не найден'; end if;
   if s.owner_user_id <> v_user then raise exception 'Это не твой корабль'; end if;
   if s.in_transit then raise exception 'Корабль в гиперпространстве'; end if;
+  -- живой бой 2.0: трюм не перекладывают, пока стычка не кончится (ECON-BUG-030, econ_fix_1)
+  if rt_obj_busy_2_0('ship', p_ship_id) is not null then
+    raise exception 'Корабль в бою — груз перекладывают, когда стычка кончится' using errcode = 'P0001', hint = 'rt_busy';
+  end if;
 
   select faction into v_sys_faction from systems where id = s.system_id;
   if v_sys_faction is distinct from s.faction then
@@ -29202,6 +29337,13 @@ CREATE TRIGGER a_rt_battle_lock BEFORE INSERT ON public.troop_transfer_items FOR
 --
 
 CREATE TRIGGER a_rt_battle_lock BEFORE DELETE OR UPDATE ON public.unit_positions FOR EACH ROW EXECUTE FUNCTION public.rt_battle_guard();
+
+
+--
+-- Name: system_control a_system_control_capture_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER a_system_control_capture_guard BEFORE INSERT OR UPDATE OF controller_user_id ON public.system_control FOR EACH ROW EXECUTE FUNCTION public.system_control_capture_guard();
 
 
 --
@@ -36634,6 +36776,14 @@ GRANT ALL ON FUNCTION public.supply_unload_room(p_route_id uuid, p_res text) TO 
 
 REVOKE ALL ON FUNCTION public.sync_carried_system() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sync_carried_system() TO service_role;
+
+
+--
+-- Name: FUNCTION system_control_capture_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.system_control_capture_guard() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.system_control_capture_guard() TO service_role;
 
 
 --
